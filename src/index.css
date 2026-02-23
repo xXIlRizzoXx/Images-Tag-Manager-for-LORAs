@@ -1,1 +1,27 @@
 @import "tailwindcss";
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zoomIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes slideInTop { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideInBottom { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideInLeftAnim { from { transform: translateX(-40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes slideInRightAnim { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+.animate-in { animation-duration: 0.3s; animation-fill-mode: both; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+.fade-in { animation-name: fadeIn; }
+.zoom-in, .zoom-in-95 { animation-name: zoomIn; }
+.slide-in-from-top-2 { animation-name: slideInTop; }
+.slide-in-from-bottom-10 { animation-name: slideInBottom; }
+.slide-in-from-bottom-12 { animation-name: slideInBottom; animation-duration: 0.4s; }
+
+.anim-slide-left { animation: slideInLeftAnim 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.anim-slide-right { animation: slideInRightAnim 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border: 4px solid rgba(0,0,0,0); background-clip: padding-box; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.8); border: 4px solid rgba(0,0,0,0); background-clip: padding-box; }
+
+.lightbox-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.lightbox-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border: 2px solid transparent; background-clip: padding-box; border-radius: 9999px; }
+.lightbox-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.6); border: 2px solid transparent; background-clip: padding-box; }
