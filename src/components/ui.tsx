@@ -40,9 +40,9 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
     const removeTag = (idx: number) => { setTags(tags.filter((_: any, i: number) => i !== idx)); soundManager.click(); };
     
     return (
-        <div onClick={() => inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-1 p-1.5 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto cursor-text ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
+        <div onClick={() => inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-1 p-1.5 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto cursor-text ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
         {tags.map((tag: string, index: number) => (
-            <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${isGlobal ? 'bg-indigo-500 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 shadow-sm'}`}>
+            <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${isGlobal ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 shadow-sm'}`}>
             {tag}
             <button onClick={(e) => { e.stopPropagation(); removeTag(index); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
             </span>
@@ -55,7 +55,7 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
             onKeyDown={handleKeyDown} 
             onPaste={handlePaste}
             placeholder={tags.length === 0 ? placeholder : "Scrivi tag..."} 
-            className={`w-full bg-transparent border-none outline-none text-gray-800 dark:text-gray-100 placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
+            className={`w-full bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-700 dark:placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
         />
         </div>
     );
@@ -86,6 +86,46 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
                 <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700">
                     <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">{t.cancel}</button>
                     <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 shadow-md shadow-red-500/20 transition-all active:scale-95">{title}</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t }: any) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="p-6">
+                    <div className="flex items-center gap-3 mb-4 text-indigo-500 dark:text-indigo-400">
+                        <Info size={24} />
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">{t.importSummaryTitle}</h3>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{t.importSummaryMsg}</p>
+                    <div className="space-y-3 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.imagesFound}</span>
+                            <span className="text-sm font-bold text-gray-900 dark:text-white">{summary.imagesCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.textFilesFound}</span>
+                            <span className="text-sm font-bold text-gray-900 dark:text-white">{summary.textFilesCount}</span>
+                        </div>
+                        <div className="h-px bg-gray-200 dark:bg-gray-700 my-2"></div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.imagesWithText}</span>
+                            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{summary.imagesWithText}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.imagesWithoutText}</span>
+                            <span className="text-sm font-bold text-red-600 dark:text-red-400">{summary.imagesWithoutText}</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700">
+                    <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">{t.cancel}</button>
+                    <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.importButton}</button>
                 </div>
             </div>
         </div>
