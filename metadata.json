@@ -1,5 +1,5 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Images Tag Manager for LORAs",
+  "description": "A tool to manage and edit tags for images used in LORA training.",
   "requestFramePermissions": []
 }
