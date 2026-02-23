@@ -3,7 +3,7 @@ import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard } from 'lucide-reac
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -137,34 +137,34 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         </div>
                     </div>
                 </div>
-                <div className="hidden lg:flex flex-col w-80 bg-gray-800 rounded-2xl shadow-xl border border-gray-700 shrink-0 h-full overflow-hidden">
-                    <div className="p-4 border-b border-gray-700 bg-gray-900 text-center shrink-0">
-                        <h3 className="text-sm font-bold text-gray-200 flex items-center justify-center gap-2"><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
-                        <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-wide">{t.clickPillsToAdd}</p>
+                <div className={`hidden lg:flex flex-col w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
+                    <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
+                        <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
+                        <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>
                     </div>
                     
-                    <div className="px-4 py-3 border-b border-gray-700 bg-gray-800 shrink-0 flex flex-col gap-3 shadow-sm z-10">
+                    <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} shrink-0 flex flex-col gap-3 shadow-sm z-10`}>
                         <div className="flex items-center justify-between px-1">
-                            <span className="text-xs font-semibold text-gray-300">{t.showOnlyAdded}</span>
+                            <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.showOnlyAdded}</span>
                             <AppleToggle checked={showOnlyAdded} onChange={setShowOnlyAdded} iconOn={<span />} iconOff={<span />} colorClass="bg-indigo-500" />
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={handleAddAll} className="flex-1 py-1.5 bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 rounded-lg text-xs font-bold transition-colors border border-indigo-800/50">
+                            <button onClick={handleAddAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/50 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100'} rounded-lg text-xs font-bold transition-colors border`}>
                                 {t.addAllTags}
                             </button>
-                            <button onClick={handleRemoveAll} className="flex-1 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg text-xs font-bold transition-colors border border-red-800/50">
+                            <button onClick={handleRemoveAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-red-900/30 border-red-800/50 text-red-400 hover:bg-red-900/50' : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100'} rounded-lg text-xs font-bold transition-colors border`}>
                                 {t.removeAllTags}
                             </button>
                         </div>
                     </div>
 
-                    <div className="flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative bg-gray-800">
+                    <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                         {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => (
-                            <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm ${currentTags.includes(tag) ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' : 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600'}`}>{tag}</button>
+                            <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm ${currentTags.includes(tag) ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200')}`}>{tag}</button>
                         ))}
                     </div>
-                    <div className="p-4 border-t border-gray-700 bg-gray-900 shrink-0 flex flex-col gap-3">
-                        <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2.5 text-sm text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0 flex flex-col gap-3`}>
+                        <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
                         <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
                     </div>
                 </div>
