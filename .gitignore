@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Electron build output
+release/
+win-unpacked/
+*.exe
+*.zip
