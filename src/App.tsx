@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Tag, Save, Download, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check } from 'lucide-react';
+import { Folder, Trash, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon } from 'lucide-react';
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
@@ -13,6 +13,8 @@ export default function App() {
     const [images, setImages] = useState<any[]>([]);
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
     const [soundEnabled, setSoundEnabled] = useState(true);
+    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isReversed, setIsReversed] = useState(false);
     
     const [saveAsZip, setSaveAsZip] = useState(false); 
     const [dirHandle, setDirHandle] = useState<any>(null);
@@ -40,6 +42,10 @@ export default function App() {
         const imgTags = images.flatMap(img => img.tags);
         return [...new Set([...imgTags, ...customProjectTags])].sort((a, b) => a.localeCompare(b));
     }, [images, customProjectTags]);
+
+    const displayedImages = useMemo(() => {
+        return isReversed ? [...images].reverse() : images;
+    }, [images, isReversed]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
 
@@ -267,9 +273,9 @@ export default function App() {
         setSelectedForBulk([]); 
     };
 
-    const currentIndex = images.findIndex(img => img.id === selectedImageId);
-    const handleNext = () => { if (currentIndex < images.length - 1) { setSlideDirection('left'); setSelectedImageId(images[currentIndex + 1].id); } };
-    const handlePrev = () => { if (currentIndex > 0) { setSlideDirection('right'); setSelectedImageId(images[currentIndex - 1].id); } };
+    const currentIndex = displayedImages.findIndex(img => img.id === selectedImageId);
+    const handleNext = () => { if (currentIndex < displayedImages.length - 1) { setSlideDirection('left'); setSelectedImageId(displayedImages[currentIndex + 1].id); } };
+    const handlePrev = () => { if (currentIndex > 0) { setSlideDirection('right'); setSelectedImageId(displayedImages[currentIndex - 1].id); } };
 
     const handleGlobalTagsChange = (newGlobalTags: string[]) => {
         const added = newGlobalTags.filter(t => !globalTriggers.includes(t));
@@ -300,55 +306,62 @@ export default function App() {
     }, []);
 
     return (
-        <div className="h-full transition-colors duration-500 overflow-hidden w-full dark">
+        <div className={`h-full transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
             {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} />
             
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
             
             <Lightbox 
-                image={images.find(img => img.id === selectedImageId)} 
+                image={displayedImages.find(img => img.id === selectedImageId)} 
                 onClose={() => setSelectedImageId(null)} 
                 updateTags={updateImageTags} 
                 allTags={allUniqueTags} 
                 t={t} 
                 onNext={handleNext} 
                 onPrev={handlePrev} 
-                hasNext={(images.length - 1) > currentIndex} 
+                hasNext={(displayedImages.length - 1) > currentIndex} 
                 hasPrev={currentIndex > 0} 
                 slideDirection={slideDirection} 
                 showNotification={showNotification} 
                 updateOriginalTags={updateOriginalTags} 
                 dirHandle={dirHandle}
+                isDarkMode={isDarkMode}
             />
 
-            <div className="fixed inset-0 z-0 bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900 transition-colors duration-500">
-                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]"></div>
+            <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
+                <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
             </div>
 
             <div className="relative z-10 w-full px-4 py-4 md:py-6 mx-auto h-full max-w-[1920px]">
-                <div className="bg-gray-900/70 backdrop-blur-xl border border-gray-700/50 shadow-2xl rounded-3xl overflow-hidden transition-all duration-500 flex flex-col relative h-full max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-3rem)]">
+                <div className={`${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl overflow-hidden transition-all duration-500 flex flex-col relative h-full max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-3rem)]`}>
                     
-                    <div className="border-b border-gray-800/50 p-4 md:p-5 flex flex-col md:flex-row justify-between items-center gap-4 bg-black/20 shrink-0 z-20">
+                    <div className={`border-b ${isDarkMode ? 'border-gray-800/50 bg-black/20' : 'border-gray-200 bg-gray-50/50'} p-4 md:p-5 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20`}>
                         <div className="flex-1 flex justify-start w-full md:w-auto">
                         </div>
-                        <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto"><div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden sm:block"><ImageIcon className="text-white" size={20} /></div><h1 className="text-lg md:text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-300 whitespace-nowrap">{t.appTitle}</h1></div>
+                        <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto"><div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden sm:block"><ImageIcon className="text-white" size={20} /></div><h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1></div>
                         <div className="flex-1 flex justify-end w-full md:w-auto">
                             <div className="relative" ref={settingsRef}>
-                                <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl bg-gray-800/50 hover:bg-gray-700 border border-gray-700/50 shadow-sm transition-colors text-gray-300 focus:outline-none"><span className="font-semibold text-sm hidden sm:inline-block">{t.settings}</span><Settings size={20} className={isSettingsOpen ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} /></button>
+                                <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}><span className="font-semibold text-sm hidden sm:inline-block">{t.settings}</span><Settings size={20} className={isSettingsOpen ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} /></button>
                                 
-                                {isSettingsOpen && <div className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-2xl shadow-xl border border-gray-700 p-4 z-50 animate-in fade-in slide-in-from-top-2">
-                                    <h3 className="text-xs font-semibold text-gray-400 uppercase mb-4 tracking-wider">{t.settings}</h3>
+                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-64 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
+                                    <h3 className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} uppercase mb-4 tracking-wider`}>{t.settings}</h3>
                                     <div className="flex flex-col gap-4">
                                         <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2 text-sm text-gray-300 font-medium">{soundEnabled ? <Volume2 size={16} className="text-indigo-500"/> : <VolumeX size={16} className="text-gray-400"/>} {t.uiSounds}</div>
+                                            <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{soundEnabled ? <Volume2 size={16} className="text-indigo-500"/> : <VolumeX size={16} className={isDarkMode ? 'text-gray-400' : 'text-gray-400'}/>} {t.uiSounds}</div>
                                             <AppleToggle checked={soundEnabled} onChange={setSoundEnabled} colorClass="bg-indigo-500" />
                                         </div>
-                                        <div className="w-full h-px bg-gray-700/50"></div>
-                                        <div className="flex items-center justify-between"><div className="flex items-center gap-2 text-sm text-gray-300 font-medium"><Globe size={16} className="text-blue-500"/>{t.language}</div><select value={lang} onChange={(e) => setLang(e.target.value)} className="bg-gray-700 text-xs rounded border border-gray-600 px-2 py-1 outline-none text-gray-200"><option value="it">Italiano</option></select></div>
-                                        <div className="w-full h-px bg-gray-700/50 my-1"></div>
-                                        <div className="flex justify-center">
-                                            <span className="text-[10px] text-gray-500 font-semibold tracking-widest uppercase">Versione 1.4.0</span>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        <div className="flex items-center justify-between">
+                                            <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{isDarkMode ? <Moon size={16} className="text-purple-400"/> : <Sun size={16} className="text-amber-500"/>} {t.theme}</div>
+                                            <AppleToggle checked={isDarkMode} onChange={setIsDarkMode} colorClass="bg-indigo-500" iconOn={<Moon size={10}/>} iconOff={<Sun size={10}/>} />
+                                        </div>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        <div className="flex items-center justify-between"><div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}><Globe size={16} className="text-blue-500"/>{t.language}</div><select value={lang} onChange={(e) => setLang(e.target.value)} className={`${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-700'} text-xs rounded border px-2 py-1 outline-none`}><option value="it">Italiano</option></select></div>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
+                                        <div className="flex flex-col items-center gap-1">
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 1.5.0</span>
+                                            <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>Copyright xXIlRizzoXx</span>
                                         </div>
                                     </div>
                                 </div>}
@@ -387,13 +400,13 @@ export default function App() {
                             </button>
                             <div className="w-full flex flex-col gap-1.5">
                                 <div className="w-full flex gap-3">
-                                    <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:text-gray-500 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                    <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                         <Save size={16} />
                                         <span className="hidden sm:inline">Salva Modifiche</span>
                                         <span className="sm:hidden">Salva</span>
                                     </button>
-                                    <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:text-gray-500 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
-                                        <Download size={16} />
+                                    <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                        <SaveAll size={16} />
                                         <span className="hidden sm:inline">Esporta Tutti</span>
                                         <span className="sm:hidden">Esporta</span>
                                     </button>
@@ -409,23 +422,39 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className="px-6 py-2.5 bg-gray-800/40 border-b border-gray-800/50 flex justify-between items-center shrink-0">
-                        <div className="flex-1 flex items-center gap-2 text-sm font-medium text-gray-400"><ImageIcon size={16} /><span>{images.length} {images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}</span></div>
-                        <div className="flex-1 flex justify-center"><div className="flex items-center bg-gray-900 p-1 rounded-lg shadow-inner"><button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}><LayoutGrid size={14} /> {t.square}</button><button onClick={() => setViewMode('original')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'original' ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}><Grid3X3 size={14} /> {t.original}</button></div></div>
-                        <div className="flex-1 flex items-center justify-end gap-3"><span className="hidden sm:inline-block text-xs font-medium text-gray-400 uppercase tracking-wide">{t.zoom}</span><div className="flex items-center gap-2 bg-gray-900 px-3 py-1 rounded-full border border-gray-700 shadow-inner"><ZoomOut size={14} className="text-gray-400" /><input type="range" min="150" max="500" step="10" value={imageWidth} onChange={(e) => setImageWidth(Number(e.target.value))} className="w-20 md:w-32 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" /><ZoomIn size={14} className="text-gray-400" /></div></div>
+                    <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex justify-between items-center shrink-0`}>
+                        <div className={`flex-1 flex items-center gap-2 text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><ImageIcon size={16} /><span>{images.length} {images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}</span></div>
+                        <div className="flex-1 flex justify-center">
+                            <div className={`flex items-center ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-1 rounded-lg shadow-inner`}>
+                                <button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><LayoutGrid size={14} /> {t.square}</button>
+                                <button onClick={() => setViewMode('original')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'original' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><Grid3X3 size={14} /> {t.original}</button>
+                            </div>
+                        </div>
+                        <div className="flex-1 flex items-center justify-end gap-3">
+                            <button onClick={() => setIsReversed(!isReversed)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isReversed ? (isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`} title={t.invertOrder}>
+                                <ArrowDownUp size={14} className={isReversed ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                                <span className="hidden lg:inline">{t.invertOrder}</span>
+                            </button>
+                            <span className={`hidden sm:inline-block text-xs font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wide`}>{t.zoom}</span>
+                            <div className={`flex items-center gap-2 ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-gray-100 border-gray-200'} px-3 py-1 rounded-full border shadow-inner`}>
+                                <ZoomOut size={14} className="text-gray-400" />
+                                <input type="range" min="150" max="500" step="10" value={imageWidth} onChange={(e) => setImageWidth(Number(e.target.value))} className="w-20 md:w-32 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+                                <ZoomIn size={14} className="text-gray-400" />
+                            </div>
+                        </div>
                     </div>
 
                     <div className="p-4 md:p-6 bg-black/20 flex-1 overflow-y-auto min-h-0 relative">
-                        {images.length === 0 ? <div className="flex flex-col items-center justify-center h-full opacity-60"><ImageIcon size={64} className="text-gray-600 mb-4" /><p className="text-lg font-medium text-gray-400">{t.noImagesTitle}</p><p className="text-sm text-gray-500 mt-2">{t.noImagesDesc}</p></div> : 
+                        {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full opacity-60`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-300'} mb-4`} /><p className={`text-lg font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} mt-2`}>{t.noImagesDesc}</p></div> : 
                         <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
-                            {images.map((img) => (
-                            <div key={img.id} className={`group bg-gray-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-gray-700'}`}>
-                                <div className={`relative bg-gray-900 overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
+                            {displayedImages.map((img) => (
+                            <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
+                                <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
                                     <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
                                     <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
                                     <button onClick={(e) => { e.stopPropagation(); removeImage(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20"><X size={14} /></button>
                                 </div>
-                                <div className="p-3 flex-1 flex flex-col bg-gray-800"><TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" /></div>
+                                <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}><TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" /></div>
                             </div>
                             ))}
                         </div>}

@@ -68,6 +68,10 @@ export const translations = {
         zipProcessing: "Generazione archivio ZIP in corso...",
         zipSuccess: "Archivio ZIP scaricato con successo!",
         zipError: "Errore durante la creazione dello ZIP.",
-        dirError: "Errore durante la sovrascrittura. Verifica i permessi della cartella."
+        dirError: "Errore durante la sovrascrittura. Verifica i permessi della cartella.",
+        invertOrder: "Inverti Ordine",
+        theme: "Tema",
+        darkTheme: "Tema Scuro",
+        lightTheme: "Tema Chiaro"
     }
 };
