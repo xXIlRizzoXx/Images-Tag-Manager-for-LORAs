@@ -1,15 +1,95 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
+import AIWorker from '../workers/ai.worker?worker';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
     const [highResUrl, setHighResUrl] = useState<string | null>(null);
     const [isHighResLoaded, setIsHighResLoaded] = useState(false);
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
+    
+    // AI State
+    const [isProcessingAI, setIsProcessingAI] = useState(false);
+    const [aiProgress, setAiProgress] = useState(0);
+    const [maxTags, setMaxTags] = useState(10);
+    const workerRef = useRef<Worker | null>(null);
+    const imageRef = useRef(image);
+
+    useEffect(() => {
+        imageRef.current = image;
+    }, [image]);
+
+    useEffect(() => {
+        workerRef.current = new AIWorker();
+        workerRef.current.onmessage = (event) => {
+            const { type, data } = event.data;
+            if (type === 'progress') {
+                if (data.status === 'progress') {
+                    setAiProgress(Math.round(data.progress || 0));
+                }
+            } else if (type === 'result') {
+                setIsProcessingAI(false);
+                setAiProgress(0);
+                handleAIResult(data);
+            } else if (type === 'error') {
+                setIsProcessingAI(false);
+                setAiProgress(0);
+                if (showNotification) showNotification(`${t.aiError}: ${data}`, "error");
+            }
+        };
+        return () => {
+            workerRef.current?.terminate();
+        };
+    }, []);
+
+    const handleAIResult = (result: any) => {
+        if (!result || !result[0] || !result[0].generated_text) return;
+        
+        const currentImage = imageRef.current;
+        if (!currentImage) return;
+
+        const text = result[0].generated_text;
+        
+        // Simple keyword extraction for now
+        // Remove common stopwords and split
+        const stopwords = ['a', 'an', 'the', 'is', 'are', 'in', 'on', 'at', 'with', 'by', 'of', 'and', 'or', 'to', 'for'];
+        const words = text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").split(/\s+/);
+        const tags = words.filter((w: string) => w.length > 2 && !stopwords.includes(w));
+        // Remove duplicates and slice
+        const newTags = [...new Set(tags)].slice(0, maxTags);
+
+        // Instead of adding to image, we call onTagsDiscovered if provided
+        if (onTagsDiscovered) {
+            onTagsDiscovered(newTags);
+            soundManager.chime();
+            if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
+        } else {
+            // Fallback to old behavior if prop not provided (should not happen with updated App.tsx)
+            const currentTags = currentImage.tags || [];
+            const combined = [...new Set([...currentTags, ...newTags])];
+            updateTags(currentImage.id, combined);
+            soundManager.chime();
+            if (showNotification) showNotification(t.completed, "success");
+        }
+    };
+
+    const handleMagicWand = () => {
+        if (isProcessingAI || !workerRef.current || !image) return;
+        
+        setIsProcessingAI(true);
+        setAiProgress(0);
+        
+        // Send image to worker
+        // We need a blob URL or base64. highResUrl is a blob URL.
+        workerRef.current.postMessage({
+            type: 'generate',
+            data: { imageUrl: highResUrl }
+        });
+    };
 
     const handleKeyDown = useCallback((e: any) => {
         if (!image) return;
@@ -164,6 +244,33 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         ))}
                     </div>
                     <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0 flex flex-col gap-3`}>
+                        
+                        {/* AI Tools Section */}
+                        <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.aiTools}</span>
+                                <div className="flex items-center gap-1">
+                                    <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.maxTags}:</span>
+                                    <input 
+                                        type="number" 
+                                        min="1" 
+                                        max="20" 
+                                        value={maxTags} 
+                                        onChange={(e) => setMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
+                                        className={`w-10 px-1 py-0.5 text-[10px] rounded border text-center outline-none focus:ring-1 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
+                                    />
+                                </div>
+                            </div>
+                            <button 
+                                onClick={handleMagicWand} 
+                                disabled={isProcessingAI}
+                                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                            >
+                                {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                {isProcessingAI ? (aiProgress > 0 ? `${t.modelLoading} ${aiProgress}%` : t.generating) : t.magicWand}
+                            </button>
+                        </div>
+
                         <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
                         <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
                     </div>
