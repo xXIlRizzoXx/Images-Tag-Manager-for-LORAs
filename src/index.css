@@ -1,3 +1,8 @@
+/**
+ * GLOBAL STYLES
+ * Contains Tailwind CSS imports, custom keyframe animations for UI transitions,
+ * and global scrollbar styling.
+ */
 @import "tailwindcss";
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

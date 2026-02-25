@@ -1,4 +1,9 @@
 
+/**
+ * AI WEB WORKER
+ * Runs the image-to-text (captioning) model in a background thread using 
+ * @xenova/transformers to avoid blocking the main UI thread.
+ */
 import { pipeline, env } from '@xenova/transformers';
 
 // Skip local model checks
@@ -12,7 +17,7 @@ class CaptioningPipeline {
 
   static async getInstance(progress_callback: any = null) {
     if (this.instance === null) {
-      this.instance = await pipeline(this.task, this.model, { progress_callback });
+      this.instance = await pipeline(this.task as any, this.model, { progress_callback });
     }
     return this.instance;
   }

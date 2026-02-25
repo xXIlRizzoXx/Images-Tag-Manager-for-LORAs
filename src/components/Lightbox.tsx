@@ -1,7 +1,14 @@
+/**
+ * LIGHTBOX COMPONENT
+ * Provides a full-screen immersive view for individual images.
+ * Includes features like tag editing, AI-powered auto-tagging for single images,
+ * and navigation between images in the current set.
+ */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
+// @ts-ignore
 import AIWorker from '../workers/ai.worker?worker';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered }: any) => {

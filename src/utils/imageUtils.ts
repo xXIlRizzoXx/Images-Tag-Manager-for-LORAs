@@ -1,3 +1,8 @@
+/**
+ * IMAGE UTILITIES
+ * Provides helper functions for image manipulation, such as generating 
+ * thumbnails for the gallery view.
+ */
 export const generateThumbnail = async (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
         const url = URL.createObjectURL(file);

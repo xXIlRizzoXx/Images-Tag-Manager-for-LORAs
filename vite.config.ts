@@ -1,3 +1,8 @@
+/**
+ * VITE CONFIGURATION
+ * Configures the build system, plugins (React, Tailwind), and development 
+ * server settings for the project.
+ */
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';

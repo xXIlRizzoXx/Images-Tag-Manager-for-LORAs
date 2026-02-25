@@ -1,3 +1,8 @@
+/**
+ * APPLICATION CONSTANTS
+ * Defines the multi-language translation strings and other static configuration
+ * values used across the application.
+ */
 export const translations = {
     it: {
         appTitle: "Images Tag Manager for LORAs",
@@ -95,6 +100,7 @@ export const translations = {
         processingImage: "Elaborazione immagine",
         of: "di",
         tagsDiscovered: "tag trovati",
+        deleteAllTags: "Elimina Tutti i Tag",
     },
     en: {
         appTitle: "Images Tag Manager for LORAs",
@@ -192,6 +198,7 @@ export const translations = {
         processingImage: "Processing image",
         of: "of",
         tagsDiscovered: "tags found",
+        deleteAllTags: "Delete All Tags",
     },
     fr: {
         appTitle: "Images Tag Manager for LORAs",
@@ -289,6 +296,7 @@ export const translations = {
         processingImage: "Traitement de l'image",
         of: "sur",
         tagsDiscovered: "tags trouvés",
+        deleteAllTags: "Supprimer tous les tags",
     },
     es: {
         appTitle: "Images Tag Manager for LORAs",
@@ -386,6 +394,7 @@ export const translations = {
         processingImage: "Procesando imagen",
         of: "de",
         tagsDiscovered: "etiquetas encontradas",
+        deleteAllTags: "Eliminar todas las etiquetas",
     },
     de: {
         appTitle: "Images Tag Manager for LORAs",
@@ -483,5 +492,6 @@ export const translations = {
         processingImage: "Bild wird verarbeitet",
         of: "von",
         tagsDiscovered: "Tags gefunden",
+        deleteAllTags: "Alle Tags löschen",
     }
 };
