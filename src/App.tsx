@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon } from 'lucide-react';
+import { Folder, Trash, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
+
+import AIWorker from './workers/ai.worker?worker';
 
 export default function App() {
     const [lang, setLang] = useState('it');
@@ -35,14 +37,83 @@ export default function App() {
 
     const [isGlobalTagManagerOpen, setIsGlobalTagManagerOpen] = useState(false);
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
+    const [aiDiscoveredTags, setAiDiscoveredTags] = useState<string[]>([]);
+    const [isGlobalAutoTagging, setIsGlobalAutoTagging] = useState(false);
+    const [globalAutoTaggingProgress, setGlobalAutoTaggingProgress] = useState(0);
+    const [globalMaxTags, setGlobalMaxTags] = useState(10);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
+    const globalWorkerRef = useRef<Worker | null>(null);
+
+    useEffect(() => {
+        globalWorkerRef.current = new AIWorker();
+        return () => globalWorkerRef.current?.terminate();
+    }, []);
+
+    const handleGlobalAutoTagging = async () => {
+        if (images.length === 0 || isGlobalAutoTagging || !globalWorkerRef.current) return;
+        
+        setIsGlobalAutoTagging(true);
+        setGlobalAutoTaggingProgress(0);
+        
+        let processed = 0;
+        const total = images.length;
+        const newDiscoveredTags: string[] = [];
+
+        for (const img of images) {
+            try {
+                const imageUrl = URL.createObjectURL(img.file);
+                
+                const result = await new Promise<any>((resolve, reject) => {
+                    if (!globalWorkerRef.current) return reject("No worker");
+                    
+                    const handleMessage = (e: MessageEvent) => {
+                        if (e.data.type === 'result') {
+                            globalWorkerRef.current?.removeEventListener('message', handleMessage);
+                            resolve(e.data.data);
+                        } else if (e.data.type === 'error') {
+                            globalWorkerRef.current?.removeEventListener('message', handleMessage);
+                            reject(e.data.data);
+                        }
+                    };
+                    
+                    globalWorkerRef.current.addEventListener('message', handleMessage);
+                    globalWorkerRef.current.postMessage({
+                        type: 'generate',
+                        data: { imageUrl }
+                    });
+                });
+
+                URL.revokeObjectURL(imageUrl);
+
+                if (result && result[0] && result[0].generated_text) {
+                    const text = result[0].generated_text;
+                    const stopwords = ['a', 'an', 'the', 'is', 'are', 'in', 'on', 'at', 'with', 'by', 'of', 'and', 'or', 'to', 'for'];
+                    const words = text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").split(/\s+/);
+                    const tags = words.filter((w: string) => w.length > 2 && !stopwords.includes(w));
+                    const uniqueTags = [...new Set(tags)].slice(0, globalMaxTags);
+                    newDiscoveredTags.push(...uniqueTags);
+                }
+            } catch (err) {
+                console.error("Error processing image:", img.id, err);
+            }
+            
+            processed++;
+            setGlobalAutoTaggingProgress(Math.round((processed / total) * 100));
+        }
+
+        setAiDiscoveredTags(prev => [...new Set([...prev, ...newDiscoveredTags])]);
+        setIsGlobalAutoTagging(false);
+        setGlobalAutoTaggingProgress(0);
+        soundManager.chime();
+        showNotification(`${t.completed}: ${newDiscoveredTags.length} ${t.tagsDiscovered}`, "success");
+    };
 
     const allUniqueTags = useMemo(() => {
         const imgTags = images.flatMap(img => img.tags);
-        return [...new Set([...imgTags, ...customProjectTags])].sort((a, b) => a.localeCompare(b));
-    }, [images, customProjectTags]);
+        return [...new Set([...imgTags, ...customProjectTags, ...aiDiscoveredTags])].sort((a, b) => a.localeCompare(b));
+    }, [images, customProjectTags, aiDiscoveredTags]);
 
     const displayedImages = useMemo(() => {
         return isReversed ? [...images].reverse() : images;
@@ -432,6 +503,29 @@ export default function App() {
                         
                         <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
                             <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" />
+                            
+                            {/* Global Auto Tagging */}
+                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex items-center justify-center gap-4`}>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} whitespace-nowrap`}>{t.maxTags}:</span>
+                                    <input 
+                                        type="number" 
+                                        min="1" 
+                                        max="20" 
+                                        value={globalMaxTags} 
+                                        onChange={(e) => setGlobalMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
+                                        className={`w-12 px-1 py-1 text-xs rounded-lg border text-center outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleGlobalAutoTagging}
+                                    disabled={isGlobalAutoTagging || images.length === 0}
+                                    className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                >
+                                    {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                    {isGlobalAutoTagging ? `${globalAutoTaggingProgress}%` : t.autoTaggingGlobal}
+                                </button>
+                            </div>
                         </div>
                         
                         <div className={`w-full lg:w-[380px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>

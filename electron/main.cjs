@@ -5,6 +5,7 @@ function createWindow () {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    title: "Images Tag Manager for LORAs",
     autoHideMenuBar: true, // Nasconde il menu in alto (File, Edit, ecc.)
     webPreferences: {
       nodeIntegration: true,
