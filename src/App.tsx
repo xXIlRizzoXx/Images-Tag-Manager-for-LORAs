@@ -1,3 +1,8 @@
+/**
+ * MAIN APPLICATION COMPONENT
+ * This file serves as the core of the Images Tag Manager. It handles state management,
+ * image importing (folder/files), global tag operations, and the main layout grid.
+ */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Folder, Trash, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';
@@ -7,6 +12,7 @@ import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 
+// @ts-ignore
 import AIWorker from './workers/ai.worker?worker';
 
 export default function App() {
@@ -92,7 +98,7 @@ export default function App() {
                     const stopwords = ['a', 'an', 'the', 'is', 'are', 'in', 'on', 'at', 'with', 'by', 'of', 'and', 'or', 'to', 'for'];
                     const words = text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").split(/\s+/);
                     const tags = words.filter((w: string) => w.length > 2 && !stopwords.includes(w));
-                    const uniqueTags = [...new Set(tags)].slice(0, globalMaxTags);
+                    const uniqueTags = [...new Set(tags)].slice(0, globalMaxTags) as string[];
                     newDiscoveredTags.push(...uniqueTags);
                 }
             } catch (err) {
@@ -120,6 +126,23 @@ export default function App() {
     }, [images, isReversed]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
+
+    const handleDeleteAllTags = () => {
+        setConfirmDialog({
+            isOpen: true,
+            title: t.deleteAllTags,
+            message: "Sei sicuro di voler eliminare tutti i tag da tutte le immagini? Questa azione non può essere annullata.",
+            onConfirm: () => {
+                setImages(prev => prev.map(img => ({ ...img, tags: [] })));
+                setCustomProjectTags([]);
+                setAiDiscoveredTags([]);
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                soundManager.pop();
+                showNotification("Tutti i tag sono stati eliminati", "success");
+            },
+            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        });
+    };
 
     const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
@@ -623,7 +646,7 @@ export default function App() {
                             <h2 className="text-lg font-bold text-gray-200 flex items-center gap-2"><Tag size={20} className="text-indigo-500"/> {t.projectTagManager}</h2>
                             <button onClick={() => setIsGlobalTagManagerOpen(false)} className="hover:bg-red-500 hover:text-white rounded-full p-1.5 transition-colors text-gray-400"><X size={16} /></button>
                         </div>
-                        <div className="p-4 border-b border-gray-700 bg-gray-800 shrink-0">
+                        <div className="p-4 border-b border-gray-700 bg-gray-800 shrink-0 flex flex-col gap-3">
                              <input
                                 type="text"
                                 placeholder={t.addTagToProject}
@@ -640,6 +663,14 @@ export default function App() {
                                 }}
                                 className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2.5 text-sm text-gray-100 outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
                             />
+                            <button 
+                                onClick={handleDeleteAllTags}
+                                disabled={allUniqueTags.length === 0}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Trash size={14} />
+                                {t.deleteAllTags}
+                            </button>
                         </div>
                         <div className="flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll bg-gray-900/50">
                             {allUniqueTags.length === 0 ? <p className="text-sm text-gray-500 italic w-full text-center mt-4">{t.noTagsInProject}</p> :

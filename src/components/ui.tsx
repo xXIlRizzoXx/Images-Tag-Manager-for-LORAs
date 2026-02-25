@@ -1,3 +1,8 @@
+/**
+ * REUSABLE UI COMPONENTS
+ * Contains shared UI elements like Apple-style toggles, tag input fields,
+ * toast notifications, and custom modal dialogs used throughout the app.
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import { X, TriangleAlert, Info, Check } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';

@@ -1,3 +1,8 @@
+/**
+ * SOUND MANAGER
+ * Handles the synthesis and playback of UI sound effects (pops, clicks, chimes)
+ * using the Web Audio API.
+ */
 class SoundManager {
     audioCtx: AudioContext | null = null;
     enabled: boolean = true;

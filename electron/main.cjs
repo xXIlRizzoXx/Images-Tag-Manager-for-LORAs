@@ -1,3 +1,8 @@
+/**
+ * ELECTRON MAIN PROCESS
+ * Configures the desktop window, handles the application lifecycle, 
+ * and serves the built web application in a native container.
+ */
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
