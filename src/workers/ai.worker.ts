@@ -1,9 +1,15 @@
 
-/**
- * AI WEB WORKER
- * Runs the image-to-text (captioning) model in a background thread using 
- * @xenova/transformers to avoid blocking the main UI thread.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: LAVORATORE INTELLIGENZA ARTIFICIALE                             **
+**  Questo file si occupa di far funzionare l'IA in sottofondo.               **
+**  Analizza le immagini per suggerire i tag senza rallentare il programma.   **
+**                                                                            **
+**  ENGLISH: ARTIFICIAL INTELLIGENCE WORKER                                   **
+**  This file handles running the AI in the background.                       **
+**  It analyzes images to suggest tags without slowing down the program.      **
+**                                                                            **
+*******************************************************************************/
 import { pipeline, env } from '@xenova/transformers';
 
 // Skip local model checks

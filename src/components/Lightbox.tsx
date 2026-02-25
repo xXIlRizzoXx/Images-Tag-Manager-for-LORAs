@@ -1,9 +1,14 @@
-/**
- * LIGHTBOX COMPONENT
- * Provides a full-screen immersive view for individual images.
- * Includes features like tag editing, AI-powered auto-tagging for single images,
- * and navigation between images in the current set.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: VISUALIZZATORE IMMAGINI (LIGHTBOX)                              **
+**  Questo file gestisce la finestra che si apre quando clicchi su un'immagine.**
+**  Permette di vedere l'immagine ingrandita e di modificarne i tag.          **
+**                                                                            **
+**  ENGLISH: IMAGE VIEWER (LIGHTBOX)                                          **
+**  This file manages the window that opens when you click on an image.       **
+**  It allows you to see the enlarged image and edit its tags.                **
+**                                                                            **
+*******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';

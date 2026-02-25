@@ -1,8 +1,14 @@
-/**
- * GLOBAL STYLES
- * Contains Tailwind CSS imports, custom keyframe animations for UI transitions,
- * and global scrollbar styling.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: STILI E COLORI                                                  **
+**  Qui vengono definiti i colori, le animazioni e l'aspetto grafico          **
+**  di tutti gli elementi del programma.                                      **
+**                                                                            **
+**  ENGLISH: STYLES AND COLORS                                                **
+**  This is where colors, animations, and the graphical appearance            **
+**  of all the program's elements are defined.                                **
+**                                                                            **
+*******************************************************************************/
 @import "tailwindcss";
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

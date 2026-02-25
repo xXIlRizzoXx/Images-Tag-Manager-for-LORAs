@@ -1,8 +1,14 @@
-/**
- * SOUND MANAGER
- * Handles the synthesis and playback of UI sound effects (pops, clicks, chimes)
- * using the Web Audio API.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: GESTORE DEI SUONI                                               **
+**  Questo file si occupa di riprodurre i suoni dell'app (come i "clic")      **
+**  per rendere l'esperienza più piacevole.                                   **
+**                                                                            **
+**  ENGLISH: SOUND MANAGER                                                    **
+**  This file is responsible for playing the app's sounds (like "clicks")     **
+**  to make the experience more pleasant.                                     **
+**                                                                            **
+*******************************************************************************/
 class SoundManager {
     audioCtx: AudioContext | null = null;
     enabled: boolean = true;

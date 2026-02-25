@@ -1,8 +1,14 @@
-/**
- * APPLICATION CONSTANTS
- * Defines the multi-language translation strings and other static configuration
- * values used across the application.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: COSTANTI DELL'APPLICAZIONE                                      **
+**  Questo file contiene tutti i testi e le traduzioni del programma.         **
+**  Serve a far sì che l'app possa parlare diverse lingue.                    **
+**                                                                            **
+**  ENGLISH: APPLICATION CONSTANTS                                            **
+**  This file contains all the texts and translations of the program.         **
+**  It allows the app to support multiple languages.                          **
+**                                                                            **
+*******************************************************************************/
 export const translations = {
     it: {
         appTitle: "Images Tag Manager for LORAs",
@@ -100,7 +106,7 @@ export const translations = {
         processingImage: "Elaborazione immagine",
         of: "di",
         tagsDiscovered: "tag trovati",
-        deleteAllTags: "Elimina Tutti i Tag",
+        deleteAllTags: "Elimina tutti i tag del progetto",
     },
     en: {
         appTitle: "Images Tag Manager for LORAs",
