@@ -1,8 +1,14 @@
-/**
- * IMAGE UTILITIES
- * Provides helper functions for image manipulation, such as generating 
- * thumbnails for the gallery view.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: STRUMENTI PER LE IMMAGINI                                       **
+**  Contiene funzioni che aiutano a gestire le foto, come la creazione        **
+**  delle piccole anteprime che vedi nella galleria.                          **
+**                                                                            **
+**  ENGLISH: IMAGE UTILITIES                                                  **
+**  Contains functions that help manage photos, such as creating              **
+**  the small thumbnails you see in the gallery.                              **
+**                                                                            **
+*******************************************************************************/
 export const generateThumbnail = async (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
         const url = URL.createObjectURL(file);

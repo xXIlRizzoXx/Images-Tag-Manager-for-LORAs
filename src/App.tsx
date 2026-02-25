@@ -1,8 +1,14 @@
-/**
- * MAIN APPLICATION COMPONENT
- * This file serves as the core of the Images Tag Manager. It handles state management,
- * image importing (folder/files), global tag operations, and the main layout grid.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: COMPONENTE PRINCIPALE DELL'APP                                  **
+**  Questo è il cuore del programma. Gestisce il caricamento delle immagini,  **
+**  la lista dei tag e l'aspetto generale della finestra principale.          **
+**                                                                            **
+**  ENGLISH: MAIN APPLICATION COMPONENT                                       **
+**  This is the heart of the program. It handles image loading,               **
+**  the tag list, and the overall appearance of the main window.              **
+**                                                                            **
+*******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Folder, Trash, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';

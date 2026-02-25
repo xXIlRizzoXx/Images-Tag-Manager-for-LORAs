@@ -1,8 +1,14 @@
-/**
- * REUSABLE UI COMPONENTS
- * Contains shared UI elements like Apple-style toggles, tag input fields,
- * toast notifications, and custom modal dialogs used throughout the app.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: COMPONENTI DELL'INTERFACCIA                                     **
+**  Qui ci sono i pezzi riutilizzabili dell'app, come i tasti, le levette     **
+**  e i messaggi di notifica che compaiono sullo schermo.                     **
+**                                                                            **
+**  ENGLISH: INTERFACE COMPONENTS                                             **
+**  Here are the reusable pieces of the app, such as buttons, toggles,        **
+**  and notification messages that appear on the screen.                      **
+**                                                                            **
+*******************************************************************************/
 import React, { useState, useRef, useEffect } from 'react';
 import { X, TriangleAlert, Info, Check } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';

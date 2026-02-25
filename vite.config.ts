@@ -1,8 +1,14 @@
-/**
- * VITE CONFIGURATION
- * Configures the build system, plugins (React, Tailwind), and development 
- * server settings for the project.
- */
+/******************************************************************************
+**                                                                            **
+**  ITALIANO: CONFIGURAZIONE DI COSTRUZIONE                                   **
+**  Questo file spiega al computer come "impacchettare" il programma          **
+**  per farlo funzionare correttamente.                                       **
+**                                                                            **
+**  ENGLISH: BUILD CONFIGURATION                                              **
+**  This file tells the computer how to "package" the program                 **
+**  to make it run correctly.                                                 **
+**                                                                            **
+*******************************************************************************/
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
