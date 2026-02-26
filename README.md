@@ -1,11 +1,6 @@
-# Image Tag Manager 🏷️
-
-![App Screenshot](./screenshot.png)
-*(Aggiungi qui lo screenshot del programma aperto per intero nominando il file `screenshot.png`)*
-
 ## 🇮🇹 Italiano
 
-**Image Tag Manager** è uno strumento potente e intuitivo progettato per gestire, modificare e generare automaticamente tag per le tue immagini. Ideale per la preparazione di dataset per l'addestramento di modelli AI (come LoRA o Stable Diffusion) o semplicemente per organizzare la tua galleria.
+**Image Tag Manager** è uno strumento potente e intuitivo progettato per gestire, modificare e generare automaticamente tag per le tue immagini. Ideale per la preparazione di dataset per l'addestramento di modelli AI (Per esempio immagini su CivitAI, Kohya_SS o similari)
 
 ### Cosa puoi fare:
 *   📂 **Caricamento Cartelle**: Importa intere cartelle contenenti immagini e i rispettivi file di testo (`.txt`) associati.
