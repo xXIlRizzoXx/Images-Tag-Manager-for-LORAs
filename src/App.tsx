@@ -30,7 +30,7 @@ export default function App() {
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(true);
-    const [isReversed, setIsReversed] = useState(false);
+    const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
     
     const [saveAsZip, setSaveAsZip] = useState(false); 
     const [dirHandle, setDirHandle] = useState<any>(null);
@@ -54,6 +54,8 @@ export default function App() {
     const [aiDiscoveredTags, setAiDiscoveredTags] = useState<string[]>([]);
     const [isGlobalAutoTagging, setIsGlobalAutoTagging] = useState(false);
     const [globalAutoTaggingProgress, setGlobalAutoTaggingProgress] = useState(0);
+    const [globalModelProgress, setGlobalModelProgress] = useState(0);
+    const [isDownloadingModel, setIsDownloadingModel] = useState(false);
     const [globalMaxTags, setGlobalMaxTags] = useState(10);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +72,8 @@ export default function App() {
         
         setIsGlobalAutoTagging(true);
         setGlobalAutoTaggingProgress(0);
+        setGlobalModelProgress(0);
+        setIsDownloadingModel(false);
         
         let processed = 0;
         const total = images.length;
@@ -83,7 +87,14 @@ export default function App() {
                     if (!globalWorkerRef.current) return reject("No worker");
                     
                     const handleMessage = (e: MessageEvent) => {
-                        if (e.data.type === 'result') {
+                        if (e.data.type === 'progress') {
+                            if (e.data.data.status === 'progress') {
+                                setIsDownloadingModel(true);
+                                setGlobalModelProgress(Math.round(e.data.data.progress || 0));
+                            } else if (e.data.data.status === 'done') {
+                                setIsDownloadingModel(false);
+                            }
+                        } else if (e.data.type === 'result') {
                             globalWorkerRef.current?.removeEventListener('message', handleMessage);
                             resolve(e.data.data);
                         } else if (e.data.type === 'error') {
@@ -120,6 +131,8 @@ export default function App() {
         setAiDiscoveredTags(prev => [...new Set([...prev, ...newDiscoveredTags])]);
         setIsGlobalAutoTagging(false);
         setGlobalAutoTaggingProgress(0);
+        setIsDownloadingModel(false);
+        setGlobalModelProgress(0);
         soundManager.chime();
         showNotification(`${t.completed}: ${newDiscoveredTags.length} ${t.tagsDiscovered}`, "success");
     };
@@ -130,8 +143,18 @@ export default function App() {
     }, [images, customProjectTags, aiDiscoveredTags]);
 
     const displayedImages = useMemo(() => {
-        return isReversed ? [...images].reverse() : images;
-    }, [images, isReversed]);
+        let sorted = [...images];
+        if (sortOrder === 'name-asc') {
+            sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
+        } else if (sortOrder === 'name-desc') {
+            sorted.sort((a, b) => b.file.name.localeCompare(a.file.name));
+        } else if (sortOrder === 'date-asc') {
+            sorted.sort((a, b) => a.file.lastModified - b.file.lastModified);
+        } else if (sortOrder === 'date-desc') {
+            sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
+        }
+        return sorted;
+    }, [images, sortOrder]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
 
@@ -466,7 +489,7 @@ export default function App() {
     }, []);
 
     return (
-        <div className={`h-full transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
+        <div className={`h-screen transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
             {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
@@ -490,6 +513,8 @@ export default function App() {
                 updateOriginalTags={updateOriginalTags} 
                 dirHandle={dirHandle}
                 isDarkMode={isDarkMode}
+                aiDiscoveredTags={aiDiscoveredTags}
+                onTagsDiscovered={(newTags: string[]) => setAiDiscoveredTags(prev => [...new Set([...prev, ...newTags])])}
             />
 
             <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
@@ -552,7 +577,7 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 1.5.0</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 2.0.0</span>
                                             <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>Copyright xXIlRizzoXx</span>
                                         </div>
                                     </div>
@@ -614,9 +639,9 @@ export default function App() {
                                     <button 
                                         onClick={handleGlobalAutoTagging}
                                         disabled={isGlobalAutoTagging || images.length === 0}
-                                        className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                        className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95' : 'bg-white border border-gray-200 text-indigo-600 hover:bg-indigo-50 shadow-sm active:scale-95')}`}
                                     >
-                                        {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                        {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className={`absolute -top-1 -right-1 animate-pulse ${isDarkMode ? 'text-yellow-300' : 'text-yellow-500'}`} /></div>}
                                         {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
                                     </button>
                                 </div>
@@ -680,10 +705,19 @@ export default function App() {
                             </div>
                         </div>
                         <div className="flex-1 flex items-center justify-end gap-3">
-                            <button onClick={() => setIsReversed(!isReversed)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isReversed ? (isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`} title={t.invertOrder}>
-                                <ArrowDownUp size={14} className={isReversed ? 'rotate-180 transition-transform' : 'transition-transform'} />
-                                <span className="hidden lg:inline">{t.invertOrder}</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-[10px] uppercase font-bold tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.sortBy}:</span>
+                                <select 
+                                    value={sortOrder} 
+                                    onChange={(e) => setSortOrder(e.target.value as any)}
+                                    className={`text-xs font-semibold px-2 py-1.5 rounded-lg outline-none transition-all cursor-pointer ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'} border shadow-sm`}
+                                >
+                                    <option value="name-asc">{t.sortNameAsc}</option>
+                                    <option value="name-desc">{t.sortNameDesc}</option>
+                                    <option value="date-desc">{t.sortDateDesc}</option>
+                                    <option value="date-asc">{t.sortDateAsc}</option>
+                                </select>
+                            </div>
                             <span className={`hidden sm:inline-block text-xs font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wide`}>{t.zoom}</span>
                             <div className={`flex items-center gap-2 ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-gray-100 border-gray-200'} px-3 py-1 rounded-full border shadow-inner`}>
                                 <ZoomOut size={14} className="text-gray-400" />
@@ -777,19 +811,39 @@ export default function App() {
                                         <button 
                                             onClick={handleGlobalAutoTagging}
                                             disabled={isGlobalAutoTagging || images.length === 0}
-                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95' : 'bg-white border border-gray-200 text-indigo-600 hover:bg-indigo-50 shadow-sm active:scale-95')}`}
                                         >
-                                            {isGlobalAutoTagging ? <Loader2 size={12} className="animate-spin" /> : <div className="relative"><Tag size={12} /><Sparkles size={6} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                            {isGlobalAutoTagging ? <Loader2 size={12} className="animate-spin" /> : <div className="relative"><Tag size={12} /><Sparkles size={6} className={`absolute -top-1 -right-1 animate-pulse ${isDarkMode ? 'text-yellow-300' : 'text-yellow-500'}`} /></div>}
                                             {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
                                         </button>
                                     </div>
                                     {isGlobalAutoTagging && (
-                                        <div className="w-full px-1">
-                                            <div className={`w-full h-1 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                                                <div 
-                                                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
-                                                    style={{ width: `${globalAutoTaggingProgress}%` }}
-                                                />
+                                        <div className="w-full px-1 flex flex-col gap-1.5">
+                                            {isDownloadingModel && (
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex justify-between items-center px-1">
+                                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{t.modelLoading}</span>
+                                                        <span className={`text-[9px] font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{globalModelProgress}%</span>
+                                                    </div>
+                                                    <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                                                        <div 
+                                                            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
+                                                            style={{ width: `${globalModelProgress}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex justify-between items-center px-1">
+                                                    <span className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-pink-400' : 'text-pink-600'}`}>{t.processing}</span>
+                                                    <span className={`text-[9px] font-bold ${isDarkMode ? 'text-pink-400' : 'text-pink-600'}`}>{globalAutoTaggingProgress}%</span>
+                                                </div>
+                                                <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                                                    <div 
+                                                        className={`h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ${!isDownloadingModel && globalAutoTaggingProgress === 0 ? 'w-full animate-pulse' : ''}`} 
+                                                        style={globalAutoTaggingProgress > 0 ? { width: `${globalAutoTaggingProgress}%` } : {}}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -806,11 +860,13 @@ export default function App() {
                             </button>
                         </div>
                         <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`}>
-                            {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
+                             {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
                              allUniqueTags.map(tag => {
                                 const isCustomOnly = customProjectTags.includes(tag) && !images.some(img => img.tags.includes(tag));
+                                const isAiGenerated = aiDiscoveredTags.includes(tag);
                                 return (
-                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}>
+                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}>
+                                    {isAiGenerated && <Sparkles size={10} className="text-purple-500" />}
                                     {tag}
                                     {isCustomOnly && (
                                         <button onClick={() => setCustomProjectTags(prev => prev.filter(t => t !== tag))} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-gray-400">
