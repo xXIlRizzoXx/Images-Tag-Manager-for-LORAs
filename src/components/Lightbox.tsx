@@ -12,13 +12,13 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles, Trash2 } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 // @ts-ignore
 import AIWorker from '../workers/ai.worker?worker';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [] }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -208,7 +208,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         <div className={`fixed inset-0 z-[100] flex ${isDarkMode ? 'bg-black/95' : 'bg-gray-50/98'} backdrop-blur-sm p-4 md:p-6 animate-in fade-in`} onClick={onClose}>
             <div className="w-full h-full max-w-[1920px] mx-auto flex gap-6" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 flex flex-col items-center gap-6 h-full min-w-0 relative">
-                    <button className={`absolute top-0 left-0 p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all z-[110] border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>
+                    <div className="absolute top-0 left-0 flex gap-2 z-[110]">
+                        <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>
+                        {onMoveToTrash && (
+                            <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={(e) => { e.stopPropagation(); onMoveToTrash(image.id); onClose(); }} title={t.moveToTrash}><Trash2 size={24} /></button>
+                        )}
+                    </div>
                     <div className={`relative w-full flex-1 rounded-xl mt-14 overflow-hidden shadow-2xl flex items-center justify-center border ${isDarkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
                         {hasPrev && <button onClick={(e) => { e.stopPropagation(); onPrev(); }} className={`absolute left-4 top-1/2 -translate-y-1/2 p-3 ${isDarkMode ? 'bg-black/40 hover:bg-indigo-600 text-white border-white/10' : 'bg-white/60 hover:bg-indigo-600 text-gray-800 hover:text-white border-gray-200'} rounded-full backdrop-blur-md z-[110] border transition-all shadow-lg`}><ChevronLeft size={32} /></button>}
                         {hasNext && <button onClick={(e) => { e.stopPropagation(); onNext(); }} className={`absolute right-4 top-1/2 -translate-y-1/2 p-3 ${isDarkMode ? 'bg-black/40 hover:bg-indigo-600 text-white border-white/10' : 'bg-white/60 hover:bg-indigo-600 text-gray-800 hover:text-white border-gray-200'} rounded-full backdrop-blur-md z-[110] border transition-all shadow-lg`}><ChevronRight size={32} /></button>}

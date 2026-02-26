@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
@@ -36,6 +36,8 @@ export default function App() {
     const [dirHandle, setDirHandle] = useState<any>(null);
     
     const [imageWidth, setImageWidth] = useState(250); 
+    const [trashImageWidth, setTrashImageWidth] = useState(250);
+    const [trashSortOrder, setTrashSortOrder] = useState('date-desc'); 
     
     const [viewMode, setViewMode] = useState('square'); 
     const [selectedImageId, setSelectedImageId] = useState<string | null>(null); 
@@ -46,6 +48,7 @@ export default function App() {
     const [selectedForBulk, setSelectedForBulk] = useState<string[]>([]);
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isTrashOpen, setIsTrashOpen] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
 
@@ -143,7 +146,7 @@ export default function App() {
     }, [images, customProjectTags, aiDiscoveredTags]);
 
     const displayedImages = useMemo(() => {
-        let sorted = [...images];
+        let sorted = [...images].filter(img => !img.isTrashed);
         if (sortOrder === 'name-asc') {
             sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
         } else if (sortOrder === 'name-desc') {
@@ -155,6 +158,22 @@ export default function App() {
         }
         return sorted;
     }, [images, sortOrder]);
+
+    const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
+
+    const sortedTrashedImages = useMemo(() => {
+        let sorted = [...trashedImages];
+        if (trashSortOrder === 'name-asc') {
+            sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
+        } else if (trashSortOrder === 'name-desc') {
+            sorted.sort((a, b) => b.file.name.localeCompare(a.file.name));
+        } else if (trashSortOrder === 'date-asc') {
+            sorted.sort((a, b) => a.file.lastModified - b.file.lastModified);
+        } else if (trashSortOrder === 'date-desc') {
+            sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
+        }
+        return sorted;
+    }, [trashedImages, trashSortOrder]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
 
@@ -173,6 +192,59 @@ export default function App() {
             },
             onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         });
+    };
+
+    const handleMoveToTrash = (id: string) => {
+        setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
+        if (selectedImageId === id) setSelectedImageId(null);
+        soundManager.pop();
+    };
+
+    const handleRestore = (id: string) => {
+        setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: false } : img));
+        soundManager.pop();
+    };
+
+    const handleDeletePermanently = async (id: string) => {
+        const img = images.find(i => i.id === id);
+        if (!img || !dirHandle) return;
+        try {
+            await dirHandle.removeEntry(img.file.name);
+            const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
+            try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
+            setImages(prev => prev.filter(i => i.id !== id));
+            showNotification(t.deleteSuccess, 'success');
+            soundManager.pop();
+        } catch (error) {
+            console.error(error);
+            showNotification(t.deleteError, 'error');
+        }
+    };
+
+    const handleEmptyTrash = async () => {
+        if (!dirHandle) return;
+        let successCount = 0;
+        for (const img of trashedImages) {
+            try {
+                await dirHandle.removeEntry(img.file.name);
+                const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
+                try { await dirHandle.removeEntry(txtName); } catch (e) {}
+                successCount++;
+            } catch (error) {
+                console.error("Failed to delete", img.file.name);
+            }
+        }
+        setImages(prev => prev.filter(i => !i.isTrashed));
+        showNotification(t.deleteSuccess, 'success');
+        setIsTrashOpen(false);
+        soundManager.pop();
+    };
+
+    const handleRestoreAll = () => {
+        setImages(prev => prev.map(img => ({ ...img, isTrashed: false })));
+        showNotification("Tutte le foto sono state ripristinate", "success");
+        setIsTrashOpen(false);
+        soundManager.pop();
     };
 
     const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null) => {
@@ -498,6 +570,115 @@ export default function App() {
             
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
             
+            {isTrashOpen && (
+                <div className={`fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
+                    <div className={`w-full max-w-5xl h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
+                        <div className={`p-4 md:p-6 border-b flex justify-between items-center ${isDarkMode ? 'border-gray-800 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-xl">
+                                    <Trash2 size={24} />
+                                </div>
+                                <div>
+                                    <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.trash}</h2>
+                                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{trashedImages.length} {t.imagesFound}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {trashedImages.length > 0 && (
+                                    <>
+                                        <button 
+                                            onClick={handleRestoreAll}
+                                            className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm`}
+                                        >
+                                            <RefreshCw size={18} />
+                                            <span className="hidden sm:inline">{t.restoreAll}</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                setConfirmDialog({
+                                                    isOpen: true,
+                                                    title: t.emptyTrash,
+                                                    message: t.confirmEmptyTrash,
+                                                    onConfirm: handleEmptyTrash,
+                                                    onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+                                                });
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm"
+                                        >
+                                            <Trash size={18} />
+                                            <span className="hidden sm:inline">{t.emptyTrash}</span>
+                                        </button>
+                                    </>
+                                )}
+                                <button onClick={() => setIsTrashOpen(false)} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+                                    <X size={24} />
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className={`flex-1 flex flex-col min-h-0 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                            {trashedImages.length > 0 && (
+                                <div className={`p-4 border-b flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 ${isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-white/50'}`}>
+                                    <div className="flex items-center gap-2">
+                                        <ArrowDownUp size={16} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                                        <select value={trashSortOrder} onChange={(e) => setTrashSortOrder(e.target.value)} className={`text-sm rounded-lg border-none focus:ring-0 cursor-pointer font-medium ${isDarkMode ? 'bg-transparent text-gray-300' : 'bg-transparent text-gray-700'}`}>
+                                            <option value="name-asc" className={isDarkMode ? 'bg-gray-800' : 'bg-white'}>{t.sortNameAsc}</option>
+                                            <option value="name-desc" className={isDarkMode ? 'bg-gray-800' : 'bg-white'}>{t.sortNameDesc}</option>
+                                            <option value="date-asc" className={isDarkMode ? 'bg-gray-800' : 'bg-white'}>{t.sortDateAsc}</option>
+                                            <option value="date-desc" className={isDarkMode ? 'bg-gray-800' : 'bg-white'}>{t.sortDateDesc}</option>
+                                        </select>
+                                    </div>
+                                    <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border shadow-sm ${isDarkMode ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-200'}`}>
+                                        <ZoomOut size={14} className="text-gray-400" />
+                                        <input type="range" min="150" max="400" value={trashImageWidth} onChange={(e) => setTrashImageWidth(Number(e.target.value))} className="w-24 md:w-32 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-500" />
+                                        <ZoomIn size={14} className="text-gray-400" />
+                                    </div>
+                                </div>
+                            )}
+                            <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
+                                {trashedImages.length === 0 ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-center">
+                                        <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 ${isDarkMode ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-300'}`}>
+                                            <Trash2 size={48} />
+                                        </div>
+                                        <h3 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>{t.trashEmpty}</h3>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4 md:gap-6 transition-all duration-300 items-start" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${trashImageWidth}px, 1fr))` }}>
+                                        {sortedTrashedImages.map(img => (
+                                            <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full`}>
+                                                <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}}>
+                                                    <img src={img.thumb} alt="Trash preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} opacity-70`} />
+                                                    
+                                                    <button onClick={() => handleRestore(img.id)} className="absolute top-2 left-2 p-1.5 bg-black/50 hover:bg-green-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.restore}><RefreshCw size={14} /></button>
+                                                    <button onClick={() => {
+                                                        setConfirmDialog({
+                                                            isOpen: true,
+                                                            title: t.deletePermanently,
+                                                            message: t.confirmDelete,
+                                                            onConfirm: () => {
+                                                                handleDeletePermanently(img.id);
+                                                                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                                                            },
+                                                            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+                                                        });
+                                                    }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.deletePermanently}><X size={14} /></button>
+                                                </div>
+                                                <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                                    <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
+                                                        <TagInput tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <Lightbox 
                 image={displayedImages.find(img => img.id === selectedImageId)} 
                 onClose={() => setSelectedImageId(null)} 
@@ -515,6 +696,7 @@ export default function App() {
                 isDarkMode={isDarkMode}
                 aiDiscoveredTags={aiDiscoveredTags}
                 onTagsDiscovered={(newTags: string[]) => setAiDiscoveredTags(prev => [...new Set([...prev, ...newTags])])}
+                onMoveToTrash={handleMoveToTrash}
             />
 
             <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
@@ -528,7 +710,18 @@ export default function App() {
                         <div className="flex-1 flex justify-start w-full md:w-auto">
                         </div>
                         <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto"><div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden sm:block"><ImageIcon className="text-white" size={20} /></div><h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1></div>
-                        <div className="flex-1 flex justify-end w-full md:w-auto">
+                        <div className="flex-1 flex justify-end w-full md:w-auto gap-2">
+                            <button onClick={() => setIsTrashOpen(true)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}>
+                                <span className="font-semibold text-sm hidden sm:inline-block">{t.trash}</span>
+                                <div className="relative">
+                                    <Trash2 size={20} />
+                                    {trashedImages.length > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full">
+                                            {trashedImages.length}
+                                        </span>
+                                    )}
+                                </div>
+                            </button>
                             <div className="relative" ref={settingsRef}>
                                 <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}><span className="font-semibold text-sm hidden sm:inline-block">{t.settings}</span><Settings size={20} className={isSettingsOpen ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} /></button>
                                 
@@ -552,16 +745,20 @@ export default function App() {
                                             </div>
                                             <div className="relative group">
                                                 <div className={`flex items-center gap-2 px-2 py-1 rounded-lg border cursor-pointer ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>
-                                                    <img src={`https://flagcdn.com/w40/${lang === 'en' ? 'gb' : lang}.png`} alt={lang} className="w-5 h-5 rounded-full object-cover" />
+                                                    <img src={`https://flagcdn.com/w40/${lang === 'en' ? 'gb' : lang === 'zh' ? 'cn' : lang === 'ja' ? 'jp' : lang === 'pt' ? 'br' : lang}.png`} alt={lang} className="w-5 h-5 rounded-full object-cover" />
                                                     <span className="text-xs font-medium uppercase">{lang}</span>
                                                 </div>
-                                                <div className={`absolute right-0 top-full mt-1 w-32 py-1 rounded-xl border shadow-xl overflow-hidden z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                                <div className={`absolute right-0 top-full mt-1 w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                                                     {[
                                                         { code: 'it', label: 'Italiano', flag: 'it' },
                                                         { code: 'en', label: 'English', flag: 'gb' },
                                                         { code: 'fr', label: 'Français', flag: 'fr' },
                                                         { code: 'es', label: 'Español', flag: 'es' },
-                                                        { code: 'de', label: 'Deutsch', flag: 'de' }
+                                                        { code: 'de', label: 'Deutsch', flag: 'de' },
+                                                        { code: 'zh', label: '中文 (简体)', flag: 'cn' },
+                                                        { code: 'ja', label: '日本語', flag: 'jp' },
+                                                        { code: 'pt', label: 'Português', flag: 'br' },
+                                                        { code: 'ru', label: 'Русский', flag: 'ru' }
                                                     ].map((l) => (
                                                         <div 
                                                             key={l.code} 
@@ -577,7 +774,7 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 2.0.0</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 2.1.0</span>
                                             <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>Copyright xXIlRizzoXx</span>
                                         </div>
                                     </div>
@@ -735,7 +932,7 @@ export default function App() {
                                 <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
                                     <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
                                     <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
-                                    <button onClick={(e) => { e.stopPropagation(); removeImage(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20"><X size={14} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.moveToTrash}><Trash2 size={14} /></button>
                                 </div>
                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                     {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
