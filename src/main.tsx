@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: PUNTO DI PARTENZA (REACT)                                       **
 **  Questo è il file che avvia tutto il sistema visivo del programma.         **
@@ -8,6 +9,7 @@
 **  This is the file that starts the entire visual system of the program.     **
 **  It connects the code to the web page you see.                             **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';

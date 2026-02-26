@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: COSTANTI DELL'APPLICAZIONE                                      **
 **  Questo file contiene tutti i testi e le traduzioni del programma.         **
@@ -8,6 +9,7 @@
 **  This file contains all the texts and translations of the program.         **
 **  It allows the app to support multiple languages.                          **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 export const translations = {
     it: {
@@ -75,11 +77,14 @@ export const translations = {
         showOnlyAdded: "Mostra solo tag aggiunti",
         addAllTags: "Aggiungi tutti",
         removeAllTags: "Rimuovi tutti",
-        exportAsZip: "Salva come .ZIP",
+        exportAsZip: "salva.zip",
         zipProcessing: "Generazione archivio ZIP in corso...",
         zipSuccess: "Archivio ZIP scaricato con successo!",
         zipError: "Errore durante la creazione dello ZIP.",
         dirError: "Errore durante la sovrascrittura. Verifica i permessi della cartella.",
+        dirSuccess: "Tutti i file sono stati sovrascritti nella cartella originale!",
+        exportFolderSuccess: "Tutti i file sono stati esportati nella cartella selezionata!",
+        exportFolderError: "Errore durante l'esportazione nella cartella.",
         invertOrder: "Inverti Ordine",
         theme: "Tema",
         darkTheme: "Tema Scuro",
@@ -173,11 +178,14 @@ export const translations = {
         showOnlyAdded: "Show only added tags",
         addAllTags: "Add all",
         removeAllTags: "Remove all",
-        exportAsZip: "Save as .ZIP",
+        exportAsZip: "save.zip",
         zipProcessing: "Generating ZIP archive...",
         zipSuccess: "ZIP archive downloaded successfully!",
         zipError: "Error creating ZIP.",
         dirError: "Error during overwrite. Check folder permissions.",
+        dirSuccess: "All files have been overwritten in the original folder!",
+        exportFolderSuccess: "All files have been exported to the selected folder!",
+        exportFolderError: "Error exporting to folder.",
         invertOrder: "Invert Order",
         theme: "Theme",
         darkTheme: "Dark Theme",
@@ -276,6 +284,8 @@ export const translations = {
         zipSuccess: "Archive ZIP téléchargée avec succès!",
         zipError: "Erreur lors de la création du ZIP.",
         dirError: "Erreur lors de l'écrasement. Vérifiez les autorisations du dossier.",
+        exportFolderSuccess: "Fichiers exportés avec succès vers le nouveau dossier!",
+        exportFolderError: "Erreur lors de l'exportation vers le dossier. Vérifiez les autorisations.",
         invertOrder: "Inverser l'ordre",
         theme: "Thème",
         darkTheme: "Thème sombre",
@@ -374,6 +384,8 @@ export const translations = {
         zipSuccess: "¡Archivo ZIP descargado con éxito!",
         zipError: "Error al crear el ZIP.",
         dirError: "Error durante la sobrescritura. Comprueba los permisos de la carpeta.",
+        exportFolderSuccess: "¡Archivos exportados con éxito a la nueva carpeta!",
+        exportFolderError: "Error al exportar a la carpeta. Verifique los permisos.",
         invertOrder: "Invertir orden",
         theme: "Tema",
         darkTheme: "Tema oscuro",
@@ -472,6 +484,8 @@ export const translations = {
         zipSuccess: "ZIP-Archiv erfolgreich heruntergeladen!",
         zipError: "Fehler beim Erstellen der ZIP-Datei.",
         dirError: "Fehler beim Überschreiben. Überprüfen Sie die Ordnerberechtigungen.",
+        exportFolderSuccess: "Dateien erfolgreich in den neuen Ordner exportiert!",
+        exportFolderError: "Fehler beim Exportieren in den Ordner. Überprüfen Sie die Berechtigungen.",
         invertOrder: "Reihenfolge umkehren",
         theme: "Thema",
         darkTheme: "Dunkles Thema",

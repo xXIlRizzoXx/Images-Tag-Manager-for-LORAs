@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: COMPONENTI DELL'INTERFACCIA                                     **
 **  Qui ci sono i pezzi riutilizzabili dell'app, come i tasti, le levette     **
@@ -8,19 +9,24 @@
 **  Here are the reusable pieces of the app, such as buttons, toggles,        **
 **  and notification messages that appear on the screen.                      **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 import React, { useState, useRef, useEffect } from 'react';
 import { X, TriangleAlert, Info, Check } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 
+// ITALIANO: Levetta stile Apple per attivare/disattivare opzioni
+// ENGLISH: Apple-style toggle to turn options on/off
 export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "bg-green-500" }: any) => (
     <div onClick={() => { onChange(!checked); if(!checked) soundManager.pop(); else soundManager.click(); }} className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ease-in-out shadow-inner shrink-0 ${checked ? colorClass : 'bg-gray-300 dark:bg-gray-600'}`}>
-        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ease-in-out flex justify-center items-center ${checked ? 'translate-x-6' : 'translate-x-0'}`}>
+        <div className={`${!checked && iconOff ? 'bg-yellow-400' : 'bg-white'} w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ease-in-out flex justify-center items-center ${checked ? 'translate-x-6' : 'translate-x-0'}`}>
         <span className="text-gray-800 w-3 h-3 flex items-center justify-center">{checked ? iconOn : iconOff}</span>
         </div>
     </div>
 );
 
+// ITALIANO: Campo di inserimento per i tag con suggerimenti e cancellazione
+// ENGLISH: Input field for tags with suggestions and deletion
 export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]" }: any) => {
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +78,8 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
     );
 };
 
+// ITALIANO: Messaggio a comparsa (notifica) in basso a destra
+// ENGLISH: Pop-up message (notification) at the bottom right
 export const Toast = ({ message, type, onClose }: any) => {
     useEffect(() => { const timer = setTimeout(onClose, 4000); return () => clearTimeout(timer); }, [onClose]);
     const bgColor = type === 'error' ? 'bg-red-600' : 'bg-emerald-500';
@@ -85,17 +93,22 @@ export const Toast = ({ message, type, onClose }: any) => {
     );
 };
 
-export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t }: any) => {
+// ITALIANO: Finestra di dialogo per confermare azioni importanti
+// ENGLISH: Dialog box to confirm important actions
+export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: any) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-6">
-                    <div className="flex items-center gap-3 mb-3 text-red-500 dark:text-red-400"><TriangleAlert size={24} /><h3 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3></div>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed ml-9">{message}</p>
+                    <div className="flex items-center gap-3 mb-3 text-red-500 dark:text-red-400">
+                        <TriangleAlert size={24} />
+                        <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
+                    </div>
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} leading-relaxed ml-9`}>{message}</p>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700">
-                    <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">{t.cancel}</button>
+                <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
+                    <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{t.cancel}</button>
                     <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 shadow-md shadow-red-500/20 transition-all active:scale-95">{title}</button>
                 </div>
             </div>
@@ -103,39 +116,41 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
     );
 };
 
-export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t }: any) => {
+// ITALIANO: Finestra che mostra cosa è stato trovato durante l'importazione
+// ENGLISH: Window showing what was found during import
+export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode }: any) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-4 text-indigo-500 dark:text-indigo-400">
                         <Info size={24} />
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">{t.importSummaryTitle}</h3>
+                        <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.importSummaryTitle}</h3>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{t.importSummaryMsg}</p>
-                    <div className="space-y-3 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} mb-4`}>{t.importSummaryMsg}</p>
+                    <div className={`space-y-3 ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} p-4 rounded-xl border`}>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.imagesFound}</span>
-                            <span className="text-sm font-bold text-gray-900 dark:text-white">{summary.imagesCount}</span>
+                            <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.imagesFound}</span>
+                            <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{summary.imagesCount}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.textFilesFound}</span>
-                            <span className="text-sm font-bold text-gray-900 dark:text-white">{summary.textFilesCount}</span>
+                            <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.textFilesFound}</span>
+                            <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{summary.textFilesCount}</span>
                         </div>
-                        <div className="h-px bg-gray-200 dark:bg-gray-700 my-2"></div>
+                        <div className={`h-px ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'} my-2`}></div>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.imagesWithText}</span>
-                            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{summary.imagesWithText}</span>
+                            <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.imagesWithText}</span>
+                            <span className={`text-sm font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{summary.imagesWithText}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{t.imagesWithoutText}</span>
-                            <span className="text-sm font-bold text-red-600 dark:text-red-400">{summary.imagesWithoutText}</span>
+                            <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.imagesWithoutText}</span>
+                            <span className={`text-sm font-bold ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{summary.imagesWithoutText}</span>
                         </div>
                     </div>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700">
-                    <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">{t.cancel}</button>
+                <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
+                    <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{t.cancel}</button>
                     <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.importButton}</button>
                 </div>
             </div>

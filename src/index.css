@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: STILI E COLORI                                                  **
 **  Qui vengono definiti i colori, le animazioni e l'aspetto grafico          **
@@ -8,6 +9,7 @@
 **  This is where colors, animations, and the graphical appearance            **
 **  of all the program's elements are defined.                                **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 @import "tailwindcss";
 

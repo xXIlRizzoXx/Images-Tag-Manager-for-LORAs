@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: MOTORE DESKTOP (ELECTRON)                                       **
 **  Questo file permette al programma di funzionare come una vera app         **
@@ -8,6 +9,7 @@
 **  This file allows the program to run as a real computer app,               **
 **  managing the window and the operating system.                             **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 const { app, BrowserWindow } = require('electron');
 const path = require('path');

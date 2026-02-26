@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: CONFIGURAZIONE DI COSTRUZIONE                                   **
 **  Questo file spiega al computer come "impacchettare" il programma          **
@@ -8,6 +9,7 @@
 **  This file tells the computer how to "package" the program                 **
 **  to make it run correctly.                                                 **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';

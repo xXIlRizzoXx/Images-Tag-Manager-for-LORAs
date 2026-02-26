@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: GESTORE DEI SUONI                                               **
 **  Questo file si occupa di riprodurre i suoni dell'app (come i "clic")      **
@@ -8,6 +9,7 @@
 **  This file is responsible for playing the app's sounds (like "clicks")     **
 **  to make the experience more pleasant.                                     **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 class SoundManager {
     audioCtx: AudioContext | null = null;
