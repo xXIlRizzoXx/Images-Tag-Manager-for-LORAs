@@ -18,7 +18,7 @@ import { AppleToggle } from './ui';
 // @ts-ignore
 import AIWorker from '../workers/ai.worker?worker';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [] }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -84,6 +84,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
             soundManager.chime();
             if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
         } else {
+            // Se non c'è onTagsDiscovered, li aggiungiamo ai tag correnti (comportamento di fallback)
             const currentTags = currentImage.tags || [];
             const combined = [...new Set([...currentTags, ...newTags])];
             updateTags(currentImage.id, combined);
@@ -252,9 +253,14 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     </div>
 
                     <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                        {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => (
-                            <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm ${currentTags.includes(tag) ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200')}`}>{tag}</button>
-                        ))}
+                        {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
+                            const isAiGenerated = aiDiscoveredTags.includes(tag);
+                            return (
+                            <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm flex items-center gap-1 ${currentTags.includes(tag) ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' : isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200')}`}>
+                                {isAiGenerated && <Sparkles size={10} className={currentTags.includes(tag) ? 'text-white' : ''} />}
+                                {tag}
+                            </button>
+                        )})}
                     </div>
                     <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0 flex flex-col gap-3`}>
                         
@@ -281,16 +287,20 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
                             >
                                 {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
-                                {isProcessingAI ? (aiProgress > 0 ? `${t.modelLoading} ${Math.floor(aiProgress)}%` : t.generating) : t.magicWand}
+                                {isProcessingAI ? t.generating : t.magicWand}
                             </button>
                             {/* ITALIANO: Barra di caricamento per l'AI */}
                             {/* ENGLISH: Loading bar for AI */}
                             {isProcessingAI && (
-                                <div className="w-full px-1 pb-1">
+                                <div className="w-full px-1 pb-1 flex flex-col gap-1">
+                                    <div className="flex justify-between items-center px-1">
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{aiProgress > 0 ? t.modelLoading : t.generating}</span>
+                                        {aiProgress > 0 && <span className={`text-[9px] font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{Math.floor(aiProgress)}%</span>}
+                                    </div>
                                     <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
                                         <div 
-                                            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
-                                            style={{ width: `${aiProgress || 5}%` }}
+                                            className={`h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ${aiProgress === 0 ? 'w-full animate-pulse' : ''}`} 
+                                            style={aiProgress > 0 ? { width: `${aiProgress}%` } : {}}
                                         />
                                     </div>
                                 </div>

@@ -18,9 +18,9 @@ import { soundManager } from '../utils/soundManager';
 // ITALIANO: Levetta stile Apple per attivare/disattivare opzioni
 // ENGLISH: Apple-style toggle to turn options on/off
 export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "bg-green-500" }: any) => (
-    <div onClick={() => { onChange(!checked); if(!checked) soundManager.pop(); else soundManager.click(); }} className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ease-in-out shadow-inner shrink-0 ${checked ? colorClass : 'bg-gray-300 dark:bg-gray-600'}`}>
-        <div className={`${!checked && iconOff ? 'bg-yellow-400' : 'bg-white'} w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ease-in-out flex justify-center items-center ${checked ? 'translate-x-6' : 'translate-x-0'}`}>
-        <span className="text-gray-800 w-3 h-3 flex items-center justify-center">{checked ? iconOn : iconOff}</span>
+    <div onClick={() => { onChange(!checked); if(!checked) soundManager.pop(); else soundManager.click(); }} className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ease-in-out shadow-inner shrink-0 ${checked ? colorClass : 'bg-gray-100 ring-1 ring-inset ring-gray-300 dark:bg-gray-600 dark:ring-0'}`}>
+        <div className={`bg-white w-4 h-4 rounded-full shadow-md ring-1 ring-black/10 transform transition-transform duration-300 ease-in-out flex justify-center items-center ${checked ? 'translate-x-6' : 'translate-x-0'}`}>
+        <span className={`w-3 h-3 flex items-center justify-center ${!checked && iconOff ? 'text-yellow-500' : 'text-gray-800'}`}>{checked ? iconOn : iconOff}</span>
         </div>
     </div>
 );
