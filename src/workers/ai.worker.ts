@@ -1,5 +1,6 @@
 
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: LAVORATORE INTELLIGENZA ARTIFICIALE                             **
 **  Questo file si occupa di far funzionare l'IA in sottofondo.               **
@@ -9,13 +10,16 @@
 **  This file handles running the AI in the background.                       **
 **  It analyzes images to suggest tags without slowing down the program.      **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 import { pipeline, env } from '@xenova/transformers';
 
-// Skip local model checks
+// ITALIANO: Salta i controlli dei modelli locali
+// ENGLISH: Skip local model checks
 env.allowLocalModels = false;
 
-// Use the Singleton pattern to enable lazy construction of the pipeline.
+// ITALIANO: Usa il pattern Singleton per consentire la costruzione pigra della pipeline.
+// ENGLISH: Use the Singleton pattern to enable lazy construction of the pipeline.
 class CaptioningPipeline {
   static task = 'image-to-text';
   static model = 'Xenova/vit-gpt2-image-captioning';

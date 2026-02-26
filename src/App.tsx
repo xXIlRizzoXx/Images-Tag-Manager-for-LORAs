@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: COMPONENTE PRINCIPALE DELL'APP                                  **
 **  Questo è il cuore del programma. Gestisce il caricamento delle immagini,  **
@@ -8,6 +9,7 @@
 **  This is the heart of the program. It handles image loading,               **
 **  the tag list, and the overall appearance of the main window.              **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
@@ -264,8 +266,12 @@ export default function App() {
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
     };
 
+    // ITALIANO: Funzione per salvare i file (sovrascrive o crea ZIP)
+    // ENGLISH: Function to save files (overwrite or create ZIP)
     const performSave = async (imagesToSave: any[], isExportAll = false) => {
-        if (dirHandle && !saveAsZip) {
+        // ITALIANO: Se abbiamo un riferimento alla cartella e stiamo salvando le modifiche (non esportando tutto), sovrascriviamo i file originali
+        // ENGLISH: If we have a folder handle and we are saving changes (not exporting all), overwrite original files
+        if (dirHandle && !saveAsZip && !isExportAll) {
             try {
                 showNotification(t.processingFiles, "info");
                 for (const img of imagesToSave) {
@@ -285,7 +291,7 @@ export default function App() {
                 }));
                 
                 soundManager.chime();
-                showNotification(isExportAll ? t.successSave : t.successSaveChanges, "success");
+                showNotification(t.successSaveChanges, "success");
             } catch (err) {
                 console.error(err);
                 showNotification(t.dirError, "error");
@@ -293,6 +299,40 @@ export default function App() {
             return; 
         }
 
+        // ITALIANO: Se l'utente vuole esportare in una cartella specifica (non quella originale)
+        // ENGLISH: If the user wants to export to a specific folder (not the original one)
+        if (!saveAsZip && isExportAll) {
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const exportHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+                    showNotification(t.processingFiles, "info");
+                    
+                    for (const img of imagesToSave) {
+                        const tagString = img.tags.length > 0 ? img.tags.join(', ') + ',' : '';
+                        const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
+                        const fileName = `${baseName}.txt`;
+                        
+                        const fileHandle = await exportHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(tagString);
+                        await writable.close();
+                    }
+                    
+                    soundManager.chime();
+                    showNotification(t.exportFolderSuccess, "success");
+                    return;
+                } catch (err: any) {
+                    if (err.name !== 'AbortError') {
+                        console.error(err);
+                        showNotification(t.exportFolderError, "error");
+                    }
+                    return;
+                }
+            }
+        }
+
+        // ITALIANO: Se vogliamo salvare come archivio ZIP
+        // ENGLISH: If we want to save as a ZIP archive
         if (saveAsZip) {
             try {
                 showNotification(t.zipProcessing, "info");
@@ -328,6 +368,8 @@ export default function App() {
             return;
         }
 
+        // ITALIANO: Metodo di salvataggio di emergenza (download multipli nel browser)
+        // ENGLISH: Fallback save method (multiple downloads in the browser)
         showNotification(t.infoSaveFallback, "info");
         imagesToSave.forEach((img, i) => setTimeout(() => {
             const tagString = img.tags.length > 0 ? img.tags.join(', ') + ',' : '';
@@ -352,12 +394,16 @@ export default function App() {
         showNotification(isExportAll ? t.successSave : t.successSaveChanges, "success");
     };
 
+    // ITALIANO: Salva solo le immagini che hanno subito modifiche
+    // ENGLISH: Save only the images that have undergone changes
     const handleSaveChanges = () => {
         const modifiedImages = images.filter(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
         if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return; }
         performSave(modifiedImages, false);
     };
 
+    // ITALIANO: Esporta i tag di tutte le immagini del progetto
+    // ENGLISH: Export tags for all images in the project
     const handleExportAll = () => {
         const imagesWithTags = images.filter(img => img.tags && img.tags.length > 0);
         
@@ -422,8 +468,10 @@ export default function App() {
     return (
         <div className={`h-full transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
             {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
-            <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} />
+            {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
+            {/* ENGLISH: Dialog boxes for confirmations and import summary */}
+            <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
             
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
             
@@ -513,51 +561,81 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center bg-gray-800/20 shrink-0 ${isImporting ? 'max-h-32 opacity-100 border-b border-gray-800/50' : 'max-h-0 opacity-0'}`}>
-                        <div className="w-full max-w-4xl p-4"><div className="bg-indigo-900/30 border border-indigo-700/50 p-4 rounded-2xl flex items-center gap-4 shadow-inner"><div className="w-6 h-6 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin shrink-0"></div><div className="flex-1"><div className="flex justify-between items-center mb-1.5"><span className="text-sm font-semibold text-gray-200">{importProgress === 100 ? t.completed : t.processingFiles}</span><span className="text-sm font-bold text-indigo-400">{importProgress}%</span></div><div className="w-full bg-gray-800 rounded-full h-2 overflow-hidden shadow-sm"><div className="bg-indigo-500 h-full rounded-full transition-all duration-200" style={{width: `${importProgress}%`}}></div></div></div></div></div>
+                    <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center shrink-0 ${isDarkMode ? 'bg-gray-800/20 border-gray-800/50' : 'bg-gray-100/50 border-gray-200'} ${isImporting ? 'max-h-32 opacity-100 border-b' : 'max-h-0 opacity-0'}`}>
+                        <div className="w-full max-w-4xl p-4">
+                            <div className={`p-4 rounded-2xl flex items-center gap-4 shadow-inner border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700/50' : 'bg-white border-indigo-200'}`}>
+                                <div className="w-6 h-6 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                <div className="flex-1">
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{importProgress === 100 ? t.completed : t.processingFiles}</span>
+                                        <span className="text-sm font-bold text-indigo-500">{importProgress}%</span>
+                                    </div>
+                                    <div className={`w-full rounded-full h-2 overflow-hidden shadow-sm ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                                        <div className="bg-indigo-500 h-full rounded-full transition-all duration-200" style={{width: `${importProgress}%`}}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-center gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
                         <div className={`w-full lg:w-[260px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
-                            <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700/50' : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border-gray-300'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm border`}>
-                                <Folder size={16} className="text-amber-500" />
+                            <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700/50' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white border-transparent'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm border`}>
+                                <Folder size={16} className={isDarkMode ? "text-amber-500" : "text-amber-200"} />
                                 <span>{t.loadFolder}</span>
                             </button>
-                            <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-800/80 hover:bg-red-900/30 text-red-400 border-gray-700/50 hover:border-red-800/50' : 'bg-white hover:bg-red-50 text-red-600 border-gray-200 hover:border-red-300'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm border`}>
+                            <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-800/80 hover:bg-red-900/30 text-red-400 border-gray-700/50 hover:border-red-800/50' : 'bg-red-600 hover:bg-red-700 text-white border-transparent'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm border`}>
                                 <Trash size={16} />
                                 <span>{t.resetProject}</span>
                             </button>
                         </div>
                         
                         <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
+                            {/* ITALIANO: Input per le trigger words globali */}
+                            {/* ENGLISH: Input for global trigger words */}
                             <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" />
                             
-                            {/* Global Auto Tagging */}
-                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex items-center justify-center gap-4`}>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} whitespace-nowrap`}>{t.maxTags}:</span>
-                                    <input 
-                                        type="number" 
-                                        min="1" 
-                                        max="20" 
-                                        value={globalMaxTags} 
-                                        onChange={(e) => setGlobalMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
-                                        className={`w-12 px-1 py-1 text-xs rounded-lg border text-center outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
-                                    />
+                            {/* ITALIANO: Strumenti di Auto Tagging Globale */}
+                            {/* ENGLISH: Global Auto Tagging tools */}
+                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2`}>
+                                <div className="flex items-center justify-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} whitespace-nowrap`}>{t.maxTags}:</span>
+                                        <input 
+                                            type="number" 
+                                            min="1" 
+                                            max="20" 
+                                            value={globalMaxTags} 
+                                            onChange={(e) => setGlobalMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
+                                            className={`w-12 px-1 py-1 text-xs rounded-lg border text-center outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
+                                        />
+                                    </div>
+                                    <button 
+                                        onClick={handleGlobalAutoTagging}
+                                        disabled={isGlobalAutoTagging || images.length === 0}
+                                        className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                    >
+                                        {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                        {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
+                                    </button>
                                 </div>
-                                <button 
-                                    onClick={handleGlobalAutoTagging}
-                                    disabled={isGlobalAutoTagging || images.length === 0}
-                                    className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
-                                >
-                                    {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
-                                    {isGlobalAutoTagging ? `${globalAutoTaggingProgress}%` : t.autoTaggingGlobal}
-                                </button>
+                                {isGlobalAutoTagging && (
+                                    <div className="w-full px-2 pb-1">
+                                        <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                                            <div 
+                                                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
+                                                style={{ width: `${globalAutoTaggingProgress}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         
                         <div className={`w-full lg:w-[380px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                            {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
+                            {/* ENGLISH: Button to view all project tags */}
                             <button 
                                 onClick={() => setIsGlobalTagManagerOpen(true)}
                                 className="w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm"
@@ -566,24 +644,28 @@ export default function App() {
                                 <span>{t.allTagsButton}</span>
                             </button>
                             <div className="w-full flex flex-col gap-1.5">
-                                <div className="w-full flex gap-3">
+                                <div className="w-full flex gap-3 items-start">
+                                    {/* ITALIANO: Pulsante Salva Modifiche */}
+                                    {/* ENGLISH: Save Changes button */}
                                     <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                         <Save size={16} />
-                                        <span className="hidden sm:inline">Salva Modifiche</span>
+                                        <span className="hidden sm:inline">{t.saveChanges}</span>
                                         <span className="sm:hidden">Salva</span>
                                     </button>
-                                    <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
-                                        <SaveAll size={16} />
-                                        <span className="hidden sm:inline">Esporta Tutti</span>
-                                        <span className="sm:hidden">Esporta</span>
-                                    </button>
-                                </div>
-                                <div className="flex items-center justify-between mt-1 px-1">
-                                    <div className={`flex items-center gap-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-700 font-semibold'}`}>
-                                        <Folder size={14} />
-                                        <span className="text-[11px] font-bold uppercase tracking-wider">{t.exportAsZip}</span>
+                                    
+                                    {/* ITALIANO: Sezione Esporta con opzione ZIP sotto */}
+                                    {/* ENGLISH: Export section with ZIP option below */}
+                                    <div className="flex-1 flex flex-col gap-2">
+                                        <button onClick={handleExportAll} disabled={images.length === 0} className="w-full h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                            <SaveAll size={16} />
+                                            <span className="hidden sm:inline">{t.exportAllTxt}</span>
+                                            <span className="sm:hidden">Esporta</span>
+                                        </button>
+                                        <div className="flex items-center justify-end gap-2 px-1">
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.exportAsZip}</span>
+                                            <AppleToggle checked={saveAsZip} onChange={setSaveAsZip} colorClass="bg-indigo-500" />
+                                        </div>
                                     </div>
-                                    <AppleToggle checked={saveAsZip} onChange={setSaveAsZip} colorClass="bg-indigo-500" />
                                 </div>
                             </div>
                         </div>
@@ -621,7 +703,13 @@ export default function App() {
                                     <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
                                     <button onClick={(e) => { e.stopPropagation(); removeImage(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20"><X size={14} /></button>
                                 </div>
-                                <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}><TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} /></div>
+                                <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                    {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
+                                    {/* ENGLISH: Tag area under the preview, aesthetically organized */}
+                                    <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
+                                        <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} />
+                                    </div>
+                                </div>
                             </div>
                             ))}
                         </div>}
@@ -647,12 +735,12 @@ export default function App() {
 
             {isGlobalTagManagerOpen && (
                 <div className="fixed inset-0 z-[200] flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsGlobalTagManagerOpen(false)}>
-                    <div className="w-96 max-w-[90vw] h-full bg-gray-800 shadow-2xl flex flex-col animate-in slide-in-from-right-4" onClick={e => e.stopPropagation()}>
-                        <div className="p-5 border-b border-gray-700 flex justify-between items-center bg-gray-900 shrink-0">
-                            <h2 className="text-lg font-bold text-gray-200 flex items-center gap-2"><Tag size={20} className="text-indigo-500"/> {t.projectTagManager}</h2>
-                            <button onClick={() => setIsGlobalTagManagerOpen(false)} className="hover:bg-red-500 hover:text-white rounded-full p-1.5 transition-colors text-gray-400"><X size={16} /></button>
+                    <div className={`w-96 max-w-[90vw] h-full ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-2xl flex flex-col animate-in slide-in-from-right-4`} onClick={e => e.stopPropagation()}>
+                        <div className={`p-5 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-100'} flex justify-between items-center shrink-0`}>
+                            <h2 className={`text-lg font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><Tag size={20} className="text-indigo-500"/> {t.projectTagManager}</h2>
+                            <button onClick={() => setIsGlobalTagManagerOpen(false)} className={`hover:bg-red-500 hover:text-white rounded-full p-1.5 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><X size={16} /></button>
                         </div>
-                        <div className="p-4 border-b border-gray-700 bg-gray-800 shrink-0 flex flex-col gap-3">
+                        <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} shrink-0 flex flex-col gap-3`}>
                              <input
                                 type="text"
                                 placeholder={t.addTagToProject}
@@ -667,23 +755,62 @@ export default function App() {
                                         }
                                     }
                                 }}
-                                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2.5 text-sm text-gray-100 outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
+                                className={`w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-100' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
                             />
+                            
+                            {/* ITALIANO: Controlli AI duplicati nel gestore tag (visibili solo se ci sono immagini) */}
+                            {/* ENGLISH: Duplicate AI controls in tag manager (visible only if there are images) */}
+                            {images.length > 0 && (
+                                <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-100 border-gray-200'} flex flex-col gap-2`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.maxTags}:</span>
+                                            <input 
+                                                type="number" 
+                                                min="1" 
+                                                max="20" 
+                                                value={globalMaxTags} 
+                                                onChange={(e) => setGlobalMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
+                                                className={`w-10 px-1 py-0.5 text-[10px] rounded border text-center outline-none focus:ring-1 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={handleGlobalAutoTagging}
+                                            disabled={isGlobalAutoTagging || images.length === 0}
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                        >
+                                            {isGlobalAutoTagging ? <Loader2 size={12} className="animate-spin" /> : <div className="relative"><Tag size={12} /><Sparkles size={6} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                            {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
+                                        </button>
+                                    </div>
+                                    {isGlobalAutoTagging && (
+                                        <div className="w-full px-1">
+                                            <div className={`w-full h-1 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                                                <div 
+                                                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
+                                                    style={{ width: `${globalAutoTaggingProgress}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             <button 
                                 onClick={handleDeleteAllTags}
                                 disabled={allUniqueTags.length === 0}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50' : 'bg-red-600 hover:bg-red-700 text-white border-transparent shadow-md'}`}
                             >
                                 <Trash size={14} />
                                 {t.deleteAllTags}
                             </button>
                         </div>
-                        <div className="flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll bg-gray-900/50">
-                            {allUniqueTags.length === 0 ? <p className="text-sm text-gray-500 italic w-full text-center mt-4">{t.noTagsInProject}</p> :
+                        <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`}>
+                            {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
                              allUniqueTags.map(tag => {
                                 const isCustomOnly = customProjectTags.includes(tag) && !images.some(img => img.tags.includes(tag));
                                 return (
-                                <span key={tag} className="px-2.5 py-1.5 rounded-full text-xs font-medium bg-gray-800 border border-gray-700 text-gray-200 shadow-sm flex items-center gap-1.5">
+                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}>
                                     {tag}
                                     {isCustomOnly && (
                                         <button onClick={() => setCustomProjectTags(prev => prev.filter(t => t !== tag))} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-gray-400">

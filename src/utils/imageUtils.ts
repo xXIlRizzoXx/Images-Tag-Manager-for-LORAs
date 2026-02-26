@@ -1,4 +1,5 @@
 /******************************************************************************
+*******************************************************************************
 **                                                                            **
 **  ITALIANO: STRUMENTI PER LE IMMAGINI                                       **
 **  Contiene funzioni che aiutano a gestire le foto, come la creazione        **
@@ -8,6 +9,7 @@
 **  Contains functions that help manage photos, such as creating              **
 **  the small thumbnails you see in the gallery.                              **
 **                                                                            **
+*******************************************************************************
 *******************************************************************************/
 export const generateThumbnail = async (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
