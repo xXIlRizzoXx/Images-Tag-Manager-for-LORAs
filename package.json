@@ -1,7 +1,7 @@
 {
   "name": "images-tag-manager",
   "private": true,
-  "version": "2.1.0",
+  "version": "3.6.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -20,7 +20,14 @@
       "output": "release"
     },
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "public/icon.ico"
+    },
+    "mac": {
+      "icon": "public/icon.png"
+    },
+    "linux": {
+      "icon": "public/icon.png"
     },
     "files": [
       "dist/**/*",

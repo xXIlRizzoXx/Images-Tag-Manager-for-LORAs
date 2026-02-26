@@ -774,7 +774,7 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 2.1.0</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 3.6.0</span>
                                             <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>Copyright xXIlRizzoXx</span>
                                         </div>
                                     </div>
