@@ -60,6 +60,8 @@ export default function App() {
     const [globalModelProgress, setGlobalModelProgress] = useState(0);
     const [isDownloadingModel, setIsDownloadingModel] = useState(false);
     const [globalMaxTags, setGlobalMaxTags] = useState(10);
+    const [showSplash, setShowSplash] = useState(true);
+    const [splashProgress, setSplashProgress] = useState(0);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
@@ -109,18 +111,16 @@ export default function App() {
                     globalWorkerRef.current.addEventListener('message', handleMessage);
                     globalWorkerRef.current.postMessage({
                         type: 'generate',
-                        data: { imageUrl }
+                        data: { imageUrl, maxTags: globalMaxTags }
                     });
                 });
 
                 URL.revokeObjectURL(imageUrl);
 
-                if (result && result[0] && result[0].generated_text) {
-                    const text = result[0].generated_text;
-                    const stopwords = ['a', 'an', 'the', 'is', 'are', 'in', 'on', 'at', 'with', 'by', 'of', 'and', 'or', 'to', 'for'];
-                    const words = text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").split(/\s+/);
-                    const tags = words.filter((w: string) => w.length > 2 && !stopwords.includes(w));
+                if (result && Array.isArray(result) && result.length > 0) {
+                    const tags = result.map((r: any) => r.label.split(',')[0].trim().toLowerCase().replace(/\s+/g, '_'));
                     const uniqueTags = [...new Set(tags)].slice(0, globalMaxTags) as string[];
+                    
                     newDiscoveredTags.push(...uniqueTags);
                 }
             } catch (err) {
@@ -194,6 +194,24 @@ export default function App() {
         });
     };
 
+    const handleCleanUnusedTags = () => {
+        const usedTags = new Set(images.flatMap(img => img.tags));
+        setCustomProjectTags(prev => prev.filter(tag => usedTags.has(tag)));
+        setAiDiscoveredTags(prev => prev.filter(tag => usedTags.has(tag)));
+        showNotification(t.completed, 'success');
+        soundManager.pop();
+    };
+
+    const handleDeleteTagFromProject = (tagToDelete: string) => {
+        setImages(prev => prev.map(img => ({
+            ...img,
+            tags: img.tags.filter(t => t !== tagToDelete)
+        })));
+        setCustomProjectTags(prev => prev.filter(t => t !== tagToDelete));
+        setAiDiscoveredTags(prev => prev.filter(t => t !== tagToDelete));
+        soundManager.click();
+    };
+
     const handleMoveToTrash = (id: string) => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
         if (selectedImageId === id) setSelectedImageId(null);
@@ -207,36 +225,45 @@ export default function App() {
 
     const handleDeletePermanently = async (id: string) => {
         const img = images.find(i => i.id === id);
-        if (!img || !dirHandle) return;
-        try {
-            await dirHandle.removeEntry(img.file.name);
-            const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
-            try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
-            setImages(prev => prev.filter(i => i.id !== id));
-            showNotification(t.deleteSuccess, 'success');
-            soundManager.pop();
-        } catch (error) {
-            console.error(error);
-            showNotification(t.deleteError, 'error');
-        }
-    };
-
-    const handleEmptyTrash = async () => {
-        if (!dirHandle) return;
-        let successCount = 0;
-        for (const img of trashedImages) {
+        if (!img) return;
+        
+        if (dirHandle) {
             try {
                 await dirHandle.removeEntry(img.file.name);
                 const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
-                try { await dirHandle.removeEntry(txtName); } catch (e) {}
-                successCount++;
+                try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
             } catch (error) {
-                console.error("Failed to delete", img.file.name);
+                console.error(error);
+                showNotification(t.deleteError, 'error');
+                return;
             }
         }
+        
+        setImages(prev => prev.filter(i => i.id !== id));
+        showNotification(t.deleteSuccess, 'success');
+        soundManager.pop();
+    };
+
+    const handleEmptyTrash = async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        setIsTrashOpen(false);
+        
+        if (dirHandle) {
+            let successCount = 0;
+            for (const img of trashedImages) {
+                try {
+                    await dirHandle.removeEntry(img.file.name);
+                    const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
+                    try { await dirHandle.removeEntry(txtName); } catch (e) {}
+                    successCount++;
+                } catch (error) {
+                    console.error("Failed to delete", img.file.name);
+                }
+            }
+        }
+        
         setImages(prev => prev.filter(i => !i.isTrashed));
         showNotification(t.deleteSuccess, 'success');
-        setIsTrashOpen(false);
         soundManager.pop();
     };
 
@@ -560,8 +587,48 @@ export default function App() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    useEffect(() => {
+        if (showSplash) {
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    setTimeout(() => setShowSplash(false), 500);
+                }
+                setSplashProgress(progress);
+            }, 100);
+            return () => clearInterval(interval);
+        }
+    }, [showSplash]);
+
     return (
         <div className={`h-screen transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
+            {showSplash && (
+                <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                    <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
+                        <div className={`p-6 rounded-3xl ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
+                            <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
+                        </div>
+                        <div className="text-center">
+                            <h1 className={`text-4xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                {t.appTitle}
+                            </h1>
+                            <p className={`mt-2 text-sm font-medium tracking-widest uppercase ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                                AI Image Tagging
+                            </p>
+                        </div>
+                        <div className="w-64 h-1.5 mt-8 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <div 
+                                className="h-full bg-indigo-500 transition-all duration-100 ease-out"
+                                style={{ width: `${splashProgress}%` }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
@@ -709,7 +776,7 @@ export default function App() {
                     <div className={`border-b ${isDarkMode ? 'border-gray-800/50 bg-black/20' : 'border-gray-200 bg-gray-50/50'} p-4 md:p-5 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20`}>
                         <div className="flex-1 flex justify-start w-full md:w-auto">
                         </div>
-                        <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto"><div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden sm:block"><ImageIcon className="text-white" size={20} /></div><h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1></div>
+                        <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto"><div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden sm:block"><Tag className="text-white" size={20} /></div><h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1></div>
                         <div className="flex-1 flex justify-end w-full md:w-auto gap-2">
                             <button onClick={() => setIsTrashOpen(true)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}>
                                 <span className="font-semibold text-sm hidden sm:inline-block">{t.trash}</span>
@@ -1047,29 +1114,36 @@ export default function App() {
                                 </div>
                             )}
 
-                            <button 
-                                onClick={handleDeleteAllTags}
-                                disabled={allUniqueTags.length === 0}
-                                className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50' : 'bg-red-600 hover:bg-red-700 text-white border-transparent shadow-md'}`}
-                            >
-                                <Trash size={14} />
-                                {t.deleteAllTags}
-                            </button>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={handleDeleteAllTags}
+                                    disabled={allUniqueTags.length === 0}
+                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50' : 'bg-red-600 hover:bg-red-700 text-white border-transparent shadow-md'}`}
+                                >
+                                    <Trash size={14} />
+                                    {t.deleteAllTags}
+                                </button>
+                                <button 
+                                    onClick={handleCleanUnusedTags}
+                                    disabled={allUniqueTags.length === 0}
+                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-800/50' : 'bg-amber-500 hover:bg-amber-600 text-white border-transparent shadow-md'}`}
+                                >
+                                    <RefreshCw size={14} />
+                                    {t.cleanUnusedTags}
+                                </button>
+                            </div>
                         </div>
                         <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`}>
                              {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
                              allUniqueTags.map(tag => {
-                                const isCustomOnly = customProjectTags.includes(tag) && !images.some(img => img.tags.includes(tag));
                                 const isAiGenerated = aiDiscoveredTags.includes(tag);
                                 return (
                                 <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}>
                                     {isAiGenerated && <Sparkles size={10} className="text-purple-500" />}
                                     {tag}
-                                    {isCustomOnly && (
-                                        <button onClick={() => setCustomProjectTags(prev => prev.filter(t => t !== tag))} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-gray-400">
-                                            <X size={10} />
-                                        </button>
-                                    )}
+                                    <button onClick={() => handleDeleteTagFromProject(tag)} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-gray-400">
+                                        <X size={10} />
+                                    </button>
                                 </span>
                              )})}
                         </div>

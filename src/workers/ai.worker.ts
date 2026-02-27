@@ -20,9 +20,9 @@ env.allowLocalModels = false;
 
 // ITALIANO: Usa il pattern Singleton per consentire la costruzione pigra della pipeline.
 // ENGLISH: Use the Singleton pattern to enable lazy construction of the pipeline.
-class CaptioningPipeline {
-  static task = 'image-to-text';
-  static model = 'Xenova/vit-gpt2-image-captioning';
+class ClassificationPipeline {
+  static task = 'image-classification';
+  static model = 'Xenova/vit-base-patch16-224';
   static instance: any = null;
 
   static async getInstance(progress_callback: any = null) {
@@ -38,11 +38,11 @@ self.addEventListener('message', async (event) => {
 
     if (type === 'generate') {
         try {
-            const captioner = await CaptioningPipeline.getInstance((x: any) => {
+            const classifier = await ClassificationPipeline.getInstance((x: any) => {
                 self.postMessage({ type: 'progress', data: x });
             });
 
-            const result = await captioner(data.imageUrl);
+            const result = await classifier(data.imageUrl, { topk: data.maxTags || 10 });
             self.postMessage({ type: 'result', data: result });
         } catch (error: any) {
             self.postMessage({ type: 'error', data: error.message });

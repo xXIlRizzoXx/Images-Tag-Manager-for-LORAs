@@ -128,6 +128,7 @@ export const translations = {
         of: "di",
         tagsDiscovered: "tag trovati",
         deleteAllTags: "Elimina tutti i tag del progetto",
+        cleanUnusedTags: "Pulisci tag inutilizzati",
     },
     en: {
         appTitle: "Images Tag Manager for LORAs",
@@ -245,6 +246,7 @@ export const translations = {
         of: "of",
         tagsDiscovered: "tags found",
         deleteAllTags: "Delete All Tags",
+        cleanUnusedTags: "Clean Unused Tags",
     },
     fr: {
         appTitle: "Images Tag Manager for LORAs",
@@ -361,6 +363,7 @@ export const translations = {
         of: "sur",
         tagsDiscovered: "tags trouvés",
         deleteAllTags: "Supprimer tous les tags",
+        cleanUnusedTags: "Nettoyer les tags inutilisés",
     },
     es: {
         appTitle: "Images Tag Manager for LORAs",
@@ -477,6 +480,7 @@ export const translations = {
         of: "de",
         tagsDiscovered: "etiquetas encontradas",
         deleteAllTags: "Eliminar todas las etiquetas",
+        cleanUnusedTags: "Limpiar etiquetas no utilizadas",
     },
     de: {
         appTitle: "Images Tag Manager for LORAs",
@@ -593,6 +597,7 @@ export const translations = {
         of: "von",
         tagsDiscovered: "Tags gefunden",
         deleteAllTags: "Alle Tags löschen",
+        cleanUnusedTags: "Ungenutzte Tags bereinigen",
     },
     zh: {
         appTitle: "Images Tag Manager for LORAs",
@@ -709,6 +714,7 @@ export const translations = {
         of: "/",
         tagsDiscovered: "发现标签",
         deleteAllTags: "删除所有标签",
+        cleanUnusedTags: "清除未使用的标签",
     },
     ja: {
         appTitle: "Images Tag Manager for LORAs",
@@ -825,6 +831,7 @@ export const translations = {
         of: "/",
         tagsDiscovered: "発見されたタグ",
         deleteAllTags: "すべてのタグを削除",
+        cleanUnusedTags: "未使用のタグをクリーンアップ",
     },
     pt: {
         appTitle: "Images Tag Manager for LORAs",
@@ -941,6 +948,7 @@ export const translations = {
         of: "de",
         tagsDiscovered: "Tags descobertas",
         deleteAllTags: "Excluir todas as tags",
+        cleanUnusedTags: "Limpar tags não utilizadas",
     },
     ru: {
         appTitle: "Images Tag Manager for LORAs",
@@ -1057,5 +1065,6 @@ export const translations = {
         of: "из",
         tagsDiscovered: "Найденные теги",
         deleteAllTags: "Удалить все теги",
+        cleanUnusedTags: "Очистить неиспользуемые теги",
     }
 };
