@@ -79,18 +79,18 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         const tags = words.filter((w: string) => w.length > 2 && !stopwords.includes(w));
         const newTags = [...new Set(tags)].slice(0, maxTags) as string[];
 
+        // ITALIANO: Aggiungiamo i tag all'immagine corrente
+        // ENGLISH: Add tags to the current image
+        const currentTags = currentImage.tags || [];
+        const combined = [...new Set([...currentTags, ...newTags])];
+        updateTags(currentImage.id, combined);
+
         if (onTagsDiscovered) {
             onTagsDiscovered(newTags);
-            soundManager.chime();
-            if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
-        } else {
-            // Se non c'è onTagsDiscovered, li aggiungiamo ai tag correnti (comportamento di fallback)
-            const currentTags = currentImage.tags || [];
-            const combined = [...new Set([...currentTags, ...newTags])];
-            updateTags(currentImage.id, combined);
-            soundManager.chime();
-            if (showNotification) showNotification(t.completed, "success");
         }
+        
+        soundManager.chime();
+        if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
     };
 
     const handleMagicWand = () => {
@@ -106,12 +106,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     };
 
     const handleKeyDown = useCallback((e: any) => {
-        if (!image) return;
+        if (!imageRef.current) return;
         if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
         if (e.key === 'ArrowRight' && hasNext) onNext();
         else if (e.key === 'ArrowLeft' && hasPrev) onPrev();
         else if (e.key === 'Escape') onClose();
-    }, [image, hasNext, hasPrev, onNext, onPrev, onClose]);
+    }, [hasNext, hasPrev, onNext, onPrev, onClose]);
 
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [handleKeyDown]);
 
@@ -124,7 +124,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
             setHighResUrl(currentUrl);
         } else setHighResUrl(null);
         return () => { if (currentUrl) URL.revokeObjectURL(currentUrl); };
-    }, [image]);
+    }, [image?.id, image?.file]);
 
     if (!image) return null;
 
