@@ -27,11 +27,14 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 
 // ITALIANO: Campo di inserimento per i tag con suggerimenti e cancellazione
 // ENGLISH: Input field for tags with suggestions and deletion
-export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]" }: any) => {
+import { getTagCategory, getCategoryColor } from '../utils/tagCategorization';
+
+export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]", isDarkMode = true, readOnly = false }: any) => {
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     
     const handleKeyDown = (e: any) => {
+        if (readOnly) return;
         if (e.key === ',' || e.key === 'Enter') {
             e.preventDefault();
             const newTag = inputValue.trim().replace(/,$/, '');
@@ -42,6 +45,7 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
     };
 
     const handlePaste = (e: any) => {
+        if (readOnly) return;
         e.preventDefault();
         const pasteData = e.clipboardData.getData('text');
         const newTags = pasteData.split(/[,\n\r]+/)
@@ -54,26 +58,41 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
         }
     };
 
-    const removeTag = (idx: number) => { setTags(tags.filter((_: any, i: number) => i !== idx)); soundManager.click(); };
+    const removeTag = (idx: number) => { 
+        if (readOnly) return;
+        setTags(tags.filter((_: any, i: number) => i !== idx)); 
+        soundManager.click(); 
+    };
     
     return (
-        <div onClick={() => inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-1 p-1.5 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto cursor-text ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
-        {tags.map((tag: string, index: number) => (
-            <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${isGlobal ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 shadow-sm'}`}>
-            {tag}
-            <button onClick={(e) => { e.stopPropagation(); removeTag(index); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
-            </span>
-        ))}
-        <input 
-            ref={inputRef}
-            type="text" 
-            value={inputValue} 
-            onChange={(e) => setInputValue(e.target.value)} 
-            onKeyDown={handleKeyDown} 
-            onPaste={handlePaste}
-            placeholder={tags.length === 0 ? placeholder : "Scrivi tag..."} 
-            className={`w-full bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-700 dark:placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
-        />
+        <div onClick={() => !readOnly && inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-1 p-1.5 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto ${readOnly ? 'cursor-default' : 'cursor-text'} ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
+        {tags.map((tag: string, index: number) => {
+            const category = getTagCategory(tag);
+            const isNsfw = category === 'nsfw';
+            const colorClass = isGlobal ? 'bg-indigo-600 text-white shadow-sm' : getCategoryColor(category, isDarkMode);
+            
+            return (
+                <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 border shadow-sm ${colorClass}`}>
+                    {isNsfw && <span className="font-bold text-[9px] bg-red-500 text-white px-1 rounded-sm mr-0.5">+18</span>}
+                    {tag}
+                    {!readOnly && (
+                        <button onClick={(e) => { e.stopPropagation(); removeTag(index); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
+                    )}
+                </span>
+            );
+        })}
+        {!readOnly && (
+            <input 
+                ref={inputRef}
+                type="text" 
+                value={inputValue} 
+                onChange={(e) => setInputValue(e.target.value)} 
+                onKeyDown={handleKeyDown} 
+                onPaste={handlePaste}
+                placeholder={tags.length === 0 ? placeholder : "Scrivi tag..."} 
+                className={`w-full bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-700 dark:placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
+            />
+        )}
         </div>
     );
 };

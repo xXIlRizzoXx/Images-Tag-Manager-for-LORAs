@@ -253,6 +253,8 @@ export const translations = {
         cleanUnusedTags: "Clean Unused Tags",
     },
     fr: {
+        undoSuccess: "Action annulée",
+        redoSuccess: "Action rétablie",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "Fichier",
         importImages: "Importer des images",
@@ -370,6 +372,8 @@ export const translations = {
         cleanUnusedTags: "Nettoyer les tags inutilisés",
     },
     es: {
+        undoSuccess: "Acción deshecha",
+        redoSuccess: "Acción rehacer",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "Archivo",
         importImages: "Importar imágenes",
@@ -487,6 +491,8 @@ export const translations = {
         cleanUnusedTags: "Limpiar etiquetas no utilizadas",
     },
     de: {
+        undoSuccess: "Aktion rückgängig gemacht",
+        redoSuccess: "Aktion wiederhergestellt",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "Datei",
         importImages: "Bilder importieren",
@@ -604,6 +610,8 @@ export const translations = {
         cleanUnusedTags: "Ungenutzte Tags bereinigen",
     },
     zh: {
+        undoSuccess: "操作已撤销",
+        redoSuccess: "操作已重做",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "文件",
         importImages: "导入图片",
@@ -721,6 +729,8 @@ export const translations = {
         cleanUnusedTags: "清除未使用的标签",
     },
     ja: {
+        undoSuccess: "操作を取り消しました",
+        redoSuccess: "操作をやり直しました",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "ファイル",
         importImages: "画像をインポート",
@@ -838,6 +848,8 @@ export const translations = {
         cleanUnusedTags: "未使用のタグをクリーンアップ",
     },
     pt: {
+        undoSuccess: "Ação desfeita",
+        redoSuccess: "Ação refeita",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "Arquivo",
         importImages: "Importar imagens",
@@ -955,6 +967,8 @@ export const translations = {
         cleanUnusedTags: "Limpar tags não utilizadas",
     },
     ru: {
+        undoSuccess: "Действие отменено",
+        redoSuccess: "Действие возвращено",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "Файл",
         importImages: "Импорт изображений",

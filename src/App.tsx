@@ -13,7 +13,21 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3 } from 'lucide-react';
+import { getTagCategory, getCategoryColor } from './utils/tagCategorization';
+import { 
+    PieChart as RechartsPieChart, 
+    Pie, 
+    Cell, 
+    Tooltip, 
+    ResponsiveContainer,
+    BarChart as RechartsBarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Legend
+} from 'recharts';
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
@@ -55,8 +69,10 @@ export default function App() {
 
     const [aiModel, setAiModel] = useState(() => localStorage.getItem('aiModel') || 'built-in');
     const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
+    const [customPrompt, setCustomPrompt] = useState(() => localStorage.getItem('customPrompt') || '');
     const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState(false);
     const [tempApiKey, setTempApiKey] = useState('');
+    const [isStatsOpen, setIsStatsOpen] = useState(false);
 
     useEffect(() => {
         if (isApiKeyDialogOpen) {
@@ -71,6 +87,10 @@ export default function App() {
     useEffect(() => {
         localStorage.setItem('geminiApiKey', geminiApiKey);
     }, [geminiApiKey]);
+
+    useEffect(() => {
+        localStorage.setItem('customPrompt', customPrompt);
+    }, [customPrompt]);
 
     const [isGlobalTagManagerOpen, setIsGlobalTagManagerOpen] = useState(false);
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
@@ -167,7 +187,7 @@ export default function App() {
                         setIsApiKeyDialogOpen(true);
                         return;
                     }
-                    uniqueTags = await getGeminiTags(img.file, geminiApiKey, aiModel, globalMaxTags);
+                    uniqueTags = await getGeminiTags(img.file, geminiApiKey, aiModel, globalMaxTags, customPrompt);
                 } else {
                     const imageUrl = URL.createObjectURL(img.file);
                     
@@ -879,7 +899,7 @@ export default function App() {
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                                        <TagInput tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} />
+                                                        <TagInput tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} isDarkMode={isDarkMode} />
                                                     </div>
                                                 </div>
                                             </div>
@@ -892,28 +912,34 @@ export default function App() {
                 </div>
             )}
 
-            <Lightbox 
-                image={displayedImages.find(img => img.id === selectedImageId)} 
-                onClose={() => setSelectedImageId(null)} 
-                updateTags={updateImageTags} 
-                allTags={allUniqueTags} 
-                t={t} 
-                onNext={handleNext} 
-                onPrev={handlePrev} 
-                hasNext={(displayedImages.length - 1) > currentIndex} 
-                hasPrev={currentIndex > 0} 
-                slideDirection={slideDirection} 
-                showNotification={showNotification} 
-                updateOriginalTags={updateOriginalTags} 
-                dirHandle={dirHandle}
-                isDarkMode={isDarkMode}
-                aiDiscoveredTags={aiDiscoveredTags}
-                onTagsDiscovered={(newTags: string[]) => setAiDiscoveredTags(prev => [...new Set([...prev, ...newTags])])}
-                onMoveToTrash={handleMoveToTrash}
-                aiModel={aiModel}
-                geminiApiKey={geminiApiKey}
-                setIsApiKeyDialogOpen={setIsApiKeyDialogOpen}
-            />
+            {selectedImageId && (
+                <Lightbox 
+                    image={displayedImages.find(img => img.id === selectedImageId)} 
+                    onClose={() => setSelectedImageId(null)} 
+                    updateTags={updateImageTags} 
+                    updateImageCaption={(id: string, caption: string) => {
+                        setImages(prev => prev.map(img => img.id === id ? { ...img, caption } : img));
+                    }}
+                    allTags={allUniqueTags} 
+                    t={t} 
+                    onNext={handleNext} 
+                    onPrev={handlePrev} 
+                    hasNext={(displayedImages.length - 1) > currentIndex} 
+                    hasPrev={currentIndex > 0} 
+                    slideDirection={slideDirection} 
+                    showNotification={showNotification} 
+                    updateOriginalTags={updateOriginalTags} 
+                    dirHandle={dirHandle}
+                    isDarkMode={isDarkMode}
+                    aiDiscoveredTags={aiDiscoveredTags}
+                    onTagsDiscovered={(newTags: string[]) => setAiDiscoveredTags(prev => [...new Set([...prev, ...newTags])])}
+                    onMoveToTrash={handleMoveToTrash}
+                    aiModel={aiModel}
+                    geminiApiKey={geminiApiKey}
+                    setIsApiKeyDialogOpen={setIsApiKeyDialogOpen}
+                    customPrompt={customPrompt}
+                />
+            )}
 
             <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
                 <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
@@ -977,6 +1003,31 @@ export default function App() {
                                                 <option value="gemini-3.1-pro-preview">Nano Banana Pro (Massima Qualità) {geminiApiKey ? '✅' : '🔑'}</option>
                                             </select>
                                         </div>
+                                        {aiModel !== 'built-in' && (
+                                            <>
+                                                <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                                <div className="flex flex-col gap-2">
+                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
+                                                        <Sparkles size={16} className="text-purple-500"/>
+                                                        Prompt Personalizzato
+                                                    </div>
+                                                    <textarea 
+                                                        value={customPrompt} 
+                                                        onChange={(e) => setCustomPrompt(e.target.value)}
+                                                        placeholder="Es. Ignora lo sfondo, usa solo termini tecnici..."
+                                                        className={`w-full text-xs rounded-lg border px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 min-h-[60px] resize-none ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-gray-50 border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        <button 
+                                            onClick={() => { setIsSettingsOpen(false); setIsStatsOpen(true); }}
+                                            className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                                        >
+                                            <LayoutGrid size={16} />
+                                            Statistiche Progetto
+                                        </button>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
                                         <div className="flex items-center justify-between">
                                             <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
@@ -1056,7 +1107,7 @@ export default function App() {
                         <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
-                            <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" />
+                            <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" isDarkMode={isDarkMode} />
                             
                             {/* ITALIANO: Strumenti di Auto Tagging Globale */}
                             {/* ENGLISH: Global Auto Tagging tools */}
@@ -1178,7 +1229,7 @@ export default function App() {
                                     {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
                                     {/* ENGLISH: Tag area under the preview, aesthetically organized */}
                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                        <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} />
+                                        <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
                                     </div>
                                 </div>
                             </div>
@@ -1319,6 +1370,115 @@ export default function App() {
                                     </button>
                                 </span>
                              )})}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isStatsOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsStatsOpen(false)}>
+                    <div className={`w-[90vw] max-w-4xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
+                        <div className={`p-6 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} flex justify-between items-center shrink-0`}>
+                            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={24} className="text-indigo-500"/> Statistiche Progetto</h2>
+                            <button onClick={() => setIsStatsOpen(false)} className={`hover:bg-red-500 hover:text-white rounded-full p-2 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><X size={20} /></button>
+                        </div>
+                        
+                        <div className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                            {(() => {
+                                const totalImages = images.length;
+                                const totalTags = allUniqueTags.length;
+                                const captionedImages = images.filter(img => img.caption && img.caption.trim().length > 0).length;
+                                const captionedPercentage = totalImages > 0 ? Math.round((captionedImages / totalImages) * 100) : 0;
+
+                                const categoryCounts: Record<string, number> = {};
+                                allUniqueTags.forEach(tag => {
+                                    const cat = getTagCategory(tag);
+                                    categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+                                });
+                                const pieData = Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
+                                const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28'];
+
+                                const tagUsage: Record<string, number> = {};
+                                images.forEach(img => {
+                                    img.tags.forEach((tag: string) => {
+                                        tagUsage[tag] = (tagUsage[tag] || 0) + 1;
+                                    });
+                                });
+                                const barData = Object.entries(tagUsage)
+                                    .sort((a, b) => b[1] - a[1])
+                                    .slice(0, 10)
+                                    .map(([name, value]) => ({ name, value }));
+
+                                return (
+                                    <div className="flex flex-col gap-8">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-indigo-50 border-indigo-100'} flex items-center gap-4`}>
+                                                <div className="p-3 bg-indigo-500 rounded-lg text-white"><ImageIcon size={24} /></div>
+                                                <div>
+                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Totale Immagini</p>
+                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalImages}</p>
+                                                </div>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
+                                                <div className="p-3 bg-purple-500 rounded-lg text-white"><Tag size={24} /></div>
+                                                <div>
+                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Totale Tag Unici</p>
+                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalTags}</p>
+                                                </div>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-emerald-50 border-emerald-100'} flex items-center gap-4`}>
+                                                <div className="p-3 bg-emerald-500 rounded-lg text-white"><Sparkles size={24} /></div>
+                                                <div>
+                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Immagini con Didascalia</p>
+                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{captionedImages} <span className="text-sm font-normal opacity-70">({captionedPercentage}%)</span></p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                            <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                                                <h3 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={20} /> Distribuzione Categorie Tag</h3>
+                                                <div className="h-64 w-full">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <RechartsPieChart>
+                                                            <Pie
+                                                                data={pieData}
+                                                                cx="50%"
+                                                                cy="50%"
+                                                                labelLine={false}
+                                                                outerRadius={80}
+                                                                fill="#8884d8"
+                                                                dataKey="value"
+                                                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                            >
+                                                                {pieData.map((entry, index) => (
+                                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                                ))}
+                                                            </Pie>
+                                                            <Tooltip contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000' }} />
+                                                        </RechartsPieChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+
+                                            <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                                                <h3 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><BarChart3 size={20} /> Top 10 Tag Più Usati</h3>
+                                                <div className="h-64 w-full">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <RechartsBarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                                                            <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} horizontal={false} />
+                                                            <XAxis type="number" stroke={isDarkMode ? '#9ca3af' : '#4b5563'} />
+                                                            <YAxis dataKey="name" type="category" width={100} stroke={isDarkMode ? '#9ca3af' : '#4b5563'} tick={{ fontSize: 11 }} />
+                                                            <Tooltip cursor={{ fill: isDarkMode ? '#374151' : '#f3f4f6' }} contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000' }} />
+                                                            <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
+                                                        </RechartsBarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>

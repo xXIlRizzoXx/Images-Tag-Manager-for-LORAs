@@ -18,15 +18,19 @@ import { AppleToggle } from './ui';
 // @ts-ignore
 import AIWorker from '../workers/ai.worker?worker';
 
-import { getGeminiTags } from '../services/geminiService';
+import { getGeminiTags, getGeminiCaption } from '../services/geminiService';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen }: any) => {
+import { getTagCategory, getCategoryColor } from '../utils/tagCategorization';
+
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen, customPrompt, updateImageCaption }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
     const [highResUrl, setHighResUrl] = useState<string | null>(null);
     const [isHighResLoaded, setIsHighResLoaded] = useState(false);
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
+    const [activeTab, setActiveTab] = useState<'tags' | 'caption'>('tags');
+    const [caption, setCaption] = useState(image.caption || '');
     
     // ITALIANO: Stato per l'elaborazione AI
     // ENGLISH: State for AI processing
@@ -38,7 +42,39 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
 
     useEffect(() => {
         imageRef.current = image;
+        setCaption(image.caption || '');
     }, [image]);
+
+    const handleSaveCaption = () => {
+        if (updateImageCaption) {
+            updateImageCaption(image.id, caption);
+            soundManager.chime();
+            if (showNotification) showNotification("Didascalia salvata!", "success");
+        }
+    };
+
+    const handleGenerateCaption = async () => {
+        if (isProcessingAI || !image || !geminiApiKey) {
+            if (!geminiApiKey) setIsApiKeyDialogOpen(true);
+            return;
+        }
+
+        setIsProcessingAI(true);
+        try {
+            const generatedCaption = await getGeminiCaption(image.file, geminiApiKey, aiModel, customPrompt);
+            setCaption(generatedCaption);
+            if (updateImageCaption) {
+                updateImageCaption(image.id, generatedCaption);
+            }
+            soundManager.chime();
+            if (showNotification) showNotification("Didascalia generata!", "success");
+        } catch (err) {
+            console.error("Error generating caption:", err);
+            if (showNotification) showNotification("Errore generazione didascalia", "error");
+        } finally {
+            setIsProcessingAI(false);
+        }
+    };
 
     useEffect(() => {
         workerRef.current = new AIWorker();
@@ -108,7 +144,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 return;
             }
             try {
-                const tags = await getGeminiTags(image.file, geminiApiKey, aiModel, maxTags);
+                const tags = await getGeminiTags(image.file, geminiApiKey, aiModel, maxTags, customPrompt);
                 if (tags.length > 0) {
                     const uniqueTags = [...new Set(tags)].slice(0, maxTags);
                     
@@ -274,36 +310,89 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 </div>
                 <div className={`hidden lg:flex flex-col w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
                     <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
-                        <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
-                        <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>
+                        <div className="flex bg-gray-200 dark:bg-gray-800 rounded-lg p-1 mb-2">
+                            <button onClick={() => setActiveTab('tags')} className={`flex-1 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'tags' ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                                TAGS
+                            </button>
+                            <button onClick={() => setActiveTab('caption')} className={`flex-1 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'caption' ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                                CAPTION
+                            </button>
+                        </div>
+                        {activeTab === 'tags' && (
+                            <>
+                                <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
+                                <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>
+                            </>
+                        )}
+                        {activeTab === 'caption' && (
+                            <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><Sparkles size={16} className="text-purple-500" /> Didascalia AI</h3>
+                        )}
                     </div>
                     
-                    <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} shrink-0 flex flex-col gap-3 shadow-sm z-10`}>
-                        <div className="flex items-center justify-between px-1">
-                            <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.showOnlyAdded}</span>
-                            <AppleToggle checked={showOnlyAdded} onChange={setShowOnlyAdded} iconOn={<span />} iconOff={<span />} colorClass="bg-indigo-500" />
+                    {activeTab === 'tags' ? (
+                    <>
+                        <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} shrink-0 flex flex-col gap-3 shadow-sm z-10`}>
+                            <div className="flex items-center justify-between px-1">
+                                <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.showOnlyAdded}</span>
+                                <AppleToggle checked={showOnlyAdded} onChange={setShowOnlyAdded} iconOn={<span />} iconOff={<span />} colorClass="bg-indigo-500" />
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handleAddAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/50 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100'} rounded-lg text-xs font-bold transition-colors border`}>
+                                    {t.addAllTags}
+                                </button>
+                                <button onClick={handleRemoveAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-red-900/30 border-red-800/50 text-red-400 hover:bg-red-900/50' : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100'} rounded-lg text-xs font-bold transition-colors border`}>
+                                    {t.removeAllTags}
+                                </button>
+                            </div>
+                            <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-3 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
                         </div>
-                        <div className="flex gap-2">
-                            <button onClick={handleAddAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/50 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100'} rounded-lg text-xs font-bold transition-colors border`}>
-                                {t.addAllTags}
-                            </button>
-                            <button onClick={handleRemoveAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-red-900/30 border-red-800/50 text-red-400 hover:bg-red-900/50' : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100'} rounded-lg text-xs font-bold transition-colors border`}>
-                                {t.removeAllTags}
-                            </button>
-                        </div>
-                        <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-3 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
-                    </div>
 
-                    <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                        {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
-                            const isAiGenerated = aiDiscoveredTags.includes(tag);
-                            return (
-                            <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm flex items-center gap-1 ${currentTags.includes(tag) ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' : isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200')}`}>
-                                {isAiGenerated && <Sparkles size={10} className={currentTags.includes(tag) ? 'text-white' : ''} />}
-                                {tag}
-                            </button>
-                        )})}
-                    </div>
+                        <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                            {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
+                                const isAiGenerated = aiDiscoveredTags.includes(tag);
+                                const category = getTagCategory(tag);
+                                const isNsfw = category === 'nsfw';
+                                const colorClass = currentTags.includes(tag) 
+                                    ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' 
+                                    : isAiGenerated 
+                                        ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40' 
+                                        : getCategoryColor(category, isDarkMode);
+
+                                return (
+                                <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm flex items-center gap-1 ${colorClass}`}>
+                                    {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${currentTags.includes(tag) ? 'bg-white text-indigo-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                                    {isAiGenerated && <Sparkles size={10} className={currentTags.includes(tag) ? 'text-white' : ''} />}
+                                    {tag}
+                                </button>
+                            )})}
+                        </div>
+                    </>
+                    ) : (
+                        <div className={`flex-1 p-4 flex flex-col gap-4 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                            <textarea 
+                                value={caption}
+                                onChange={(e) => setCaption(e.target.value)}
+                                placeholder="Scrivi una didascalia o generane una con l'IA..."
+                                className={`flex-1 w-full p-3 rounded-xl border resize-none outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400'}`}
+                            />
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={handleGenerateCaption}
+                                    disabled={isProcessingAI}
+                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'}`}
+                                >
+                                    {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                    Genera con IA
+                                </button>
+                                <button 
+                                    onClick={handleSaveCaption}
+                                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md transition-all"
+                                >
+                                    Salva Didascalia
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0 flex flex-col gap-3`}>
                         
                         {/* ITALIANO: Sezione Strumenti AI */}
