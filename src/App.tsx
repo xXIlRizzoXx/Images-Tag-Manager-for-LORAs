@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2 } from 'lucide-react';
 import { translations } from './constants';
@@ -19,6 +19,7 @@ import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
+import { getGeminiTags } from './services/geminiService';
 
 // @ts-ignore
 import AIWorker from './workers/ai.worker?worker';
@@ -52,6 +53,25 @@ export default function App() {
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
 
+    const [aiModel, setAiModel] = useState(() => localStorage.getItem('aiModel') || 'built-in');
+    const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
+    const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState(false);
+    const [tempApiKey, setTempApiKey] = useState('');
+
+    useEffect(() => {
+        if (isApiKeyDialogOpen) {
+            setTempApiKey(geminiApiKey);
+        }
+    }, [isApiKeyDialogOpen, geminiApiKey]);
+
+    useEffect(() => {
+        localStorage.setItem('aiModel', aiModel);
+    }, [aiModel]);
+
+    useEffect(() => {
+        localStorage.setItem('geminiApiKey', geminiApiKey);
+    }, [geminiApiKey]);
+
     const [isGlobalTagManagerOpen, setIsGlobalTagManagerOpen] = useState(false);
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
     const [aiDiscoveredTags, setAiDiscoveredTags] = useState<string[]>([]);
@@ -66,6 +86,59 @@ export default function App() {
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const globalWorkerRef = useRef<Worker | null>(null);
+
+    const [history, setHistory] = useState<any[][]>([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const isUndoRedoAction = useRef(false);
+
+    useEffect(() => {
+        if (isUndoRedoAction.current) {
+            isUndoRedoAction.current = false;
+            return;
+        }
+        setHistory(prev => {
+            const newHistory = prev.slice(0, historyIndex + 1);
+            newHistory.push(images);
+            if (newHistory.length > 50) newHistory.shift();
+            return newHistory;
+        });
+        setHistoryIndex(prev => Math.min(prev + 1, 49));
+    }, [images]);
+
+    const handleUndo = useCallback(() => {
+        if (historyIndex > 0) {
+            isUndoRedoAction.current = true;
+            setHistoryIndex(prev => prev - 1);
+            setImages(history[historyIndex - 1]);
+            setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info' });
+        }
+    }, [history, historyIndex, t]);
+
+    const handleRedo = useCallback(() => {
+        if (historyIndex < history.length - 1) {
+            isUndoRedoAction.current = true;
+            setHistoryIndex(prev => prev + 1);
+            setImages(history[historyIndex + 1]);
+            setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info' });
+        }
+    }, [history, historyIndex, t]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                handleRedo();
+            } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                handleUndo();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleUndo, handleRedo]);
 
     useEffect(() => {
         globalWorkerRef.current = new AIWorker();
@@ -86,45 +159,63 @@ export default function App() {
 
         for (const img of images) {
             try {
-                const imageUrl = URL.createObjectURL(img.file);
-                
-                const result = await new Promise<any>((resolve, reject) => {
-                    if (!globalWorkerRef.current) return reject("No worker");
+                let uniqueTags: string[] = [];
+
+                if (aiModel !== 'built-in') {
+                    if (!geminiApiKey) {
+                        setIsGlobalAutoTagging(false);
+                        setIsApiKeyDialogOpen(true);
+                        return;
+                    }
+                    uniqueTags = await getGeminiTags(img.file, geminiApiKey, aiModel, globalMaxTags);
+                } else {
+                    const imageUrl = URL.createObjectURL(img.file);
                     
-                    const handleMessage = (e: MessageEvent) => {
-                        if (e.data.type === 'progress') {
-                            if (e.data.data.status === 'progress') {
-                                setIsDownloadingModel(true);
-                                setGlobalModelProgress(Math.round(e.data.data.progress || 0));
-                            } else if (e.data.data.status === 'done') {
-                                setIsDownloadingModel(false);
+                    const result = await new Promise<any>((resolve, reject) => {
+                        if (!globalWorkerRef.current) return reject("No worker");
+                        
+                        const handleMessage = (e: MessageEvent) => {
+                            if (e.data.type === 'progress') {
+                                if (e.data.data.status === 'progress') {
+                                    setIsDownloadingModel(true);
+                                    setGlobalModelProgress(Math.round(e.data.data.progress || 0));
+                                } else if (e.data.data.status === 'done') {
+                                    setIsDownloadingModel(false);
+                                }
+                            } else if (e.data.type === 'result') {
+                                globalWorkerRef.current?.removeEventListener('message', handleMessage);
+                                resolve(e.data.data);
+                            } else if (e.data.type === 'error') {
+                                globalWorkerRef.current?.removeEventListener('message', handleMessage);
+                                reject(e.data.data);
                             }
-                        } else if (e.data.type === 'result') {
-                            globalWorkerRef.current?.removeEventListener('message', handleMessage);
-                            resolve(e.data.data);
-                        } else if (e.data.type === 'error') {
-                            globalWorkerRef.current?.removeEventListener('message', handleMessage);
-                            reject(e.data.data);
-                        }
-                    };
-                    
-                    globalWorkerRef.current.addEventListener('message', handleMessage);
-                    globalWorkerRef.current.postMessage({
-                        type: 'generate',
-                        data: { imageUrl, maxTags: globalMaxTags }
+                        };
+                        
+                        globalWorkerRef.current.addEventListener('message', handleMessage);
+                        globalWorkerRef.current.postMessage({
+                            type: 'generate',
+                            data: { imageUrl, maxTags: globalMaxTags }
+                        });
                     });
-                });
 
-                URL.revokeObjectURL(imageUrl);
+                    URL.revokeObjectURL(imageUrl);
 
-                if (result && Array.isArray(result) && result.length > 0) {
-                    const tags = result.map((r: any) => r.label.split(',')[0].trim().toLowerCase().replace(/\s+/g, '_'));
-                    const uniqueTags = [...new Set(tags)].slice(0, globalMaxTags) as string[];
-                    
+                    if (result && Array.isArray(result) && result.length > 0) {
+                        const tags = result.map((r: any) => r.label.split(',')[0].trim().toLowerCase().replace(/\s+/g, '_'));
+                        uniqueTags = [...new Set(tags)].slice(0, globalMaxTags) as string[];
+                    }
+                }
+
+                if (uniqueTags.length > 0) {
                     newDiscoveredTags.push(...uniqueTags);
                 }
             } catch (err) {
                 console.error("Error processing image:", img.id, err);
+                if (aiModel !== 'built-in' && err instanceof Error && err.message.includes('API key not valid')) {
+                    setIsGlobalAutoTagging(false);
+                    setIsApiKeyDialogOpen(true);
+                    return;
+                }
             }
             
             processed++;
@@ -635,6 +726,61 @@ export default function App() {
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
             <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
             
+            {isApiKeyDialogOpen && (
+                <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
+                    <div className={`w-full max-w-md p-6 rounded-3xl shadow-2xl border ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} flex flex-col gap-4`}>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-500 rounded-xl">
+                                <Sparkles size={24} />
+                            </div>
+                            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>API Key Richiesta</h2>
+                        </div>
+                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                            Per utilizzare i modelli avanzati di Nano Banana (Gemini), è necessaria una API Key gratuita.
+                        </p>
+                        <div className={`p-3 rounded-xl text-xs ${isDarkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-50 text-gray-500'}`}>
+                            <p className="mb-2"><strong>Come ottenerla:</strong></p>
+                            <ol className="list-decimal pl-4 space-y-1">
+                                <li>Vai su <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">Google AI Studio</a></li>
+                                <li>Accedi con il tuo account Google</li>
+                                <li>Clicca su "Create API key"</li>
+                                <li>Copia la chiave generata e incollala qui sotto</li>
+                            </ol>
+                        </div>
+                        <input 
+                            type="password" 
+                            value={tempApiKey} 
+                            onChange={(e) => setTempApiKey(e.target.value)} 
+                            placeholder="Incolla qui la tua API Key..." 
+                            className={`w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                        />
+                        <div className="flex justify-end gap-3 mt-2">
+                            <button 
+                                onClick={() => {
+                                    setIsApiKeyDialogOpen(false);
+                                    if (!geminiApiKey) setAiModel('built-in');
+                                }} 
+                                className={`px-4 py-2 rounded-xl font-medium transition-colors ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+                            >
+                                Annulla
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    if (tempApiKey.trim()) {
+                                        setGeminiApiKey(tempApiKey.trim());
+                                        setIsApiKeyDialogOpen(false);
+                                        setToast({ show: true, message: "API Key salvata con successo!", type: 'success' });
+                                    }
+                                }} 
+                                className="px-4 py-2 rounded-xl font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shadow-md"
+                            >
+                                Salva e Continua
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
             
             {isTrashOpen && (
@@ -764,6 +910,9 @@ export default function App() {
                 aiDiscoveredTags={aiDiscoveredTags}
                 onTagsDiscovered={(newTags: string[]) => setAiDiscoveredTags(prev => [...new Set([...prev, ...newTags])])}
                 onMoveToTrash={handleMoveToTrash}
+                aiModel={aiModel}
+                geminiApiKey={geminiApiKey}
+                setIsApiKeyDialogOpen={setIsApiKeyDialogOpen}
             />
 
             <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
@@ -803,6 +952,30 @@ export default function App() {
                                         <div className="flex items-center justify-between">
                                             <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{isDarkMode ? <Moon size={16} className="text-purple-400"/> : <Sun size={16} className="text-amber-500"/>} {t.theme}</div>
                                             <AppleToggle checked={isDarkMode} onChange={setIsDarkMode} colorClass="bg-indigo-500" iconOn={<Moon size={10}/>} iconOff={<Sun size={10}/>} />
+                                        </div>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        <div className="flex flex-col gap-2">
+                                            <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
+                                                <Sparkles size={16} className="text-purple-500"/>
+                                                Modello AI
+                                            </div>
+                                            <select 
+                                                value={aiModel} 
+                                                onChange={(e) => {
+                                                    const newModel = e.target.value;
+                                                    setAiModel(newModel);
+                                                    if (newModel !== 'built-in' && !geminiApiKey) {
+                                                        setIsApiKeyDialogOpen(true);
+                                                    }
+                                                }}
+                                                className={`w-full text-xs rounded-lg border px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
+                                            >
+                                                <option value="built-in">Modello Incorporato</option>
+                                                <option disabled>──────────</option>
+                                                <option value="gemini-2.5-flash">Nano Banana (Veloce) {geminiApiKey ? '✅' : '🔑'}</option>
+                                                <option value="gemini-3.1-flash-preview">Nano Banana 2 (Avanzato) {geminiApiKey ? '✅' : '🔑'}</option>
+                                                <option value="gemini-3.1-pro-preview">Nano Banana Pro (Massima Qualità) {geminiApiKey ? '✅' : '🔑'}</option>
+                                            </select>
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
                                         <div className="flex items-center justify-between">

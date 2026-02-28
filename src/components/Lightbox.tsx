@@ -18,7 +18,9 @@ import { AppleToggle } from './ui';
 // @ts-ignore
 import AIWorker from '../workers/ai.worker?worker';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash }: any) => {
+import { getGeminiTags } from '../services/geminiService';
+
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -93,16 +95,50 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
     };
 
-    const handleMagicWand = () => {
-        if (isProcessingAI || !workerRef.current || !image) return;
+    const handleMagicWand = async () => {
+        if (isProcessingAI || !image) return;
         
         setIsProcessingAI(true);
         setAiProgress(0);
         
-        workerRef.current.postMessage({
-            type: 'generate',
-            data: { imageUrl: highResUrl }
-        });
+        if (aiModel !== 'built-in') {
+            if (!geminiApiKey) {
+                setIsProcessingAI(false);
+                setIsApiKeyDialogOpen(true);
+                return;
+            }
+            try {
+                const tags = await getGeminiTags(image.file, geminiApiKey, aiModel, maxTags);
+                if (tags.length > 0) {
+                    const uniqueTags = [...new Set(tags)].slice(0, maxTags);
+                    
+                    if (onTagsDiscovered) {
+                        onTagsDiscovered(uniqueTags);
+                    }
+                    
+                    const newTags = uniqueTags.filter(t => !currentTags.includes(t));
+                    if (newTags.length > 0) {
+                        updateTags(image.id, [...currentTags, ...newTags]);
+                    }
+                    
+                    soundManager.chime();
+                    if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
+                }
+            } catch (err) {
+                console.error("Error processing image with Gemini:", err);
+                if (err instanceof Error && err.message.includes('API key not valid')) {
+                    setIsApiKeyDialogOpen(true);
+                }
+            } finally {
+                setIsProcessingAI(false);
+            }
+        } else {
+            if (!workerRef.current) return;
+            workerRef.current.postMessage({
+                type: 'generate',
+                data: { imageUrl: highResUrl, maxTags }
+            });
+        }
     };
 
     const handleKeyDown = useCallback((e: any) => {
@@ -255,6 +291,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 {t.removeAllTags}
                             </button>
                         </div>
+                        <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-3 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
                     </div>
 
                     <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -312,7 +349,6 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                             )}
                         </div>
 
-                        <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
                         <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
                     </div>
                 </div>
