@@ -13,6 +13,8 @@
 *******************************************************************************/
 export const translations = {
     it: {
+        undoSuccess: "Azione annullata",
+        redoSuccess: "Azione ripristinata",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "File",
         importImages: "Importa immagini",
@@ -131,6 +133,8 @@ export const translations = {
         cleanUnusedTags: "Pulisci tag inutilizzati",
     },
     en: {
+        undoSuccess: "Action undone",
+        redoSuccess: "Action redone",
         appTitle: "Images Tag Manager for LORAs",
         fileMenu: "File",
         importImages: "Import images",
