@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3 } from 'lucide-react';
 import { getTagCategory, getCategoryColor } from './utils/tagCategorization';
 import { 
     PieChart as RechartsPieChart, 
@@ -33,6 +33,7 @@ import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
+import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { getGeminiTags } from './services/geminiService';
 
 // @ts-ignore
@@ -93,6 +94,7 @@ export default function App() {
     }, [customPrompt]);
 
     const [isGlobalTagManagerOpen, setIsGlobalTagManagerOpen] = useState(false);
+    const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
     const [aiDiscoveredTags, setAiDiscoveredTags] = useState<string[]>([]);
     const [isGlobalAutoTagging, setIsGlobalAutoTagging] = useState(false);
@@ -109,6 +111,25 @@ export default function App() {
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
+
+    const handleSuggestedTagClick = (tag: string) => {
+        if (selectedImageId) {
+            // Siamo nella Lightbox
+            const image = images.find(img => img.id === selectedImageId);
+            if (image && !image.tags.includes(tag)) {
+                updateImageTags(selectedImageId, [...image.tags, tag]);
+                soundManager.pop();
+            }
+        } else if (selectedForBulk.length > 0) {
+            // Siamo nella vista principale con immagini selezionate
+            if (!stagedBulkTags.includes(tag)) {
+                setStagedBulkTags(prev => [...prev, tag]);
+                soundManager.pop();
+            }
+        } else {
+            showNotification(t.selectImagesFirst || "Seleziona una o più immagini per aggiungere tag", "info");
+        }
+    };
     const isUndoRedoAction = useRef(false);
 
     useEffect(() => {
@@ -719,8 +740,12 @@ export default function App() {
             {showSplash && (
                 <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
                     <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
-                        <div className={`p-6 rounded-3xl ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
-                            <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
+                        <div className="relative flex items-center justify-center">
+                            <div className={`absolute inset-0 blur-2xl rounded-full ${isDarkMode ? 'bg-purple-500/20' : 'bg-purple-500/30'}`}></div>
+                            <img src="/logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); }} />
+                            <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
+                                <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
+                            </div>
                         </div>
                         <div className="text-center">
                             <h1 className={`text-4xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -938,6 +963,7 @@ export default function App() {
                     geminiApiKey={geminiApiKey}
                     setIsApiKeyDialogOpen={setIsApiKeyDialogOpen}
                     customPrompt={customPrompt}
+                    lang={lang}
                 />
             )}
 
@@ -951,7 +977,13 @@ export default function App() {
                     <div className={`border-b ${isDarkMode ? 'border-gray-800/50 bg-black/20' : 'border-gray-200 bg-gray-50/50'} p-4 md:p-5 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20`}>
                         <div className="flex-1 flex justify-start w-full md:w-auto">
                         </div>
-                        <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto"><div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden sm:block"><Tag className="text-white" size={20} /></div><h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1></div>
+                        <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto">
+                            <div className="hidden sm:block relative">
+                                <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-header-logo')!.classList.remove('hidden'); }} />
+                                <div id="fallback-header-logo" className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden"><Tag className="text-white" size={20} /></div>
+                            </div>
+                            <h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1>
+                        </div>
                         <div className="flex-1 flex justify-end w-full md:w-auto gap-2">
                             <button onClick={() => setIsTrashOpen(true)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}>
                                 <span className="font-semibold text-sm hidden sm:inline-block">{t.trash}</span>
@@ -1094,11 +1126,11 @@ export default function App() {
                     <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-center gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
                         <div className={`w-full lg:w-[260px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
-                            <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-white border-gray-700/50' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white border-transparent'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm border`}>
-                                <Folder size={16} className={isDarkMode ? "text-amber-500" : "text-amber-200"} />
+                            <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
+                                <Folder size={16} />
                                 <span>{t.loadFolder}</span>
                             </button>
-                            <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-800/80 hover:bg-red-900/30 text-red-400 border-gray-700/50 hover:border-red-800/50' : 'bg-red-600 hover:bg-red-700 text-white border-transparent'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm border`}>
+                            <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
                                 <Trash size={16} />
                                 <span>{t.resetProject}</span>
                             </button>
@@ -1127,10 +1159,17 @@ export default function App() {
                                     <button 
                                         onClick={handleGlobalAutoTagging}
                                         disabled={isGlobalAutoTagging || images.length === 0}
-                                        className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95' : 'bg-white border border-gray-200 text-indigo-600 hover:bg-indigo-50 shadow-sm active:scale-95')}`}
+                                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95' : 'bg-white border border-gray-200 text-indigo-600 hover:bg-indigo-50 shadow-sm active:scale-95')}`}
                                     >
                                         {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className={`absolute -top-1 -right-1 animate-pulse ${isDarkMode ? 'text-yellow-300' : 'text-yellow-500'}`} /></div>}
                                         {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsTagSuggestionsOpen(!isTagSuggestionsOpen)}
+                                        className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md active:scale-95`}
+                                    >
+                                        <Tags size={14} />
+                                        {t.suggestedTags}
                                     </button>
                                 </div>
                                 {isGlobalAutoTagging && (
@@ -1147,15 +1186,17 @@ export default function App() {
                         </div>
                         
                         <div className={`w-full lg:w-[380px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
-                            {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
-                            {/* ENGLISH: Button to view all project tags */}
-                            <button 
-                                onClick={() => setIsGlobalTagManagerOpen(true)}
-                                className="w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm"
-                            >
-                                <Tag size={16} />
-                                <span>{t.allTagsButton}</span>
-                            </button>
+                            <div className="flex gap-2">
+                                {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
+                                {/* ENGLISH: Button to view all project tags */}
+                                <button 
+                                    onClick={() => setIsGlobalTagManagerOpen(true)}
+                                    className="w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm"
+                                >
+                                    <Tag size={16} />
+                                    <span>{t.allTagsButton}</span>
+                                </button>
+                            </div>
                             <div className="w-full flex flex-col gap-1.5">
                                 <div className="w-full flex gap-3 items-start">
                                     {/* ITALIANO: Pulsante Salva Modifiche */}
@@ -1215,36 +1256,72 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`p-4 md:p-6 ${isDarkMode ? 'bg-black/20' : 'bg-gray-200/40'} flex-1 overflow-y-auto min-h-0 relative`}>
-                        {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> : 
-                        <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
-                            {displayedImages.map((img) => (
-                            <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
-                                <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
-                                    <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
-                                    <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
-                                    <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.moveToTrash}><Trash2 size={14} /></button>
-                                </div>
-                                <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                                    {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
-                                    {/* ENGLISH: Tag area under the preview, aesthetically organized */}
-                                    <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                        <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
+                    <div className="flex-1 flex flex-row overflow-hidden relative">
+                        <div className={`p-4 md:p-6 ${isDarkMode ? 'bg-black/20' : 'bg-gray-200/40'} flex-1 overflow-y-auto min-h-0 relative`}>
+                            {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> : 
+                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
+                                {displayedImages.map((img) => (
+                                <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
+                                    <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
+                                        <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
+                                        <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
+                                        <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.moveToTrash}><Trash2 size={14} /></button>
+                                    </div>
+                                    <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                        {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
+                                        {/* ENGLISH: Tag area under the preview, aesthetically organized */}
+                                        <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
+                                            <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            ))}
-                        </div>}
+                                ))}
+                            </div>}
+                        </div>
+                        <TagSuggestionsPanel 
+                            isOpen={isTagSuggestionsOpen} 
+                            onClose={() => setIsTagSuggestionsOpen(false)} 
+                            onTagClick={handleSuggestedTagClick} 
+                            lang={lang} 
+                            isDarkMode={isDarkMode} 
+                            t={t} 
+                            selectedTags={stagedBulkTags}
+                        />
                     </div>
 
                     {selectedForBulk.length > 0 && (
                         <div className="absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl bg-gray-900/95 backdrop-blur-xl border border-gray-700 p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5">
                             <div className="w-full flex flex-col gap-3 h-full">
                                 <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className="p-1.5 bg-indigo-900/50 rounded-lg text-indigo-400"><Grid3X3 size={18} /></div><div><h3 className="text-sm font-bold text-gray-200 leading-tight">{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className="text-[10px] text-gray-500 uppercase tracking-wide">{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className="p-1.5 rounded-full border border-gray-600 text-gray-400 hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm"><X size={14} /></button></div>
-                                <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll p-1 border-y border-gray-800">
-                                    {allUniqueTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : allUniqueTags.map(tag => (
-                                        <button key={tag} onClick={() => setStagedBulkTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${stagedBulkTags.includes(tag) ? 'bg-indigo-500 border-2 border-indigo-500 text-white shadow-md scale-105' : selectedForBulk.some(id => images.find(i => i.id === id)?.tags.includes(tag)) ? 'bg-transparent border-2 border-gray-500 border-dashed text-gray-300 hover:bg-gray-800' : 'bg-gray-800 border-2 border-transparent text-gray-200 hover:bg-gray-700 shadow-sm'}`}>{tag}</button>
-                                    ))}
+                                <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll p-[10px] border-y border-gray-800">
+                                    {(() => {
+                                        const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
+                                        return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
+                                            const category = getTagCategory(tag);
+                                            const colorClass = getCategoryColor(category, isDarkMode);
+                                            const isStaged = stagedBulkTags.includes(tag);
+                                            const isPartiallySelected = selectedForBulk.some(id => images.find(i => i.id === id)?.tags.includes(tag));
+                                            
+                                            let buttonClass = '';
+                                            if (isStaged) {
+                                                buttonClass = `${colorClass} ring-2 ring-offset-1 ${isDarkMode ? 'ring-offset-gray-900 ring-white' : 'ring-offset-white ring-black'} shadow-md scale-105 font-bold`;
+                                            } else if (isPartiallySelected) {
+                                                const textColorMatch = colorClass.match(/text-[a-z]+-\d+/);
+                                                const textColor = textColorMatch ? textColorMatch[0] : (isDarkMode ? 'text-gray-300' : 'text-gray-600');
+                                                const borderColor = textColor.replace('text-', 'border-');
+                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} hover:bg-gray-800/50 opacity-80`;
+                                            } else {
+                                                buttonClass = `${colorClass} border border-transparent hover:brightness-110 shadow-sm`;
+                                            }
+                                            
+                                            return (
+                                                <button key={tag} onClick={() => setStagedBulkTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1 ${buttonClass}`}>
+                                                    {category === 'nsfw' && <span className="font-bold text-[9px] bg-red-500 text-white px-1 rounded-sm">+18</span>}
+                                                    {tag}
+                                                </button>
+                                            );
+                                        });
+                                    })()}
                                 </div>
                                 <div className="flex justify-end gap-2 shrink-0 h-9 transition-all">
                                     {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className="px-4 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold transition-colors text-xs">{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}
@@ -1361,9 +1438,13 @@ export default function App() {
                              {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
                              allUniqueTags.map(tag => {
                                 const isAiGenerated = aiDiscoveredTags.includes(tag);
+                                const category = getTagCategory(tag);
+                                const colorClass = getCategoryColor(category, isDarkMode);
+                                
                                 return (
-                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}>
+                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : colorClass}`}>
                                     {isAiGenerated && <Sparkles size={10} className="text-purple-500" />}
+                                    {category === 'nsfw' && !isAiGenerated && <span className="font-bold text-[9px] bg-red-500 text-white px-1 rounded-sm">+18</span>}
                                     {tag}
                                     <button onClick={() => handleDeleteTagFromProject(tag)} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-gray-400">
                                         <X size={10} />
