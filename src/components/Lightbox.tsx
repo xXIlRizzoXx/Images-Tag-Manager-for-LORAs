@@ -12,7 +12,7 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles, Trash2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles, Trash2, Tags } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 // @ts-ignore
@@ -21,8 +21,9 @@ import AIWorker from '../workers/ai.worker?worker';
 import { getGeminiTags, getGeminiCaption } from '../services/geminiService';
 
 import { getTagCategory, getCategoryColor } from '../utils/tagCategorization';
+import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen, customPrompt, updateImageCaption }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen, customPrompt, updateImageCaption, lang }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -31,6 +32,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
     const [activeTab, setActiveTab] = useState<'tags' | 'caption'>('tags');
     const [caption, setCaption] = useState(image.caption || '');
+    const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
     
     // ITALIANO: Stato per l'elaborazione AI
     // ENGLISH: State for AI processing
@@ -345,6 +347,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 </button>
                             </div>
                             <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-3 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
+                            
+                            <button 
+                                onClick={() => {
+                                    setIsTagSuggestionsOpen(!isTagSuggestionsOpen);
+                                }}
+                                className={`w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-colors border ${isDarkMode ? 'bg-cyan-900/30 border-cyan-800/50 text-cyan-400 hover:bg-cyan-900/50' : 'bg-cyan-50 border-cyan-100 text-cyan-600 hover:bg-cyan-100'}`}
+                            >
+                                <Tags size={14} />
+                                {t.suggestedTags || 'Tag Suggeriti'}
+                            </button>
                         </div>
 
                         <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -352,16 +364,22 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 const isAiGenerated = aiDiscoveredTags.includes(tag);
                                 const category = getTagCategory(tag);
                                 const isNsfw = category === 'nsfw';
-                                const colorClass = currentTags.includes(tag) 
-                                    ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600' 
-                                    : isAiGenerated 
-                                        ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40' 
-                                        : getCategoryColor(category, isDarkMode);
+                                const baseColorClass = getCategoryColor(category, isDarkMode);
+                                const isSelected = currentTags.includes(tag);
+                                
+                                let colorClass = '';
+                                if (isSelected) {
+                                    colorClass = `${baseColorClass} ring-2 ring-offset-1 ${isDarkMode ? 'ring-offset-gray-800 ring-white' : 'ring-offset-white ring-black'} shadow-md scale-105 font-bold`;
+                                } else if (isAiGenerated) {
+                                    colorClass = 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40';
+                                } else {
+                                    colorClass = `${baseColorClass} border border-transparent hover:brightness-110 shadow-sm`;
+                                }
 
                                 return (
-                                <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight font-medium transition-colors border shadow-sm flex items-center gap-1 ${colorClass}`}>
-                                    {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${currentTags.includes(tag) ? 'bg-white text-indigo-500' : 'bg-red-500 text-white'}`}>+18</span>}
-                                    {isAiGenerated && <Sparkles size={10} className={currentTags.includes(tag) ? 'text-white' : ''} />}
+                                <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
+                                    {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${isSelected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                                    {isAiGenerated && <Sparkles size={10} className={isSelected ? 'text-white' : ''} />}
                                     {tag}
                                 </button>
                             )})}
@@ -441,6 +459,21 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
                     </div>
                 </div>
+                <TagSuggestionsPanel 
+                    isOpen={isTagSuggestionsOpen} 
+                    onClose={() => setIsTagSuggestionsOpen(false)} 
+                    onTagClick={(tag) => {
+                        if (!currentTags.includes(tag)) {
+                            updateTags(image.id, [...currentTags, tag]);
+                            soundManager.pop();
+                        }
+                    }} 
+                    lang={lang} 
+                    isDarkMode={isDarkMode} 
+                    t={t} 
+                    isLightbox={true}
+                    selectedTags={currentTags}
+                />
             </div>
         </div>
     );

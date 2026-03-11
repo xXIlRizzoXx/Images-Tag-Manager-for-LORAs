@@ -131,6 +131,8 @@ export const translations = {
         tagsDiscovered: "tag trovati",
         deleteAllTags: "Elimina tutti i tag del progetto",
         cleanUnusedTags: "Pulisci tag inutilizzati",
+        suggestedTags: "Tag Suggeriti",
+        selectImagesFirst: "Seleziona una o più immagini per aggiungere tag",
     },
     en: {
         undoSuccess: "Action undone",
@@ -251,6 +253,8 @@ export const translations = {
         tagsDiscovered: "tags found",
         deleteAllTags: "Delete All Tags",
         cleanUnusedTags: "Clean Unused Tags",
+        suggestedTags: "Suggested Tags",
+        selectImagesFirst: "Select one or more images to add tags",
     },
     fr: {
         undoSuccess: "Action annulée",
@@ -370,6 +374,8 @@ export const translations = {
         tagsDiscovered: "tags trouvés",
         deleteAllTags: "Supprimer tous les tags",
         cleanUnusedTags: "Nettoyer les tags inutilisés",
+        suggestedTags: "Tags Suggérés",
+        selectImagesFirst: "Sélectionnez une ou plusieurs images pour ajouter des tags",
     },
     es: {
         undoSuccess: "Acción deshecha",
@@ -489,6 +495,8 @@ export const translations = {
         tagsDiscovered: "etiquetas encontradas",
         deleteAllTags: "Eliminar todas las etiquetas",
         cleanUnusedTags: "Limpiar etiquetas no utilizadas",
+        suggestedTags: "Etiquetas Sugeridas",
+        selectImagesFirst: "Seleccione una o más imágenes para agregar etiquetas",
     },
     de: {
         undoSuccess: "Aktion rückgängig gemacht",
@@ -608,6 +616,8 @@ export const translations = {
         tagsDiscovered: "Tags gefunden",
         deleteAllTags: "Alle Tags löschen",
         cleanUnusedTags: "Ungenutzte Tags bereinigen",
+        suggestedTags: "Vorgeschlagene Tags",
+        selectImagesFirst: "Wählen Sie ein oder mehrere Bilder aus, um Tags hinzuzufügen",
     },
     zh: {
         undoSuccess: "操作已撤销",
@@ -727,6 +737,8 @@ export const translations = {
         tagsDiscovered: "发现标签",
         deleteAllTags: "删除所有标签",
         cleanUnusedTags: "清除未使用的标签",
+        suggestedTags: "推荐标签",
+        selectImagesFirst: "选择一张或多张图片以添加标签",
     },
     ja: {
         undoSuccess: "操作を取り消しました",
@@ -846,6 +858,8 @@ export const translations = {
         tagsDiscovered: "発見されたタグ",
         deleteAllTags: "すべてのタグを削除",
         cleanUnusedTags: "未使用のタグをクリーンアップ",
+        suggestedTags: "おすすめタグ",
+        selectImagesFirst: "タグを追加するには、1つ以上の画像を選択してください",
     },
     pt: {
         undoSuccess: "Ação desfeita",
@@ -965,6 +979,8 @@ export const translations = {
         tagsDiscovered: "Tags descobertas",
         deleteAllTags: "Excluir todas as tags",
         cleanUnusedTags: "Limpar tags não utilizadas",
+        suggestedTags: "Tags Sugeridas",
+        selectImagesFirst: "Selecione uma ou mais imagens para adicionar tags",
     },
     ru: {
         undoSuccess: "Действие отменено",
@@ -1084,5 +1100,7 @@ export const translations = {
         tagsDiscovered: "Найденные теги",
         deleteAllTags: "Удалить все теги",
         cleanUnusedTags: "Очистить неиспользуемые теги",
+        suggestedTags: "Предлагаемые теги",
+        selectImagesFirst: "Выберите одно или несколько изображений для добавления тегов",
     }
 };
