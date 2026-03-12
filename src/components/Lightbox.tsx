@@ -359,7 +359,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                             </button>
                         </div>
 
-                        <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                        <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                             {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
                                 const isAiGenerated = aiDiscoveredTags.includes(tag);
                                 const category = getTagCategory(tag);
@@ -416,28 +416,30 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         {/* ITALIANO: Sezione Strumenti AI */}
                         {/* ENGLISH: AI Tools Section */}
                         <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'} flex flex-col gap-2`}>
-                            <div className="flex items-center justify-between mb-1">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.aiTools}</span>
-                                <div className="flex items-center gap-1">
-                                    <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.maxTags}:</span>
-                                    <input 
-                                        type="number" 
-                                        min="1" 
-                                        max="20" 
-                                        value={maxTags} 
-                                        onChange={(e) => setMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
-                                        className={`w-10 px-1 py-0.5 text-[10px] rounded border text-center outline-none focus:ring-1 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
-                                    />
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex flex-col gap-1.5">
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.aiTools}</span>
+                                    <div className="flex items-center gap-1">
+                                        <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.maxTags}:</span>
+                                        <input 
+                                            type="number" 
+                                            min="1" 
+                                            max="20" 
+                                            value={maxTags} 
+                                            onChange={(e) => setMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
+                                            className={`w-10 px-1 py-0.5 text-[10px] rounded border text-center outline-none focus:ring-1 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
+                                        />
+                                    </div>
                                 </div>
+                                <button 
+                                    onClick={handleMagicWand} 
+                                    disabled={isProcessingAI}
+                                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shrink-0 ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                >
+                                    {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
+                                    {isProcessingAI ? t.generating : t.magicWand}
+                                </button>
                             </div>
-                            <button 
-                                onClick={handleMagicWand} 
-                                disabled={isProcessingAI}
-                                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
-                            >
-                                {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
-                                {isProcessingAI ? t.generating : t.magicWand}
-                            </button>
                             {/* ITALIANO: Barra di caricamento per l'AI */}
                             {/* ENGLISH: Loading bar for AI */}
                             {isProcessingAI && (

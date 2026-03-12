@@ -65,7 +65,7 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
     };
     
     return (
-        <div onClick={() => !readOnly && inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-1 p-1.5 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto ${readOnly ? 'cursor-default' : 'cursor-text'} ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
+        <div onClick={() => !readOnly && inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-3.5 p-2 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto lightbox-scroll ${readOnly ? 'cursor-default' : 'cursor-text'} ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
         {tags.map((tag: string, index: number) => {
             const category = getTagCategory(tag);
             const isNsfw = category === 'nsfw';

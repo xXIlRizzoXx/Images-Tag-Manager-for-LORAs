@@ -72,7 +72,7 @@ export const getCategoryColor = (category: TagCategory, isDarkMode: boolean) => 
         case 'time_of_day':
             return isDarkMode ? 'bg-sky-900/30 text-sky-400 border-sky-800/50' : 'bg-sky-100 text-sky-700 border-sky-200';
         case 'weather':
-            return isDarkMode ? 'bg-blue-900/30 text-blue-400 border-blue-800/50' : 'bg-blue-100 text-blue-700 border-blue-200';
+            return isDarkMode ? 'bg-zinc-900/30 text-zinc-400 border-zinc-800/50' : 'bg-zinc-100 text-zinc-700 border-zinc-200';
         case 'lighting':
             return isDarkMode ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800/50' : 'bg-yellow-100 text-yellow-700 border-yellow-200';
         case 'anthro_traits':
