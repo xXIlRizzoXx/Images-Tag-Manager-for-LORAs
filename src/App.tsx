@@ -740,7 +740,7 @@ export default function App() {
                     <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
                         <div className="relative flex items-center justify-center">
                             <div className={`absolute inset-0 blur-2xl rounded-full ${isDarkMode ? 'bg-purple-500/20' : 'bg-purple-500/30'}`}></div>
-                            <img src="/logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); }} />
+                            <img src="./icon.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
                                 <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
                             </div>
@@ -977,7 +977,7 @@ export default function App() {
                         </div>
                         <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto">
                             <div className="hidden sm:block relative">
-                                <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-header-logo')!.classList.remove('hidden'); }} />
+                                <img src="./icon.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-header-logo')!.classList.remove('hidden'); }} />
                                 <div id="fallback-header-logo" className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden"><Tag className="text-white" size={20} /></div>
                             </div>
                             <h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1>
@@ -1095,7 +1095,7 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 3.6.0</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 3.7.0</span>
                                             <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>Copyright xXIlRizzoXx</span>
                                         </div>
                                     </div>
