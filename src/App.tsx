@@ -1143,10 +1143,10 @@ export default function App() {
                             
                             {/* ITALIANO: Strumenti di Auto Tagging Globale */}
                             {/* ENGLISH: Global Auto Tagging tools */}
-                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2`}>
+                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2 w-[600px] max-w-full mx-auto`}>
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} whitespace-nowrap`}>{t.maxTags}:</span>
+                                        <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} whitespace-nowrap`}>Max tag generati con AI:</span>
                                         <input 
                                             type="number" 
                                             min="1" 
@@ -1293,7 +1293,7 @@ export default function App() {
                         <div className="absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl bg-gray-900/95 backdrop-blur-xl border border-gray-700 p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5">
                             <div className="w-full flex flex-col gap-3 h-full">
                                 <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className="p-1.5 bg-indigo-900/50 rounded-lg text-indigo-400"><Grid3X3 size={18} /></div><div><h3 className="text-sm font-bold text-gray-200 leading-tight">{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className="text-[10px] text-gray-500 uppercase tracking-wide">{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className="p-1.5 rounded-full border border-gray-600 text-gray-400 hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm"><X size={14} /></button></div>
-                                <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll p-[10px] border-y border-gray-800">
+                                <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y border-gray-800" style={{ scrollbarGutter: 'stable' }}>
                                     {(() => {
                                         const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
                                         return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
@@ -1434,7 +1434,7 @@ export default function App() {
                                 </button>
                             </div>
                         </div>
-                        <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-1.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`}>
+                        <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`} style={{ scrollbarGutter: 'stable' }}>
                              {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
                              allUniqueTags.map(tag => {
                                 const isAiGenerated = aiDiscoveredTags.includes(tag);
