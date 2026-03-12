@@ -12,7 +12,7 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Wand2, Loader2, Tag, Sparkles, Trash2, Tags } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Loader2, Tag, Sparkles, Trash2, Tags } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 // @ts-ignore

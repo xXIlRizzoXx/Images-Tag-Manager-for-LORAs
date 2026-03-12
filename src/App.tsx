@@ -25,8 +25,7 @@ import {
     Bar,
     XAxis,
     YAxis,
-    CartesianGrid,
-    Legend
+    CartesianGrid
 } from 'recharts';
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
@@ -670,7 +669,6 @@ export default function App() {
 
     const updateImageTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, tags: newTags } : img));
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
-    const removeImage = (id: string) => { setImages(prev => prev.filter(img => img.id !== id)); setSelectedForBulk(p => p.filter(i => i !== id)); soundManager.click(); };
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
     
     const applyBulkTags = () => {
@@ -1532,7 +1530,7 @@ export default function App() {
                                                                 dataKey="value"
                                                                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                                                             >
-                                                                {pieData.map((entry, index) => (
+                                                                {pieData.map((_, index) => (
                                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                                 ))}
                                                             </Pie>
