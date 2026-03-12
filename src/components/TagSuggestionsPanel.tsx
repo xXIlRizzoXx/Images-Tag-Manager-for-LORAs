@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ChevronDown, ChevronRight, User, MapPin, Palette, Camera, Tag as TagIcon, Tags, Info, ChevronsDown, ChevronsUp } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, User, MapPin, Palette, Camera, Tag as TagIcon, Tags, ChevronsDown, ChevronsUp } from 'lucide-react';
 import { suggestedTagsData, TagCategoryList } from '../constants/tagSuggestions';
 import { getCategoryColor, TagCategory } from '../utils/tagCategorization';
 
