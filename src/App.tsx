@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3 } from 'lucide-react';
-import { getTagCategory, getCategoryColor } from './utils/tagCategorization';
+import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { 
     PieChart as RechartsPieChart, 
     Pie, 
@@ -425,7 +425,11 @@ export default function App() {
             const base = imgFiles[i].name.split('.').slice(0, -1).join('.');
             const thumb = await generateThumbnail(imgFiles[i]);
             const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(base) || [])])];
-            newImages.push({ id: Math.random().toString(36).substring(7), file: imgFiles[i], thumb, tags: combinedTags, originalTags: [...combinedTags] });
+            const orderedTags = [
+                ...globalTriggers.filter(t => combinedTags.includes(t)),
+                ...combinedTags.filter(t => !globalTriggers.includes(t))
+            ];
+            newImages.push({ id: Math.random().toString(36).substring(7), file: imgFiles[i], thumb, tags: orderedTags, originalTags: [...orderedTags] });
             setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
             if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
         }
@@ -519,6 +523,15 @@ export default function App() {
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
     };
 
+    // Helper function to order tags with global triggers first
+    const getOrderedTagString = (tags: string[]) => {
+        const orderedTags = [
+            ...globalTriggers.filter(t => tags.includes(t)),
+            ...tags.filter(t => !globalTriggers.includes(t))
+        ];
+        return orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
+    };
+
     // ITALIANO: Funzione per salvare i file (sovrascrive o crea ZIP)
     // ENGLISH: Function to save files (overwrite or create ZIP)
     const performSave = async (imagesToSave: any[], isExportAll = false) => {
@@ -528,7 +541,7 @@ export default function App() {
             try {
                 showNotification(t.processingFiles, "info");
                 for (const img of imagesToSave) {
-                    const tagString = img.tags.length > 0 ? img.tags.join(', ') + ',' : '';
+                    const tagString = getOrderedTagString(img.tags);
                     const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
                     const fileName = `${baseName}.txt`;
                     
@@ -561,7 +574,7 @@ export default function App() {
                     showNotification(t.processingFiles, "info");
                     
                     for (const img of imagesToSave) {
-                        const tagString = img.tags.length > 0 ? img.tags.join(', ') + ',' : '';
+                        const tagString = getOrderedTagString(img.tags);
                         const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
                         const fileName = `${baseName}.txt`;
                         
@@ -592,7 +605,7 @@ export default function App() {
                 const zip = new JSZip();
                 
                 imagesToSave.forEach((img) => {
-                    const tagString = img.tags.length > 0 ? img.tags.join(', ') + ',' : '';
+                    const tagString = getOrderedTagString(img.tags);
                     const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
                     zip.file(`${baseName}.txt`, tagString);
                 });
@@ -625,7 +638,7 @@ export default function App() {
         // ENGLISH: Fallback save method (multiple downloads in the browser)
         showNotification(t.infoSaveFallback, "info");
         imagesToSave.forEach((img, i) => setTimeout(() => {
-            const tagString = img.tags.length > 0 ? img.tags.join(', ') + ',' : '';
+            const tagString = getOrderedTagString(img.tags);
             const blob = new Blob([tagString], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); 
@@ -667,7 +680,13 @@ export default function App() {
         performSave(imagesWithTags, true);
     };
 
-    const updateImageTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, tags: newTags } : img));
+    const updateImageTags = (id: string, newTags: string[]) => {
+        const orderedTags = [
+            ...globalTriggers.filter(t => newTags.includes(t)),
+            ...newTags.filter(t => !globalTriggers.includes(t))
+        ];
+        setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
+    };
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
     
@@ -675,7 +694,11 @@ export default function App() {
         setImages(prev => prev.map(img => {
             if (selectedForBulk.includes(img.id)) {
                 const combinedTags = [...new Set([...img.tags, ...stagedBulkTags])];
-                return { ...img, tags: combinedTags };
+                const orderedTags = [
+                    ...globalTriggers.filter(t => combinedTags.includes(t)),
+                    ...combinedTags.filter(t => !globalTriggers.includes(t))
+                ];
+                return { ...img, tags: orderedTags };
             }
             return img;
         }));
@@ -698,7 +721,13 @@ export default function App() {
                 let updatedTags = [...img.tags];
                 added.forEach(tag => { if (!updatedTags.includes(tag)) updatedTags.unshift(tag); });
                 removed.forEach(tag => { updatedTags = updatedTags.filter(t => t !== tag); });
-                return { ...img, tags: updatedTags };
+                
+                const orderedTags = [
+                    ...newGlobalTags.filter(t => updatedTags.includes(t)),
+                    ...updatedTags.filter(t => !newGlobalTags.includes(t))
+                ];
+                
+                return { ...img, tags: orderedTags };
             }));
         }
     };
@@ -740,7 +769,7 @@ export default function App() {
                     <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
                         <div className="relative flex items-center justify-center">
                             <div className={`absolute inset-0 blur-2xl rounded-full ${isDarkMode ? 'bg-purple-500/20' : 'bg-purple-500/30'}`}></div>
-                            <img src="./icon.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); }} />
+                            <img src="./logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { (e2.currentTarget as HTMLImageElement).style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); } }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
                                 <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
                             </div>
@@ -937,6 +966,7 @@ export default function App() {
 
             {selectedImageId && (
                 <Lightbox 
+                    globalTriggers={globalTriggers}
                     image={displayedImages.find(img => img.id === selectedImageId)} 
                     onClose={() => setSelectedImageId(null)} 
                     updateTags={updateImageTags} 
@@ -977,7 +1007,7 @@ export default function App() {
                         </div>
                         <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto">
                             <div className="hidden sm:block relative">
-                                <img src="./icon.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; document.getElementById('fallback-header-logo')!.classList.remove('hidden'); }} />
+                                <img src="./logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { (e2.currentTarget as HTMLImageElement).style.display = 'none'; document.getElementById('fallback-header-logo')!.classList.remove('hidden'); } }} />
                                 <div id="fallback-header-logo" className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden"><Tag className="text-white" size={20} /></div>
                             </div>
                             <h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1>
@@ -1297,12 +1327,13 @@ export default function App() {
                                         return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
                                             const category = getTagCategory(tag);
                                             const colorClass = getCategoryColor(category, isDarkMode);
+                                            const activeColorClass = getActiveCategoryColor(category);
                                             const isStaged = stagedBulkTags.includes(tag);
                                             const isPartiallySelected = selectedForBulk.some(id => images.find(i => i.id === id)?.tags.includes(tag));
                                             
                                             let buttonClass = '';
                                             if (isStaged) {
-                                                buttonClass = `${colorClass} ring-2 ring-offset-1 ${isDarkMode ? 'ring-offset-gray-900 ring-white' : 'ring-offset-white ring-black'} shadow-md scale-105 font-bold`;
+                                                buttonClass = `${activeColorClass} scale-105 font-bold`;
                                             } else if (isPartiallySelected) {
                                                 const textColorMatch = colorClass.match(/text-[a-z]+-\d+/);
                                                 const textColor = textColorMatch ? textColorMatch[0] : (isDarkMode ? 'text-gray-300' : 'text-gray-600');
@@ -1314,7 +1345,7 @@ export default function App() {
                                             
                                             return (
                                                 <button key={tag} onClick={() => setStagedBulkTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1 ${buttonClass}`}>
-                                                    {category === 'nsfw' && <span className="font-bold text-[9px] bg-red-500 text-white px-1 rounded-sm">+18</span>}
+                                                    {category === 'nsfw' && <span className={`font-bold text-[9px] px-1 rounded-sm ${isStaged ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
                                                     {tag}
                                                 </button>
                                             );
@@ -1361,7 +1392,7 @@ export default function App() {
                                 <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-100 border-gray-200'} flex flex-col gap-2`}>
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="flex items-center gap-2">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.maxTags}:</span>
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Max tag generati con AI:</span>
                                             <input 
                                                 type="number" 
                                                 min="1" 
@@ -1417,7 +1448,7 @@ export default function App() {
                                 <button 
                                     onClick={handleDeleteAllTags}
                                     disabled={allUniqueTags.length === 0}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50' : 'bg-red-600 hover:bg-red-700 text-white border-transparent shadow-md'}`}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md border-0"
                                 >
                                     <Trash size={14} />
                                     {t.deleteAllTags}
@@ -1425,7 +1456,7 @@ export default function App() {
                                 <button 
                                     onClick={handleCleanUnusedTags}
                                     disabled={allUniqueTags.length === 0}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-800/50' : 'bg-amber-500 hover:bg-amber-600 text-white border-transparent shadow-md'}`}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md border-0"
                                 >
                                     <RefreshCw size={14} />
                                     {t.cleanUnusedTags}
@@ -1437,14 +1468,14 @@ export default function App() {
                              allUniqueTags.map(tag => {
                                 const isAiGenerated = aiDiscoveredTags.includes(tag);
                                 const category = getTagCategory(tag);
-                                const colorClass = getCategoryColor(category, isDarkMode);
+                                const colorClass = getActiveCategoryColor(category);
                                 
                                 return (
-                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium border shadow-sm flex items-center gap-1.5 ${isAiGenerated ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : colorClass}`}>
-                                    {isAiGenerated && <Sparkles size={10} className="text-purple-500" />}
-                                    {category === 'nsfw' && !isAiGenerated && <span className="font-bold text-[9px] bg-red-500 text-white px-1 rounded-sm">+18</span>}
+                                <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 ${colorClass}`}>
+                                    {isAiGenerated && <Sparkles size={10} className="text-white" />}
+                                    {category === 'nsfw' && !isAiGenerated && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm">+18</span>}
                                     {tag}
-                                    <button onClick={() => handleDeleteTagFromProject(tag)} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-gray-400">
+                                    <button onClick={() => handleDeleteTagFromProject(tag)} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-white/70 hover:text-white">
                                         <X size={10} />
                                     </button>
                                 </span>

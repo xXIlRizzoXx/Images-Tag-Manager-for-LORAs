@@ -49,7 +49,7 @@ function createWindow () {
     title: `Images Tag Manager for LORAs v${appVersion}`,
     show: false, // Nascondi finché non è pronta
     autoHideMenuBar: true, // Nasconde il menu in alto (File, Edit, ecc.)
-    icon: path.join(__dirname, '../public/icon.ico'), // Icona della finestra
+    icon: path.join(__dirname, '../public/logo.png'), // Icona della finestra
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false

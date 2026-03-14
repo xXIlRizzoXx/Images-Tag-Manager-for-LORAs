@@ -21,13 +21,13 @@
     },
     "win": {
       "target": "portable",
-      "icon": "public/icon.ico"
+      "icon": "public/logo.png"
     },
     "mac": {
-      "icon": "public/icon.png"
+      "icon": "public/logo.png"
     },
     "linux": {
-      "icon": "public/icon.png"
+      "icon": "public/logo.png"
     },
     "files": [
       "dist/**/*",
