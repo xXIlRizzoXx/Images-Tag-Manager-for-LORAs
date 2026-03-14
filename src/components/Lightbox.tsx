@@ -20,10 +20,10 @@ import AIWorker from '../workers/ai.worker?worker';
 
 import { getGeminiTags, getGeminiCaption } from '../services/geminiService';
 
-import { getTagCategory, getCategoryColor } from '../utils/tagCategorization';
+import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen, customPrompt, updateImageCaption, lang }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen, customPrompt, updateImageCaption, lang, globalTriggers = [] }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -241,7 +241,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     };
 
     const handleSaveSingleTxt = async () => {
-        const tagString = currentTags.length > 0 ? currentTags.join(', ') + ',' : '';
+        const orderedTags = [
+            ...globalTriggers.filter((t: string) => currentTags.includes(t)),
+            ...currentTags.filter((t: string) => !globalTriggers.includes(t))
+        ];
+        const tagString = orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
         const baseName = image.file.name.substring(0, image.file.name.lastIndexOf('.')) || image.file.name;
         const fileName = `${baseName}.txt`;
         
@@ -365,11 +369,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 const category = getTagCategory(tag);
                                 const isNsfw = category === 'nsfw';
                                 const baseColorClass = getCategoryColor(category, isDarkMode);
+                                const activeColorClass = getActiveCategoryColor(category);
                                 const isSelected = currentTags.includes(tag);
                                 
                                 let colorClass = '';
                                 if (isSelected) {
-                                    colorClass = `${baseColorClass} ring-2 ring-offset-1 ${isDarkMode ? 'ring-offset-gray-800 ring-white' : 'ring-offset-white ring-black'} shadow-md scale-105 font-bold`;
+                                    colorClass = `${activeColorClass} scale-105 font-bold`;
                                 } else if (isAiGenerated) {
                                     colorClass = 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40';
                                 } else {
@@ -420,7 +425,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 <div className="flex flex-col gap-1.5">
                                     <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.aiTools}</span>
                                     <div className="flex items-center gap-1">
-                                        <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.maxTags}:</span>
+                                        <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Max tag generati con AI:</span>
                                         <input 
                                             type="number" 
                                             min="1" 

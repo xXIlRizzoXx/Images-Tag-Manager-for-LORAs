@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, ChevronDown, ChevronRight, User, MapPin, Palette, Camera, Tag as TagIcon, Tags, ChevronsDown, ChevronsUp } from 'lucide-react';
 import { suggestedTagsData, TagCategoryList } from '../constants/tagSuggestions';
-import { getCategoryColor, TagCategory } from '../utils/tagCategorization';
+import { getCategoryColor, getActiveCategoryColor, TagCategory } from '../utils/tagCategorization';
 
 interface TagSuggestionsPanelProps {
     isOpen: boolean;
@@ -92,11 +92,12 @@ export const TagSuggestionsPanel: React.FC<TagSuggestionsPanelProps> = ({ isOpen
                                     {category.tags.map((tagObj, idx) => {
                                         const translation = tagObj.translations[lang] || tagObj.translations['en'];
                                         const baseColorClass = getCategoryColor(category.id as TagCategory, isDarkMode);
+                                        const activeColorClass = getActiveCategoryColor(category.id as TagCategory);
                                         const isSelected = selectedTags.includes(tagObj.tag);
                                         
                                         let buttonClass = '';
                                         if (isSelected) {
-                                            buttonClass = `${baseColorClass} ring-2 ring-offset-1 ${isDarkMode ? 'ring-offset-gray-800 ring-white' : 'ring-offset-white ring-black'} shadow-md scale-105 font-bold`;
+                                            buttonClass = `${activeColorClass} scale-105 font-bold`;
                                         } else {
                                             buttonClass = `${baseColorClass} border border-transparent hover:brightness-110 shadow-sm`;
                                         }

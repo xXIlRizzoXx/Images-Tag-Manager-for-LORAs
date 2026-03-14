@@ -89,3 +89,28 @@ export const getCategoryColor = (category: TagCategory, isDarkMode: boolean) => 
             return isDarkMode ? 'bg-gray-800 text-gray-200 border-gray-700' : 'bg-white text-gray-700 border-gray-200';
     }
 };
+
+export const getActiveCategoryColor = (category: TagCategory) => {
+    switch (category) {
+        case 'nsfw': return 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-md border-0';
+        case 'characters': return 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md border-0';
+        case 'places': return 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md border-0';
+        case 'styles': return 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md border-0';
+        case 'colors': return 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md border-0';
+        case 'framing': return 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-md border-0';
+        case 'feral_poses': return 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md border-0';
+        case 'moods': return 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-md border-0';
+        case 'face_details': return 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md border-0';
+        case 'bird_features': return 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md border-0';
+        case 'seasons': return 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-md border-0';
+        case 'time_of_day': return 'bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-md border-0';
+        case 'weather': return 'bg-gradient-to-r from-zinc-500 to-zinc-600 text-white shadow-md border-0';
+        case 'lighting': return 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-md border-0';
+        case 'anthro_traits': return 'bg-gradient-to-r from-lime-500 to-lime-600 text-white shadow-md border-0';
+        case 'body_types': return 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md border-0';
+        case 'clothing': return 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md border-0';
+        case 'intimate': return 'bg-gradient-to-r from-fuchsia-500 to-fuchsia-600 text-white shadow-md border-0';
+        case 'accessories': return 'bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-md border-0';
+        default: return 'bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-md border-0';
+    }
+};

@@ -27,7 +27,7 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 
 // ITALIANO: Campo di inserimento per i tag con suggerimenti e cancellazione
 // ENGLISH: Input field for tags with suggestions and deletion
-import { getTagCategory, getCategoryColor } from '../utils/tagCategorization';
+import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 
 export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]", isDarkMode = true, readOnly = false }: any) => {
     const [inputValue, setInputValue] = useState('');
@@ -69,11 +69,11 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
         {tags.map((tag: string, index: number) => {
             const category = getTagCategory(tag);
             const isNsfw = category === 'nsfw';
-            const colorClass = isGlobal ? 'bg-indigo-600 text-white shadow-sm' : getCategoryColor(category, isDarkMode);
+            const colorClass = getActiveCategoryColor(category);
             
             return (
-                <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 border shadow-sm ${colorClass}`}>
-                    {isNsfw && <span className="font-bold text-[9px] bg-red-500 text-white px-1 rounded-sm mr-0.5">+18</span>}
+                <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
+                    {isNsfw && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm mr-0.5">+18</span>}
                     {tag}
                     {!readOnly && (
                         <button onClick={(e) => { e.stopPropagation(); removeTag(index); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
