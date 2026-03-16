@@ -768,7 +768,6 @@ export default function App() {
                 <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
                     <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
                         <div className="relative flex items-center justify-center">
-                            <div className={`absolute inset-0 blur-2xl rounded-full ${isDarkMode ? 'bg-purple-500/20' : 'bg-purple-500/30'}`}></div>
                             <img src="./logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { (e2.currentTarget as HTMLImageElement).style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); } }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
                                 <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
