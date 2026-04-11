@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3, AlertTriangle } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { 
     PieChart as RechartsPieChart, 
@@ -423,13 +423,21 @@ export default function App() {
         const newImages = [];
         for (let i = 0; i < imgFiles.length; i++) {
             const base = imgFiles[i].name.split('.').slice(0, -1).join('.');
-            const thumb = await generateThumbnail(imgFiles[i]);
+            const thumbData = await generateThumbnail(imgFiles[i]);
             const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(base) || [])])];
             const orderedTags = [
                 ...globalTriggers.filter(t => combinedTags.includes(t)),
                 ...combinedTags.filter(t => !globalTriggers.includes(t))
             ];
-            newImages.push({ id: Math.random().toString(36).substring(7), file: imgFiles[i], thumb, tags: orderedTags, originalTags: [...orderedTags] });
+            newImages.push({ 
+                id: Math.random().toString(36).substring(7), 
+                file: imgFiles[i], 
+                thumb: thumbData?.url || '', 
+                width: thumbData?.width || 0,
+                height: thumbData?.height || 0,
+                tags: orderedTags, 
+                originalTags: [...orderedTags] 
+            });
             setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
             if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
         }
@@ -934,6 +942,17 @@ export default function App() {
                                                 <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}}>
                                                     <img src={img.thumb} alt="Trash preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} opacity-70`} />
                                                     
+                                                    {img.width * img.height < 1048576 && (
+                                                        <div className="absolute top-2 right-2 z-30 group/alert">
+                                                            <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
+                                                                <AlertTriangle size={16} strokeWidth={2.5} />
+                                                            </div>
+                                                            <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
+                                                                {`Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)\nQualità di questa immagine: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
                                                     <button onClick={() => handleRestore(img.id)} className="absolute top-2 left-2 p-1.5 bg-black/50 hover:bg-green-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.restore}><RefreshCw size={14} /></button>
                                                     <button onClick={() => {
                                                         setConfirmDialog({
@@ -946,7 +965,7 @@ export default function App() {
                                                             },
                                                             onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                         });
-                                                    }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.deletePermanently}><X size={14} /></button>
+                                                    }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.deletePermanently}><X size={14} /></button>
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
@@ -1291,8 +1310,20 @@ export default function App() {
                                 <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
                                     <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
                                         <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
+                                        
+                                        {img.width * img.height < 1048576 && (
+                                            <div className="absolute top-2 right-2 z-30 group/alert">
+                                                <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
+                                                    <AlertTriangle size={16} strokeWidth={2.5} />
+                                                </div>
+                                                <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
+                                                    {`Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)\nQualità di questa immagine: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
-                                        <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.moveToTrash}><Trash2 size={14} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
                                     </div>
                                     <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                         {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
