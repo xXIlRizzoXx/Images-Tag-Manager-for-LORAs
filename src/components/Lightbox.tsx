@@ -12,7 +12,7 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Loader2, Tag, Sparkles, Trash2, Tags } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Loader2, Tag, Sparkles, Trash2, Tags, AlertTriangle } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 // @ts-ignore
@@ -290,6 +290,18 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>
                         {onMoveToTrash && (
                             <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={(e) => { e.stopPropagation(); onMoveToTrash(image.id); onClose(); }} title={t.moveToTrash}><Trash2 size={24} /></button>
+                        )}
+                    </div>
+                    <div className="absolute top-0 right-0 flex gap-2 z-[110]">
+                        {image.width * image.height < 1048576 && (
+                            <div className="relative group/alert">
+                                <div className="p-2.5 bg-yellow-500 text-white rounded-full transition-all border border-yellow-600 shadow-md flex items-center justify-center cursor-help">
+                                    <AlertTriangle size={24} strokeWidth={2.5} />
+                                </div>
+                                <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
+                                    {`Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)\nQualità di questa immagine: ${image.width}x${image.height} (${(image.width * image.height / 1000000).toFixed(2)} MP)`}
+                                </div>
+                            </div>
                         )}
                     </div>
                     <div className={`relative w-full flex-1 rounded-xl mt-14 overflow-hidden shadow-2xl flex items-center justify-center border ${isDarkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
