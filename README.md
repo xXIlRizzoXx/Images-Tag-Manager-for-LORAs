@@ -3,32 +3,34 @@
   <h1>AI Image Tag Manager</h1>
   <p>A powerful, intuitive, and privacy-focused desktop application for managing, editing, and auto-generating tags for image datasets.</p>
 
-  [![React](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/)
-  [![Vite](https://img.shields.io/badge/Vite-5-646CFF.svg)](https://vitejs.dev/)
-  [![Electron](https://img.shields.io/badge/Electron-Ready-47848F.svg)](https://www.electronjs.org/)
-  [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-38B2AC.svg)](https://tailwindcss.com/)
-  [![Gemini API](https://img.shields.io/badge/AI-Google_Gemini-orange.svg)](https://ai.google.dev/)
+  [![React](https://img.shields.io/badge/React-19-blue.svg)](https://reactjs.org/)
+  [![Vite](https://img.shields.io/badge/Vite-6-646CFF.svg)](https://vitejs.dev/)
+  [![Electron](https://img.shields.io/badge/Electron-Hardened-47848F.svg)](https://www.electronjs.org/)
+  [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38B2AC.svg)](https://tailwindcss.com/)
 </div>
 
 ---
 
 ## 📖 Overview
 
-**AI Image Tag Manager** is the ultimate tool for preparing image datasets for AI model training (e.g., LoRA, Kohya_SS, Stable Diffusion) or simply organizing large galleries. It allows you to load folders of images, edit their associated `.txt` tag files, and even use AI to automatically caption and tag them.
+**Images Tag Manager for LORAs** is a fast, offline desktop tool for preparing image datasets for LoRA / Kohya_SS / Stable Diffusion training. Load folders of images, edit the associated `.txt` tag files, and ship them back to disk — no cloud services, no AI calls, no telemetry.
 
 ## ✨ Key Features
 
-*   📂 **Folder Loading & Project Management**: Import entire folders containing images and their respective `.txt` files. Save and load your project state (`.json`) to resume work later.
+*   📂 **Folder Loading & Project Management**: Import entire folders containing images and their respective `.txt` files in one click.
 *   🏷️ **Advanced Tag Management**: Add, remove, or edit tags for individual images or apply changes to multiple images at once using **Bulk Tagging**.
-*   🤖 **AI Auto-Tagging (Gemini API)**: Automatically generate highly accurate descriptive tags and captions for your images using Google's Gemini Vision models. Works on single images or the entire project simultaneously.
+*   🤖 **AI Tagging & Captioning (Gemini)**: Optional integration with Google Gemini for high-quality booru-style tags and natural-language captions. Default model is **Gemini 2.5 Flash** (free tier). Bring your own API key (encrypted via OS keychain) — model selector covers Flash, Flash-Lite, 3.5 Flash and 3.1 Pro.
+*   🎯 **Curated Tag Suggestions**: A built-in static library of categorized tag suggestions (poses, lighting, anatomy, hair, eyes, styles, etc.) that you can click to add. Resizable panel.
 *   🌍 **Global Tag Manager**: View and manage all unique tags present in the project from a single interface. Easily add global "Trigger Words" to all images with one click.
-*   📊 **Project Statistics**: Visual charts and metrics showing tag distribution, total images, captioned percentages, and most used tags.
-*   🔞 **NSFW Detection**: Automatic highlighting of NSFW tags with dedicated `+18` badges.
-*   💾 **Flexible Export Options**: 
-    *   Export all tags to a new folder.
-    *   Download the entire project (images + tags) as a `.zip` archive.
+*   📊 **Project Statistics**: Visual charts and metrics showing tag distribution, total images, tagged percentages, captioned percentages, and most used tags.
+*   🔞 **NSFW Detection**: Automatic highlighting of NSFW tags with dedicated `+18` badges (heuristic, keyword-based).
+*   💾 **Flexible Export Options**:
+    *   Save changes back to the original folder.
+    *   Export tags to a new folder.
+    *   Download the entire tag set as a `.zip` archive.
 *   🎨 **Modern UI/UX**: Beautiful, responsive interface with Light and Dark mode support, built with Tailwind CSS and Lucide icons.
-*   🌐 **Multilingual Support**: Available in English, Italian, Chinese, Japanese, Portuguese, and Russian.
+*   🌐 **Multilingual Support**: Available in Italian, English, French, Spanish, German, Chinese, Japanese, Portuguese, and Russian.
+*   🔐 **Encrypted API key storage**: when running inside Electron, your Gemini key is stored in the OS keychain (via `safeStorage`); never in plain `localStorage`, never inside the bundle.
 
 ## 🚀 Getting Started
 
@@ -70,22 +72,44 @@ npm run electron:build
 
 The compiled portable executable will be available in the `release/` folder.
 
-## ⚙️ Configuration
+## 🤖 AI Tagging & Captioning (optional, Gemini)
 
-### AI Auto-Tagging (Gemini)
-To use the AI auto-tagging features, you will need a free Google Gemini API Key.
-1. Get your API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Open the app, go to **Settings** (gear icon), and paste your API key.
-3. Select your preferred Gemini model and customize the prompt if needed.
+When the AI Tools section in Settings is enabled and a valid Gemini API key is saved, the app can:
+
+1. **Tag images** in booru style suitable for Kohya / sd-scripts LoRA training (comma-separated lowercase tags).
+2. **Caption images** as a single descriptive English sentence.
+3. **Apply a custom prompt** to bias either output toward your specific needs.
+
+**Models available** (selectable in Settings):
+
+| Model | Free tier | Notes |
+|---|---|---|
+| **Gemini 2.5 Flash** ⭐ default | ✅ Yes | Best price/quality, recommended |
+| Gemini 2.5 Flash-Lite | ✅ Yes | Faster, slightly lower quality, ideal for large batches |
+| Gemini 3.5 Flash | ⚠️ Limited | Higher quality, paid for sustained use |
+| Gemini 3.1 Pro (Preview) | ❌ No | Top quality, paid only |
+
+**Get a free API key** at [Google AI Studio](https://aistudio.google.com/app/apikey) → "Create API key".
+The app verifies the key with a tiny test call before saving, then encrypts it in the OS keychain (via Electron `safeStorage`).
+
+The "Auto-tag all" button in the toolbar paces requests at ~13 RPM to stay under the free-tier 15 RPM cap.
+
+## 🔒 Hardening Highlights
+
+*   Electron renderer runs with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, and a minimal IPC bridge defined in `electron/preload.cjs`.
+*   A strict Content-Security-Policy is applied both via `index.html` meta tag and via the production session headers in `electron/main.cjs`. The CSP `connect-src` allows only `generativelanguage.googleapis.com` (Google Gemini endpoint). Everything else is locked.
+*   The Gemini API key is stored encrypted via Electron `safeStorage` (OS keychain) — never in plain `localStorage`, never inside the bundle.
+*   Filenames written to disk or to ZIP archives are sanitized to prevent path traversal and reserved-name issues on Windows.
+*   A React `ErrorBoundary` shows a recovery screen instead of a blank window on unexpected UI errors.
 
 ## 🛠️ Tech Stack
 
-*   **Frontend**: React 18, TypeScript, Vite
-*   **Styling**: Tailwind CSS, Framer Motion
+*   **Frontend**: React 19, TypeScript, Vite 6
+*   **Styling**: Tailwind CSS 4
 *   **Icons**: Lucide React
-*   **Desktop Framework**: Electron, Electron Builder
-*   **AI Integration**: `@google/genai` (Gemini API)
-*   **Utilities**: JSZip, FileSaver.js, Recharts (Statistics)
+*   **Desktop Framework**: Electron (hardened), Electron Builder
+*   **AI**: `@google/genai` (Gemini API)
+*   **Utilities**: JSZip (archives), Recharts (statistics charts)
 
 ## 📝 License & Credits
 
