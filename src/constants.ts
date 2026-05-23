@@ -218,6 +218,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Il free tier copre ~15 richieste/minuto, sufficiente per dataset fino a centinaia di foto.",
         aiKeyGuideRecoverTitle: "L'hai persa?",
         aiKeyGuideRecoverBody: "Apri di nuovo aistudio.google.com/app/apikey: troverai tutte le tue key (puoi crearne di nuove o eliminare le vecchie).",
+        aiRpmLabel: "Velocità (req/min)",
+        aiRpmHint: "Free tier: max 15. Più alto = più veloce ma rischio rate-limit.",
     },
     en: {
         undoSuccess: "Action undone",
@@ -425,6 +427,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     fr: {
         undoSuccess: "Action annulée",
@@ -631,6 +635,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     es: {
         undoSuccess: "Acción deshecha",
@@ -837,6 +843,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     de: {
         undoSuccess: "Aktion rückgängig gemacht",
@@ -1043,6 +1051,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     zh: {
         undoSuccess: "操作已撤销",
@@ -1249,6 +1259,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     ja: {
         undoSuccess: "操作を取り消しました",
@@ -1455,6 +1467,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     pt: {
         undoSuccess: "Ação desfeita",
@@ -1661,6 +1675,8 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     },
     ru: {
         undoSuccess: "Действие отменено",
@@ -1867,5 +1883,7 @@ export const translations = {
         aiKeyGuideFreeBody: "Free tier covers ~15 requests/min — enough for datasets up to hundreds of photos.",
         aiKeyGuideRecoverTitle: "Lost it?",
         aiKeyGuideRecoverBody: "Reopen aistudio.google.com/app/apikey: you can see all your keys (create new ones or delete old).",
+        aiRpmLabel: "Speed (req/min)",
+        aiRpmHint: "Free tier: max 15. Higher = faster but risks rate-limit.",
     }
 };
