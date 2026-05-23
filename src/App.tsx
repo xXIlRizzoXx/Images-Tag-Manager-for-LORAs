@@ -91,6 +91,11 @@ export default function App() {
         const v = parseInt(localStorage.getItem('aiRpm') || '14', 10);
         return Number.isFinite(v) ? Math.max(5, Math.min(60, v)) : 14;
     });
+    const [aiSkipTagged, setAiSkipTagged] = useState<boolean>(() => localStorage.getItem('aiSkipTagged') !== 'false');
+    const aiCancelRequestedRef = useRef<boolean>(false);
+    // ITALIANO: Stato gemello del ref aiCancelRequestedRef — solo per aggiornare l'UI del pulsante Annulla
+    // ENGLISH: Mirror state of aiCancelRequestedRef — UI-only signal for the Cancel button
+    const [aiCancelRequested, setAiCancelRequested] = useState<boolean>(false);
     const [geminiApiKey, setGeminiApiKey] = useState<string>('');
     const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState<boolean>(false);
     const [tempApiKey, setTempApiKey] = useState<string>('');
@@ -99,7 +104,7 @@ export default function App() {
     const [apiKeyError, setApiKeyError] = useState<string>('');
     const [isAIBusy, setIsAIBusy] = useState<boolean>(false);
     const [isGlobalAITagging, setIsGlobalAITagging] = useState<boolean>(false);
-    const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number }>({ done: 0, total: 0, ok: 0, errors: 0 });
+    const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number; skipped: number }>({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
     const apiKeyLoadedRef = useRef<boolean>(false);
 
     useEffect(() => { localStorage.setItem('aiEnabled', String(aiEnabled)); }, [aiEnabled]);
@@ -107,6 +112,7 @@ export default function App() {
     useEffect(() => { localStorage.setItem('aiMaxTags', String(aiMaxTags)); }, [aiMaxTags]);
     useEffect(() => { localStorage.setItem('aiCustomPrompt', aiCustomPrompt); }, [aiCustomPrompt]);
     useEffect(() => { localStorage.setItem('aiRpm', String(aiRpm)); }, [aiRpm]);
+    useEffect(() => { localStorage.setItem('aiSkipTagged', String(aiSkipTagged)); }, [aiSkipTagged]);
 
     // ITALIANO: Carico la API key dallo storage cifrato all'avvio
     // ENGLISH: Load the API key from encrypted storage on mount
@@ -142,7 +148,7 @@ export default function App() {
             setGeminiApiKey('');
             setIsAIBusy(false);
             setIsGlobalAITagging(false);
-            setGlobalAIProgress({ done: 0, total: 0, ok: 0, errors: 0 });
+            setGlobalAIProgress({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
             soundManager.chime();
             showNotification(t.aiKeyCleared || 'API Key removed', 'success');
         } catch (e: any) {
@@ -740,30 +746,70 @@ export default function App() {
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiCustomPrompt, images, t, updateImageCaption]);
 
-    // ITALIANO: Tagga tutte le immagini con throttle adattivo (mira aiRpm) + retry su rate-limit
-    // ENGLISH: Tag every image with adaptive throttle (targets aiRpm) + retry on rate-limit
+    // ITALIANO: Richiesta di annullamento del bulk tagging — viene letta dai cicli e dagli sleep.
+    //           Aggiorna sia il ref (per il loop async) che lo state (per re-render del pulsante).
+    // ENGLISH: Cancel request for bulk tagging — read by loops and sleeps.
+    //          Updates both the ref (for the async loop) and state (to re-render the button).
+    const handleCancelAITagging = useCallback(() => {
+        aiCancelRequestedRef.current = true;
+        setAiCancelRequested(true);
+    }, []);
+
+    // ITALIANO: Tagga tutte le immagini con throttle adattivo (mira aiRpm) + retry su rate-limit.
+    //           Supporta skip immagini già taggate e annullamento via aiCancelRequestedRef.
+    // ENGLISH: Tag every image with adaptive throttle (targets aiRpm) + retry on rate-limit.
+    //          Supports skipping already-tagged images and cancel via aiCancelRequestedRef.
     const handleAITagAll = useCallback(async () => {
         if (!aiEnabled || images.length === 0 || isGlobalAITagging) return;
         if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return; }
+        aiCancelRequestedRef.current = false;
+        setAiCancelRequested(false);
         setIsGlobalAITagging(true);
-        setGlobalAIProgress({ done: 0, total: images.length, ok: 0, errors: 0 });
+        setGlobalAIProgress({ done: 0, total: images.length, ok: 0, errors: 0, skipped: 0 });
         // ITALIANO: Intervallo minimo tra le richieste in base alla RPM target dell'utente
         // ENGLISH: Minimum interval between requests based on user's target RPM
         const minIntervalMs = Math.max(1000, Math.floor(60000 / Math.max(1, aiRpm)));
+        // ITALIANO: Sleep cancellabile — controlla aiCancelRequestedRef ad intervalli di 200ms
+        // ENGLISH: Cancellable sleep — checks aiCancelRequestedRef every 200ms
+        const cancellableSleep = async (ms: number): Promise<void> => {
+            const step = 200;
+            const end = Date.now() + ms;
+            while (Date.now() < end) {
+                if (aiCancelRequestedRef.current) return;
+                const remaining = end - Date.now();
+                if (remaining <= 0) return;
+                await new Promise(r => setTimeout(r, Math.min(step, remaining)));
+            }
+        };
         let totalTagsAdded = 0;
         let okCount = 0;
         let errorCount = 0;
+        let skippedCount = 0;
         let fatalAbort = false;
+        let cancelled = false;
         try {
             for (let i = 0; i < images.length; i++) {
+                if (aiCancelRequestedRef.current) { cancelled = true; break; }
                 const current = images[i];
-                if (!current) { setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount }); continue; }
+                if (!current) {
+                    setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                    continue;
+                }
+                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag
+                // ENGLISH: Skip if requested and the image already has at least one tag
+                if (aiSkipTagged && Array.isArray(current.tags) && current.tags.length > 0) {
+                    skippedCount++;
+                    console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
+                    setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                    continue;
+                }
 
                 const requestStart = Date.now();
                 let success = false;
                 // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
                 // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
                 for (let attempt = 0; attempt < 3; attempt++) {
+                    if (aiCancelRequestedRef.current) { cancelled = true; break; }
                     try {
                         const tags = await getGeminiTags(current.file, {
                             apiKey: geminiApiKey,
@@ -795,11 +841,12 @@ export default function App() {
                             break;
                         }
                         if (kind === 'rate_limit' && attempt < 2) {
-                            // ITALIANO: Backoff progressivo: 15s, 45s
-                            // ENGLISH: Progressive backoff: 15s, 45s
+                            // ITALIANO: Backoff progressivo: 15s, 45s — cancellabile
+                            // ENGLISH: Progressive backoff: 15s, 45s — cancellable
                             const backoff = attempt === 0 ? 15000 : 45000;
                             console.warn(`[AI] Rate limit, retry in ${backoff / 1000}s...`);
-                            await new Promise(r => setTimeout(r, backoff));
+                            await cancellableSleep(backoff);
+                            if (aiCancelRequestedRef.current) { cancelled = true; break; }
                             continue;
                         }
                         // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui
@@ -808,27 +855,33 @@ export default function App() {
                     }
                 }
 
-                if (fatalAbort) break;
+                if (fatalAbort || cancelled) break;
                 if (success) okCount++;
                 else errorCount++;
-                setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount });
+                setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
 
                 // ITALIANO: Throttle adattivo — aspetta solo se la richiesta è stata più veloce del minimo
                 // ENGLISH: Adaptive throttle — only wait if the request was faster than the minimum
                 if (i < images.length - 1) {
                     const elapsed = Date.now() - requestStart;
                     const waitMs = Math.max(0, minIntervalMs - elapsed);
-                    if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
+                    if (waitMs > 0) await cancellableSleep(waitMs);
                 }
             }
             soundManager.chime();
-            const successType: 'success' | 'info' | 'error' = errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
-            const summary = `${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount} · +${totalTagsAdded} ${t.aiTagsGenerated || 'tags'}`;
+            const successType: 'success' | 'info' | 'error' = cancelled
+                ? 'info'
+                : errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
+            const prefix = cancelled ? `${t.aiCancelled || 'Cancelled'} · ` : '';
+            const skippedSuffix = skippedCount > 0 ? ` · ⊘ ${skippedCount}` : '';
+            const summary = `${prefix}${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount}${skippedSuffix} · +${totalTagsAdded} ${t.aiTagsGenerated || 'tags'}`;
             showNotification(summary, successType);
         } finally {
+            aiCancelRequestedRef.current = false;
+            setAiCancelRequested(false);
             setIsGlobalAITagging(false);
         }
-    }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, images, isGlobalAITagging, t, updateImageTags]);
+    }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, aiSkipTagged, images, isGlobalAITagging, t, updateImageTags]);
 
     // ITALIANO: Verifica la API key. Usa SEMPRE 2.5 Flash (free tier) per la verifica,
     //           così non confondiamo "key invalida" con "modello a pagamento".
@@ -1379,6 +1432,13 @@ export default function App() {
                                                         />
                                                         <p className="text-[9px] italic opacity-80">{t.aiRpmHint || 'Free tier: max 15. Più alto = più veloce ma rischio rate-limit.'}</p>
                                                     </div>
+                                                    <div className={`flex items-start justify-between gap-3 px-2 py-1.5 rounded-md ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-100/70'}`}>
+                                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                                            <span className="font-medium text-[11px]">{t.aiSkipTagged || 'Salta foto già taggate'}</span>
+                                                            <span className="text-[9px] italic opacity-75 leading-snug">{t.aiSkipTaggedHint || 'Se attivo, le immagini che hanno già almeno un tag vengono saltate durante "Tagga tutte con AI".'}</span>
+                                                        </div>
+                                                        <AppleToggle checked={aiSkipTagged} onChange={(v: boolean) => setAiSkipTagged(v)} colorClass="bg-purple-500" />
+                                                    </div>
                                                     <div className="flex flex-col gap-1">
                                                         <label className="font-medium text-[11px]">{t.aiCustomPromptLabel || 'Prompt personalizzato (opzionale)'}</label>
                                                         <textarea
@@ -1490,6 +1550,17 @@ export default function App() {
                                             {isGlobalAITagging ? `${globalAIProgress.done}/${globalAIProgress.total}` : (t.aiAutoTagAll || 'Auto-tag all with AI')}
                                         </button>
                                     )}
+                                    {aiEnabled && isGlobalAITagging && (
+                                        <button
+                                            onClick={handleCancelAITagging}
+                                            disabled={aiCancelRequested}
+                                            title={t.aiCancel || t.cancel || 'Cancel'}
+                                            className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${aiCancelRequested ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md active:scale-95'}`}
+                                        >
+                                            <X size={14} />
+                                            {aiCancelRequested ? (t.aiCancelling || 'Cancelling…') : (t.aiCancel || t.cancel || 'Cancel')}
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setIsTagSuggestionsOpen(!isTagSuggestionsOpen)}
                                         className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md active:scale-95`}
@@ -1500,7 +1571,8 @@ export default function App() {
                                 </div>
                                 {isGlobalAITagging && (() => {
                                     const errSuffix = globalAIProgress.errors > 0 ? ` · ✗ ${globalAIProgress.errors}` : '';
-                                    const label = `${t.aiTaggingInProgress || 'Tagging…'} ${globalAIProgress.done}/${globalAIProgress.total}${errSuffix}`;
+                                    const skipSuffix = globalAIProgress.skipped > 0 ? ` · ⊘ ${globalAIProgress.skipped}` : '';
+                                    const label = `${t.aiTaggingInProgress || 'Tagging…'} ${globalAIProgress.done}/${globalAIProgress.total}${errSuffix}${skipSuffix}`;
                                     const pct = globalAIProgress.total > 0 ? Math.round((globalAIProgress.done / globalAIProgress.total) * 100) : 0;
                                     return (
                                         <div className="w-full flex flex-col gap-1 px-2 pb-1">

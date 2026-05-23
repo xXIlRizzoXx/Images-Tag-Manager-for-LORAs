@@ -1,6 +1,20 @@
 export type TagCategory = 'characters' | 'places' | 'styles' | 'colors' | 'framing' | 'nsfw' | 'general' | 'feral_poses' | 'moods' | 'face_details' | 'bird_features' | 'seasons' | 'time_of_day' | 'weather' | 'lighting' | 'anthro_traits' | 'body_types' | 'clothing' | 'intimate' | 'accessories' | 'hair' | 'eyes' | 'human_poses' | 'hand_gestures' | 'footwear' | 'headwear' | 'patterns_fabrics' | 'art_mediums' | 'camera_effects' | 'vfx_particles' | 'render_styles';
 
-const nsfwKeywords = ['nude', 'naked', 'nsfw', 'explicit', 'breasts', 'nipples', 'sex', 'porn', 'pussy', 'penis', 'ass', 'uncensored', 'hentai', 'r18', 'rule34', '18+', 'topless', 'bottomless', 'lingerie', 'thong', 'panties', 'bra', 'bikini', 'underwear'];
+// ITALIANO: Lista di parole intere (non substring) — evita falsi positivi tipo "grass" → "ass"
+// ENGLISH: Whole-word list (not substring) — avoids false positives like "grass" → "ass"
+const nsfwWords = new Set<string>([
+    // Strong NSFW
+    'nude', 'naked', 'nsfw', 'explicit', 'uncensored', 'hentai', 'porn', 'pornographic',
+    'r18', 'r-18', 'rule34', '18+', '+18', 'lewd', 'erotic', 'erotica', 'risque',
+    // Anatomy
+    'nipple', 'nipples', 'breast', 'breasts', 'pussy', 'penis', 'vagina', 'anus', 'anal',
+    'genitals', 'genitalia', 'buttocks', 'butthole', 'cock', 'dick', 'testicles', 'clitoris',
+    // Acts
+    'sex', 'sexual', 'sexy', 'intercourse', 'orgasm', 'orgy', 'masturbation', 'fellatio',
+    'cunnilingus', 'cum', 'ejaculation',
+    // State
+    'topless', 'bottomless', 'fully nude',
+]);
 const charactersKeywords = ['boy', 'girl', 'man', 'woman', '1girl', '1boy', 'character', 'solo', 'multiple girls', 'multiple boys', 'male', 'female', 'eyes', 'hair', 'face', 'smile', 'looking at viewer', 'portrait', 'person', 'people', 'human-like', 'bipedal', 'anthro', 'furry', 'kemonomimi', 'muzzle', 'snout', 'paws', 'pawpads', 'toe beans', 'claws', 'digitigrade', 'plantigrade', 'hooves', 'tail hole', 'animal ears', 'fluffy tail', 'scales', 'fur', 'fur patterns', 'striped fur', 'spotted fur', 'animal hands', 'animal feet'];
 const placesKeywords = ['outdoors', 'indoors', 'scenery', 'sky', 'building', 'tree', 'nature', 'city', 'room', 'landscape', 'background', 'water', 'ocean', 'forest', 'street', 'day', 'night', 'sunlight', 'jungle', 'desert', 'beach', 'sea', 'lake', 'river', 'waterfall', 'mountains', 'hills', 'valley', 'meadow', 'field', 'cave', 'ruins', 'cityscape', 'town', 'village', 'alley', 'park', 'garden', 'bedroom', 'living room', 'bathroom', 'kitchen', 'library', 'office', 'castle', 'dungeon', 'fantasy landscape', 'sci-fi city', 'space', 'underwater'];
 const stylesKeywords = ['sketch', 'realistic', '3d', 'painting', 'anime', 'monochrome', 'comic', 'illustration', 'watercolor', 'oil painting', 'pixel art', 'concept art', 'digital art', 'traditional media', 'greyscale', 'photorealistic', 'raw photo', 'photography', 'polaroid', 'rough sketch', 'lineart', 'manga', 'cartoon', 'cel shading', '3d render', 'octane render', 'unreal engine', 'colorful', 'pastel colors', 'muted colors'];
@@ -20,9 +34,14 @@ const accessoriesKeywords = ['collar', 'spiked collar', 'leather collar', 'leash
 
 export const getTagCategory = (tag: string): TagCategory => {
     const lowerTag = tag.toLowerCase();
-    
-    // Check NSFW first
-    if (nsfwKeywords.some(kw => lowerTag.includes(kw))) return 'nsfw';
+
+    // ITALIANO: NSFW — match a parole intere per evitare falsi positivi (grass, class, glasses, ecc.)
+    // ENGLISH: NSFW — whole-word match to avoid false positives (grass, class, glasses, etc.)
+    // Tag arrivano come stringhe space/underscore/dash separated; tokenizziamo e cerchiamo match esatto.
+    const tokens = lowerTag.split(/[\s,_\-/]+/).filter(Boolean);
+    if (tokens.some(tok => nsfwWords.has(tok))) return 'nsfw';
+    // Anche match esatto sull'intera stringa (per tag composti come "fully nude")
+    if (nsfwWords.has(lowerTag)) return 'nsfw';
     
     // Check others
     if (charactersKeywords.some(kw => lowerTag.includes(kw))) return 'characters';
