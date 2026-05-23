@@ -87,6 +87,10 @@ export default function App() {
         return Number.isFinite(v) ? Math.max(1, Math.min(80, v)) : 30;
     });
     const [aiCustomPrompt, setAiCustomPrompt] = useState<string>(() => localStorage.getItem('aiCustomPrompt') || '');
+    const [aiRpm, setAiRpm] = useState<number>(() => {
+        const v = parseInt(localStorage.getItem('aiRpm') || '14', 10);
+        return Number.isFinite(v) ? Math.max(5, Math.min(60, v)) : 14;
+    });
     const [geminiApiKey, setGeminiApiKey] = useState<string>('');
     const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState<boolean>(false);
     const [tempApiKey, setTempApiKey] = useState<string>('');
@@ -95,13 +99,14 @@ export default function App() {
     const [apiKeyError, setApiKeyError] = useState<string>('');
     const [isAIBusy, setIsAIBusy] = useState<boolean>(false);
     const [isGlobalAITagging, setIsGlobalAITagging] = useState<boolean>(false);
-    const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+    const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number }>({ done: 0, total: 0, ok: 0, errors: 0 });
     const apiKeyLoadedRef = useRef<boolean>(false);
 
     useEffect(() => { localStorage.setItem('aiEnabled', String(aiEnabled)); }, [aiEnabled]);
     useEffect(() => { localStorage.setItem('aiModel', aiModel); }, [aiModel]);
     useEffect(() => { localStorage.setItem('aiMaxTags', String(aiMaxTags)); }, [aiMaxTags]);
     useEffect(() => { localStorage.setItem('aiCustomPrompt', aiCustomPrompt); }, [aiCustomPrompt]);
+    useEffect(() => { localStorage.setItem('aiRpm', String(aiRpm)); }, [aiRpm]);
 
     // ITALIANO: Carico la API key dallo storage cifrato all'avvio
     // ENGLISH: Load the API key from encrypted storage on mount
@@ -137,7 +142,7 @@ export default function App() {
             setGeminiApiKey('');
             setIsAIBusy(false);
             setIsGlobalAITagging(false);
-            setGlobalAIProgress({ done: 0, total: 0 });
+            setGlobalAIProgress({ done: 0, total: 0, ok: 0, errors: 0 });
             soundManager.chime();
             showNotification(t.aiKeyCleared || 'API Key removed', 'success');
         } catch (e: any) {
@@ -735,57 +740,95 @@ export default function App() {
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiCustomPrompt, images, t, updateImageCaption]);
 
-    // ITALIANO: Tagga tutte le immagini in sequenza (rispetta rate limit free 15 RPM con piccolo throttle)
-    // ENGLISH: Tag every image sequentially (respects free 15 RPM rate limit with mild throttle)
+    // ITALIANO: Tagga tutte le immagini con throttle adattivo (mira aiRpm) + retry su rate-limit
+    // ENGLISH: Tag every image with adaptive throttle (targets aiRpm) + retry on rate-limit
     const handleAITagAll = useCallback(async () => {
         if (!aiEnabled || images.length === 0 || isGlobalAITagging) return;
         if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return; }
         setIsGlobalAITagging(true);
-        setGlobalAIProgress({ done: 0, total: images.length });
+        setGlobalAIProgress({ done: 0, total: images.length, ok: 0, errors: 0 });
+        // ITALIANO: Intervallo minimo tra le richieste in base alla RPM target dell'utente
+        // ENGLISH: Minimum interval between requests based on user's target RPM
+        const minIntervalMs = Math.max(1000, Math.floor(60000 / Math.max(1, aiRpm)));
         let totalTagsAdded = 0;
-        let errors = 0;
+        let okCount = 0;
+        let errorCount = 0;
+        let fatalAbort = false;
         try {
             for (let i = 0; i < images.length; i++) {
                 const current = images[i];
-                if (!current) { setGlobalAIProgress({ done: i + 1, total: images.length }); continue; }
-                try {
-                    const tags = await getGeminiTags(current.file, {
-                        apiKey: geminiApiKey,
-                        modelName: aiModel,
-                        maxTags: aiMaxTags,
-                        customPrompt: aiCustomPrompt,
-                    });
-                    const before = current.tags.length;
-                    const merged = [...new Set([...current.tags, ...tags])];
-                    totalTagsAdded += merged.length - before;
-                    updateImageTags(current.id, merged);
-                } catch (err: any) {
-                    console.error('AI tag failed for', current.id, err);
-                    errors++;
-                    const { kind } = classifyGeminiError(err);
-                    if (kind === 'invalid_key') { setIsApiKeyDialogOpen(true); break; }
-                    if (kind === 'billing_required' || kind === 'model_unavailable') {
-                        const friendly = kind === 'billing_required'
-                            ? (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.')
-                            : (t.aiModelUnavailable || 'Model unavailable for your account.');
-                        showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+                if (!current) { setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount }); continue; }
+
+                const requestStart = Date.now();
+                let success = false;
+                // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
+                // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        const tags = await getGeminiTags(current.file, {
+                            apiKey: geminiApiKey,
+                            modelName: aiModel,
+                            maxTags: aiMaxTags,
+                            customPrompt: aiCustomPrompt,
+                        });
+                        const before = current.tags.length;
+                        const merged = [...new Set([...current.tags, ...tags])];
+                        totalTagsAdded += merged.length - before;
+                        updateImageTags(current.id, merged);
+                        success = true;
+                        console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: ${tags.length} tags`);
+                        break;
+                    } catch (err: any) {
+                        const { kind, message } = classifyGeminiError(err);
+                        console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
+                        if (kind === 'invalid_key') {
+                            setIsApiKeyDialogOpen(true);
+                            fatalAbort = true;
+                            break;
+                        }
+                        if (kind === 'billing_required' || kind === 'model_unavailable') {
+                            const friendly = kind === 'billing_required'
+                                ? (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.')
+                                : (t.aiModelUnavailable || 'Model unavailable for your account.');
+                            showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+                            fatalAbort = true;
+                            break;
+                        }
+                        if (kind === 'rate_limit' && attempt < 2) {
+                            // ITALIANO: Backoff progressivo: 15s, 45s
+                            // ENGLISH: Progressive backoff: 15s, 45s
+                            const backoff = attempt === 0 ? 15000 : 45000;
+                            console.warn(`[AI] Rate limit, retry in ${backoff / 1000}s...`);
+                            await new Promise(r => setTimeout(r, backoff));
+                            continue;
+                        }
+                        // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui
+                        // ENGLISH: Non-fatal error or last attempt failed → record error and continue
                         break;
                     }
                 }
-                setGlobalAIProgress({ done: i + 1, total: images.length });
-                // ITALIANO: ~4.5s tra le richieste = ~13 RPM (sotto la soglia free tier 15 RPM)
-                // ENGLISH: ~4.5s between requests = ~13 RPM (under the free-tier 15 RPM cap)
+
+                if (fatalAbort) break;
+                if (success) okCount++;
+                else errorCount++;
+                setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount });
+
+                // ITALIANO: Throttle adattivo — aspetta solo se la richiesta è stata più veloce del minimo
+                // ENGLISH: Adaptive throttle — only wait if the request was faster than the minimum
                 if (i < images.length - 1) {
-                    await new Promise(r => setTimeout(r, 4500));
+                    const elapsed = Date.now() - requestStart;
+                    const waitMs = Math.max(0, minIntervalMs - elapsed);
+                    if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
                 }
             }
             soundManager.chime();
-            const errSuffix = errors > 0 ? ` · ${errors} errori` : '';
-            showNotification(`${t.completed || 'Done'} · ${totalTagsAdded} ${t.aiTagsGenerated || 'tags generated'}${errSuffix}`, errors > 0 ? 'info' : 'success');
+            const successType: 'success' | 'info' | 'error' = errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
+            const summary = `${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount} · +${totalTagsAdded} ${t.aiTagsGenerated || 'tags'}`;
+            showNotification(summary, successType);
         } finally {
             setIsGlobalAITagging(false);
         }
-    }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, images, isGlobalAITagging, t, updateImageTags]);
+    }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, images, isGlobalAITagging, t, updateImageTags]);
 
     // ITALIANO: Verifica la API key. Usa SEMPRE 2.5 Flash (free tier) per la verifica,
     //           così non confondiamo "key invalida" con "modello a pagamento".
@@ -1323,6 +1366,20 @@ export default function App() {
                                                         />
                                                     </div>
                                                     <div className="flex flex-col gap-1">
+                                                        <label className="flex items-center justify-between font-medium text-[11px]">
+                                                            <span>{t.aiRpmLabel || 'Velocità (req/min)'}</span>
+                                                            <span className="font-bold tabular-nums">{aiRpm}</span>
+                                                        </label>
+                                                        <input
+                                                            type="range"
+                                                            min={5} max={60} step={1}
+                                                            value={aiRpm}
+                                                            onChange={(e) => setAiRpm(parseInt(e.target.value, 10))}
+                                                            className="w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                                        />
+                                                        <p className="text-[9px] italic opacity-80">{t.aiRpmHint || 'Free tier: max 15. Più alto = più veloce ma rischio rate-limit.'}</p>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
                                                         <label className="font-medium text-[11px]">{t.aiCustomPromptLabel || 'Prompt personalizzato (opzionale)'}</label>
                                                         <textarea
                                                             value={aiCustomPrompt}
@@ -1442,7 +1499,8 @@ export default function App() {
                                     </button>
                                 </div>
                                 {isGlobalAITagging && (() => {
-                                    const label = `${t.aiTaggingInProgress || 'Tagging…'} ${globalAIProgress.done}/${globalAIProgress.total}`;
+                                    const errSuffix = globalAIProgress.errors > 0 ? ` · ✗ ${globalAIProgress.errors}` : '';
+                                    const label = `${t.aiTaggingInProgress || 'Tagging…'} ${globalAIProgress.done}/${globalAIProgress.total}${errSuffix}`;
                                     const pct = globalAIProgress.total > 0 ? Math.round((globalAIProgress.done / globalAIProgress.total) * 100) : 0;
                                     return (
                                         <div className="w-full flex flex-col gap-1 px-2 pb-1">
