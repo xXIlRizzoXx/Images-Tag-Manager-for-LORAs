@@ -7,8 +7,13 @@ coverage/
 .env*
 !.env.example
 
+
 # Electron build output
 release/
 win-unpacked/
+Portable/
 *.exe
 *.zip
+
+# Claude Code workspace state (worktrees, launch config)
+.claude/

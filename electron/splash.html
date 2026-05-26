@@ -205,14 +205,14 @@
             }, 200);
         }, 800);
 
-        // Cerca di leggere la versione dal package.json se possibile (in Electron nodeIntegration è true)
-        try {
-            const fs = require('fs');
-            const path = require('path');
-            const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
-            document.getElementById('version-text').innerText = 'v' + pkg.version;
-        } catch(e) {
-            console.log("Using default version");
+        // ITALIANO: Chiede la versione al processo principale tramite IPC sicuro (preload)
+        // ENGLISH: Asks the main process for the version via secure IPC (preload)
+        if (window.electronAPI && typeof window.electronAPI.getAppVersion === 'function') {
+            window.electronAPI.getAppVersion()
+                .then(function (v) {
+                    if (v) document.getElementById('version-text').innerText = 'v' + v;
+                })
+                .catch(function () { /* ITALIANO: fallback silenzioso — ENGLISH: silent fallback */ });
         }
     </script>
 </body>

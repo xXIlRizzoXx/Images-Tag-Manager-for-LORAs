@@ -13,13 +13,15 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, Sparkles, Loader2, PieChart, BarChart3, AlertTriangle } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { 
-    PieChart as RechartsPieChart, 
-    Pie, 
-    Cell, 
-    Tooltip, 
+import { getGeminiTags, getGeminiCaption, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
+import {
+    PieChart as RechartsPieChart,
+    Pie,
+    Cell,
+    Tooltip,
     ResponsiveContainer,
     BarChart as RechartsBarChart,
     Bar,
@@ -33,10 +35,7 @@ import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
-import { getGeminiTags } from './services/geminiService';
-
-// @ts-ignore
-import AIWorker from './workers/ai.worker?worker';
+import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
 
 export default function App() {
     const [lang, setLang] = useState('it');
@@ -67,46 +66,105 @@ export default function App() {
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
 
-    const [aiModel, setAiModel] = useState(() => localStorage.getItem('aiModel') || 'built-in');
-    const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
-    const [customPrompt, setCustomPrompt] = useState(() => localStorage.getItem('customPrompt') || '');
-    const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState(false);
-    const [tempApiKey, setTempApiKey] = useState('');
     const [isStatsOpen, setIsStatsOpen] = useState(false);
+
+    // ITALIANO: Pulizia di vecchie chiavi AI Gemini (sostituite da WD14 + BLIP offline)
+    // ENGLISH: Cleanup of legacy Gemini AI keys (replaced by offline WD14 + BLIP)
+    useEffect(() => {
+        try {
+            localStorage.removeItem('aiModel');
+            localStorage.removeItem('geminiApiKey');
+            localStorage.removeItem('customPrompt');
+        } catch (_) { /* ignore */ }
+    }, []);
+
+    // ITALIANO: Configurazione AI cloud (Gemini), persistente
+    // ENGLISH: Cloud AI config (Gemini), persistent
+    const [aiEnabled, setAiEnabled] = useState<boolean>(() => localStorage.getItem('aiEnabled') === 'true');
+    const [aiModel, setAiModel] = useState<string>(() => localStorage.getItem('aiModel') || DEFAULT_GEMINI_MODEL);
+    const [aiMaxTags, setAiMaxTags] = useState<number>(() => {
+        const v = parseInt(localStorage.getItem('aiMaxTags') || '30', 10);
+        return Number.isFinite(v) ? Math.max(1, Math.min(80, v)) : 30;
+    });
+    const [aiCustomPrompt, setAiCustomPrompt] = useState<string>(() => localStorage.getItem('aiCustomPrompt') || '');
+    const [aiRpm, setAiRpm] = useState<number>(() => {
+        const v = parseInt(localStorage.getItem('aiRpm') || '14', 10);
+        return Number.isFinite(v) ? Math.max(5, Math.min(60, v)) : 14;
+    });
+    const [aiSkipTagged, setAiSkipTagged] = useState<boolean>(() => localStorage.getItem('aiSkipTagged') !== 'false');
+    const aiCancelRequestedRef = useRef<boolean>(false);
+    // ITALIANO: Stato gemello del ref aiCancelRequestedRef — solo per aggiornare l'UI del pulsante Annulla
+    // ENGLISH: Mirror state of aiCancelRequestedRef — UI-only signal for the Cancel button
+    const [aiCancelRequested, setAiCancelRequested] = useState<boolean>(false);
+    const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+    const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState<boolean>(false);
+    const [tempApiKey, setTempApiKey] = useState<string>('');
+    const [isApiKeyGuideOpen, setIsApiKeyGuideOpen] = useState<boolean>(false);
+    const [isVerifyingApiKey, setIsVerifyingApiKey] = useState<boolean>(false);
+    const [apiKeyError, setApiKeyError] = useState<string>('');
+    const [isAIBusy, setIsAIBusy] = useState<boolean>(false);
+    const [isGlobalAITagging, setIsGlobalAITagging] = useState<boolean>(false);
+    const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number; skipped: number }>({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
+    const apiKeyLoadedRef = useRef<boolean>(false);
+
+    useEffect(() => { localStorage.setItem('aiEnabled', String(aiEnabled)); }, [aiEnabled]);
+    useEffect(() => { localStorage.setItem('aiModel', aiModel); }, [aiModel]);
+    useEffect(() => { localStorage.setItem('aiMaxTags', String(aiMaxTags)); }, [aiMaxTags]);
+    useEffect(() => { localStorage.setItem('aiCustomPrompt', aiCustomPrompt); }, [aiCustomPrompt]);
+    useEffect(() => { localStorage.setItem('aiRpm', String(aiRpm)); }, [aiRpm]);
+    useEffect(() => { localStorage.setItem('aiSkipTagged', String(aiSkipTagged)); }, [aiSkipTagged]);
+
+    // ITALIANO: Carico la API key dallo storage cifrato all'avvio
+    // ENGLISH: Load the API key from encrypted storage on mount
+    useEffect(() => {
+        let cancelled = false;
+        getSecret('geminiApiKey').then((value) => {
+            if (cancelled) return;
+            if (value) setGeminiApiKey(value);
+            apiKeyLoadedRef.current = true;
+        }).catch(() => { apiKeyLoadedRef.current = true; });
+        return () => { cancelled = true; };
+    }, []);
+
+    // ITALIANO: Persisti la API key in safeStorage (cifrata) appena cambia
+    // ENGLISH: Persist the API key in safeStorage (encrypted) on every change
+    useEffect(() => {
+        if (!apiKeyLoadedRef.current) return;
+        setSecret('geminiApiKey', geminiApiKey).catch(err => console.error('Failed to persist API key', err));
+    }, [geminiApiKey]);
 
     useEffect(() => {
         if (isApiKeyDialogOpen) {
             setTempApiKey(geminiApiKey);
+            setApiKeyError('');
         }
     }, [isApiKeyDialogOpen, geminiApiKey]);
 
-    useEffect(() => {
-        localStorage.setItem('aiModel', aiModel);
-    }, [aiModel]);
-
-    useEffect(() => {
-        localStorage.setItem('geminiApiKey', geminiApiKey);
-    }, [geminiApiKey]);
-
-    useEffect(() => {
-        localStorage.setItem('customPrompt', customPrompt);
-    }, [customPrompt]);
+    // ITALIANO: Cancella la API key cifrata e termina sessione AI
+    // ENGLISH: Wipe the encrypted API key and end AI session
+    const handleClearApiKey = useCallback(async () => {
+        try {
+            await deleteSecret('geminiApiKey');
+            setGeminiApiKey('');
+            setIsAIBusy(false);
+            setIsGlobalAITagging(false);
+            setGlobalAIProgress({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
+            soundManager.chime();
+            showNotification(t.aiKeyCleared || 'API Key removed', 'success');
+        } catch (e: any) {
+            console.error('Failed to clear API key', e);
+            showNotification(`${t.aiError || 'AI Error'}: ${e?.message || ''}`.trim(), 'error');
+        }
+    }, [t]);
 
     const [isGlobalTagManagerOpen, setIsGlobalTagManagerOpen] = useState(false);
     const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
-    const [aiDiscoveredTags, setAiDiscoveredTags] = useState<string[]>([]);
-    const [isGlobalAutoTagging, setIsGlobalAutoTagging] = useState(false);
-    const [globalAutoTaggingProgress, setGlobalAutoTaggingProgress] = useState(0);
-    const [globalModelProgress, setGlobalModelProgress] = useState(0);
-    const [isDownloadingModel, setIsDownloadingModel] = useState(false);
-    const [globalMaxTags, setGlobalMaxTags] = useState(10);
     const [showSplash, setShowSplash] = useState(true);
     const [splashProgress, setSplashProgress] = useState(0);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
-    const globalWorkerRef = useRef<Worker | null>(null);
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -180,101 +238,10 @@ export default function App() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleUndo, handleRedo]);
 
-    useEffect(() => {
-        globalWorkerRef.current = new AIWorker();
-        return () => globalWorkerRef.current?.terminate();
-    }, []);
-
-    const handleGlobalAutoTagging = async () => {
-        if (images.length === 0 || isGlobalAutoTagging || !globalWorkerRef.current) return;
-        
-        setIsGlobalAutoTagging(true);
-        setGlobalAutoTaggingProgress(0);
-        setGlobalModelProgress(0);
-        setIsDownloadingModel(false);
-        
-        let processed = 0;
-        const total = images.length;
-        const newDiscoveredTags: string[] = [];
-
-        for (const img of images) {
-            try {
-                let uniqueTags: string[] = [];
-
-                if (aiModel !== 'built-in') {
-                    if (!geminiApiKey) {
-                        setIsGlobalAutoTagging(false);
-                        setIsApiKeyDialogOpen(true);
-                        return;
-                    }
-                    uniqueTags = await getGeminiTags(img.file, geminiApiKey, aiModel, globalMaxTags, customPrompt);
-                } else {
-                    const imageUrl = URL.createObjectURL(img.file);
-                    
-                    const result = await new Promise<any>((resolve, reject) => {
-                        if (!globalWorkerRef.current) return reject("No worker");
-                        
-                        const handleMessage = (e: MessageEvent) => {
-                            if (e.data.type === 'progress') {
-                                if (e.data.data.status === 'progress') {
-                                    setIsDownloadingModel(true);
-                                    setGlobalModelProgress(Math.round(e.data.data.progress || 0));
-                                } else if (e.data.data.status === 'done') {
-                                    setIsDownloadingModel(false);
-                                }
-                            } else if (e.data.type === 'result') {
-                                globalWorkerRef.current?.removeEventListener('message', handleMessage);
-                                resolve(e.data.data);
-                            } else if (e.data.type === 'error') {
-                                globalWorkerRef.current?.removeEventListener('message', handleMessage);
-                                reject(e.data.data);
-                            }
-                        };
-                        
-                        globalWorkerRef.current.addEventListener('message', handleMessage);
-                        globalWorkerRef.current.postMessage({
-                            type: 'generate',
-                            data: { imageUrl, maxTags: globalMaxTags }
-                        });
-                    });
-
-                    URL.revokeObjectURL(imageUrl);
-
-                    if (result && Array.isArray(result) && result.length > 0) {
-                        const tags = result.map((r: any) => r.label.split(',')[0].trim().toLowerCase().replace(/\s+/g, '_'));
-                        uniqueTags = [...new Set(tags)].slice(0, globalMaxTags) as string[];
-                    }
-                }
-
-                if (uniqueTags.length > 0) {
-                    newDiscoveredTags.push(...uniqueTags);
-                }
-            } catch (err) {
-                console.error("Error processing image:", img.id, err);
-                if (aiModel !== 'built-in' && err instanceof Error && err.message.includes('API key not valid')) {
-                    setIsGlobalAutoTagging(false);
-                    setIsApiKeyDialogOpen(true);
-                    return;
-                }
-            }
-            
-            processed++;
-            setGlobalAutoTaggingProgress(Math.round((processed / total) * 100));
-        }
-
-        setAiDiscoveredTags(prev => [...new Set([...prev, ...newDiscoveredTags])]);
-        setIsGlobalAutoTagging(false);
-        setGlobalAutoTaggingProgress(0);
-        setIsDownloadingModel(false);
-        setGlobalModelProgress(0);
-        soundManager.chime();
-        showNotification(`${t.completed}: ${newDiscoveredTags.length} ${t.tagsDiscovered}`, "success");
-    };
-
     const allUniqueTags = useMemo(() => {
         const imgTags = images.flatMap(img => img.tags);
-        return [...new Set([...imgTags, ...customProjectTags, ...aiDiscoveredTags])].sort((a, b) => a.localeCompare(b));
-    }, [images, customProjectTags, aiDiscoveredTags]);
+        return [...new Set([...imgTags, ...customProjectTags])].sort((a, b) => a.localeCompare(b));
+    }, [images, customProjectTags]);
 
     const displayedImages = useMemo(() => {
         let sorted = [...images].filter(img => !img.isTrashed);
@@ -312,14 +279,13 @@ export default function App() {
         setConfirmDialog({
             isOpen: true,
             title: t.deleteAllTags,
-            message: "Sei sicuro di voler eliminare tutti i tag da tutte le immagini? Questa azione non può essere annullata.",
+            message: t.confirmDeleteAllTagsMsg,
             onConfirm: () => {
                 setImages(prev => prev.map(img => ({ ...img, tags: [] })));
                 setCustomProjectTags([]);
-                setAiDiscoveredTags([]);
                 setConfirmDialog(prev => ({ ...prev, isOpen: false }));
                 soundManager.pop();
-                showNotification("Tutti i tag sono stati eliminati", "success");
+                showNotification(t.allTagsDeleted, "success");
             },
             onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
         });
@@ -328,7 +294,6 @@ export default function App() {
     const handleCleanUnusedTags = () => {
         const usedTags = new Set(images.flatMap(img => img.tags));
         setCustomProjectTags(prev => prev.filter(tag => usedTags.has(tag)));
-        setAiDiscoveredTags(prev => prev.filter(tag => usedTags.has(tag)));
         showNotification(t.completed, 'success');
         soundManager.pop();
     };
@@ -339,7 +304,6 @@ export default function App() {
             tags: img.tags.filter(t => t !== tagToDelete)
         })));
         setCustomProjectTags(prev => prev.filter(t => t !== tagToDelete));
-        setAiDiscoveredTags(prev => prev.filter(t => t !== tagToDelete));
         soundManager.click();
     };
 
@@ -357,11 +321,14 @@ export default function App() {
     const handleDeletePermanently = async (id: string) => {
         const img = images.find(i => i.id === id);
         if (!img) return;
-        
+
         if (dirHandle) {
             try {
-                await dirHandle.removeEntry(img.file.name);
-                const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
+                // ITALIANO: removeEntry accetta solo nomi senza separatori di path
+                // ENGLISH: removeEntry only accepts names without path separators
+                const safeName = sanitizeFileName(img.file.name);
+                await dirHandle.removeEntry(safeName);
+                const txtName = buildTagFileName(img.file.name);
                 try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
             } catch (error) {
                 console.error(error);
@@ -369,7 +336,7 @@ export default function App() {
                 return;
             }
         }
-        
+
         setImages(prev => prev.filter(i => i.id !== id));
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
@@ -378,21 +345,20 @@ export default function App() {
     const handleEmptyTrash = async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsTrashOpen(false);
-        
+
         if (dirHandle) {
-            let successCount = 0;
             for (const img of trashedImages) {
                 try {
-                    await dirHandle.removeEntry(img.file.name);
-                    const txtName = img.file.name.replace(/\.[^/.]+$/, "") + '.txt';
-                    try { await dirHandle.removeEntry(txtName); } catch (e) {}
-                    successCount++;
+                    const safeName = sanitizeFileName(img.file.name);
+                    await dirHandle.removeEntry(safeName);
+                    const txtName = buildTagFileName(img.file.name);
+                    try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore */ }
                 } catch (error) {
                     console.error("Failed to delete", img.file.name);
                 }
             }
         }
-        
+
         setImages(prev => prev.filter(i => !i.isTrashed));
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
@@ -400,7 +366,7 @@ export default function App() {
 
     const handleRestoreAll = () => {
         setImages(prev => prev.map(img => ({ ...img, isTrashed: false })));
-        showNotification("Tutte le foto sono state ripristinate", "success");
+        showNotification(t.allPhotosRestored, "success");
         setIsTrashOpen(false);
         soundManager.pop();
     };
@@ -525,7 +491,7 @@ export default function App() {
 
     const handleResetProject = () => {
         setConfirmDialog({ isOpen: true, title: t.confirmResetTitle, message: t.confirmResetMsg, onConfirm: () => {
-            setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null); setAiDiscoveredTags([]);
+            setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
@@ -550,9 +516,8 @@ export default function App() {
                 showNotification(t.processingFiles, "info");
                 for (const img of imagesToSave) {
                     const tagString = getOrderedTagString(img.tags);
-                    const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
-                    const fileName = `${baseName}.txt`;
-                    
+                    const fileName = buildTagFileName(img.file.name);
+
                     const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
                     const writable = await fileHandle.createWritable();
                     await writable.write(tagString);
@@ -583,9 +548,8 @@ export default function App() {
                     
                     for (const img of imagesToSave) {
                         const tagString = getOrderedTagString(img.tags);
-                        const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
-                        const fileName = `${baseName}.txt`;
-                        
+                        const fileName = buildTagFileName(img.file.name);
+
                         const fileHandle = await exportHandle.getFileHandle(fileName, { create: true });
                         const writable = await fileHandle.createWritable();
                         await writable.write(tagString);
@@ -614,19 +578,23 @@ export default function App() {
                 
                 imagesToSave.forEach((img) => {
                     const tagString = getOrderedTagString(img.tags);
-                    const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
-                    zip.file(`${baseName}.txt`, tagString);
+                    // ITALIANO: Nome sanitizzato per prevenire zip-slip e caratteri illegali su Windows
+                    // ENGLISH: Sanitized name to prevent zip-slip and illegal Windows characters
+                    zip.file(buildTagFileName(img.file.name), tagString);
                 });
                 
                 const blob = await zip.generateAsync({ type: "blob" });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = isExportAll ? "tags_tutti.zip" : "tags_modificati.zip";
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                try {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = isExportAll ? "tags_tutti.zip" : "tags_modificati.zip";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } finally {
+                    URL.revokeObjectURL(url);
+                }
                 
                 setImages(prev => prev.map(img => {
                     if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
@@ -649,14 +617,16 @@ export default function App() {
             const tagString = getOrderedTagString(img.tags);
             const blob = new Blob([tagString], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); 
-            const baseName = img.file.name.substring(0, img.file.name.lastIndexOf('.')) || img.file.name;
-            a.href = url; 
-            a.download = `${baseName}.txt`; 
-            document.body.appendChild(a);
-            a.click(); 
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            try {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = buildTagFileName(img.file.name);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } finally {
+                URL.revokeObjectURL(url);
+            }
         }, i * 300));
         
         setImages(prev => prev.map(img => {
@@ -696,7 +666,255 @@ export default function App() {
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     };
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
+    const updateImageCaption = useCallback((id: string, caption: string) => {
+        setImages(prev => prev.map(img => img.id === id ? { ...img, caption } : img));
+    }, []);
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
+
+    // ITALIANO: Tagga la singola immagine via Gemini API
+    // ENGLISH: Tag a single image via Gemini API
+    const handleAITagSingle = useCallback(async (imageId: string): Promise<number> => {
+        if (!aiEnabled) return 0;
+        if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return 0; }
+        const img = images.find(i => i.id === imageId);
+        if (!img) return 0;
+        setIsAIBusy(true);
+        try {
+            const tags = await getGeminiTags(img.file, {
+                apiKey: geminiApiKey,
+                modelName: aiModel,
+                maxTags: aiMaxTags,
+                customPrompt: aiCustomPrompt,
+            });
+            const merged = [...new Set([...img.tags, ...tags])];
+            const added = merged.length - img.tags.length;
+            updateImageTags(imageId, merged);
+            soundManager.chime();
+            showNotification(`${added} ${t.aiTagsGenerated || 'tags generated'}`, 'success');
+            return added;
+        } catch (e: any) {
+            console.error('AI tag failed', e);
+            const { kind } = classifyGeminiError(e);
+            if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
+            const friendly = kind === 'billing_required'
+                ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
+                : kind === 'rate_limit'
+                ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
+                : kind === 'model_unavailable'
+                ? (t.aiModelUnavailable || 'Model unavailable for your account.')
+                : String(e?.message || e || '').slice(0, 200);
+            showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+            return 0;
+        } finally {
+            setIsAIBusy(false);
+        }
+    }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, images, t, updateImageTags]);
+
+    // ITALIANO: Genera didascalia via Gemini per la singola immagine
+    // ENGLISH: Generate Gemini caption for a single image
+    const handleAICaptionSingle = useCallback(async (imageId: string): Promise<string> => {
+        if (!aiEnabled) return '';
+        if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return ''; }
+        const img = images.find(i => i.id === imageId);
+        if (!img) return '';
+        setIsAIBusy(true);
+        try {
+            const caption = await getGeminiCaption(img.file, {
+                apiKey: geminiApiKey,
+                modelName: aiModel,
+                customPrompt: aiCustomPrompt,
+            });
+            updateImageCaption(imageId, caption);
+            soundManager.chime();
+            showNotification(t.aiCaptionGenerated || 'Caption generated!', 'success');
+            return caption;
+        } catch (e: any) {
+            console.error('AI caption failed', e);
+            const { kind } = classifyGeminiError(e);
+            if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
+            const friendly = kind === 'billing_required'
+                ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
+                : kind === 'rate_limit'
+                ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
+                : kind === 'model_unavailable'
+                ? (t.aiModelUnavailable || 'Model unavailable for your account.')
+                : String(e?.message || e || '').slice(0, 200);
+            showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+            return '';
+        } finally {
+            setIsAIBusy(false);
+        }
+    }, [aiEnabled, geminiApiKey, aiModel, aiCustomPrompt, images, t, updateImageCaption]);
+
+    // ITALIANO: Richiesta di annullamento del bulk tagging — viene letta dai cicli e dagli sleep.
+    //           Aggiorna sia il ref (per il loop async) che lo state (per re-render del pulsante).
+    // ENGLISH: Cancel request for bulk tagging — read by loops and sleeps.
+    //          Updates both the ref (for the async loop) and state (to re-render the button).
+    const handleCancelAITagging = useCallback(() => {
+        aiCancelRequestedRef.current = true;
+        setAiCancelRequested(true);
+    }, []);
+
+    // ITALIANO: Tagga tutte le immagini con throttle adattivo (mira aiRpm) + retry su rate-limit.
+    //           Supporta skip immagini già taggate e annullamento via aiCancelRequestedRef.
+    // ENGLISH: Tag every image with adaptive throttle (targets aiRpm) + retry on rate-limit.
+    //          Supports skipping already-tagged images and cancel via aiCancelRequestedRef.
+    const handleAITagAll = useCallback(async () => {
+        if (!aiEnabled || images.length === 0 || isGlobalAITagging) return;
+        if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return; }
+        aiCancelRequestedRef.current = false;
+        setAiCancelRequested(false);
+        setIsGlobalAITagging(true);
+        setGlobalAIProgress({ done: 0, total: images.length, ok: 0, errors: 0, skipped: 0 });
+        // ITALIANO: Intervallo minimo tra le richieste in base alla RPM target dell'utente
+        // ENGLISH: Minimum interval between requests based on user's target RPM
+        const minIntervalMs = Math.max(1000, Math.floor(60000 / Math.max(1, aiRpm)));
+        // ITALIANO: Sleep cancellabile — controlla aiCancelRequestedRef ad intervalli di 200ms
+        // ENGLISH: Cancellable sleep — checks aiCancelRequestedRef every 200ms
+        const cancellableSleep = async (ms: number): Promise<void> => {
+            const step = 200;
+            const end = Date.now() + ms;
+            while (Date.now() < end) {
+                if (aiCancelRequestedRef.current) return;
+                const remaining = end - Date.now();
+                if (remaining <= 0) return;
+                await new Promise(r => setTimeout(r, Math.min(step, remaining)));
+            }
+        };
+        let totalTagsAdded = 0;
+        let okCount = 0;
+        let errorCount = 0;
+        let skippedCount = 0;
+        let fatalAbort = false;
+        let cancelled = false;
+        try {
+            for (let i = 0; i < images.length; i++) {
+                if (aiCancelRequestedRef.current) { cancelled = true; break; }
+                const current = images[i];
+                if (!current) {
+                    setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                    continue;
+                }
+                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag
+                // ENGLISH: Skip if requested and the image already has at least one tag
+                if (aiSkipTagged && Array.isArray(current.tags) && current.tags.length > 0) {
+                    skippedCount++;
+                    console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
+                    setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                    continue;
+                }
+
+                const requestStart = Date.now();
+                let success = false;
+                // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
+                // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    if (aiCancelRequestedRef.current) { cancelled = true; break; }
+                    try {
+                        const tags = await getGeminiTags(current.file, {
+                            apiKey: geminiApiKey,
+                            modelName: aiModel,
+                            maxTags: aiMaxTags,
+                            customPrompt: aiCustomPrompt,
+                        });
+                        const before = current.tags.length;
+                        const merged = [...new Set([...current.tags, ...tags])];
+                        totalTagsAdded += merged.length - before;
+                        updateImageTags(current.id, merged);
+                        success = true;
+                        console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: ${tags.length} tags`);
+                        break;
+                    } catch (err: any) {
+                        const { kind, message } = classifyGeminiError(err);
+                        console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
+                        if (kind === 'invalid_key') {
+                            setIsApiKeyDialogOpen(true);
+                            fatalAbort = true;
+                            break;
+                        }
+                        if (kind === 'billing_required' || kind === 'model_unavailable') {
+                            const friendly = kind === 'billing_required'
+                                ? (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.')
+                                : (t.aiModelUnavailable || 'Model unavailable for your account.');
+                            showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+                            fatalAbort = true;
+                            break;
+                        }
+                        if (kind === 'rate_limit' && attempt < 2) {
+                            // ITALIANO: Backoff progressivo: 15s, 45s — cancellabile
+                            // ENGLISH: Progressive backoff: 15s, 45s — cancellable
+                            const backoff = attempt === 0 ? 15000 : 45000;
+                            console.warn(`[AI] Rate limit, retry in ${backoff / 1000}s...`);
+                            await cancellableSleep(backoff);
+                            if (aiCancelRequestedRef.current) { cancelled = true; break; }
+                            continue;
+                        }
+                        // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui
+                        // ENGLISH: Non-fatal error or last attempt failed → record error and continue
+                        break;
+                    }
+                }
+
+                if (fatalAbort || cancelled) break;
+                if (success) okCount++;
+                else errorCount++;
+                setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+
+                // ITALIANO: Throttle adattivo — aspetta solo se la richiesta è stata più veloce del minimo
+                // ENGLISH: Adaptive throttle — only wait if the request was faster than the minimum
+                if (i < images.length - 1) {
+                    const elapsed = Date.now() - requestStart;
+                    const waitMs = Math.max(0, minIntervalMs - elapsed);
+                    if (waitMs > 0) await cancellableSleep(waitMs);
+                }
+            }
+            soundManager.chime();
+            const successType: 'success' | 'info' | 'error' = cancelled
+                ? 'info'
+                : errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
+            const prefix = cancelled ? `${t.aiCancelled || 'Cancelled'} · ` : '';
+            const skippedSuffix = skippedCount > 0 ? ` · ⊘ ${skippedCount}` : '';
+            const summary = `${prefix}${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount}${skippedSuffix} · +${totalTagsAdded} ${t.aiTagsGenerated || 'tags'}`;
+            showNotification(summary, successType);
+        } finally {
+            aiCancelRequestedRef.current = false;
+            setAiCancelRequested(false);
+            setIsGlobalAITagging(false);
+        }
+    }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, aiSkipTagged, images, isGlobalAITagging, t, updateImageTags]);
+
+    // ITALIANO: Verifica la API key. Usa SEMPRE 2.5 Flash (free tier) per la verifica,
+    //           così non confondiamo "key invalida" con "modello a pagamento".
+    // ENGLISH: Verify the API key. ALWAYS uses 2.5 Flash (free tier) for verification
+    //          so we don't confuse "invalid key" with "paid-only model".
+    const handleVerifyApiKey = useCallback(async () => {
+        const key = tempApiKey.trim();
+        if (!key) { setApiKeyError(t.aiKeyEmpty || 'Please enter a key'); return; }
+        setIsVerifyingApiKey(true);
+        setApiKeyError('');
+        try {
+            const result = await verifyGeminiApiKey(key, DEFAULT_GEMINI_MODEL);
+            if (result.ok) {
+                setGeminiApiKey(key);
+                setIsApiKeyDialogOpen(false);
+                soundManager.chime();
+                showNotification(t.aiKeySaved || 'API Key verified and saved', 'success');
+            } else {
+                const friendly = result.errorKind === 'billing_required'
+                    ? (t.aiBillingRequired || 'Billing required on your Google Cloud project.')
+                    : result.errorKind === 'rate_limit'
+                    ? (t.aiRateLimit || 'Rate limit (key valid but throttled).')
+                    : result.errorKind === 'model_unavailable'
+                    ? (t.aiModelUnavailable || 'Model unavailable for your account.')
+                    : (result.error || (t.aiKeyInvalid || 'API Key invalid'));
+                setApiKeyError(friendly);
+            }
+        } catch (e: any) {
+            setApiKeyError(e?.message || (t.aiKeyInvalid || 'API Key invalid'));
+        } finally {
+            setIsVerifyingApiKey(false);
+        }
+    }, [tempApiKey, t]);
     
     const applyBulkTags = () => {
         setImages(prev => prev.map(img => {
@@ -755,19 +973,18 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        if (showSplash) {
-            let progress = 0;
-            const interval = setInterval(() => {
-                progress += Math.random() * 15;
-                if (progress >= 100) {
-                    progress = 100;
-                    clearInterval(interval);
-                    setTimeout(() => setShowSplash(false), 500);
-                }
-                setSplashProgress(progress);
-            }, 100);
-            return () => clearInterval(interval);
-        }
+        if (!showSplash) return undefined;
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += Math.random() * 15;
+            if (progress >= 100) {
+                progress = 100;
+                clearInterval(interval);
+                setTimeout(() => setShowSplash(false), 500);
+            }
+            setSplashProgress(progress);
+        }, 100);
+        return () => clearInterval(interval);
     }, [showSplash]);
 
     return (
@@ -776,7 +993,7 @@ export default function App() {
                 <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
                     <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
                         <div className="relative flex items-center justify-center">
-                            <img src="./logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { (e2.currentTarget as HTMLImageElement).style.display = 'none'; document.getElementById('fallback-splash-logo')!.classList.remove('hidden'); } }} />
+                            <img src="./logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
                                 <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
                             </div>
@@ -804,56 +1021,58 @@ export default function App() {
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
             <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
-            
+
+            {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
+            {/* ENGLISH: Gemini API Key entry / verification dialog */}
             {isApiKeyDialogOpen && (
-                <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
+                <div className={`fixed inset-0 z-[400] flex items-center justify-center p-4 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
                     <div className={`w-full max-w-md p-6 rounded-3xl shadow-2xl border ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} flex flex-col gap-4`}>
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-1">
                             <div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-500 rounded-xl">
-                                <Sparkles size={24} />
+                                <KeyRound size={24} />
                             </div>
-                            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>API Key Richiesta</h2>
+                            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.apiKeyTitle || 'API Key Gemini'}</h2>
                         </div>
-                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                            Per utilizzare i modelli avanzati di Nano Banana (Gemini), è necessaria una API Key gratuita.
-                        </p>
+                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.apiKeyDesc || 'Per usare Gemini è necessaria una API key gratuita di Google AI Studio.'}</p>
                         <div className={`p-3 rounded-xl text-xs ${isDarkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-50 text-gray-500'}`}>
-                            <p className="mb-2"><strong>Come ottenerla:</strong></p>
+                            <p className="mb-2"><strong>{t.apiKeyHowTo || 'Come ottenerla:'}</strong></p>
                             <ol className="list-decimal pl-4 space-y-1">
-                                <li>Vai su <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">Google AI Studio</a></li>
-                                <li>Accedi con il tuo account Google</li>
-                                <li>Clicca su "Create API key"</li>
-                                <li>Copia la chiave generata e incollala qui sotto</li>
+                                <li><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">{t.apiKeyStep1 || 'Vai su Google AI Studio'}</a></li>
+                                <li>{t.apiKeyStep2 || 'Accedi col tuo account Google'}</li>
+                                <li>{t.apiKeyStep3 || 'Clicca su "Create API key"'}</li>
+                                <li>{t.apiKeyStep4 || 'Copia e incolla qui sotto'}</li>
                             </ol>
                         </div>
-                        <input 
-                            type="password" 
-                            value={tempApiKey} 
-                            onChange={(e) => setTempApiKey(e.target.value)} 
-                            placeholder="Incolla qui la tua API Key..." 
+                        <input
+                            type="password"
+                            value={tempApiKey}
+                            onChange={(e) => { setTempApiKey(e.target.value); setApiKeyError(''); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !isVerifyingApiKey) handleVerifyApiKey(); }}
+                            placeholder={t.apiKeyPlaceholder || 'Incolla qui la tua API Key...'}
+                            autoComplete="off"
+                            spellCheck={false}
                             className={`w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
                         />
-                        <div className="flex justify-end gap-3 mt-2">
-                            <button 
-                                onClick={() => {
-                                    setIsApiKeyDialogOpen(false);
-                                    if (!geminiApiKey) setAiModel('built-in');
-                                }} 
+                        {apiKeyError && (
+                            <div className={`text-xs rounded-lg px-3 py-2 ${isDarkMode ? 'bg-red-900/30 text-red-400 border border-red-800/50' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                                {apiKeyError}
+                            </div>
+                        )}
+                        <div className="flex justify-end gap-3 mt-1">
+                            <button
+                                onClick={() => { setIsApiKeyDialogOpen(false); if (!geminiApiKey) setAiEnabled(false); }}
+                                disabled={isVerifyingApiKey}
                                 className={`px-4 py-2 rounded-xl font-medium transition-colors ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
                             >
-                                Annulla
+                                {t.cancel || 'Annulla'}
                             </button>
-                            <button 
-                                onClick={() => {
-                                    if (tempApiKey.trim()) {
-                                        setGeminiApiKey(tempApiKey.trim());
-                                        setIsApiKeyDialogOpen(false);
-                                        setToast({ show: true, message: "API Key salvata con successo!", type: 'success' });
-                                    }
-                                }} 
-                                className="px-4 py-2 rounded-xl font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shadow-md"
+                            <button
+                                onClick={handleVerifyApiKey}
+                                disabled={isVerifyingApiKey || tempApiKey.trim().length < 20}
+                                className="px-4 py-2 rounded-xl font-medium bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white transition-colors shadow-md flex items-center gap-2"
                             >
-                                Salva e Continua
+                                {isVerifyingApiKey && <Loader2 size={14} className="animate-spin" />}
+                                {isVerifyingApiKey ? (t.aiKeyVerifying || 'Verifica in corso…') : (t.apiKeySaveButton || 'Verifica e salva')}
                             </button>
                         </div>
                     </div>
@@ -948,7 +1167,7 @@ export default function App() {
                                                                 <AlertTriangle size={16} strokeWidth={2.5} />
                                                             </div>
                                                             <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                                                {`Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)\nQualità di questa immagine: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                                                                {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
                                                             </div>
                                                         </div>
                                                     )}
@@ -983,33 +1202,29 @@ export default function App() {
             )}
 
             {selectedImageId && (
-                <Lightbox 
+                <Lightbox
                     globalTriggers={globalTriggers}
-                    image={displayedImages.find(img => img.id === selectedImageId)} 
-                    onClose={() => setSelectedImageId(null)} 
-                    updateTags={updateImageTags} 
-                    updateImageCaption={(id: string, caption: string) => {
-                        setImages(prev => prev.map(img => img.id === id ? { ...img, caption } : img));
-                    }}
-                    allTags={allUniqueTags} 
-                    t={t} 
-                    onNext={handleNext} 
-                    onPrev={handlePrev} 
-                    hasNext={(displayedImages.length - 1) > currentIndex} 
-                    hasPrev={currentIndex > 0} 
-                    slideDirection={slideDirection} 
-                    showNotification={showNotification} 
-                    updateOriginalTags={updateOriginalTags} 
+                    image={displayedImages.find(img => img.id === selectedImageId)}
+                    onClose={() => setSelectedImageId(null)}
+                    updateTags={updateImageTags}
+                    updateImageCaption={updateImageCaption}
+                    allTags={allUniqueTags}
+                    t={t}
+                    onNext={handleNext}
+                    onPrev={handlePrev}
+                    hasNext={(displayedImages.length - 1) > currentIndex}
+                    hasPrev={currentIndex > 0}
+                    slideDirection={slideDirection}
+                    showNotification={showNotification}
+                    updateOriginalTags={updateOriginalTags}
                     dirHandle={dirHandle}
                     isDarkMode={isDarkMode}
-                    aiDiscoveredTags={aiDiscoveredTags}
-                    onTagsDiscovered={(newTags: string[]) => setAiDiscoveredTags(prev => [...new Set([...prev, ...newTags])])}
                     onMoveToTrash={handleMoveToTrash}
-                    aiModel={aiModel}
-                    geminiApiKey={geminiApiKey}
-                    setIsApiKeyDialogOpen={setIsApiKeyDialogOpen}
-                    customPrompt={customPrompt}
                     lang={lang}
+                    aiEnabled={aiEnabled}
+                    aiBusy={isAIBusy}
+                    onAITagSingle={handleAITagSingle}
+                    onAICaptionSingle={handleAICaptionSingle}
                 />
             )}
 
@@ -1025,7 +1240,7 @@ export default function App() {
                         </div>
                         <div className="flex-1 flex justify-center items-center gap-3 w-full md:w-auto">
                             <div className="hidden sm:block relative">
-                                <img src="./logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { (e2.currentTarget as HTMLImageElement).style.display = 'none'; document.getElementById('fallback-header-logo')!.classList.remove('hidden'); } }} />
+                                <img src="./logo.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-header-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
                                 <div id="fallback-header-logo" className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-md hidden"><Tag className="text-white" size={20} /></div>
                             </div>
                             <h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1>
@@ -1045,7 +1260,7 @@ export default function App() {
                             <div className="relative" ref={settingsRef}>
                                 <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}><span className="font-semibold text-sm hidden sm:inline-block">{t.settings}</span><Settings size={20} className={isSettingsOpen ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} /></button>
                                 
-                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-64 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
+                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
                                     <h3 className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} uppercase mb-4 tracking-wider`}>{t.settings}</h3>
                                     <div className="flex flex-col gap-4">
                                         <div className="flex items-center justify-between">
@@ -1058,54 +1273,188 @@ export default function App() {
                                             <AppleToggle checked={isDarkMode} onChange={setIsDarkMode} colorClass="bg-indigo-500" iconOn={<Moon size={10}/>} iconOff={<Sun size={10}/>} />
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
-                                        <div className="flex flex-col gap-2">
-                                            <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
-                                                <Sparkles size={16} className="text-purple-500"/>
-                                                Modello AI
-                                            </div>
-                                            <select 
-                                                value={aiModel} 
-                                                onChange={(e) => {
-                                                    const newModel = e.target.value;
-                                                    setAiModel(newModel);
-                                                    if (newModel !== 'built-in' && !geminiApiKey) {
-                                                        setIsApiKeyDialogOpen(true);
-                                                    }
-                                                }}
-                                                className={`w-full text-xs rounded-lg border px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
-                                            >
-                                                <option value="built-in">Modello Incorporato</option>
-                                                <option disabled>──────────</option>
-                                                <option value="gemini-2.5-flash">Nano Banana (Veloce) {geminiApiKey ? '✅' : '🔑'}</option>
-                                                <option value="gemini-3.1-flash-preview">Nano Banana 2 (Avanzato) {geminiApiKey ? '✅' : '🔑'}</option>
-                                                <option value="gemini-3.1-pro-preview">Nano Banana Pro (Massima Qualità) {geminiApiKey ? '✅' : '🔑'}</option>
-                                            </select>
-                                        </div>
-                                        {aiModel !== 'built-in' && (
-                                            <>
-                                                <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
-                                                <div className="flex flex-col gap-2">
-                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
-                                                        <Sparkles size={16} className="text-purple-500"/>
-                                                        Prompt Personalizzato
-                                                    </div>
-                                                    <textarea 
-                                                        value={customPrompt} 
-                                                        onChange={(e) => setCustomPrompt(e.target.value)}
-                                                        placeholder="Es. Ignora lo sfondo, usa solo termini tecnici..."
-                                                        className={`w-full text-xs rounded-lg border px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 min-h-[60px] resize-none ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-gray-50 border-gray-300 text-gray-800 placeholder-gray-400'}`}
-                                                    />
-                                                </div>
-                                            </>
-                                        )}
-                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
-                                        <button 
+                                        <button
                                             onClick={() => { setIsSettingsOpen(false); setIsStatsOpen(true); }}
                                             className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                                         >
                                             <LayoutGrid size={16} />
-                                            Statistiche Progetto
+                                            {t.projectStats}
                                         </button>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        {/* ITALIANO: Sezione strumenti AI cloud (Gemini) */}
+                                        {/* ENGLISH: Cloud AI tools section (Gemini) */}
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
+                                                    <Sparkles size={16} className="text-purple-500"/>
+                                                    {t.aiSettings || 'AI Tools'}
+                                                </div>
+                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
+                                            </div>
+                                            {aiEnabled && (
+                                                <div className={`flex flex-col gap-2 p-2 rounded-lg text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/50 text-gray-600'}`}>
+                                                    <p className="leading-relaxed">{t.aiCloudInfo || ''}</p>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="font-medium text-[11px]">{t.aiKeyLabel || 'API Key Gemini'}</label>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={() => setIsApiKeyDialogOpen(true)}
+                                                                className={`flex-1 flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-mono transition-colors border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                                                            >
+                                                                <span className="truncate">{geminiApiKey ? `${'•'.repeat(8)}${geminiApiKey.slice(-4)}` : (t.aiKeyMissing || 'Click to enter your key')}</span>
+                                                                <KeyRound size={11} className="shrink-0" />
+                                                            </button>
+                                                            {geminiApiKey && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setConfirmDialog({
+                                                                            isOpen: true,
+                                                                            title: t.aiKeyClearTitle || 'Cancella API Key',
+                                                                            message: t.aiKeyClearMsg || 'Vuoi davvero rimuovere la API key salvata?',
+                                                                            onConfirm: async () => {
+                                                                                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                                                                                await handleClearApiKey();
+                                                                            },
+                                                                            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+                                                                        });
+                                                                    }}
+                                                                    className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'text-red-400 hover:bg-red-900/40' : 'text-red-500 hover:bg-red-50'}`}
+                                                                    title={t.aiKeyClear || 'Rimuovi'}
+                                                                >
+                                                                    <X size={11} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {/* ITALIANO: Pulsante guida espandibile */}
+                                                        {/* ENGLISH: Expandable guide button */}
+                                                        <button
+                                                            onClick={() => setIsApiKeyGuideOpen(v => !v)}
+                                                            className={`mt-1 flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-bold transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-300 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+                                                        >
+                                                            <span className="flex items-center gap-1.5">
+                                                                <BookOpen size={11} />
+                                                                {t.aiKeyGuideToggle || 'Come ottenere una API key'}
+                                                            </span>
+                                                            {isApiKeyGuideOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                                                        </button>
+                                                        {isApiKeyGuideOpen && (
+                                                            <div className={`mt-1 p-3 rounded-md text-[10.5px] leading-relaxed flex flex-col gap-2 ${isDarkMode ? 'bg-gray-900/80 text-gray-300 border border-gray-700' : 'bg-white text-gray-700 border border-gray-200'}`}>
+                                                                <p className="font-bold text-[11px]">{t.aiKeyGuideIntro || 'La key è gratis. Servono ~30 secondi:'}</p>
+                                                                <ol className="list-decimal pl-4 space-y-2">
+                                                                    <li>
+                                                                        <span className="font-medium">{t.aiKeyGuideStep1Title || 'Apri Google AI Studio'}</span>
+                                                                        <p className="opacity-80 mt-0.5">{t.aiKeyGuideStep1Desc || 'Clicca il link qui sotto, il sito si aprirà nel browser predefinito.'}</p>
+                                                                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className={`inline-flex items-center gap-1 mt-1 px-2 py-1 rounded text-[10px] font-bold ${isDarkMode ? 'bg-indigo-700 text-white hover:bg-indigo-600' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                                                            <ExternalLink size={10} /> aistudio.google.com/app/apikey
+                                                                        </a>
+                                                                    </li>
+                                                                    <li>
+                                                                        <span className="font-medium">{t.aiKeyGuideStep2Title || 'Accedi col tuo account Google'}</span>
+                                                                        <p className="opacity-80 mt-0.5">{t.aiKeyGuideStep2Desc || 'Va bene un qualsiasi account Gmail (anche personale). Accetta i termini se richiesto.'}</p>
+                                                                    </li>
+                                                                    <li>
+                                                                        <span className="font-medium">{t.aiKeyGuideStep3Title || 'Clicca "Create API key" o "Get API key"'}</span>
+                                                                        <p className="opacity-80 mt-0.5">{t.aiKeyGuideStep3Desc || "Il pulsante blu in alto a destra. Se chiede di scegliere un progetto, lascia quello suggerito di default."}</p>
+                                                                    </li>
+                                                                    <li>
+                                                                        <span className="font-medium">{t.aiKeyGuideStep4Title || 'Copia la stringa generata'}</span>
+                                                                        <p className="opacity-80 mt-0.5">{t.aiKeyGuideStep4Desc || 'Inizia con "AIza..." ed è lunga 39 caratteri. Usa l\'icona di copia accanto alla key.'}</p>
+                                                                    </li>
+                                                                    <li>
+                                                                        <span className="font-medium">{t.aiKeyGuideStep5Title || 'Incollala qui'}</span>
+                                                                        <p className="opacity-80 mt-0.5">{t.aiKeyGuideStep5Desc || 'Clicca il campo "API Key Gemini" sopra, incolla, conferma. L\'app la verifica e la salva cifrata.'}</p>
+                                                                    </li>
+                                                                </ol>
+                                                                <div className={`mt-1 p-2 rounded text-[10px] flex items-start gap-1.5 ${isDarkMode ? 'bg-emerald-900/30 text-emerald-300 border border-emerald-800/50' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                                                                    <Check size={11} className="shrink-0 mt-0.5" />
+                                                                    <span><strong>{t.aiKeyGuideFreeTitle || 'È gratis'}</strong> — {t.aiKeyGuideFreeBody || 'Il free tier copre ~15 richieste/minuto, sufficiente per dataset fino a centinaia di foto.'}</span>
+                                                                </div>
+                                                                <div className={`p-2 rounded text-[10px] flex items-start gap-1.5 ${isDarkMode ? 'bg-amber-900/30 text-amber-300 border border-amber-800/50' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                                                    <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                                                                    <span><strong>{t.aiKeyGuideRecoverTitle || 'L\'hai persa?'}</strong> {t.aiKeyGuideRecoverBody || 'Apri di nuovo aistudio.google.com/app/apikey: troverai tutte le tue key (puoi crearne di nuove o eliminare le vecchie).'}</span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="font-medium text-[11px]">{t.aiModelLabel || 'Modello'}</label>
+                                                        <select
+                                                            value={aiModel}
+                                                            onChange={(e) => setAiModel(e.target.value)}
+                                                            className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
+                                                        >
+                                                            {GEMINI_MODELS.map(m => {
+                                                                const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : ' $';
+                                                                return (
+                                                                    <option key={m.id} value={m.id}>
+                                                                        {m.label}{tierBadge}{m.recommended ? ' ★' : ''}
+                                                                    </option>
+                                                                );
+                                                            })}
+                                                        </select>
+                                                        {getModelTier(aiModel) === 'limited' && (
+                                                            <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-blue-900/30 text-blue-300 border border-blue-800/50' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+                                                                <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                                                                <span>{t.aiModelLimitedWarning || 'Free tier limitato (rate limit più bassi). Per uso intenso serve billing attivo.'}</span>
+                                                            </div>
+                                                        )}
+                                                        {getModelTier(aiModel) === 'paid' && (
+                                                            <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-amber-900/30 text-amber-300 border border-amber-800/50' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                                                <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                                                                <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="flex items-center justify-between font-medium text-[11px]">
+                                                            <span>{t.aiMaxTags || 'Max tags'}</span>
+                                                            <span className="font-bold tabular-nums">{aiMaxTags}</span>
+                                                        </label>
+                                                        <input
+                                                            type="range"
+                                                            min={1} max={80} step={1}
+                                                            value={aiMaxTags}
+                                                            onChange={(e) => setAiMaxTags(parseInt(e.target.value, 10))}
+                                                            className="w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="flex items-center justify-between font-medium text-[11px]">
+                                                            <span>{t.aiRpmLabel || 'Velocità (req/min)'}</span>
+                                                            <span className="font-bold tabular-nums">{aiRpm}</span>
+                                                        </label>
+                                                        <input
+                                                            type="range"
+                                                            min={5} max={60} step={1}
+                                                            value={aiRpm}
+                                                            onChange={(e) => setAiRpm(parseInt(e.target.value, 10))}
+                                                            className="w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                                        />
+                                                        <p className="text-[9px] italic opacity-80">{t.aiRpmHint || 'Free tier: max 15. Più alto = più veloce ma rischio rate-limit.'}</p>
+                                                    </div>
+                                                    <div className={`flex items-start justify-between gap-3 px-2 py-1.5 rounded-md ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-100/70'}`}>
+                                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                                            <span className="font-medium text-[11px]">{t.aiSkipTagged || 'Salta foto già taggate'}</span>
+                                                            <span className="text-[9px] italic opacity-75 leading-snug">{t.aiSkipTaggedHint || 'Se attivo, le immagini che hanno già almeno un tag vengono saltate durante "Tagga tutte con AI".'}</span>
+                                                        </div>
+                                                        <AppleToggle checked={aiSkipTagged} onChange={(v: boolean) => setAiSkipTagged(v)} colorClass="bg-purple-500" />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="font-medium text-[11px]">{t.aiCustomPromptLabel || 'Prompt personalizzato (opzionale)'}</label>
+                                                        <textarea
+                                                            value={aiCustomPrompt}
+                                                            onChange={(e) => setAiCustomPrompt(e.target.value)}
+                                                            maxLength={500}
+                                                            placeholder={t.aiCustomPromptPlaceholder || "Es. focalizzati su vestiti e ambientazione, niente NSFW…"}
+                                                            className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 min-h-[60px] resize-none ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                                                        />
+                                                    </div>
+                                                    <p className={`text-[9px] italic mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                                                        ✓ free · ◐ limitato · $ pagamento · ★ consigliato
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
                                         <div className="flex items-center justify-between">
                                             <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
@@ -1143,8 +1492,8 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>Versione 3.7.0</span>
-                                            <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>Copyright xXIlRizzoXx</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>{t.versionLabel} 3.7.0</span>
+                                            <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>{t.copyrightLabel} xXIlRizzoXx</span>
                                         </div>
                                     </div>
                                 </div>}
@@ -1187,30 +1536,32 @@ export default function App() {
                             {/* ENGLISH: Input for global trigger words */}
                             <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" isDarkMode={isDarkMode} />
                             
-                            {/* ITALIANO: Strumenti di Auto Tagging Globale */}
-                            {/* ENGLISH: Global Auto Tagging tools */}
+                            {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
+                            {/* ENGLISH: Toolbar with Suggested Tags + AI Auto-Tag (if enabled) */}
                             <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2 w-[600px] max-w-full mx-auto`}>
-                                <div className="flex items-center justify-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} whitespace-nowrap`}>Max tag generati con AI:</span>
-                                        <input 
-                                            type="number" 
-                                            min="1" 
-                                            max="20" 
-                                            value={globalMaxTags} 
-                                            onChange={(e) => setGlobalMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
-                                            className={`w-12 px-1 py-1 text-xs rounded-lg border text-center outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
-                                        />
-                                    </div>
-                                    <button 
-                                        onClick={handleGlobalAutoTagging}
-                                        disabled={isGlobalAutoTagging || images.length === 0}
-                                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95' : 'bg-white border border-gray-200 text-indigo-600 hover:bg-indigo-50 shadow-sm active:scale-95')}`}
-                                    >
-                                        {isGlobalAutoTagging ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className={`absolute -top-1 -right-1 animate-pulse ${isDarkMode ? 'text-yellow-300' : 'text-yellow-500'}`} /></div>}
-                                        {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
-                                    </button>
-                                    <button 
+                                <div className="flex items-center justify-center gap-3 flex-wrap">
+                                    {aiEnabled && (
+                                        <button
+                                            onClick={handleAITagAll}
+                                            disabled={isGlobalAITagging || images.length === 0}
+                                            className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isGlobalAITagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                        >
+                                            {isGlobalAITagging ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                                            {isGlobalAITagging ? `${globalAIProgress.done}/${globalAIProgress.total}` : (t.aiAutoTagAll || 'Auto-tag all with AI')}
+                                        </button>
+                                    )}
+                                    {aiEnabled && isGlobalAITagging && (
+                                        <button
+                                            onClick={handleCancelAITagging}
+                                            disabled={aiCancelRequested}
+                                            title={t.aiCancel || t.cancel || 'Cancel'}
+                                            className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${aiCancelRequested ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md active:scale-95'}`}
+                                        >
+                                            <X size={14} />
+                                            {aiCancelRequested ? (t.aiCancelling || 'Cancelling…') : (t.aiCancel || t.cancel || 'Cancel')}
+                                        </button>
+                                    )}
+                                    <button
                                         onClick={() => setIsTagSuggestionsOpen(!isTagSuggestionsOpen)}
                                         className={`flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md active:scale-95`}
                                     >
@@ -1218,16 +1569,26 @@ export default function App() {
                                         {t.suggestedTags}
                                     </button>
                                 </div>
-                                {isGlobalAutoTagging && (
-                                    <div className="w-full px-2 pb-1">
-                                        <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                                            <div 
-                                                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
-                                                style={{ width: `${globalAutoTaggingProgress}%` }}
-                                            />
+                                {isGlobalAITagging && (() => {
+                                    const errSuffix = globalAIProgress.errors > 0 ? ` · ✗ ${globalAIProgress.errors}` : '';
+                                    const skipSuffix = globalAIProgress.skipped > 0 ? ` · ⊘ ${globalAIProgress.skipped}` : '';
+                                    const label = `${t.aiTaggingInProgress || 'Tagging…'} ${globalAIProgress.done}/${globalAIProgress.total}${errSuffix}${skipSuffix}`;
+                                    const pct = globalAIProgress.total > 0 ? Math.round((globalAIProgress.done / globalAIProgress.total) * 100) : 0;
+                                    return (
+                                        <div className="w-full flex flex-col gap-1 px-2 pb-1">
+                                            <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
+                                                <span className={isDarkMode ? 'text-purple-400' : 'text-purple-600'}>{label}</span>
+                                                <span className={isDarkMode ? 'text-purple-400' : 'text-purple-600'}>{pct}%</span>
+                                            </div>
+                                            <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                                                <div
+                                                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                                                    style={{ width: `${pct}%` }}
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </div>
                         </div>
                         
@@ -1250,7 +1611,7 @@ export default function App() {
                                     <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                         <Save size={16} />
                                         <span className="hidden sm:inline">{t.saveChanges}</span>
-                                        <span className="sm:hidden">Salva</span>
+                                        <span className="sm:hidden">{t.saveShort}</span>
                                     </button>
                                     
                                     {/* ITALIANO: Sezione Esporta con opzione ZIP sotto */}
@@ -1259,7 +1620,7 @@ export default function App() {
                                         <button onClick={handleExportAll} disabled={images.length === 0} className="w-full h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                             <SaveAll size={16} />
                                             <span className="hidden sm:inline">{t.exportAllTxt}</span>
-                                            <span className="sm:hidden">Esporta</span>
+                                            <span className="sm:hidden">{t.exportShort}</span>
                                         </button>
                                         <div className="flex items-center justify-end gap-2 px-1">
                                             <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.exportAsZip}</span>
@@ -1317,7 +1678,7 @@ export default function App() {
                                                     <AlertTriangle size={16} strokeWidth={2.5} />
                                                 </div>
                                                 <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                                    {`Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)\nQualità di questa immagine: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                                                    {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
                                                 </div>
                                             </div>
                                         )}
@@ -1416,64 +1777,6 @@ export default function App() {
                                 className={`w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-100' : 'bg-gray-50 border-gray-300 text-gray-800'}`}
                             />
                             
-                            {/* ITALIANO: Controlli AI duplicati nel gestore tag (visibili solo se ci sono immagini) */}
-                            {/* ENGLISH: Duplicate AI controls in tag manager (visible only if there are images) */}
-                            {images.length > 0 && (
-                                <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-100 border-gray-200'} flex flex-col gap-2`}>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Max tag generati con AI:</span>
-                                            <input 
-                                                type="number" 
-                                                min="1" 
-                                                max="20" 
-                                                value={globalMaxTags} 
-                                                onChange={(e) => setGlobalMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
-                                                className={`w-10 px-1 py-0.5 text-[10px] rounded border text-center outline-none focus:ring-1 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
-                                            />
-                                        </div>
-                                        <button 
-                                            onClick={handleGlobalAutoTagging}
-                                            disabled={isGlobalAutoTagging || images.length === 0}
-                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${isGlobalAutoTagging || images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95' : 'bg-white border border-gray-200 text-indigo-600 hover:bg-indigo-50 shadow-sm active:scale-95')}`}
-                                        >
-                                            {isGlobalAutoTagging ? <Loader2 size={12} className="animate-spin" /> : <div className="relative"><Tag size={12} /><Sparkles size={6} className={`absolute -top-1 -right-1 animate-pulse ${isDarkMode ? 'text-yellow-300' : 'text-yellow-500'}`} /></div>}
-                                            {isGlobalAutoTagging ? `${Math.floor(globalAutoTaggingProgress)}%` : t.autoTaggingGlobal}
-                                        </button>
-                                    </div>
-                                    {isGlobalAutoTagging && (
-                                        <div className="w-full px-1 flex flex-col gap-1.5">
-                                            {isDownloadingModel && (
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="flex justify-between items-center px-1">
-                                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{t.modelLoading}</span>
-                                                        <span className={`text-[9px] font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{globalModelProgress}%</span>
-                                                    </div>
-                                                    <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                                                        <div 
-                                                            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" 
-                                                            style={{ width: `${globalModelProgress}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
-                                            <div className="flex flex-col gap-1">
-                                                <div className="flex justify-between items-center px-1">
-                                                    <span className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-pink-400' : 'text-pink-600'}`}>{t.processing}</span>
-                                                    <span className={`text-[9px] font-bold ${isDarkMode ? 'text-pink-400' : 'text-pink-600'}`}>{globalAutoTaggingProgress}%</span>
-                                                </div>
-                                                <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                                                    <div 
-                                                        className={`h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ${!isDownloadingModel && globalAutoTaggingProgress === 0 ? 'w-full animate-pulse' : ''}`} 
-                                                        style={globalAutoTaggingProgress > 0 ? { width: `${globalAutoTaggingProgress}%` } : {}}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
                             <div className="flex gap-2">
                                 <button 
                                     onClick={handleDeleteAllTags}
@@ -1496,14 +1799,12 @@ export default function App() {
                         <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`} style={{ scrollbarGutter: 'stable' }}>
                              {allUniqueTags.length === 0 ? <p className={`text-sm italic w-full text-center mt-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.noTagsInProject}</p> :
                              allUniqueTags.map(tag => {
-                                const isAiGenerated = aiDiscoveredTags.includes(tag);
                                 const category = getTagCategory(tag);
                                 const colorClass = getActiveCategoryColor(category);
-                                
+
                                 return (
                                 <span key={tag} className={`px-2.5 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 ${colorClass}`}>
-                                    {isAiGenerated && <Sparkles size={10} className="text-white" />}
-                                    {category === 'nsfw' && !isAiGenerated && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm">+18</span>}
+                                    {category === 'nsfw' && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm">+18</span>}
                                     {tag}
                                     <button onClick={() => handleDeleteTagFromProject(tag)} className="hover:bg-red-500 hover:text-white rounded-full p-0.5 transition-colors focus:outline-none text-white/70 hover:text-white">
                                         <X size={10} />
@@ -1519,7 +1820,7 @@ export default function App() {
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsStatsOpen(false)}>
                     <div className={`w-[90vw] max-w-4xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
                         <div className={`p-6 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} flex justify-between items-center shrink-0`}>
-                            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={24} className="text-indigo-500"/> Statistiche Progetto</h2>
+                            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={24} className="text-indigo-500"/> {t.projectStats}</h2>
                             <button onClick={() => setIsStatsOpen(false)} className={`hover:bg-red-500 hover:text-white rounded-full p-2 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><X size={20} /></button>
                         </div>
                         
@@ -1527,7 +1828,9 @@ export default function App() {
                             {(() => {
                                 const totalImages = images.length;
                                 const totalTags = allUniqueTags.length;
-                                const captionedImages = images.filter(img => img.caption && img.caption.trim().length > 0).length;
+                                const taggedImages = images.filter(img => img.tags && img.tags.length > 0).length;
+                                const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
+                                const captionedImages = images.filter(img => typeof img.caption === 'string' && img.caption.trim().length > 0).length;
                                 const captionedPercentage = totalImages > 0 ? Math.round((captionedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};
@@ -1555,29 +1858,38 @@ export default function App() {
                                             <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-indigo-50 border-indigo-100'} flex items-center gap-4`}>
                                                 <div className="p-3 bg-indigo-500 rounded-lg text-white"><ImageIcon size={24} /></div>
                                                 <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Totale Immagini</p>
+                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalImages}</p>
                                                     <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalImages}</p>
                                                 </div>
                                             </div>
                                             <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
                                                 <div className="p-3 bg-purple-500 rounded-lg text-white"><Tag size={24} /></div>
                                                 <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Totale Tag Unici</p>
+                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalTags}</p>
                                                     <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalTags}</p>
                                                 </div>
                                             </div>
                                             <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-emerald-50 border-emerald-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-emerald-500 rounded-lg text-white"><Sparkles size={24} /></div>
+                                                <div className="p-3 bg-emerald-500 rounded-lg text-white"><Check size={24} /></div>
                                                 <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Immagini con Didascalia</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{captionedImages} <span className="text-sm font-normal opacity-70">({captionedPercentage}%)</span></p>
+                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTaggedImages}</p>
+                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-sm font-normal opacity-70">({taggedPercentage}%)</span></p>
                                                 </div>
                                             </div>
+                                            {aiEnabled && (
+                                                <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
+                                                    <div className="p-3 bg-purple-500 rounded-lg text-white"><Sparkles size={24} /></div>
+                                                    <div>
+                                                        <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsCaptioned}</p>
+                                                        <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{captionedImages} <span className="text-sm font-normal opacity-70">({captionedPercentage}%)</span></p>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                             <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-                                                <h3 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={20} /> Distribuzione Categorie Tag</h3>
+                                                <h3 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={20} /> {t.statsCategoryDistribution}</h3>
                                                 <div className="h-64 w-full">
                                                     <ResponsiveContainer width="100%" height="100%">
                                                         <RechartsPieChart>
@@ -1602,7 +1914,7 @@ export default function App() {
                                             </div>
 
                                             <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-                                                <h3 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><BarChart3 size={20} /> Top 10 Tag Più Usati</h3>
+                                                <h3 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><BarChart3 size={20} /> {t.statsTopTags}</h3>
                                                 <div className="h-64 w-full">
                                                     <ResponsiveContainer width="100%" height="100%">
                                                         <RechartsBarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>

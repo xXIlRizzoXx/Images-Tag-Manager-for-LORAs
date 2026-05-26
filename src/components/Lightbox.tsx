@@ -3,185 +3,52 @@
 **                                                                            **
 **  ITALIANO: VISUALIZZATORE IMMAGINI (LIGHTBOX)                              **
 **  Questo file gestisce la finestra che si apre quando clicchi su un'immagine.**
-**  Permette di vedere l'immagine ingrandita e di modificarne i tag.          **
+**  Permette di vedere l'immagine ingrandita, modificarne tag e didascalia,   **
+**  e usare l'AI offline (tag WD14 + didascalia BLIP) se abilitata.           **
 **                                                                            **
 **  ENGLISH: IMAGE VIEWER (LIGHTBOX)                                          **
 **  This file manages the window that opens when you click on an image.       **
-**  It allows you to see the enlarged image and edit its tags.                **
+**  It allows viewing, editing tags and caption, plus offline AI (WD14 tags + **
+**  BLIP caption) when enabled.                                               **
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Loader2, Tag, Sparkles, Trash2, Tags, AlertTriangle } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Tag, Trash2, Tags, AlertTriangle, Wand2, Loader2, Sparkles } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
-// @ts-ignore
-import AIWorker from '../workers/ai.worker?worker';
-
-import { getGeminiTags, getGeminiCaption } from '../services/geminiService';
 
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
+import { buildTagFileName } from '../utils/pathUtils';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onTagsDiscovered, aiDiscoveredTags = [], onMoveToTrash, aiModel, geminiApiKey, setIsApiKeyDialogOpen, customPrompt, updateImageCaption, lang, globalTriggers = [] }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, onAICaptionSingle }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
     const [highResUrl, setHighResUrl] = useState<string | null>(null);
     const [isHighResLoaded, setIsHighResLoaded] = useState(false);
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
-    const [activeTab, setActiveTab] = useState<'tags' | 'caption'>('tags');
-    const [caption, setCaption] = useState(image.caption || '');
     const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
-    
-    // ITALIANO: Stato per l'elaborazione AI
-    // ENGLISH: State for AI processing
-    const [isProcessingAI, setIsProcessingAI] = useState(false);
-    const [aiProgress, setAiProgress] = useState(0);
-    const [maxTags, setMaxTags] = useState(10);
-    const workerRef = useRef<Worker | null>(null);
+    const [activeTab, setActiveTab] = useState<'tags' | 'caption'>('tags');
+    const [captionDraft, setCaptionDraft] = useState<string>(image?.caption || '');
+
     const imageRef = useRef(image);
+    const isMountedRef = useRef(true);
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => { isMountedRef.current = false; };
+    }, []);
 
     useEffect(() => {
         imageRef.current = image;
-        setCaption(image.caption || '');
+        setCaptionDraft(image?.caption || '');
     }, [image]);
-
-    const handleSaveCaption = () => {
-        if (updateImageCaption) {
-            updateImageCaption(image.id, caption);
-            soundManager.chime();
-            if (showNotification) showNotification("Didascalia salvata!", "success");
-        }
-    };
-
-    const handleGenerateCaption = async () => {
-        if (isProcessingAI || !image || !geminiApiKey) {
-            if (!geminiApiKey) setIsApiKeyDialogOpen(true);
-            return;
-        }
-
-        setIsProcessingAI(true);
-        try {
-            const generatedCaption = await getGeminiCaption(image.file, geminiApiKey, aiModel, customPrompt);
-            setCaption(generatedCaption);
-            if (updateImageCaption) {
-                updateImageCaption(image.id, generatedCaption);
-            }
-            soundManager.chime();
-            if (showNotification) showNotification("Didascalia generata!", "success");
-        } catch (err) {
-            console.error("Error generating caption:", err);
-            if (showNotification) showNotification("Errore generazione didascalia", "error");
-        } finally {
-            setIsProcessingAI(false);
-        }
-    };
-
-    useEffect(() => {
-        workerRef.current = new AIWorker();
-        workerRef.current.onmessage = (event) => {
-            const { type, data } = event.data;
-            if (type === 'progress') {
-                if (data.status === 'progress') {
-                    // ITALIANO: Stabilizziamo la percentuale per evitare salti bruschi
-                    // ENGLISH: Stabilize percentage to avoid sudden jumps
-                    const prog = Math.round(data.progress || 0);
-                    setAiProgress(prev => Math.max(prev, prog));
-                }
-            } else if (type === 'result') {
-                setIsProcessingAI(false);
-                setAiProgress(0);
-                handleAIResult(data);
-            } else if (type === 'error') {
-                setIsProcessingAI(false);
-                setAiProgress(0);
-                if (showNotification) showNotification(`${t.aiError}: ${data}`, "error");
-            }
-        };
-        return () => {
-            workerRef.current?.terminate();
-        };
-    }, []);
-
-    const handleAIResult = (result: any) => {
-        if (!result || !result[0] || !result[0].generated_text) return;
-        
-        const currentImage = imageRef.current;
-        if (!currentImage) return;
-
-        const text = result[0].generated_text;
-        
-        // ITALIANO: Estrazione semplice delle parole chiave
-        // ENGLISH: Simple keyword extraction
-        const stopwords = ['a', 'an', 'the', 'is', 'are', 'in', 'on', 'at', 'with', 'by', 'of', 'and', 'or', 'to', 'for'];
-        const words = text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").split(/\s+/);
-        const tags = words.filter((w: string) => w.length > 2 && !stopwords.includes(w));
-        const newTags = [...new Set(tags)].slice(0, maxTags) as string[];
-
-        // ITALIANO: Aggiungiamo i tag all'immagine corrente
-        // ENGLISH: Add tags to the current image
-        const currentTags = currentImage.tags || [];
-        const combined = [...new Set([...currentTags, ...newTags])];
-        updateTags(currentImage.id, combined);
-
-        if (onTagsDiscovered) {
-            onTagsDiscovered(newTags);
-        }
-        
-        soundManager.chime();
-        if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
-    };
-
-    const handleMagicWand = async () => {
-        if (isProcessingAI || !image) return;
-        
-        setIsProcessingAI(true);
-        setAiProgress(0);
-        
-        if (aiModel !== 'built-in') {
-            if (!geminiApiKey) {
-                setIsProcessingAI(false);
-                setIsApiKeyDialogOpen(true);
-                return;
-            }
-            try {
-                const tags = await getGeminiTags(image.file, geminiApiKey, aiModel, maxTags, customPrompt);
-                if (tags.length > 0) {
-                    const uniqueTags = [...new Set(tags)].slice(0, maxTags);
-                    
-                    if (onTagsDiscovered) {
-                        onTagsDiscovered(uniqueTags);
-                    }
-                    
-                    const newTags = uniqueTags.filter(t => !currentTags.includes(t));
-                    if (newTags.length > 0) {
-                        updateTags(image.id, [...currentTags, ...newTags]);
-                    }
-                    
-                    soundManager.chime();
-                    if (showNotification) showNotification(`${t.completed}: ${newTags.length} ${t.tagsDiscovered}`, "success");
-                }
-            } catch (err) {
-                console.error("Error processing image with Gemini:", err);
-                if (err instanceof Error && err.message.includes('API key not valid')) {
-                    setIsApiKeyDialogOpen(true);
-                }
-            } finally {
-                setIsProcessingAI(false);
-            }
-        } else {
-            if (!workerRef.current) return;
-            workerRef.current.postMessage({
-                type: 'generate',
-                data: { imageUrl: highResUrl, maxTags }
-            });
-        }
-    };
 
     const handleKeyDown = useCallback((e: any) => {
         if (!imageRef.current) return;
-        if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
         if (e.key === 'ArrowRight' && hasNext) onNext();
         else if (e.key === 'ArrowLeft' && hasPrev) onPrev();
         else if (e.key === 'Escape') onClose();
@@ -230,15 +97,8 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         }
     };
 
-    const handleAddAll = () => {
-        updateTags(image.id, [...allTags]);
-        soundManager.chime();
-    };
-
-    const handleRemoveAll = () => {
-        updateTags(image.id, []);
-        soundManager.pop();
-    };
+    const handleAddAll = () => { updateTags(image.id, [...allTags]); soundManager.chime(); };
+    const handleRemoveAll = () => { updateTags(image.id, []); soundManager.pop(); };
 
     const handleSaveSingleTxt = async () => {
         const orderedTags = [
@@ -246,38 +106,51 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
             ...currentTags.filter((t: string) => !globalTriggers.includes(t))
         ];
         const tagString = orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
-        const baseName = image.file.name.substring(0, image.file.name.lastIndexOf('.')) || image.file.name;
-        const fileName = `${baseName}.txt`;
-        
+        const fileName = buildTagFileName(image.file.name);
+
         try {
             if (dirHandle) {
                 const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
                 const writable = await fileHandle.createWritable();
                 await writable.write(tagString);
                 await writable.close();
-                
+
                 updateOriginalTags(image.id, currentTags);
                 soundManager.chime();
                 if (showNotification) showNotification(t.successSaveSingle, "success");
                 return;
             }
-
             const blob = new Blob([tagString], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; 
-            a.download = fileName; 
-            document.body.appendChild(a);
-            a.click(); 
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
+            try {
+                const a = document.createElement('a');
+                a.href = url; a.download = fileName;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            } finally { URL.revokeObjectURL(url); }
             updateOriginalTags(image.id, currentTags);
             soundManager.chime();
             if (showNotification) showNotification(t.successSaveSingle, "success");
         } catch (err) {
-            console.error("Errore salvataggio singolo:", err);
+            console.error("Errore salvataggio singolo");
         }
+    };
+
+    const handleAITagClick = async () => {
+        if (!onAITagSingle || aiBusy) return;
+        await onAITagSingle(image.id);
+    };
+
+    const handleAICaptionClick = async () => {
+        if (!onAICaptionSingle || aiBusy) return;
+        const result = await onAICaptionSingle(image.id);
+        if (result && isMountedRef.current) setCaptionDraft(result);
+    };
+
+    const handleSaveCaption = () => {
+        if (!updateImageCaption) return;
+        updateImageCaption(image.id, captionDraft);
+        soundManager.chime();
+        if (showNotification) showNotification(t.aiCaptionSaved || 'Caption saved!', 'success');
     };
 
     const animClass = slideDirection === 'left' ? 'anim-slide-right' : 'anim-slide-left';
@@ -299,7 +172,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                     <AlertTriangle size={24} strokeWidth={2.5} />
                                 </div>
                                 <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                    {`Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)\nQualità di questa immagine: ${image.width}x${image.height} (${(image.width * image.height / 1000000).toFixed(2)} MP)`}
+                                    {`${t.minQualityWarning || 'Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)'}\n${t.imageQualityLabel || 'Qualità di questa immagine'}: ${image.width}x${image.height} (${(image.width * image.height / 1000000).toFixed(2)} MP)`}
                                 </div>
                             </div>
                         )}
@@ -327,169 +200,142 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     </div>
                 </div>
                 <div className={`hidden lg:flex flex-col w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
-                    <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
-                        <div className="flex bg-gray-200 dark:bg-gray-800 rounded-lg p-1 mb-2">
-                            <button onClick={() => setActiveTab('tags')} className={`flex-1 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'tags' ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-                                TAGS
+                    {aiEnabled && (
+                        <div className={`flex border-b shrink-0 ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'}`}>
+                            <button
+                                onClick={() => setActiveTab('tags')}
+                                className={`flex-1 py-2.5 text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${activeTab === 'tags' ? (isDarkMode ? 'text-indigo-400 border-b-2 border-indigo-400 bg-gray-800/40' : 'text-indigo-600 border-b-2 border-indigo-600 bg-white') : (isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700')}`}
+                            >
+                                <Tag size={12} /> {t.aiTagsTab || 'Tags'}
                             </button>
-                            <button onClick={() => setActiveTab('caption')} className={`flex-1 py-1 text-xs font-bold rounded-md transition-all ${activeTab === 'caption' ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-                                CAPTION
+                            <button
+                                onClick={() => setActiveTab('caption')}
+                                className={`flex-1 py-2.5 text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${activeTab === 'caption' ? (isDarkMode ? 'text-purple-400 border-b-2 border-purple-400 bg-gray-800/40' : 'text-purple-600 border-b-2 border-purple-600 bg-white') : (isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700')}`}
+                            >
+                                <Sparkles size={12} /> {t.aiCaptionTab || 'Caption'}
                             </button>
                         </div>
-                        {activeTab === 'tags' && (
-                            <>
+                    )}
+
+                    {activeTab === 'tags' && (
+                        <>
+                            <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
                                 <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
                                 <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>
-                            </>
-                        )}
-                        {activeTab === 'caption' && (
-                            <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><Sparkles size={16} className="text-purple-500" /> Didascalia AI</h3>
-                        )}
-                    </div>
-                    
-                    {activeTab === 'tags' ? (
-                    <>
-                        <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} shrink-0 flex flex-col gap-3 shadow-sm z-10`}>
-                            <div className="flex items-center justify-between px-1">
-                                <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.showOnlyAdded}</span>
-                                <AppleToggle checked={showOnlyAdded} onChange={setShowOnlyAdded} iconOn={<span />} iconOff={<span />} colorClass="bg-indigo-500" />
                             </div>
-                            <div className="flex gap-2">
-                                <button onClick={handleAddAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/50 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100'} rounded-lg text-xs font-bold transition-colors border`}>
-                                    {t.addAllTags}
-                                </button>
-                                <button onClick={handleRemoveAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-red-900/30 border-red-800/50 text-red-400 hover:bg-red-900/50' : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100'} rounded-lg text-xs font-bold transition-colors border`}>
-                                    {t.removeAllTags}
+
+                            <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} shrink-0 flex flex-col gap-3 shadow-sm z-10`}>
+                                {aiEnabled && (
+                                    <button
+                                        onClick={handleAITagClick}
+                                        disabled={aiBusy}
+                                        className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${aiBusy ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
+                                    >
+                                        {aiBusy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                                        {aiBusy
+                                            ? (t.aiTaggingInProgress || 'Tagging…')
+                                            : (t.aiAutoTagSingle || 'Generate tags with AI')}
+                                    </button>
+                                )}
+                                <div className="flex items-center justify-between px-1">
+                                    <span className={`text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.showOnlyAdded}</span>
+                                    <AppleToggle checked={showOnlyAdded} onChange={setShowOnlyAdded} iconOn={<span />} iconOff={<span />} colorClass="bg-indigo-500" />
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={handleAddAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/50 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100'} rounded-lg text-xs font-bold transition-colors border`}>
+                                        {t.addAllTags}
+                                    </button>
+                                    <button onClick={handleRemoveAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-red-900/30 border-red-800/50 text-red-400 hover:bg-red-900/50' : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100'} rounded-lg text-xs font-bold transition-colors border`}>
+                                        {t.removeAllTags}
+                                    </button>
+                                </div>
+                                <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-1 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
+
+                                <button
+                                    onClick={() => setIsTagSuggestionsOpen(!isTagSuggestionsOpen)}
+                                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-colors border ${isDarkMode ? 'bg-cyan-900/30 border-cyan-800/50 text-cyan-400 hover:bg-cyan-900/50' : 'bg-cyan-50 border-cyan-100 text-cyan-600 hover:bg-cyan-100'}`}
+                                >
+                                    <Tags size={14} />
+                                    {t.suggestedTags || 'Tag Suggeriti'}
                                 </button>
                             </div>
-                            <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-3 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />
-                            
-                            <button 
-                                onClick={() => {
-                                    setIsTagSuggestionsOpen(!isTagSuggestionsOpen);
-                                }}
-                                className={`w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-colors border ${isDarkMode ? 'bg-cyan-900/30 border-cyan-800/50 text-cyan-400 hover:bg-cyan-900/50' : 'bg-cyan-50 border-cyan-100 text-cyan-600 hover:bg-cyan-100'}`}
-                            >
-                                <Tags size={14} />
-                                {t.suggestedTags || 'Tag Suggeriti'}
-                            </button>
-                        </div>
 
-                        <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                            {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
-                                const isAiGenerated = aiDiscoveredTags.includes(tag);
-                                const category = getTagCategory(tag);
-                                const isNsfw = category === 'nsfw';
-                                const baseColorClass = getCategoryColor(category, isDarkMode);
-                                const activeColorClass = getActiveCategoryColor(category);
-                                const isSelected = currentTags.includes(tag);
-                                
-                                let colorClass = '';
-                                if (isSelected) {
-                                    colorClass = `${activeColorClass} scale-105 font-bold`;
-                                } else if (isAiGenerated) {
-                                    colorClass = 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40';
-                                } else {
-                                    colorClass = `${baseColorClass} border border-transparent hover:brightness-110 shadow-sm`;
-                                }
+                            <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
+                                    const category = getTagCategory(tag);
+                                    const isNsfw = category === 'nsfw';
+                                    const baseColorClass = getCategoryColor(category, isDarkMode);
+                                    const activeColorClass = getActiveCategoryColor(category);
+                                    const isSelected = currentTags.includes(tag);
+                                    let colorClass = '';
+                                    if (isSelected) {
+                                        colorClass = `${activeColorClass} scale-105 font-bold`;
+                                    } else {
+                                        colorClass = `${baseColorClass} border border-transparent hover:brightness-110 shadow-sm`;
+                                    }
+                                    return (
+                                        <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
+                                            {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${isSelected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                                            {tag}
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                                return (
-                                <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
-                                    {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${isSelected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
-                                    {isAiGenerated && <Sparkles size={10} className={isSelected ? 'text-white' : ''} />}
-                                    {tag}
-                                </button>
-                            )})}
-                        </div>
-                    </>
-                    ) : (
-                        <div className={`flex-1 p-4 flex flex-col gap-4 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                            <textarea 
-                                value={caption}
-                                onChange={(e) => setCaption(e.target.value)}
-                                placeholder="Scrivi una didascalia o generane una con l'IA..."
-                                className={`flex-1 w-full p-3 rounded-xl border resize-none outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400'}`}
-                            />
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={handleGenerateCaption}
-                                    disabled={isProcessingAI}
-                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'}`}
-                                >
-                                    {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                                    Genera con IA
-                                </button>
-                                <button 
-                                    onClick={handleSaveCaption}
-                                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md transition-all"
-                                >
-                                    Salva Didascalia
-                                </button>
+                            <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0`}>
+                                <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
+                            </div>
+                        </>
+                    )}
+
+                    {activeTab === 'caption' && aiEnabled && (
+                        <div className={`flex flex-col flex-1 min-h-0 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                            <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
+                                <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><Sparkles size={16} className="text-purple-500" /> {t.aiCaption || 'AI Caption'}</h3>
+                                <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>BLIP base · offline</p>
+                            </div>
+                            <div className="flex-1 p-4 flex flex-col gap-3 min-h-0">
+                                <textarea
+                                    value={captionDraft}
+                                    onChange={(e) => setCaptionDraft(e.target.value)}
+                                    placeholder={t.aiCaptionPlaceholder || 'Write a caption or generate one with AI…'}
+                                    className={`flex-1 w-full p-3 rounded-xl border resize-none outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400'}`}
+                                />
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleAICaptionClick}
+                                        disabled={aiBusy}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${aiBusy ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'}`}
+                                    >
+                                        {aiBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                        {aiBusy
+                                            ? (t.aiCaptioningInProgress || 'Generating…')
+                                            : (t.aiCaptionGenerate || 'Generate caption')}
+                                    </button>
+                                    <button
+                                        onClick={handleSaveCaption}
+                                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md transition-all"
+                                    >
+                                        <Save size={14} className="inline mr-1" />
+                                        {t.aiSaveCaption || 'Save caption'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
-                    <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0 flex flex-col gap-3`}>
-                        
-                        {/* ITALIANO: Sezione Strumenti AI */}
-                        {/* ENGLISH: AI Tools Section */}
-                        <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'} flex flex-col gap-2`}>
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex flex-col gap-1.5">
-                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.aiTools}</span>
-                                    <div className="flex items-center gap-1">
-                                        <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Max tag generati con AI:</span>
-                                        <input 
-                                            type="number" 
-                                            min="1" 
-                                            max="20" 
-                                            value={maxTags} 
-                                            onChange={(e) => setMaxTags(Math.max(1, parseInt(e.target.value) || 1))}
-                                            className={`w-10 px-1 py-0.5 text-[10px] rounded border text-center outline-none focus:ring-1 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
-                                        />
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={handleMagicWand} 
-                                    disabled={isProcessingAI}
-                                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shrink-0 ${isProcessingAI ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-md active:scale-95'}`}
-                                >
-                                    {isProcessingAI ? <Loader2 size={14} className="animate-spin" /> : <div className="relative"><Tag size={14} /><Sparkles size={8} className="absolute -top-1 -right-1 text-yellow-300 animate-pulse" /></div>}
-                                    {isProcessingAI ? t.generating : t.magicWand}
-                                </button>
-                            </div>
-                            {/* ITALIANO: Barra di caricamento per l'AI */}
-                            {/* ENGLISH: Loading bar for AI */}
-                            {isProcessingAI && (
-                                <div className="w-full px-1 pb-1 flex flex-col gap-1">
-                                    <div className="flex justify-between items-center px-1">
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{aiProgress > 0 ? t.modelLoading : t.generating}</span>
-                                        {aiProgress > 0 && <span className={`text-[9px] font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`}>{Math.floor(aiProgress)}%</span>}
-                                    </div>
-                                    <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                                        <div 
-                                            className={`h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ${aiProgress === 0 ? 'w-full animate-pulse' : ''}`} 
-                                            style={aiProgress > 0 ? { width: `${aiProgress}%` } : {}}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
-                    </div>
                 </div>
-                <TagSuggestionsPanel 
-                    isOpen={isTagSuggestionsOpen} 
-                    onClose={() => setIsTagSuggestionsOpen(false)} 
+                <TagSuggestionsPanel
+                    isOpen={isTagSuggestionsOpen}
+                    onClose={() => setIsTagSuggestionsOpen(false)}
                     onTagClick={(tag) => {
                         if (!currentTags.includes(tag)) {
                             updateTags(image.id, [...currentTags, tag]);
                             soundManager.pop();
                         }
-                    }} 
-                    lang={lang} 
-                    isDarkMode={isDarkMode} 
-                    t={t} 
+                    }}
+                    lang={lang}
+                    isDarkMode={isDarkMode}
+                    t={t}
                     isLightbox={true}
                     selectedTags={currentTags}
                 />

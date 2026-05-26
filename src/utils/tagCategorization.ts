@@ -1,6 +1,20 @@
-export type TagCategory = 'characters' | 'places' | 'styles' | 'colors' | 'framing' | 'nsfw' | 'general' | 'feral_poses' | 'moods' | 'face_details' | 'bird_features' | 'seasons' | 'time_of_day' | 'weather' | 'lighting' | 'anthro_traits' | 'body_types' | 'clothing' | 'intimate' | 'accessories';
+export type TagCategory = 'characters' | 'places' | 'styles' | 'colors' | 'framing' | 'nsfw' | 'general' | 'feral_poses' | 'moods' | 'face_details' | 'bird_features' | 'seasons' | 'time_of_day' | 'weather' | 'lighting' | 'anthro_traits' | 'body_types' | 'clothing' | 'intimate' | 'accessories' | 'hair' | 'eyes' | 'human_poses' | 'hand_gestures' | 'footwear' | 'headwear' | 'patterns_fabrics' | 'art_mediums' | 'camera_effects' | 'vfx_particles' | 'render_styles';
 
-const nsfwKeywords = ['nude', 'naked', 'nsfw', 'explicit', 'breasts', 'nipples', 'sex', 'porn', 'pussy', 'penis', 'ass', 'uncensored', 'hentai', 'r18', 'rule34', '18+', 'topless', 'bottomless', 'lingerie', 'thong', 'panties', 'bra', 'bikini', 'underwear'];
+// ITALIANO: Lista di parole intere (non substring) — evita falsi positivi tipo "grass" → "ass"
+// ENGLISH: Whole-word list (not substring) — avoids false positives like "grass" → "ass"
+const nsfwWords = new Set<string>([
+    // Strong NSFW
+    'nude', 'naked', 'nsfw', 'explicit', 'uncensored', 'hentai', 'porn', 'pornographic',
+    'r18', 'r-18', 'rule34', '18+', '+18', 'lewd', 'erotic', 'erotica', 'risque',
+    // Anatomy
+    'nipple', 'nipples', 'breast', 'breasts', 'pussy', 'penis', 'vagina', 'anus', 'anal',
+    'genitals', 'genitalia', 'buttocks', 'butthole', 'cock', 'dick', 'testicles', 'clitoris',
+    // Acts
+    'sex', 'sexual', 'sexy', 'intercourse', 'orgasm', 'orgy', 'masturbation', 'fellatio',
+    'cunnilingus', 'cum', 'ejaculation',
+    // State
+    'topless', 'bottomless', 'fully nude',
+]);
 const charactersKeywords = ['boy', 'girl', 'man', 'woman', '1girl', '1boy', 'character', 'solo', 'multiple girls', 'multiple boys', 'male', 'female', 'eyes', 'hair', 'face', 'smile', 'looking at viewer', 'portrait', 'person', 'people', 'human-like', 'bipedal', 'anthro', 'furry', 'kemonomimi', 'muzzle', 'snout', 'paws', 'pawpads', 'toe beans', 'claws', 'digitigrade', 'plantigrade', 'hooves', 'tail hole', 'animal ears', 'fluffy tail', 'scales', 'fur', 'fur patterns', 'striped fur', 'spotted fur', 'animal hands', 'animal feet'];
 const placesKeywords = ['outdoors', 'indoors', 'scenery', 'sky', 'building', 'tree', 'nature', 'city', 'room', 'landscape', 'background', 'water', 'ocean', 'forest', 'street', 'day', 'night', 'sunlight', 'jungle', 'desert', 'beach', 'sea', 'lake', 'river', 'waterfall', 'mountains', 'hills', 'valley', 'meadow', 'field', 'cave', 'ruins', 'cityscape', 'town', 'village', 'alley', 'park', 'garden', 'bedroom', 'living room', 'bathroom', 'kitchen', 'library', 'office', 'castle', 'dungeon', 'fantasy landscape', 'sci-fi city', 'space', 'underwater'];
 const stylesKeywords = ['sketch', 'realistic', '3d', 'painting', 'anime', 'monochrome', 'comic', 'illustration', 'watercolor', 'oil painting', 'pixel art', 'concept art', 'digital art', 'traditional media', 'greyscale', 'photorealistic', 'raw photo', 'photography', 'polaroid', 'rough sketch', 'lineart', 'manga', 'cartoon', 'cel shading', '3d render', 'octane render', 'unreal engine', 'colorful', 'pastel colors', 'muted colors'];
@@ -20,9 +34,14 @@ const accessoriesKeywords = ['collar', 'spiked collar', 'leather collar', 'leash
 
 export const getTagCategory = (tag: string): TagCategory => {
     const lowerTag = tag.toLowerCase();
-    
-    // Check NSFW first
-    if (nsfwKeywords.some(kw => lowerTag.includes(kw))) return 'nsfw';
+
+    // ITALIANO: NSFW — match a parole intere per evitare falsi positivi (grass, class, glasses, ecc.)
+    // ENGLISH: NSFW — whole-word match to avoid false positives (grass, class, glasses, etc.)
+    // Tag arrivano come stringhe space/underscore/dash separated; tokenizziamo e cerchiamo match esatto.
+    const tokens = lowerTag.split(/[\s,_\-/]+/).filter(Boolean);
+    if (tokens.some(tok => nsfwWords.has(tok))) return 'nsfw';
+    // Anche match esatto sull'intera stringa (per tag composti come "fully nude")
+    if (nsfwWords.has(lowerTag)) return 'nsfw';
     
     // Check others
     if (charactersKeywords.some(kw => lowerTag.includes(kw))) return 'characters';
@@ -85,6 +104,28 @@ export const getCategoryColor = (category: TagCategory, isDarkMode: boolean) => 
             return isDarkMode ? 'bg-fuchsia-900/30 text-fuchsia-400 border-fuchsia-800/50' : 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200';
         case 'accessories':
             return isDarkMode ? 'bg-slate-900/30 text-slate-400 border-slate-800/50' : 'bg-slate-100 text-slate-700 border-slate-200';
+        case 'hair':
+            return isDarkMode ? 'bg-amber-900/30 text-amber-400 border-amber-800/50' : 'bg-amber-100 text-amber-700 border-amber-200';
+        case 'eyes':
+            return isDarkMode ? 'bg-sky-900/30 text-sky-400 border-sky-800/50' : 'bg-sky-100 text-sky-700 border-sky-200';
+        case 'human_poses':
+            return isDarkMode ? 'bg-orange-900/30 text-orange-400 border-orange-800/50' : 'bg-orange-100 text-orange-700 border-orange-200';
+        case 'hand_gestures':
+            return isDarkMode ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800/50' : 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        case 'footwear':
+            return isDarkMode ? 'bg-stone-900/40 text-stone-300 border-stone-800/50' : 'bg-stone-100 text-stone-700 border-stone-200';
+        case 'headwear':
+            return isDarkMode ? 'bg-neutral-900/40 text-neutral-300 border-neutral-800/50' : 'bg-neutral-100 text-neutral-700 border-neutral-200';
+        case 'patterns_fabrics':
+            return isDarkMode ? 'bg-fuchsia-900/30 text-fuchsia-400 border-fuchsia-800/50' : 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200';
+        case 'art_mediums':
+            return isDarkMode ? 'bg-purple-900/30 text-purple-400 border-purple-800/50' : 'bg-purple-100 text-purple-700 border-purple-200';
+        case 'camera_effects':
+            return isDarkMode ? 'bg-teal-900/30 text-teal-400 border-teal-800/50' : 'bg-teal-100 text-teal-700 border-teal-200';
+        case 'vfx_particles':
+            return isDarkMode ? 'bg-cyan-900/30 text-cyan-400 border-cyan-800/50' : 'bg-cyan-100 text-cyan-700 border-cyan-200';
+        case 'render_styles':
+            return isDarkMode ? 'bg-indigo-900/30 text-indigo-400 border-indigo-800/50' : 'bg-indigo-100 text-indigo-700 border-indigo-200';
         default:
             return isDarkMode ? 'bg-gray-800 text-gray-200 border-gray-700' : 'bg-white text-gray-700 border-gray-200';
     }
@@ -111,6 +152,17 @@ export const getActiveCategoryColor = (category: TagCategory) => {
         case 'clothing': return 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md border-0';
         case 'intimate': return 'bg-gradient-to-r from-fuchsia-500 to-fuchsia-600 text-white shadow-md border-0';
         case 'accessories': return 'bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-md border-0';
+        case 'hair': return 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md border-0';
+        case 'eyes': return 'bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-md border-0';
+        case 'human_poses': return 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md border-0';
+        case 'hand_gestures': return 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-md border-0';
+        case 'footwear': return 'bg-gradient-to-r from-stone-500 to-stone-600 text-white shadow-md border-0';
+        case 'headwear': return 'bg-gradient-to-r from-neutral-500 to-neutral-600 text-white shadow-md border-0';
+        case 'patterns_fabrics': return 'bg-gradient-to-r from-fuchsia-500 to-fuchsia-600 text-white shadow-md border-0';
+        case 'art_mediums': return 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md border-0';
+        case 'camera_effects': return 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-md border-0';
+        case 'vfx_particles': return 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-md border-0';
+        case 'render_styles': return 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md border-0';
         default: return 'bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-md border-0';
     }
 };
