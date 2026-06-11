@@ -20,6 +20,15 @@ const TAG_MAX_LENGTH = 60;
 const CAPTION_MAX_LENGTH = 2000;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIME_PREFIX = 'image/';
+const REQUEST_TIMEOUT_MS = 90_000;
+const VERIFY_TIMEOUT_MS = 30_000;
+
+// ITALIANO: Combina il segnale chiamante (es. Annulla del batch) con un timeout di sicurezza:
+//           nessuna richiesta può restare appesa per sempre su una connessione bloccata.
+// ENGLISH: Combines the caller's signal (e.g. batch Cancel) with a safety timeout:
+//          no request can hang forever on a stalled connection.
+const buildAbortSignal = (signal?: AbortSignal, timeoutMs: number = REQUEST_TIMEOUT_MS): AbortSignal =>
+    signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
 
 const stripControlChars = (input: string): string => {
     let out = '';
@@ -89,6 +98,9 @@ export type GeminiOptions = {
     apiKey: string;
     modelName: string;
     customPrompt?: string;
+    // ITALIANO: Segnale di annullamento opzionale (es. pulsante Annulla del bulk tagging)
+    // ENGLISH: Optional cancellation signal (e.g. the bulk-tagging Cancel button)
+    signal?: AbortSignal;
 };
 
 export type GeminiTagOptions = GeminiOptions & {
@@ -111,6 +123,7 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
             ],
         },
         config: {
+            abortSignal: buildAbortSignal(opts.signal),
             responseMimeType: 'application/json',
             responseSchema: {
                 type: Type.ARRAY,
@@ -145,6 +158,9 @@ export const getGeminiCaption = async (file: File, opts: GeminiOptions): Promise
                 { inlineData: { data: base64Data, mimeType: file.type } },
                 { text: buildCaptionPrompt(opts.customPrompt) },
             ],
+        },
+        config: {
+            abortSignal: buildAbortSignal(opts.signal),
         },
     });
 
@@ -208,6 +224,9 @@ export const verifyGeminiApiKey = async (apiKey: string, modelId: string = DEFAU
         await ai.models.generateContent({
             model: modelId,
             contents: { parts: [{ text: 'ping' }] },
+            config: {
+                abortSignal: buildAbortSignal(undefined, VERIFY_TIMEOUT_MS),
+            },
         });
         return { ok: true };
     } catch (err: any) {
