@@ -241,11 +241,18 @@ export default function App() {
                     if (img.isTrashed) continue;
                     data[img.file.name] = { tags: img.tags, ...(img.caption ? { caption: img.caption } : {}) };
                 }
-                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), data }));
+                // ITALIANO: Salviamo anche il nome cartella: il ripristino avviene SOLO se si reimporta
+                //           la stessa cartella, così i tag non finiscono su immagini omonime di un'altra
+                //           cartella (nei dataset LoRA nomi come '01.png' sono comunissimi).
+                // ENGLISH: Store the folder name too: restore happens ONLY when re-importing the same
+                //          folder, so tags never land on same-named images from a different folder
+                //          (in LoRA datasets names like '01.png' are very common).
+                const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
+                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, data }));
             } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
         }, 1000);
         return () => clearTimeout(handle);
-    }, [images]);
+    }, [images, dirHandle]);
 
     const handleUndo = useCallback(() => {
         if (historyIndex > 0) {
@@ -431,14 +438,21 @@ export default function App() {
         try {
             await new Promise(r => setTimeout(r, 300));
 
-            // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'
-            // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect
+            // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'.
+            //           Lo applichiamo SOLO se la cartella reimportata è la stessa del backup (match per nome):
+            //           evita di ripristinare tag su immagini omonime di un'altra cartella.
+            // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect.
+            //          Apply it ONLY when the re-imported folder matches the backup's folder (by name):
+            //          prevents restoring tags onto same-named images from a different folder.
             let backupMap: Record<string, { tags?: unknown; caption?: unknown }> | null = null;
+            const importFolder = (handle && handle.name) ? String(handle.name) : '';
             try {
                 const raw = localStorage.getItem('tagBackup');
                 if (raw) {
                     const parsed = JSON.parse(raw);
-                    if (parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
+                    const backupFolder = parsed && typeof parsed.folder === 'string' ? parsed.folder : '';
+                    const sameFolder = importFolder !== '' && backupFolder === importFolder;
+                    if (sameFolder && parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
                         backupMap = parsed.data;
                     }
                 }
