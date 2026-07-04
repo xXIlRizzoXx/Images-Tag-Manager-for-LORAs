@@ -1469,6 +1469,13 @@ export default function App() {
                                                 <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
                                                     <Sparkles size={16} className="text-purple-500"/>
                                                     {t.aiSettings || 'AI Tools'}
+                                                    {/* ITALIANO: Badge che segnala la funzione AI come sperimentale (beta) — ENGLISH: Badge marking the AI feature as experimental (beta) */}
+                                                    <span
+                                                        title={t.aiBetaHint || 'Experimental feature — may change or give imperfect results.'}
+                                                        className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider leading-none ${isDarkMode ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'}`}
+                                                    >
+                                                        {t.aiBeta || 'Beta'}
+                                                    </span>
                                                 </div>
                                                 <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
                                             </div>
