@@ -70,10 +70,18 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
     if (!image) return null;
 
     const currentTags = image.tags || [];
-    let filteredTags = allTags.filter((tag: string) => tag.toLowerCase().includes(filterText.toLowerCase()));
-    if (showOnlyAdded) {
-        filteredTags = filteredTags.filter((tag: string) => currentTags.includes(tag));
-    }
+    const filterLc = filterText.toLowerCase();
+    // ITALIANO: Pannello a due zone (3.8.0): SOPRA i tag già su questa immagine,
+    //           SOTTO i tag delle ALTRE immagini del progetto non ancora messi qui.
+    //           La zona "sotto" deriva da allTags (unione dei tag di tutte le immagini)
+    //           meno i tag correnti: un tag unico rimosso da sopra esce dal vocabolario
+    //           e sparisce del tutto (scelta B).
+    // ENGLISH: Two-zone panel (3.8.0): applied tags on TOP, tags from OTHER project
+    //          images not yet here on the BOTTOM. The bottom derives from allTags
+    //          (union of every image's tags) minus current tags: a tag unique to this
+    //          image, once removed, leaves the vocabulary and disappears (choice B).
+    const appliedTags = currentTags.filter((tag: string) => tag.toLowerCase().includes(filterLc));
+    const availableTags = allTags.filter((tag: string) => !currentTags.includes(tag) && tag.toLowerCase().includes(filterLc));
 
     const toggleTag = (tag: string) => {
         if (currentTags.includes(tag)) {
@@ -83,6 +91,22 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
             updateTags(image.id, [...currentTags, tag]);
             soundManager.pop();
         }
+    };
+
+    // ITALIANO: Renderizza una pillola-tag; `selected` = è già sull'immagine (zona sopra)
+    // ENGLISH: Render a tag pill; `selected` = already on the image (top zone)
+    const renderTag = (tag: string, key: string, selected: boolean) => {
+        const category = getTagCategory(tag);
+        const isNsfw = category === 'nsfw';
+        const colorClass = selected
+            ? `${getActiveCategoryColor(category)} scale-105 font-bold`
+            : `${getCategoryColor(category, isDarkMode)} border border-transparent hover:brightness-110 shadow-sm`;
+        return (
+            <button key={key} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
+                {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${selected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                {tag}
+            </button>
+        );
     };
 
     const handleSidebarKeyDown = (e: any) => {
@@ -260,26 +284,39 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
                                 </button>
                             </div>
 
-                            <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                                {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
-                                    const category = getTagCategory(tag);
-                                    const isNsfw = category === 'nsfw';
-                                    const baseColorClass = getCategoryColor(category, isDarkMode);
-                                    const activeColorClass = getActiveCategoryColor(category);
-                                    const isSelected = currentTags.includes(tag);
-                                    let colorClass = '';
-                                    if (isSelected) {
-                                        colorClass = `${activeColorClass} scale-105 font-bold`;
-                                    } else {
-                                        colorClass = `${baseColorClass} border border-transparent hover:brightness-110 shadow-sm`;
-                                    }
-                                    return (
-                                        <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
-                                            {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${isSelected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
-                                            {tag}
-                                        </button>
-                                    );
-                                })}
+                            <div className={`flex-1 overflow-y-auto lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                {allTags.length === 0 && appliedTags.length === 0 ? (
+                                    <p className="text-sm text-gray-500 w-full text-center mt-4 italic px-3">{t.noTagsInProject}</p>
+                                ) : (
+                                    <>
+                                        {/* ITALIANO: Zona SOPRA — i tag già presenti su questa immagine (clic = rimuovi) */}
+                                        {/* ENGLISH: TOP zone — tags already on this image (click = remove) */}
+                                        <div className="px-3 pt-3 pb-2">
+                                            <div className={`flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                                                <Tag size={12} /> {t.lbAppliedTitle || 'On this image'} <span className="opacity-60">({appliedTags.length})</span>
+                                            </div>
+                                            <div className="flex flex-wrap content-start gap-3.5">
+                                                {appliedTags.length === 0
+                                                    ? <p className="text-xs text-gray-500 italic w-full">{t.lbNoApplied || 'No tags on this image yet'}</p>
+                                                    : appliedTags.map((tag: string) => renderTag(tag, `applied-${tag}`, true))}
+                                            </div>
+                                        </div>
+                                        {/* ITALIANO: Zona SOTTO — tag delle ALTRE immagini non su questa (clic = aggiungi). Nascosta con "mostra solo aggiunti". */}
+                                        {/* ENGLISH: BOTTOM zone — tags from OTHER images not on this one (click = add). Hidden by "show only added". */}
+                                        {!showOnlyAdded && (
+                                            <div className={`px-3 pt-3 pb-3 border-t ${isDarkMode ? 'border-gray-700/70' : 'border-gray-200'}`}>
+                                                <div className={`flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                    <Tags size={12} /> {t.lbAvailableTitle || 'Other tags in the project'} <span className="opacity-60">({availableTags.length})</span>
+                                                </div>
+                                                <div className="flex flex-wrap content-start gap-3.5">
+                                                    {availableTags.length === 0
+                                                        ? (filterText ? <p className="text-xs text-gray-500 italic w-full">{t.noTagsFound}</p> : null)
+                                                        : availableTags.map((tag: string) => renderTag(tag, `avail-${tag}`, false))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
                             </div>
 
                             <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0`}>

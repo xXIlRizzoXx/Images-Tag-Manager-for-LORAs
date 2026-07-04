@@ -110,6 +110,19 @@ export default function App() {
     const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number; skipped: number }>({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
     const apiKeyLoadedRef = useRef<boolean>(false);
 
+    // ITALIANO: Versione mostrata nelle impostazioni — letta da package.json tramite Electron,
+    //           così nell'exe è SEMPRE aggiornata senza doverla cambiare a mano. In browser/dev
+    //           usa il valore di riserva qui sotto.
+    // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
+    //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
+    const [appVersion, setAppVersion] = useState<string>('3.8.0');
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.getAppVersion === 'function') {
+            api.getAppVersion().then((v: string) => { if (v) setAppVersion(v); }).catch(() => {});
+        }
+    }, []);
+
     useEffect(() => { localStorage.setItem('aiEnabled', String(aiEnabled)); }, [aiEnabled]);
     useEffect(() => { localStorage.setItem('aiModel', aiModel); }, [aiModel]);
     useEffect(() => { localStorage.setItem('aiMaxTags', String(aiMaxTags)); }, [aiMaxTags]);
@@ -1680,7 +1693,7 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>{t.versionLabel} 3.7.0</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>{t.versionLabel} {appVersion}</span>
                                             <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>{t.copyrightLabel} xXIlRizzoXx</span>
                                         </div>
                                     </div>
