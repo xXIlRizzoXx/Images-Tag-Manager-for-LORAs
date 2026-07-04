@@ -22,7 +22,7 @@ import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../uti
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName } from '../utils/pathUtils';
 
-export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, onAICaptionSingle }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, onAICaptionSingle, addProjectTag }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -365,16 +365,20 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
                     isOpen={isTagSuggestionsOpen}
                     onClose={() => setIsTagSuggestionsOpen(false)}
                     onTagClick={(tag) => {
-                        if (!currentTags.includes(tag)) {
-                            updateTags(image.id, [...currentTags, tag]);
-                            soundManager.pop();
-                        }
+                        // ITALIANO: I tag suggeriti NON vanno più direttamente sull'immagine: finiscono
+                        //           tra gli "Altri tag del progetto" (zona sotto). Poi l'utente li applica
+                        //           cliccandoli lì, immagine per immagine.
+                        // ENGLISH: Suggested tags no longer go straight onto the image: they land in the
+                        //          "other project tags" bottom zone. The user then applies them from there,
+                        //          one image at a time.
+                        if (addProjectTag) addProjectTag(tag);
+                        soundManager.pop();
                     }}
                     lang={lang}
                     isDarkMode={isDarkMode}
                     t={t}
                     isLightbox={true}
-                    selectedTags={currentTags}
+                    selectedTags={allTags}
                 />
             </div>
         </div>

@@ -1403,6 +1403,7 @@ export default function App() {
                     updateTags={updateImageTags}
                     updateImageCaption={updateImageCaption}
                     allTags={allUniqueTags}
+                    addProjectTag={(tag: string) => setCustomProjectTags(prev => prev.includes(tag) ? prev : [...prev, tag])}
                     t={t}
                     onNext={handleNext}
                     onPrev={handlePrev}
