@@ -815,9 +815,14 @@ export default function App() {
     };
 
     const updateImageTags = (id: string, newTags: string[]) => {
+        // ITALIANO: Deduplica alla fonte — incollando "sunset, sunset" o simili non si creano tag
+        //           doppi (che finirebbero nel .txt esportato e darebbero due pillole con la stessa key React).
+        // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
+        //          (they would end up in the exported .txt and render two pills with the same React key).
+        const uniqueTags = [...new Set(newTags)];
         const orderedTags = [
-            ...globalTriggers.filter(t => newTags.includes(t)),
-            ...newTags.filter(t => !globalTriggers.includes(t))
+            ...globalTriggers.filter(t => uniqueTags.includes(t)),
+            ...uniqueTags.filter(t => !globalTriggers.includes(t))
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     };
