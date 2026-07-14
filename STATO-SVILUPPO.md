@@ -25,6 +25,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 10 | AI spenta di default + badge "Beta" | Al primo avvio l'AI è spenta; accanto a "Strumenti AI" c'è un'etichetta "Beta" con spiegazione. |
 | 11 | Pannello tag diviso in 2 (v3.8.0) | Nella finestra di una foto i tag sono in due zone: **sopra** quelli già su questa foto, **sotto** quelli delle altre foto non ancora messi qui. Clic sotto → sale sopra; togli da sopra → torna sotto (se è su altre foto) oppure sparisce (se era solo su questa — scelta B). |
 | 12 | Suggerimenti → palette del progetto (v3.8.0) | Nella finestra di una foto, i tag scelti dai **"Tag Suggeriti"** non finiscono più diretti sull'immagine: entrano nella zona **sotto** (palette del progetto). Poi li applichi cliccandoli lì, una foto alla volta. |
+| 13 | Rimossa la didascalia AI in linguaggio naturale (v3.8.0) | Tolta la scheda **"Caption"** (didascalia descrittiva in frasi). L'app ora fa **solo tag**. Nessun dato perso: le didascalie non erano mai salvate nei file `.txt`, che contengono solo i tag. |
 
 ---
 

@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, getGeminiCaption, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -249,10 +249,10 @@ export default function App() {
         if (images.length === 0) return undefined;
         const handle = setTimeout(() => {
             try {
-                const data: Record<string, { tags: string[]; caption?: string }> = {};
+                const data: Record<string, { tags: string[] }> = {};
                 for (const img of images) {
                     if (img.isTrashed) continue;
-                    data[img.file.name] = { tags: img.tags, ...(img.caption ? { caption: img.caption } : {}) };
+                    data[img.file.name] = { tags: img.tags };
                 }
                 // ITALIANO: Salviamo anche il nome cartella: il ripristino avviene SOLO se si reimporta
                 //           la stessa cartella, così i tag non finiscono su immagini omonime di un'altra
@@ -513,7 +513,6 @@ export default function App() {
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
-                let restoredCaption: string | undefined;
                 const entry = backupMap && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)
                     ? backupMap[imgFiles[i].name]
                     : undefined;
@@ -532,9 +531,6 @@ export default function App() {
                             restoredCount++;
                         }
                     }
-                    if (typeof entry.caption === 'string' && entry.caption) {
-                        restoredCaption = entry.caption.slice(0, 2000);
-                    }
                 }
                 newImages.push({
                     id: Math.random().toString(36).substring(7),
@@ -544,7 +540,6 @@ export default function App() {
                     height: thumbData?.height || 0,
                     tags: finalTags,
                     originalTags: [...orderedTags],
-                    ...(restoredCaption ? { caption: restoredCaption } : {})
                 });
                 setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
                 if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
@@ -827,9 +822,6 @@ export default function App() {
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     };
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
-    const updateImageCaption = useCallback((id: string, caption: string) => {
-        setImages(prev => prev.map(img => img.id === id ? { ...img, caption } : img));
-    }, []);
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
 
     // ITALIANO: Tagga la singola immagine via Gemini API
@@ -876,42 +868,6 @@ export default function App() {
             setIsAIBusy(false);
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, images, t, updateImageTags]);
-
-    // ITALIANO: Genera didascalia via Gemini per la singola immagine
-    // ENGLISH: Generate Gemini caption for a single image
-    const handleAICaptionSingle = useCallback(async (imageId: string): Promise<string> => {
-        if (!aiEnabled) return '';
-        if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return ''; }
-        const img = images.find(i => i.id === imageId);
-        if (!img) return '';
-        setIsAIBusy(true);
-        try {
-            const caption = await getGeminiCaption(img.file, {
-                apiKey: geminiApiKey,
-                modelName: aiModel,
-                customPrompt: aiCustomPrompt,
-            });
-            updateImageCaption(imageId, caption);
-            soundManager.chime();
-            showNotification(t.aiCaptionGenerated || 'Caption generated!', 'success');
-            return caption;
-        } catch (e: any) {
-            console.error('AI caption failed', e);
-            const { kind } = classifyGeminiError(e);
-            if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
-            const friendly = kind === 'billing_required'
-                ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
-                : kind === 'rate_limit'
-                ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
-                : kind === 'model_unavailable'
-                ? (t.aiModelUnavailable || 'Model unavailable for your account.')
-                : String(e?.message || e || '').slice(0, 200);
-            showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
-            return '';
-        } finally {
-            setIsAIBusy(false);
-        }
-    }, [aiEnabled, geminiApiKey, aiModel, aiCustomPrompt, images, t, updateImageCaption]);
 
     // ITALIANO: Richiesta di annullamento del bulk tagging — viene letta dai cicli e dagli sleep.
     //           Aggiorna sia il ref (per il loop async) che lo state (per re-render del pulsante).
@@ -1406,7 +1362,6 @@ export default function App() {
                     image={displayedImages.find(img => img.id === selectedImageId)}
                     onClose={() => setSelectedImageId(null)}
                     updateTags={updateImageTags}
-                    updateImageCaption={updateImageCaption}
                     allTags={allUniqueTags}
                     addProjectTag={(tag: string) => setCustomProjectTags(prev => prev.includes(tag) ? prev : [...prev, tag])}
                     t={t}
@@ -1424,7 +1379,6 @@ export default function App() {
                     aiEnabled={aiEnabled}
                     aiBusy={isAIBusy}
                     onAITagSingle={handleAITagSingle}
-                    onAICaptionSingle={handleAICaptionSingle}
                 />
             )}
 
@@ -2037,8 +1991,6 @@ export default function App() {
                                 const totalTags = allUniqueTags.length;
                                 const taggedImages = images.filter(img => img.tags && img.tags.length > 0).length;
                                 const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
-                                const captionedImages = images.filter(img => typeof img.caption === 'string' && img.caption.trim().length > 0).length;
-                                const captionedPercentage = totalImages > 0 ? Math.round((captionedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};
                                 allUniqueTags.forEach(tag => {
@@ -2083,15 +2035,6 @@ export default function App() {
                                                     <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-sm font-normal opacity-70">({taggedPercentage}%)</span></p>
                                                 </div>
                                             </div>
-                                            {aiEnabled && (
-                                                <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
-                                                    <div className="p-3 bg-purple-500 rounded-lg text-white"><Sparkles size={24} /></div>
-                                                    <div>
-                                                        <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsCaptioned}</p>
-                                                        <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{captionedImages} <span className="text-sm font-normal opacity-70">({captionedPercentage}%)</span></p>
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
 
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
