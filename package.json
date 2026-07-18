@@ -1,7 +1,7 @@
 {
   "name": "images-tag-manager",
   "private": true,
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "Privacy-focused desktop tool to manage, edit and auto-generate tags for image datasets used in LoRA / Stable Diffusion training.",
   "author": {
     "name": "xXIlRizzoXx",
@@ -10,7 +10,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "vite --port=3000",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "npx rimraf dist release",
@@ -61,7 +61,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.21",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "electron": "^40.6.0",
     "electron-builder": "^26.8.1",

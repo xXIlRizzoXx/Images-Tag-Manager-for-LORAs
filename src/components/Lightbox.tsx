@@ -14,7 +14,7 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Tag, Trash2, Tags, AlertTriangle, Wand2, Loader2, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Tag, Trash2, Tags, AlertTriangle, Wand2, Loader2 } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 
@@ -22,7 +22,7 @@ import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../uti
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName } from '../utils/pathUtils';
 
-export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, onAICaptionSingle }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -30,8 +30,6 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
     const [isHighResLoaded, setIsHighResLoaded] = useState(false);
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
     const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<'tags' | 'caption'>('tags');
-    const [captionDraft, setCaptionDraft] = useState<string>(image?.caption || '');
 
     const imageRef = useRef(image);
     const isMountedRef = useRef(true);
@@ -43,7 +41,6 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
 
     useEffect(() => {
         imageRef.current = image;
-        setCaptionDraft(image?.caption || '');
     }, [image]);
 
     const handleKeyDown = useCallback((e: any) => {
@@ -70,10 +67,18 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
     if (!image) return null;
 
     const currentTags = image.tags || [];
-    let filteredTags = allTags.filter((tag: string) => tag.toLowerCase().includes(filterText.toLowerCase()));
-    if (showOnlyAdded) {
-        filteredTags = filteredTags.filter((tag: string) => currentTags.includes(tag));
-    }
+    const filterLc = filterText.toLowerCase();
+    // ITALIANO: Pannello a due zone (3.8.0): SOPRA i tag già su questa immagine,
+    //           SOTTO i tag delle ALTRE immagini del progetto non ancora messi qui.
+    //           La zona "sotto" deriva da allTags (unione dei tag di tutte le immagini)
+    //           meno i tag correnti: un tag unico rimosso da sopra esce dal vocabolario
+    //           e sparisce del tutto (scelta B).
+    // ENGLISH: Two-zone panel (3.8.0): applied tags on TOP, tags from OTHER project
+    //          images not yet here on the BOTTOM. The bottom derives from allTags
+    //          (union of every image's tags) minus current tags: a tag unique to this
+    //          image, once removed, leaves the vocabulary and disappears (choice B).
+    const appliedTags = currentTags.filter((tag: string) => tag.toLowerCase().includes(filterLc));
+    const availableTags = allTags.filter((tag: string) => !currentTags.includes(tag) && tag.toLowerCase().includes(filterLc));
 
     const toggleTag = (tag: string) => {
         if (currentTags.includes(tag)) {
@@ -83,6 +88,22 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
             updateTags(image.id, [...currentTags, tag]);
             soundManager.pop();
         }
+    };
+
+    // ITALIANO: Renderizza una pillola-tag; `selected` = è già sull'immagine (zona sopra)
+    // ENGLISH: Render a tag pill; `selected` = already on the image (top zone)
+    const renderTag = (tag: string, key: string, selected: boolean) => {
+        const category = getTagCategory(tag);
+        const isNsfw = category === 'nsfw';
+        const colorClass = selected
+            ? `${getActiveCategoryColor(category)} scale-105 font-bold`
+            : `${getCategoryColor(category, isDarkMode)} border border-transparent hover:brightness-110 shadow-sm`;
+        return (
+            <button key={key} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
+                {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${selected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                {tag}
+            </button>
+        );
     };
 
     const handleSidebarKeyDown = (e: any) => {
@@ -140,19 +161,6 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
         await onAITagSingle(image.id);
     };
 
-    const handleAICaptionClick = async () => {
-        if (!onAICaptionSingle || aiBusy) return;
-        const result = await onAICaptionSingle(image.id);
-        if (result && isMountedRef.current) setCaptionDraft(result);
-    };
-
-    const handleSaveCaption = () => {
-        if (!updateImageCaption) return;
-        updateImageCaption(image.id, captionDraft);
-        soundManager.chime();
-        if (showNotification) showNotification(t.aiCaptionSaved || 'Caption saved!', 'success');
-    };
-
     const animClass = slideDirection === 'left' ? 'anim-slide-right' : 'anim-slide-left';
 
     return (
@@ -200,25 +208,6 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
                     </div>
                 </div>
                 <div className={`hidden lg:flex flex-col w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
-                    {aiEnabled && (
-                        <div className={`flex border-b shrink-0 ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'}`}>
-                            <button
-                                onClick={() => setActiveTab('tags')}
-                                className={`flex-1 py-2.5 text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${activeTab === 'tags' ? (isDarkMode ? 'text-indigo-400 border-b-2 border-indigo-400 bg-gray-800/40' : 'text-indigo-600 border-b-2 border-indigo-600 bg-white') : (isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700')}`}
-                            >
-                                <Tag size={12} /> {t.aiTagsTab || 'Tags'}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('caption')}
-                                className={`flex-1 py-2.5 text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 ${activeTab === 'caption' ? (isDarkMode ? 'text-purple-400 border-b-2 border-purple-400 bg-gray-800/40' : 'text-purple-600 border-b-2 border-purple-600 bg-white') : (isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700')}`}
-                            >
-                                <Sparkles size={12} /> {t.aiCaptionTab || 'Caption'}
-                            </button>
-                        </div>
-                    )}
-
-                    {activeTab === 'tags' && (
-                        <>
                             <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
                                 <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
                                 <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>
@@ -260,84 +249,63 @@ export const Lightbox = ({ image, onClose, updateTags, updateImageCaption, allTa
                                 </button>
                             </div>
 
-                            <div className={`flex-1 p-3 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                                {allTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsInProject}</p> : filteredTags.length === 0 ? <p className="text-sm text-gray-500 w-full text-center mt-4 italic">{t.noTagsFound}</p> : filteredTags.map((tag: string, idx: number) => {
-                                    const category = getTagCategory(tag);
-                                    const isNsfw = category === 'nsfw';
-                                    const baseColorClass = getCategoryColor(category, isDarkMode);
-                                    const activeColorClass = getActiveCategoryColor(category);
-                                    const isSelected = currentTags.includes(tag);
-                                    let colorClass = '';
-                                    if (isSelected) {
-                                        colorClass = `${activeColorClass} scale-105 font-bold`;
-                                    } else {
-                                        colorClass = `${baseColorClass} border border-transparent hover:brightness-110 shadow-sm`;
-                                    }
-                                    return (
-                                        <button key={idx} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
-                                            {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${isSelected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
-                                            {tag}
-                                        </button>
-                                    );
-                                })}
+                            <div className={`flex-1 overflow-y-auto lightbox-scroll relative ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                                {allTags.length === 0 && appliedTags.length === 0 ? (
+                                    <p className="text-sm text-gray-500 w-full text-center mt-4 italic px-3">{t.noTagsInProject}</p>
+                                ) : (
+                                    <>
+                                        {/* ITALIANO: Zona SOPRA — i tag già presenti su questa immagine (clic = rimuovi) */}
+                                        {/* ENGLISH: TOP zone — tags already on this image (click = remove) */}
+                                        <div className="px-3 pt-3 pb-2">
+                                            <div className={`flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                                                <Tag size={12} /> {t.lbAppliedTitle || 'On this image'} <span className="opacity-60">({appliedTags.length})</span>
+                                            </div>
+                                            <div className="flex flex-wrap content-start gap-3.5">
+                                                {appliedTags.length === 0
+                                                    ? <p className="text-xs text-gray-500 italic w-full">{t.lbNoApplied || 'No tags on this image yet'}</p>
+                                                    : appliedTags.map((tag: string) => renderTag(tag, `applied-${tag}`, true))}
+                                            </div>
+                                        </div>
+                                        {/* ITALIANO: Zona SOTTO — tag delle ALTRE immagini non su questa (clic = aggiungi). Nascosta con "mostra solo aggiunti". */}
+                                        {/* ENGLISH: BOTTOM zone — tags from OTHER images not on this one (click = add). Hidden by "show only added". */}
+                                        {!showOnlyAdded && (
+                                            <div className={`px-3 pt-3 pb-3 border-t ${isDarkMode ? 'border-gray-700/70' : 'border-gray-200'}`}>
+                                                <div className={`flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                    <Tags size={12} /> {t.lbAvailableTitle || 'Other tags in the project'} <span className="opacity-60">({availableTags.length})</span>
+                                                </div>
+                                                <div className="flex flex-wrap content-start gap-3.5">
+                                                    {availableTags.length === 0
+                                                        ? (filterText ? <p className="text-xs text-gray-500 italic w-full">{t.noTagsFound}</p> : null)
+                                                        : availableTags.map((tag: string) => renderTag(tag, `avail-${tag}`, false))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
                             </div>
 
                             <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} shrink-0`}>
                                 <button onClick={handleSaveSingleTxt} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg shadow-md font-semibold transition-all active:scale-95 text-sm"><Save size={16} /> {t.saveSingleTxt}</button>
                             </div>
-                        </>
-                    )}
-
-                    {activeTab === 'caption' && aiEnabled && (
-                        <div className={`flex flex-col flex-1 min-h-0 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                            <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
-                                <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><Sparkles size={16} className="text-purple-500" /> {t.aiCaption || 'AI Caption'}</h3>
-                                <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>BLIP base · offline</p>
-                            </div>
-                            <div className="flex-1 p-4 flex flex-col gap-3 min-h-0">
-                                <textarea
-                                    value={captionDraft}
-                                    onChange={(e) => setCaptionDraft(e.target.value)}
-                                    placeholder={t.aiCaptionPlaceholder || 'Write a caption or generate one with AI…'}
-                                    className={`flex-1 w-full p-3 rounded-xl border resize-none outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400'}`}
-                                />
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={handleAICaptionClick}
-                                        disabled={aiBusy}
-                                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${aiBusy ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'}`}
-                                    >
-                                        {aiBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                                        {aiBusy
-                                            ? (t.aiCaptioningInProgress || 'Generating…')
-                                            : (t.aiCaptionGenerate || 'Generate caption')}
-                                    </button>
-                                    <button
-                                        onClick={handleSaveCaption}
-                                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md transition-all"
-                                    >
-                                        <Save size={14} className="inline mr-1" />
-                                        {t.aiSaveCaption || 'Save caption'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
                 <TagSuggestionsPanel
                     isOpen={isTagSuggestionsOpen}
                     onClose={() => setIsTagSuggestionsOpen(false)}
                     onTagClick={(tag) => {
-                        if (!currentTags.includes(tag)) {
-                            updateTags(image.id, [...currentTags, tag]);
-                            soundManager.pop();
-                        }
+                        // ITALIANO: I tag suggeriti NON vanno più direttamente sull'immagine: finiscono
+                        //           tra gli "Altri tag del progetto" (zona sotto). Poi l'utente li applica
+                        //           cliccandoli lì, immagine per immagine.
+                        // ENGLISH: Suggested tags no longer go straight onto the image: they land in the
+                        //          "other project tags" bottom zone. The user then applies them from there,
+                        //          one image at a time.
+                        if (addProjectTag) addProjectTag(tag);
+                        soundManager.pop();
                     }}
                     lang={lang}
                     isDarkMode={isDarkMode}
                     t={t}
                     isLightbox={true}
-                    selectedTags={currentTags}
+                    selectedTags={allTags}
                 />
             </div>
         </div>

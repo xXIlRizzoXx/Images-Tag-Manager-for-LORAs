@@ -228,12 +228,17 @@ function createMainWindow() {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 
-    // ITALIANO: Quando la finestra è pronta, chiudi lo splash e mostra l'app
-    // ENGLISH: When the window is ready, close the splash and show the app
+    // ITALIANO: Quando la finestra è pronta, chiudi lo splash, massimizza (finestra piena,
+    //           con barra del titolo — non a schermo intero) e mostra l'app. Il 1280x800
+    //           sopra resta la dimensione "ripristinata" quando l'utente riduce la finestra.
+    // ENGLISH: When the window is ready, close the splash, maximize it (full window with the
+    //          title bar — not fullscreen) and show the app. The 1280x800 above stays as the
+    //          "restored" size when the user un-maximizes.
     mainWindow.once('ready-to-show', () => {
         if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
         }
+        mainWindow.maximize();
         mainWindow.show();
     });
 

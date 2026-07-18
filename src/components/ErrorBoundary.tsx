@@ -72,7 +72,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                         Qualcosa è andato storto
                     </h1>
                     <p style={{ margin: '0 0 1rem 0', fontSize: 14, color: '#cbd5e1' }}>
-                        Si è verificato un errore imprevisto nell'interfaccia. Le tue immagini caricate non sono andate perse.
+                        Si è verificato un errore imprevisto nell'interfaccia. I tag e le didascalie
+                        vengono salvati automaticamente in una copia di sicurezza locale: dopo
+                        "Riprova" o "Ricarica", reimporta la cartella per ripristinare le modifiche
+                        non ancora salvate su disco.
                     </p>
                     <pre
                         style={{

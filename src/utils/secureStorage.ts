@@ -57,24 +57,33 @@ export const getSecret = async (key: string): Promise<string> => {
     return localStorage.getItem(key) || '';
 };
 
-export const setSecret = async (key: string, value: string): Promise<void> => {
+export const setSecret = async (key: string, value: string): Promise<boolean> => {
     const api = getElectronAPI();
     if (api && api.secureStorage) {
         try {
             const ok = await api.secureStorage.set(key, value);
             if (ok) {
                 localStorage.removeItem(key);
-                return;
+                return true;
             }
         } catch (e) {
-            console.error('secureStorage.set failed, falling back to localStorage', e);
+            console.error('secureStorage.set failed', e);
         }
+        // ITALIANO: In Electron NON degradiamo mai a localStorage in chiaro: meglio nessun
+        //           salvataggio che una API key leggibile in chiaro su disco. Puliamo i residui.
+        // ENGLISH: In Electron we NEVER degrade to plaintext localStorage: better no save at all
+        //          than an API key readable in cleartext on disk. Clean up any leftovers.
+        try { localStorage.removeItem(key); } catch (_) { /* ignore */ }
+        return false;
     }
+    // ITALIANO: Fallback solo browser/dev (fuori da Electron non esiste storage cifrato)
+    // ENGLISH: Browser/dev-only fallback (no encrypted storage outside Electron)
     if (value) {
         localStorage.setItem(key, value);
     } else {
         localStorage.removeItem(key);
     }
+    return true;
 };
 
 export const deleteSecret = async (key: string): Promise<void> => {

@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, getGeminiCaption, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -68,12 +68,12 @@ export default function App() {
 
     const [isStatsOpen, setIsStatsOpen] = useState(false);
 
-    // ITALIANO: Pulizia di vecchie chiavi AI Gemini (sostituite da WD14 + BLIP offline)
-    // ENGLISH: Cleanup of legacy Gemini AI keys (replaced by offline WD14 + BLIP)
+    // ITALIANO: Pulizia della sola chiave legacy 'customPrompt' (vecchia AI locale).
+    //           NON rimuovere 'geminiApiKey' (getSecret la migra in safeStorage) né 'aiModel' (chiave viva).
+    // ENGLISH: Cleanup of the legacy 'customPrompt' key only (old local AI).
+    //          Do NOT remove 'geminiApiKey' (getSecret migrates it into safeStorage) nor 'aiModel' (live key).
     useEffect(() => {
         try {
-            localStorage.removeItem('aiModel');
-            localStorage.removeItem('geminiApiKey');
             localStorage.removeItem('customPrompt');
         } catch (_) { /* ignore */ }
     }, []);
@@ -96,6 +96,9 @@ export default function App() {
     // ITALIANO: Stato gemello del ref aiCancelRequestedRef — solo per aggiornare l'UI del pulsante Annulla
     // ENGLISH: Mirror state of aiCancelRequestedRef — UI-only signal for the Cancel button
     const [aiCancelRequested, setAiCancelRequested] = useState<boolean>(false);
+    // ITALIANO: AbortController del batch AI in corso — permette di interrompere anche la richiesta HTTP appesa
+    // ENGLISH: AbortController of the running AI batch — lets Cancel interrupt even a hung HTTP request
+    const aiAbortControllerRef = useRef<AbortController | null>(null);
     const [geminiApiKey, setGeminiApiKey] = useState<string>('');
     const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState<boolean>(false);
     const [tempApiKey, setTempApiKey] = useState<string>('');
@@ -106,6 +109,19 @@ export default function App() {
     const [isGlobalAITagging, setIsGlobalAITagging] = useState<boolean>(false);
     const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number; skipped: number }>({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
     const apiKeyLoadedRef = useRef<boolean>(false);
+
+    // ITALIANO: Versione mostrata nelle impostazioni — letta da package.json tramite Electron,
+    //           così nell'exe è SEMPRE aggiornata senza doverla cambiare a mano. In browser/dev
+    //           usa il valore di riserva qui sotto.
+    // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
+    //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
+    const [appVersion, setAppVersion] = useState<string>('3.8.0');
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.getAppVersion === 'function') {
+            api.getAppVersion().then((v: string) => { if (v) setAppVersion(v); }).catch(() => {});
+        }
+    }, []);
 
     useEffect(() => { localStorage.setItem('aiEnabled', String(aiEnabled)); }, [aiEnabled]);
     useEffect(() => { localStorage.setItem('aiModel', aiModel); }, [aiModel]);
@@ -130,7 +146,15 @@ export default function App() {
     // ENGLISH: Persist the API key in safeStorage (encrypted) on every change
     useEffect(() => {
         if (!apiKeyLoadedRef.current) return;
-        setSecret('geminiApiKey', geminiApiKey).catch(err => console.error('Failed to persist API key', err));
+        setSecret('geminiApiKey', geminiApiKey).then((ok) => {
+            // ITALIANO: Fail-closed: se lo storage cifrato non è disponibile la chiave NON viene
+            //           salvata in chiaro — avvisiamo l'utente che resterà valida solo per la sessione
+            // ENGLISH: Fail-closed: if encrypted storage is unavailable the key is NOT saved in
+            //          cleartext — warn the user it will only last for this session
+            if (!ok && geminiApiKey) {
+                showNotification(`${t.aiError || 'AI Error'}: secure storage unavailable — API key NOT saved (session only)`, 'error');
+            }
+        }).catch(err => console.error('Failed to persist API key', err));
     }, [geminiApiKey]);
 
     useEffect(() => {
@@ -144,6 +168,13 @@ export default function App() {
     // ENGLISH: Wipe the encrypted API key and end AI session
     const handleClearApiKey = useCallback(async () => {
         try {
+            // ITALIANO: Ferma SUBITO un eventuale batch in corso — altrimenti continuerebbe
+            //           invisibile (e non annullabile) con la vecchia chiave catturata nella closure
+            // ENGLISH: Stop any running batch IMMEDIATELY — otherwise it would keep running
+            //          invisibly (and uncancellably) with the old key captured in its closure
+            aiCancelRequestedRef.current = true;
+            setAiCancelRequested(true);
+            aiAbortControllerRef.current?.abort();
             await deleteSecret('geminiApiKey');
             setGeminiApiKey('');
             setIsAIBusy(false);
@@ -165,6 +196,9 @@ export default function App() {
 
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
+    // ITALIANO: Specchio sempre aggiornato di `images` per i loop async (evita snapshot stantii che sovrascrivono le modifiche manuali)
+    // ENGLISH: Always-fresh mirror of `images` for async loops (avoids stale snapshots that overwrite manual edits)
+    const imagesRef = useRef<any[]>([]);
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -202,6 +236,36 @@ export default function App() {
         });
         setHistoryIndex(prev => Math.min(prev + 1, 49));
     }, [images]);
+
+    useEffect(() => { imagesRef.current = images; }, [images]);
+
+    // ITALIANO: Backup automatico (debounce 1s) di tag e didascalie in localStorage —
+    //           rete anti-crash: al re-import della cartella le modifiche non salvate vengono ripristinate.
+    //           Non si svuota mai da solo: viene cancellato solo dal Reset progetto.
+    // ENGLISH: Debounced (1s) automatic backup of tags and captions to localStorage —
+    //          crash safety net: re-importing the folder restores unsaved edits.
+    //          Never auto-cleared: only Project Reset removes it.
+    useEffect(() => {
+        if (images.length === 0) return undefined;
+        const handle = setTimeout(() => {
+            try {
+                const data: Record<string, { tags: string[] }> = {};
+                for (const img of images) {
+                    if (img.isTrashed) continue;
+                    data[img.file.name] = { tags: img.tags };
+                }
+                // ITALIANO: Salviamo anche il nome cartella: il ripristino avviene SOLO se si reimporta
+                //           la stessa cartella, così i tag non finiscono su immagini omonime di un'altra
+                //           cartella (nei dataset LoRA nomi come '01.png' sono comunissimi).
+                // ENGLISH: Store the folder name too: restore happens ONLY when re-importing the same
+                //          folder, so tags never land on same-named images from a different folder
+                //          (in LoRA datasets names like '01.png' are very common).
+                const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
+                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, data }));
+            } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
+        }, 1000);
+        return () => clearTimeout(handle);
+    }, [images, dirHandle]);
 
     const handleUndo = useCallback(() => {
         if (historyIndex > 0) {
@@ -371,51 +435,132 @@ export default function App() {
         soundManager.pop();
     };
 
+    // ITALIANO: Limiti di sicurezza sull'ingestione dei .txt sidecar (un dataset scaricato è input non fidato)
+    // ENGLISH: Safety caps on sidecar .txt ingestion (a downloaded dataset is untrusted input)
+    const TXT_MAX_BYTES = 1024 * 1024;
+    const TXT_MAX_TAGS_PER_FILE = 200;
+    const TXT_TAG_MAX_CHARS = 100;
+
     const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         setDirHandle(handle);
-        setIsImporting(true); 
+        setIsImporting(true);
         setImportProgress(0);
-        
-        await new Promise(r => setTimeout(r, 300));
-        
-        const textMap = new Map();
-        for (let i = 0; i < txtFiles.length; i++) {
-            const text = await txtFiles[i].text();
-            textMap.set(txtFiles[i].name.split('.').slice(0, -1).join('.'), text.split(/[,\n\r]+/).map((t: string) => t.trim()).filter((t: string) => t.length > 0));
-            setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
-        }
-        
-        const newImages = [];
-        for (let i = 0; i < imgFiles.length; i++) {
-            const base = imgFiles[i].name.split('.').slice(0, -1).join('.');
-            const thumbData = await generateThumbnail(imgFiles[i]);
-            const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(base) || [])])];
-            const orderedTags = [
-                ...globalTriggers.filter(t => combinedTags.includes(t)),
-                ...combinedTags.filter(t => !globalTriggers.includes(t))
-            ];
-            newImages.push({ 
-                id: Math.random().toString(36).substring(7), 
-                file: imgFiles[i], 
-                thumb: thumbData?.url || '', 
-                width: thumbData?.width || 0,
-                height: thumbData?.height || 0,
-                tags: orderedTags, 
-                originalTags: [...orderedTags] 
+        let skippedTxtCount = 0;
+        let restoredCount = 0;
+        try {
+            await new Promise(r => setTimeout(r, 300));
+
+            // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'.
+            //           Lo applichiamo SOLO se la cartella reimportata è la stessa del backup (match per nome):
+            //           evita di ripristinare tag su immagini omonime di un'altra cartella.
+            // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect.
+            //          Apply it ONLY when the re-imported folder matches the backup's folder (by name):
+            //          prevents restoring tags onto same-named images from a different folder.
+            let backupMap: Record<string, { tags?: unknown; caption?: unknown }> | null = null;
+            const importFolder = (handle && handle.name) ? String(handle.name) : '';
+            try {
+                const raw = localStorage.getItem('tagBackup');
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    const backupFolder = parsed && typeof parsed.folder === 'string' ? parsed.folder : '';
+                    const sameFolder = importFolder !== '' && backupFolder === importFolder;
+                    if (sameFolder && parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
+                        backupMap = parsed.data;
+                    }
+                }
+            } catch (_) { backupMap = null; }
+
+            const textMap = new Map();
+            for (let i = 0; i < txtFiles.length; i++) {
+                try {
+                    if (txtFiles[i].size > TXT_MAX_BYTES) {
+                        // ITALIANO: Un sidecar legittimo pesa pochi KB: oltre 1 MB è sospetto, lo saltiamo
+                        // ENGLISH: A legit sidecar weighs a few KB: over 1 MB is suspicious, skip it
+                        console.warn(`[Import] Skipped oversized .txt (${txtFiles[i].size} bytes):`, txtFiles[i].name);
+                        skippedTxtCount++;
+                    } else {
+                        const text = await txtFiles[i].text();
+                        const parsedTags = text.split(/[,\n\r]+/)
+                            .map((tag: string) => tag.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, TXT_TAG_MAX_CHARS))
+                            .filter((tag: string) => tag.length > 0)
+                            .slice(0, TXT_MAX_TAGS_PER_FILE);
+                        textMap.set(txtFiles[i].name.split('.').slice(0, -1).join('.'), [...new Set(parsedTags)]);
+                    }
+                } catch (e) {
+                    // ITALIANO: File illeggibile (lockato/spostato): si salta, l'import non deve bloccarsi
+                    // ENGLISH: Unreadable file (locked/moved): skip it, the import must not get stuck
+                    console.warn('[Import] Unreadable .txt skipped:', txtFiles[i]?.name, e);
+                    skippedTxtCount++;
+                }
+                setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
+            }
+
+            const newImages = [];
+            for (let i = 0; i < imgFiles.length; i++) {
+                const base = imgFiles[i].name.split('.').slice(0, -1).join('.');
+                let thumbData: any = null;
+                try {
+                    thumbData = await generateThumbnail(imgFiles[i]);
+                } catch (e) {
+                    console.warn('[Import] Thumbnail failed for', imgFiles[i]?.name, e);
+                }
+                const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(base) || [])])];
+                const orderedTags = [
+                    ...globalTriggers.filter(t => combinedTags.includes(t)),
+                    ...combinedTags.filter(t => !globalTriggers.includes(t))
+                ];
+                // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
+                // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
+                let finalTags = orderedTags;
+                const entry = backupMap && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)
+                    ? backupMap[imgFiles[i].name]
+                    : undefined;
+                if (entry) {
+                    if (Array.isArray(entry.tags)) {
+                        const backupTags = (entry.tags as unknown[])
+                            .filter((x): x is string => typeof x === 'string')
+                            .map(x => x.slice(0, TXT_TAG_MAX_CHARS))
+                            .slice(0, 500);
+                        const differs = JSON.stringify([...backupTags].sort()) !== JSON.stringify([...orderedTags].sort());
+                        if (differs && backupTags.length > 0) {
+                            finalTags = [
+                                ...globalTriggers.filter(t => backupTags.includes(t)),
+                                ...backupTags.filter(t => !globalTriggers.includes(t))
+                            ];
+                            restoredCount++;
+                        }
+                    }
+                }
+                newImages.push({
+                    id: Math.random().toString(36).substring(7),
+                    file: imgFiles[i],
+                    thumb: thumbData?.url || '',
+                    width: thumbData?.width || 0,
+                    height: thumbData?.height || 0,
+                    tags: finalTags,
+                    originalTags: [...orderedTags],
+                });
+                setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
+                if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
+            }
+
+            setImages(prev => {
+                const combined = [...prev, ...newImages];
+                return combined.sort((a, b) => a.file.name.localeCompare(b.file.name));
             });
-            setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
-            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
+            soundManager.chime();
+            const extras = `${restoredCount > 0 ? ` · ↻ ${restoredCount}` : ''}${skippedTxtCount > 0 ? ` · ⊘ ${skippedTxtCount} .txt` : ''}`;
+            showNotification(`${newImages.length} ${t.successImport}${extras}`, "success");
+        } catch (error: any) {
+            console.error('[Import] Failed', error);
+            showNotification(`${t.aiError || 'Error'}: ${String(error?.message || error || '').slice(0, 150)}`, 'error');
+        } finally {
+            // ITALIANO: Comunque vada, l'UI di import non deve restare bloccata
+            // ENGLISH: No matter what, the import UI must never stay stuck
+            setIsImporting(false);
+            if (folderInputRef.current) folderInputRef.current.value = '';
         }
-        
-        setImages(prev => {
-            const combined = [...prev, ...newImages];
-            return combined.sort((a, b) => a.file.name.localeCompare(b.file.name));
-        }); 
-        soundManager.chime();
-        showNotification(`${newImages.length} ${t.successImport}`, "success");
-        setIsImporting(false);
-        if (folderInputRef.current) folderInputRef.current.value = '';
     };
 
     const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null) => {
@@ -491,6 +636,12 @@ export default function App() {
 
     const handleResetProject = () => {
         setConfirmDialog({ isOpen: true, title: t.confirmResetTitle, message: t.confirmResetMsg, onConfirm: () => {
+            // ITALIANO: Ferma un eventuale batch AI in corso e svuota il backup automatico dei tag
+            // ENGLISH: Stop any running AI batch and clear the automatic tag backup
+            aiCancelRequestedRef.current = true;
+            setAiCancelRequested(true);
+            aiAbortControllerRef.current?.abort();
+            try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
@@ -659,16 +810,18 @@ export default function App() {
     };
 
     const updateImageTags = (id: string, newTags: string[]) => {
+        // ITALIANO: Deduplica alla fonte — incollando "sunset, sunset" o simili non si creano tag
+        //           doppi (che finirebbero nel .txt esportato e darebbero due pillole con la stessa key React).
+        // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
+        //          (they would end up in the exported .txt and render two pills with the same React key).
+        const uniqueTags = [...new Set(newTags)];
         const orderedTags = [
-            ...globalTriggers.filter(t => newTags.includes(t)),
-            ...newTags.filter(t => !globalTriggers.includes(t))
+            ...globalTriggers.filter(t => uniqueTags.includes(t)),
+            ...uniqueTags.filter(t => !globalTriggers.includes(t))
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     };
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
-    const updateImageCaption = useCallback((id: string, caption: string) => {
-        setImages(prev => prev.map(img => img.id === id ? { ...img, caption } : img));
-    }, []);
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
 
     // ITALIANO: Tagga la singola immagine via Gemini API
@@ -686,8 +839,14 @@ export default function App() {
                 maxTags: aiMaxTags,
                 customPrompt: aiCustomPrompt,
             });
-            const merged = [...new Set([...img.tags, ...tags])];
-            const added = merged.length - img.tags.length;
+            // ITALIANO: Merge sui tag LIVE (via imagesRef), non sullo snapshot pre-richiesta:
+            //           i tag modificati a mano durante l'attesa non vengono persi
+            // ENGLISH: Merge against LIVE tags (via imagesRef), not the pre-request snapshot:
+            //          tags edited manually while waiting are not lost
+            const live = imagesRef.current.find(i => i.id === imageId);
+            const baseTags: string[] = live ? live.tags : img.tags;
+            const merged = [...new Set([...baseTags, ...tags])];
+            const added = merged.length - baseTags.length;
             updateImageTags(imageId, merged);
             soundManager.chime();
             showNotification(`${added} ${t.aiTagsGenerated || 'tags generated'}`, 'success');
@@ -710,42 +869,6 @@ export default function App() {
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, images, t, updateImageTags]);
 
-    // ITALIANO: Genera didascalia via Gemini per la singola immagine
-    // ENGLISH: Generate Gemini caption for a single image
-    const handleAICaptionSingle = useCallback(async (imageId: string): Promise<string> => {
-        if (!aiEnabled) return '';
-        if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return ''; }
-        const img = images.find(i => i.id === imageId);
-        if (!img) return '';
-        setIsAIBusy(true);
-        try {
-            const caption = await getGeminiCaption(img.file, {
-                apiKey: geminiApiKey,
-                modelName: aiModel,
-                customPrompt: aiCustomPrompt,
-            });
-            updateImageCaption(imageId, caption);
-            soundManager.chime();
-            showNotification(t.aiCaptionGenerated || 'Caption generated!', 'success');
-            return caption;
-        } catch (e: any) {
-            console.error('AI caption failed', e);
-            const { kind } = classifyGeminiError(e);
-            if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
-            const friendly = kind === 'billing_required'
-                ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
-                : kind === 'rate_limit'
-                ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
-                : kind === 'model_unavailable'
-                ? (t.aiModelUnavailable || 'Model unavailable for your account.')
-                : String(e?.message || e || '').slice(0, 200);
-            showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
-            return '';
-        } finally {
-            setIsAIBusy(false);
-        }
-    }, [aiEnabled, geminiApiKey, aiModel, aiCustomPrompt, images, t, updateImageCaption]);
-
     // ITALIANO: Richiesta di annullamento del bulk tagging — viene letta dai cicli e dagli sleep.
     //           Aggiorna sia il ref (per il loop async) che lo state (per re-render del pulsante).
     // ENGLISH: Cancel request for bulk tagging — read by loops and sleeps.
@@ -753,6 +876,9 @@ export default function App() {
     const handleCancelAITagging = useCallback(() => {
         aiCancelRequestedRef.current = true;
         setAiCancelRequested(true);
+        // ITALIANO: Abortisce anche l'eventuale richiesta HTTP in volo (altrimenti su rete bloccata si resterebbe appesi)
+        // ENGLISH: Also aborts any in-flight HTTP request (otherwise a stalled connection would hang forever)
+        aiAbortControllerRef.current?.abort();
     }, []);
 
     // ITALIANO: Tagga tutte le immagini con throttle adattivo (mira aiRpm) + retry su rate-limit.
@@ -764,6 +890,10 @@ export default function App() {
         if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return; }
         aiCancelRequestedRef.current = false;
         setAiCancelRequested(false);
+        // ITALIANO: Controller per abortire le richieste HTTP in volo quando l'utente annulla
+        // ENGLISH: Controller to abort in-flight HTTP requests when the user cancels
+        aiAbortControllerRef.current = new AbortController();
+        const batchSignal = aiAbortControllerRef.current.signal;
         setIsGlobalAITagging(true);
         setGlobalAIProgress({ done: 0, total: images.length, ok: 0, errors: 0, skipped: 0 });
         // ITALIANO: Intervallo minimo tra le richieste in base alla RPM target dell'utente
@@ -790,13 +920,21 @@ export default function App() {
         try {
             for (let i = 0; i < images.length; i++) {
                 if (aiCancelRequestedRef.current) { cancelled = true; break; }
-                const current = images[i];
-                if (!current) {
+                // ITALIANO: Lo snapshot fornisce solo l'ID; lo stato VIVO arriva da imagesRef —
+                //           così skip e merge vedono le modifiche fatte dall'utente durante il batch
+                // ENGLISH: The snapshot only provides the ID; LIVE state comes from imagesRef —
+                //          so skip and merge see edits the user made during the batch
+                const snapshotItem = images[i];
+                const current = snapshotItem ? imagesRef.current.find(im => im.id === snapshotItem.id) : null;
+                if (!current || current.isTrashed) {
+                    // ITALIANO: Eliminata o nel cestino nel frattempo: non sprecare quota
+                    // ENGLISH: Deleted or trashed meanwhile: don't waste quota
+                    skippedCount++;
                     setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
                     continue;
                 }
-                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag
-                // ENGLISH: Skip if requested and the image already has at least one tag
+                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag (stato live)
+                // ENGLISH: Skip if requested and the image already has at least one tag (live state)
                 if (aiSkipTagged && Array.isArray(current.tags) && current.tags.length > 0) {
                     skippedCount++;
                     console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
@@ -816,15 +954,31 @@ export default function App() {
                             modelName: aiModel,
                             maxTags: aiMaxTags,
                             customPrompt: aiCustomPrompt,
+                            signal: batchSignal,
                         });
-                        const before = current.tags.length;
-                        const merged = [...new Set([...current.tags, ...tags])];
-                        totalTagsAdded += merged.length - before;
+                        // ITALIANO: Merge sui tag LIVE letti ORA — le modifiche manuali fatte
+                        //           durante la richiesta (secondi) non vengono sovrascritte
+                        // ENGLISH: Merge against LIVE tags read NOW — manual edits made during
+                        //          the request (seconds) are not overwritten
+                        const liveNow = imagesRef.current.find(im => im.id === current.id);
+                        if (!liveNow) {
+                            // ITALIANO: Rimossa durante la richiesta: ignora il risultato
+                            // ENGLISH: Removed during the request: discard the result
+                            console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: removed mid-batch, result discarded`);
+                            success = true;
+                            break;
+                        }
+                        const baseTags: string[] = Array.isArray(liveNow.tags) ? liveNow.tags : [];
+                        const merged = [...new Set([...baseTags, ...tags])];
+                        totalTagsAdded += merged.length - baseTags.length;
                         updateImageTags(current.id, merged);
                         success = true;
                         console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: ${tags.length} tags`);
                         break;
                     } catch (err: any) {
+                        // ITALIANO: Se l'errore deriva dall'annullamento (abort), esci subito senza contarlo come errore
+                        // ENGLISH: If the error comes from cancellation (abort), exit immediately without counting it as an error
+                        if (aiCancelRequestedRef.current) { cancelled = true; break; }
                         const { kind, message } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (kind === 'invalid_key') {
@@ -880,6 +1034,7 @@ export default function App() {
             aiCancelRequestedRef.current = false;
             setAiCancelRequested(false);
             setIsGlobalAITagging(false);
+            aiAbortControllerRef.current = null;
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, aiSkipTagged, images, isGlobalAITagging, t, updateImageTags]);
 
@@ -1207,8 +1362,8 @@ export default function App() {
                     image={displayedImages.find(img => img.id === selectedImageId)}
                     onClose={() => setSelectedImageId(null)}
                     updateTags={updateImageTags}
-                    updateImageCaption={updateImageCaption}
                     allTags={allUniqueTags}
+                    addProjectTag={(tag: string) => setCustomProjectTags(prev => prev.includes(tag) ? prev : [...prev, tag])}
                     t={t}
                     onNext={handleNext}
                     onPrev={handlePrev}
@@ -1224,7 +1379,6 @@ export default function App() {
                     aiEnabled={aiEnabled}
                     aiBusy={isAIBusy}
                     onAITagSingle={handleAITagSingle}
-                    onAICaptionSingle={handleAICaptionSingle}
                 />
             )}
 
@@ -1288,6 +1442,13 @@ export default function App() {
                                                 <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
                                                     <Sparkles size={16} className="text-purple-500"/>
                                                     {t.aiSettings || 'AI Tools'}
+                                                    {/* ITALIANO: Badge che segnala la funzione AI come sperimentale (beta) — ENGLISH: Badge marking the AI feature as experimental (beta) */}
+                                                    <span
+                                                        title={t.aiBetaHint || 'Experimental feature — may change or give imperfect results.'}
+                                                        className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider leading-none ${isDarkMode ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'}`}
+                                                    >
+                                                        {t.aiBeta || 'Beta'}
+                                                    </span>
                                                 </div>
                                                 <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
                                             </div>
@@ -1492,7 +1653,7 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>{t.versionLabel} 3.7.0</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>{t.versionLabel} {appVersion}</span>
                                             <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>{t.copyrightLabel} xXIlRizzoXx</span>
                                         </div>
                                     </div>
@@ -1830,8 +1991,6 @@ export default function App() {
                                 const totalTags = allUniqueTags.length;
                                 const taggedImages = images.filter(img => img.tags && img.tags.length > 0).length;
                                 const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
-                                const captionedImages = images.filter(img => typeof img.caption === 'string' && img.caption.trim().length > 0).length;
-                                const captionedPercentage = totalImages > 0 ? Math.round((captionedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};
                                 allUniqueTags.forEach(tag => {
@@ -1876,15 +2035,6 @@ export default function App() {
                                                     <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-sm font-normal opacity-70">({taggedPercentage}%)</span></p>
                                                 </div>
                                             </div>
-                                            {aiEnabled && (
-                                                <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
-                                                    <div className="p-3 bg-purple-500 rounded-lg text-white"><Sparkles size={24} /></div>
-                                                    <div>
-                                                        <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsCaptioned}</p>
-                                                        <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{captionedImages} <span className="text-sm font-normal opacity-70">({captionedPercentage}%)</span></p>
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
 
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

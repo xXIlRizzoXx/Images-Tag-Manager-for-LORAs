@@ -17,9 +17,17 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 const CUSTOM_PROMPT_MAX_LENGTH = 500;
 const TAG_MAX_LENGTH = 60;
-const CAPTION_MAX_LENGTH = 2000;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIME_PREFIX = 'image/';
+const REQUEST_TIMEOUT_MS = 90_000;
+const VERIFY_TIMEOUT_MS = 30_000;
+
+// ITALIANO: Combina il segnale chiamante (es. Annulla del batch) con un timeout di sicurezza:
+//           nessuna richiesta può restare appesa per sempre su una connessione bloccata.
+// ENGLISH: Combines the caller's signal (e.g. batch Cancel) with a safety timeout:
+//          no request can hang forever on a stalled connection.
+const buildAbortSignal = (signal?: AbortSignal, timeoutMs: number = REQUEST_TIMEOUT_MS): AbortSignal =>
+    signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
 
 const stripControlChars = (input: string): string => {
     let out = '';
@@ -77,18 +85,13 @@ const buildTagPrompt = (maxTags: number, customPrompt?: string): string => {
     return `Analyze this image and return exactly ${safeMaxTags} short descriptive tags as a JSON array of lowercase strings. Tags should be single words or short phrases describing main subjects, expressions, clothing, environment, lighting, style. Useful for LoRA/Stable Diffusion training datasets. Return ONLY a JSON array of lowercase strings.`;
 };
 
-const buildCaptionPrompt = (customPrompt?: string): string => {
-    const safeCustom = sanitizeCustomPrompt(customPrompt);
-    if (safeCustom) {
-        return `User preference: ${safeCustom}\n\nTask: provide a single detailed descriptive caption for this image. Focus on main subject, action, setting and style. Return plain text only, no JSON, no markdown.`;
-    }
-    return `Provide a single detailed descriptive caption for this image. Focus on main subject, action, setting and style. Return plain text only, one sentence.`;
-};
-
 export type GeminiOptions = {
     apiKey: string;
     modelName: string;
     customPrompt?: string;
+    // ITALIANO: Segnale di annullamento opzionale (es. pulsante Annulla del bulk tagging)
+    // ENGLISH: Optional cancellation signal (e.g. the bulk-tagging Cancel button)
+    signal?: AbortSignal;
 };
 
 export type GeminiTagOptions = GeminiOptions & {
@@ -111,6 +114,7 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
             ],
         },
         config: {
+            abortSignal: buildAbortSignal(opts.signal),
             responseMimeType: 'application/json',
             responseSchema: {
                 type: Type.ARRAY,
@@ -129,27 +133,6 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
         console.error('Gemini response was not valid JSON.');
         return [];
     }
-};
-
-export const getGeminiCaption = async (file: File, opts: GeminiOptions): Promise<string> => {
-    if (!opts.apiKey || typeof opts.apiKey !== 'string') {
-        throw new Error('Missing API key');
-    }
-    const ai = new GoogleGenAI({ apiKey: opts.apiKey });
-    const base64Data = await fileToBase64(file);
-
-    const response = await ai.models.generateContent({
-        model: opts.modelName,
-        contents: {
-            parts: [
-                { inlineData: { data: base64Data, mimeType: file.type } },
-                { text: buildCaptionPrompt(opts.customPrompt) },
-            ],
-        },
-    });
-
-    const text = (response.text || '').trim();
-    return text.slice(0, CAPTION_MAX_LENGTH);
 };
 
 // ITALIANO: Modelli vision di Gemini disponibili (default 2.5 Flash)
@@ -208,6 +191,9 @@ export const verifyGeminiApiKey = async (apiKey: string, modelId: string = DEFAU
         await ai.models.generateContent({
             model: modelId,
             contents: { parts: [{ text: 'ping' }] },
+            config: {
+                abortSignal: buildAbortSignal(undefined, VERIFY_TIMEOUT_MS),
+            },
         });
         return { ok: true };
     } catch (err: any) {
