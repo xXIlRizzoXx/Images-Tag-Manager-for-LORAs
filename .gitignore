@@ -1,5 +1,12 @@
 node_modules/
-build/
+# ITALIANO: build/ e' la cartella RISORSE di electron-builder (script installer e
+#           immagini del wizard): quelle vanno versionate. L'output va in release/.
+# ENGLISH: build/ is electron-builder's RESOURCES dir (installer script + wizard
+#          images): those must be tracked. Build output goes to release/.
+build/*
+!build/installer.nsh
+!build/*.bmp
+!build/*.ico
 dist/
 coverage/
 .DS_Store
