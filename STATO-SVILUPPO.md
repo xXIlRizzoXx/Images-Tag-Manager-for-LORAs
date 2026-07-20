@@ -44,9 +44,11 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 ## Vincoli sempre validi del progetto
 
-- **Portable Windows:** l'eseguibile finale va messo in
-  `D:\SOFTWARE PERSONALI IN SVILUPPO\000 SOFTWARE AI STUDIO PASSATI A CLAUDE\Images-Tag-Manager-for-LORAs\Portable\`
+- **Consegna Windows:** i due file finali (portable + installer) vanno messi in
+  `D:\SOFTWARE PERSONALI IN SVILUPPO\000 SOFTWARE AI STUDIO PASSATI A CLAUDE\Images-Tag-Manager-for-LORAs\Release\`
   (radice del progetto, non dentro la cartella di lavoro git).
+- **Dati dell'app:** sempre in `%APPDATA%\images-tag-manager` (mai accanto all'exe).
+  È la cartella da cancellare per far ripartire l'app "da zero".
 - **Privacy:** nessuna telemetria, nessun tracciamento. Con l'AI cloud le foto vanno a Google
   solo se l'utente attiva l'AI e mette la chiave.
 - **Chiave API:** sempre cifrata nel sistema, mai in chiaro, mai dentro l'exe.
