@@ -76,6 +76,11 @@ export default function App() {
     const [showLangPicker, setShowLangPicker] = useState<boolean>(() => {
         try { return !localStorage.getItem('langChosen'); } catch (_) { return false; }
     });
+    // ITALIANO: Lingua solo EVIDENZIATA nella schermata iniziale: non si applica da sola,
+    //           serve premere il tasto di conferma.
+    // ENGLISH: Language only HIGHLIGHTED in the first-run screen: it is not applied on click,
+    //          the user must press the confirm button.
+    const [pendingLang, setPendingLang] = useState<string>(lang);
     // ITALIANO: La lingua scelta viene ricordata tra un avvio e l'altro (prima si perdeva).
     // ENGLISH: The chosen language is remembered across launches (it used to be lost).
     useEffect(() => { try { localStorage.setItem('lang', lang); } catch (_) { /* ignore */ } }, [lang]);
@@ -1200,13 +1205,8 @@ export default function App() {
                             {APP_LANGUAGES.map((l) => (
                                 <button
                                     key={l.code}
-                                    onClick={() => {
-                                        setLang(l.code);
-                                        try { localStorage.setItem('langChosen', '1'); } catch (_) { /* ignore */ }
-                                        setShowLangPicker(false);
-                                        soundManager.pop();
-                                    }}
-                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all active:scale-95 ${lang === l.code
+                                    onClick={() => { setPendingLang(l.code); soundManager.pop(); }}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all active:scale-95 ${pendingLang === l.code
                                         ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-transparent shadow-lg scale-105'
                                         : (isDarkMode ? 'bg-gray-800/60 border-gray-700/50 text-gray-300 hover:bg-gray-700/60 hover:border-indigo-500/50' : 'bg-white/70 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-indigo-300')}`}
                                 >
@@ -1215,6 +1215,20 @@ export default function App() {
                                 </button>
                             ))}
                         </div>
+                        {/* ITALIANO: Conferma esplicita — l'etichetta è già nella lingua selezionata.
+                            ENGLISH: Explicit confirmation — the label is already in the selected language. */}
+                        <button
+                            onClick={() => {
+                                setLang(pendingLang);
+                                try { localStorage.setItem('langChosen', '1'); } catch (_) { /* ignore */ }
+                                setShowLangPicker(false);
+                                soundManager.chime();
+                            }}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold shadow-lg transition-all active:scale-95"
+                        >
+                            <Check size={18} />
+                            {(translations[pendingLang as keyof typeof translations] as any)?.confirm || 'Confirm'}
+                        </button>
                         <p className={`text-[11px] text-center ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             Puoi cambiarla quando vuoi dalle Impostazioni · You can change it anytime in Settings
                         </p>
