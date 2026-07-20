@@ -37,9 +37,48 @@ import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
 
+// ITALIANO: Lingue dell'interfaccia — usate sia dal selettore nelle impostazioni
+//           sia dalla schermata di scelta lingua al primo avvio.
+// ENGLISH: UI languages — used by both the settings selector and the first-run picker.
+const APP_LANGUAGES = [
+    { code: 'it', label: 'Italiano', flag: 'it' },
+    { code: 'en', label: 'English', flag: 'gb' },
+    { code: 'fr', label: 'Français', flag: 'fr' },
+    { code: 'es', label: 'Español', flag: 'es' },
+    { code: 'de', label: 'Deutsch', flag: 'de' },
+    { code: 'zh', label: '中文 (简体)', flag: 'cn' },
+    { code: 'ja', label: '日本語', flag: 'jp' },
+    { code: 'pt', label: 'Português', flag: 'br' },
+    { code: 'ru', label: 'Русский', flag: 'ru' },
+];
+const LANG_CODES = APP_LANGUAGES.map(l => l.code);
+
+// ITALIANO: Lingua iniziale: quella già scelta, altrimenti quella del sistema operativo,
+//           altrimenti inglese (così un PC tedesco parte in tedesco).
+// ENGLISH: Initial language: the saved choice, else the OS language, else English.
+const detectInitialLang = (): string => {
+    try {
+        const saved = localStorage.getItem('lang');
+        if (saved && LANG_CODES.includes(saved)) return saved;
+    } catch (_) { /* ignore */ }
+    try {
+        const sys = (navigator.language || '').slice(0, 2).toLowerCase();
+        if (LANG_CODES.includes(sys)) return sys;
+    } catch (_) { /* ignore */ }
+    return 'en';
+};
+
 export default function App() {
-    const [lang, setLang] = useState('it');
+    const [lang, setLang] = useState<string>(detectInitialLang);
     const t = translations[lang as keyof typeof translations];
+    // ITALIANO: Al primissimo avvio (nessuna scelta salvata) mostra la schermata di scelta lingua.
+    // ENGLISH: On the very first launch (no saved choice) show the language picker screen.
+    const [showLangPicker, setShowLangPicker] = useState<boolean>(() => {
+        try { return !localStorage.getItem('langChosen'); } catch (_) { return false; }
+    });
+    // ITALIANO: La lingua scelta viene ricordata tra un avvio e l'altro (prima si perdeva).
+    // ENGLISH: The chosen language is remembered across launches (it used to be lost).
+    useEffect(() => { try { localStorage.setItem('lang', lang); } catch (_) { /* ignore */ } }, [lang]);
     const [images, setImages] = useState<any[]>([]);
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
     const [soundEnabled, setSoundEnabled] = useState(true);
@@ -1144,6 +1183,44 @@ export default function App() {
 
     return (
         <div className={`h-screen transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
+            {/* ITALIANO: Scelta lingua al PRIMO avvio — sta sopra a tutto (anche allo splash).
+                          Usa i nomi nelle lingue native: niente immagini remote, funziona offline. */}
+            {/* ENGLISH: FIRST-run language picker — sits above everything (splash included).
+                         Uses native language names: no remote images, works offline. */}
+            {showLangPicker && (
+                <div className={`fixed inset-0 z-[10000] flex items-center justify-center p-6 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
+                    <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
+                    <div className={`relative w-full max-w-xl p-8 ${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl flex flex-col gap-7 animate-in fade-in zoom-in duration-500`}>
+                        <div className="flex flex-col items-center gap-3 text-center">
+                            <img src="./logo.png" alt="" className="w-16 h-16 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                            <h1 className={`text-2xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'}`}>Images Tag Manager for LORAs</h1>
+                            <p className={`text-[10px] uppercase tracking-widest font-semibold ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Scegli la lingua · Choose your language</p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {APP_LANGUAGES.map((l) => (
+                                <button
+                                    key={l.code}
+                                    onClick={() => {
+                                        setLang(l.code);
+                                        try { localStorage.setItem('langChosen', '1'); } catch (_) { /* ignore */ }
+                                        setShowLangPicker(false);
+                                        soundManager.pop();
+                                    }}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all active:scale-95 ${lang === l.code
+                                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-transparent shadow-lg scale-105'
+                                        : (isDarkMode ? 'bg-gray-800/60 border-gray-700/50 text-gray-300 hover:bg-gray-700/60 hover:border-indigo-500/50' : 'bg-white/70 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-indigo-300')}`}
+                                >
+                                    <img src={`https://flagcdn.com/w40/${l.flag}.png`} alt="" className="w-5 h-5 rounded-full object-cover shadow-sm shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                    <span className="truncate">{l.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <p className={`text-[11px] text-center ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            Puoi cambiarla quando vuoi dalle Impostazioni · You can change it anytime in Settings
+                        </p>
+                    </div>
+                </div>
+            )}
             {showSplash && (
                 <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
                     <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
@@ -1386,7 +1463,11 @@ export default function App() {
                 <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
             </div>
 
-            <div className="relative z-10 w-full px-4 py-4 md:py-6 mx-auto h-full max-w-[1920px]">
+            {/* ITALIANO: Rientro UGUALE su tutti i lati (p-4/p-6) e nessun tetto di larghezza,
+                          così su schermi larghi la finestra interna non lascia grandi fasce ai lati.
+                ENGLISH: EQUAL inset on every side (p-4/p-6) and no width cap, so on wide screens
+                         the inner window doesn't leave big empty bands left and right. */}
+            <div className="relative z-10 w-full p-4 md:p-6 mx-auto h-full">
                 <div className={`${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl overflow-hidden transition-all duration-500 flex flex-col relative h-full max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-3rem)]`}>
                     
                     <div className={`border-b ${isDarkMode ? 'border-gray-800/50 bg-black/20' : 'border-gray-200 bg-gray-50/50'} p-4 md:p-5 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20`}>
@@ -1628,17 +1709,7 @@ export default function App() {
                                                     <span className="text-xs font-medium uppercase">{lang}</span>
                                                 </div>
                                                 <div className={`absolute right-0 top-full mt-1 w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                                                    {[
-                                                        { code: 'it', label: 'Italiano', flag: 'it' },
-                                                        { code: 'en', label: 'English', flag: 'gb' },
-                                                        { code: 'fr', label: 'Français', flag: 'fr' },
-                                                        { code: 'es', label: 'Español', flag: 'es' },
-                                                        { code: 'de', label: 'Deutsch', flag: 'de' },
-                                                        { code: 'zh', label: '中文 (简体)', flag: 'cn' },
-                                                        { code: 'ja', label: '日本語', flag: 'jp' },
-                                                        { code: 'pt', label: 'Português', flag: 'br' },
-                                                        { code: 'ru', label: 'Русский', flag: 'ru' }
-                                                    ].map((l) => (
+                                                    {APP_LANGUAGES.map((l) => (
                                                         <div 
                                                             key={l.code} 
                                                             onClick={() => setLang(l.code)}

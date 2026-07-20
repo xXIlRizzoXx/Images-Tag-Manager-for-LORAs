@@ -27,6 +27,9 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 12 | Suggerimenti → palette del progetto (v3.8.0) | Nella finestra di una foto, i tag scelti dai **"Tag Suggeriti"** non finiscono più diretti sull'immagine: entrano nella zona **sotto** (palette del progetto). Poi li applichi cliccandoli lì, una foto alla volta. |
 | 13 | Rimossa la didascalia AI in linguaggio naturale (v3.8.0) | Tolta la scheda **"Caption"** (didascalia descrittiva in frasi). L'app ora fa **solo tag**. Nessun dato perso: le didascalie non erano mai salvate nei file `.txt`, che contengono solo i tag. |
 | 14 | Avvio a finestra piena (v3.8.0) | All'apertura l'app si presenta **massimizzata** (finestra piena con barra del titolo, non a schermo intero). Riducendola torna alla dimensione normale (1280×800). |
+| 15 | Installer multilingue (v3.8.0) | Oltre al portable ora c'è un vero **programma di installazione**: come prima cosa fa **scegliere la lingua** (9 lingue), permette di scegliere la cartella, e alla fine mostra le caselle **"Esegui l'app"** e **"Crea un collegamento sul desktop"**. Disinstallazione pulita. |
+| 16 | Scelta lingua al primo avvio (v3.8.0) | Al **primissimo avvio** (sia portable sia installato) compare una schermata per scegliere la lingua, con già proposta quella del PC. La scelta ora **viene ricordata** (prima si riazzerava a italiano a ogni riavvio). |
+| 17 | Rientro uniforme della finestra (v3.8.0) | La finestra interna ora ha lo **stesso margine su tutti e quattro i lati** (24px) e usa tutta la larghezza: prima i lati erano più stretti e su schermi larghi restavano grandi fasce vuote. |
 
 ---
 

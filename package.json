@@ -26,8 +26,36 @@
       "output": "release"
     },
     "win": {
-      "target": "portable",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "multiLanguageInstaller": true,
+      "displayLanguageSelector": true,
+      "installerLanguages": [
+        "it_IT",
+        "en_US",
+        "fr_FR",
+        "es_ES",
+        "de_DE",
+        "zh_CN",
+        "ja_JP",
+        "pt_BR",
+        "ru_RU"
+      ],
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Images Tag Manager for LORAs",
+      "runAfterFinish": true,
+      "include": "build/installer.nsh",
+      "warningsAsErrors": false,
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "mac": {
       "icon": "public/icon.png",
