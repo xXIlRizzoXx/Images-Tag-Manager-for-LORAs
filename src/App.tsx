@@ -81,6 +81,11 @@ export default function App() {
     // ENGLISH: Language only HIGHLIGHTED in the first-run screen: it is not applied on click,
     //          the user must press the confirm button.
     const [pendingLang, setPendingLang] = useState<string>(lang);
+    // ITALIANO: Testi della schermata di scelta lingua: seguono la lingua EVIDENZIATA, non
+    //           quella attiva, cosi' tutta la finestra cambia lingua a ogni clic (anteprima).
+    // ENGLISH: First-run screen texts: they follow the HIGHLIGHTED language, not the active
+    //          one, so the whole window switches language on every click (live preview).
+    const tPending = translations[pendingLang as keyof typeof translations] ?? translations.en;
     // ITALIANO: La lingua scelta viene ricordata tra un avvio e l'altro (prima si perdeva).
     // ENGLISH: The chosen language is remembered across launches (it used to be lost).
     useEffect(() => { try { localStorage.setItem('lang', lang); } catch (_) { /* ignore */ } }, [lang]);
@@ -1199,7 +1204,7 @@ export default function App() {
                         <div className="flex flex-col items-center gap-3 text-center">
                             <img src="./logo.png" alt="" className="w-16 h-16 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                             <h1 className={`text-2xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'}`}>Images Tag Manager for LORAs</h1>
-                            <p className={`text-[10px] uppercase tracking-widest font-semibold ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Scegli la lingua · Choose your language</p>
+                            <p className={`text-[10px] uppercase tracking-widest font-semibold ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{tPending.langPickerTitle}</p>
                         </div>
                         <div className="grid grid-cols-3 gap-2.5">
                             {APP_LANGUAGES.map((l) => (
@@ -1227,10 +1232,10 @@ export default function App() {
                             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold shadow-lg transition-all active:scale-95"
                         >
                             <Check size={18} />
-                            {(translations[pendingLang as keyof typeof translations] as any)?.confirm || 'Confirm'}
+                            {tPending.confirm}
                         </button>
                         <p className={`text-[11px] text-center ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Puoi cambiarla quando vuoi dalle Impostazioni · You can change it anytime in Settings
+                            {tPending.langPickerHint}
                         </p>
                     </div>
                 </div>

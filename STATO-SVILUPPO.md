@@ -1,6 +1,6 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 4 luglio 2026
+**Ultimo aggiornamento:** 20 luglio 2026
 **Versione attuale:** 3.8.0 (in lavorazione sul branch)
 **Ultima versione stabile:** 3.7.0 (su `main`)
 
@@ -30,6 +30,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 15 | Installer multilingue (v3.8.0) | Oltre al portable ora c'è un vero **programma di installazione**: come prima cosa fa **scegliere la lingua** (9 lingue), permette di scegliere la cartella, e alla fine mostra le caselle **"Esegui l'app"** e **"Crea un collegamento sul desktop"**. Disinstallazione pulita. |
 | 16 | Scelta lingua al primo avvio (v3.8.0) | Al **primissimo avvio** (sia portable sia installato) compare una schermata per scegliere la lingua, con già proposta quella del PC. La scelta ora **viene ricordata** (prima si riazzerava a italiano a ogni riavvio). |
 | 17 | Rientro uniforme della finestra (v3.8.0) | La finestra interna ora ha lo **stesso margine su tutti e quattro i lati** (24px) e usa tutta la larghezza: prima i lati erano più stretti e su schermi larghi restavano grandi fasce vuote. |
+| 18 | Anteprima lingua dal vivo (v3.8.0) | Nella schermata di scelta lingua al primo avvio, cliccando una bandiera **cambia lingua tutta la finestra** (titolo, sottotitolo, tasto di conferma, nota in basso), non più solo il tasto. Così si vede subito com'è la lingua prima di confermare. |
 
 ---
 
