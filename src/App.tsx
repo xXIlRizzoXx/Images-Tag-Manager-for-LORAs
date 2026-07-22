@@ -2033,20 +2033,20 @@ export default function App() {
                             </button>
                         </div>
                         
-                        <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
+                        {/* ITALIANO: Sezione centrale racchiusa in un riquadro con lo STESSO stile dei due
+                                      pannelli laterali (bg, bordo, angoli, ombra interna). */}
+                        {/* ENGLISH: Centre section wrapped in a panel with the SAME style as the two side
+                                     panels (bg, border, rounding, inner shadow). */}
+                        <div className={`flex-1 w-full flex flex-col gap-3 min-w-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
-                            {/* ITALIANO: riempie tutta la colonna centrale: lo spazio verso i due riquadri
-                                          laterali resta costante (il gap-6 della riga) a ogni larghezza schermo */}
-                            {/* ENGLISH: fills the whole centre column so the gap to the two side boxes stays
-                                         constant (the row's gap-6) at every screen width */}
                             <div className="w-full">
                                 <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" isDarkMode={isDarkMode} />
                             </div>
-                            
+
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
                             {/* ENGLISH: Toolbar with Suggested Tags + AI Auto-Tag (if enabled) */}
-                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2 w-full`}>
+                            <div className={`p-2 rounded-xl border ${isDarkMode ? 'bg-gray-950/40 border-gray-700/40' : 'bg-gray-50 border-gray-100'} flex flex-col gap-2 w-full`}>
                                 <div className="flex items-center justify-center gap-3 flex-wrap">
                                     {aiEnabled && (
                                         <button
