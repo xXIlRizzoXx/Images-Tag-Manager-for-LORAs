@@ -2041,7 +2041,11 @@ export default function App() {
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
                             <div className="w-full">
-                                <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" isDarkMode={isDarkMode} />
+                                {/* ITALIANO: cap a 120px (con scorrimento interno) cosi' la sezione centrale non
+                                              diventa mai piu' alta dei due riquadri laterali: la barra comandi resta bilanciata. */}
+                                {/* ENGLISH: capped at 120px (scrolls inside) so the centre section never grows taller
+                                             than the two side panels: the command bar stays balanced. */}
+                                <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[120px]" isDarkMode={isDarkMode} />
                             </div>
 
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
