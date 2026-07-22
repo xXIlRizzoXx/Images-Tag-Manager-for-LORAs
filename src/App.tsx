@@ -114,6 +114,11 @@ export default function App() {
     const [isTrashOpen, setIsTrashOpen] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
+    // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
+    //           per la percentuale; isSaving decide se mostrarla e con quale etichetta.
+    // ENGLISH: Same progress bar, but during SAVING. Reuses importProgress for the percentage;
+    //          isSaving controls whether it shows and with which label.
+    const [isSaving, setIsSaving] = useState(false);
 
     const [isStatsOpen, setIsStatsOpen] = useState(false);
     // ITALIANO: "Appunti" dei tag: copiati da una foto, incollabili su un'altra.
@@ -817,9 +822,11 @@ export default function App() {
         // ITALIANO: Se abbiamo un riferimento alla cartella e stiamo salvando le modifiche (non esportando tutto), sovrascriviamo i file originali
         // ENGLISH: If we have a folder handle and we are saving changes (not exporting all), overwrite original files
         if (dirHandle && !saveAsZip && !isExportAll) {
+            setIsSaving(true); setImportProgress(0);
             try {
                 showNotification(t.processingFiles, "info");
-                for (const img of imagesToSave) {
+                for (let i = 0; i < imagesToSave.length; i++) {
+                    const img = imagesToSave[i];
                     const tagString = getOrderedTagString(img.tags);
                     const fileName = buildTagFileName(img.file.name);
 
@@ -827,20 +834,23 @@ export default function App() {
                     const writable = await fileHandle.createWritable();
                     await writable.write(tagString);
                     await writable.close();
+                    setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
                 }
-                
+
                 setImages(prev => prev.map(img => {
                     if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
                     return img;
                 }));
-                
+
                 soundManager.chime();
                 showNotification(t.successSaveChanges, "success");
             } catch (err) {
                 console.error(err);
                 showNotification(t.dirError, "error");
+            } finally {
+                setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
             }
-            return; 
+            return;
         }
 
         // ITALIANO: Se l'utente vuole esportare in una cartella specifica (non quella originale)
@@ -849,9 +859,11 @@ export default function App() {
             if ('showDirectoryPicker' in window) {
                 try {
                     const exportHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-export', startIn: 'itm-project' });
+                    setIsSaving(true); setImportProgress(0);
                     showNotification(t.processingFiles, "info");
-                    
-                    for (const img of imagesToSave) {
+
+                    for (let i = 0; i < imagesToSave.length; i++) {
+                        const img = imagesToSave[i];
                         const tagString = getOrderedTagString(img.tags);
                         const fileName = buildTagFileName(img.file.name);
 
@@ -859,8 +871,9 @@ export default function App() {
                         const writable = await fileHandle.createWritable();
                         await writable.write(tagString);
                         await writable.close();
+                        setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
                     }
-                    
+
                     soundManager.chime();
                     showNotification(t.exportFolderSuccess, "success");
                     return;
@@ -870,6 +883,8 @@ export default function App() {
                         showNotification(t.exportFolderError, "error");
                     }
                     return;
+                } finally {
+                    setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
                 }
             }
         }
@@ -877,18 +892,21 @@ export default function App() {
         // ITALIANO: Se vogliamo salvare come archivio ZIP
         // ENGLISH: If we want to save as a ZIP archive
         if (saveAsZip) {
+            setIsSaving(true); setImportProgress(0);
             try {
                 showNotification(t.zipProcessing, "info");
                 const zip = new JSZip();
-                
+
                 imagesToSave.forEach((img) => {
                     const tagString = getOrderedTagString(img.tags);
                     // ITALIANO: Nome sanitizzato per prevenire zip-slip e caratteri illegali su Windows
                     // ENGLISH: Sanitized name to prevent zip-slip and illegal Windows characters
                     zip.file(buildTagFileName(img.file.name), tagString);
                 });
-                
-                const blob = await zip.generateAsync({ type: "blob" });
+
+                // ITALIANO: la callback aggiorna la barra mentre lo ZIP viene generato
+                // ENGLISH: the callback updates the bar while the ZIP is being generated
+                const blob = await zip.generateAsync({ type: "blob" }, (metadata) => { setImportProgress(Math.round(metadata.percent)); });
                 const url = URL.createObjectURL(blob);
                 try {
                     const a = document.createElement('a');
@@ -911,6 +929,8 @@ export default function App() {
             } catch (err) {
                 console.error(err);
                 showNotification(t.zipError, "error");
+            } finally {
+                setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
             }
             return;
         }
@@ -918,6 +938,7 @@ export default function App() {
         // ITALIANO: Metodo di salvataggio di emergenza (download multipli nel browser)
         // ENGLISH: Fallback save method (multiple downloads in the browser)
         showNotification(t.infoSaveFallback, "info");
+        if (imagesToSave.length > 0) { setIsSaving(true); setImportProgress(0); }
         imagesToSave.forEach((img, i) => setTimeout(() => {
             const tagString = getOrderedTagString(img.tags);
             const blob = new Blob([tagString], { type: 'text/plain' });
@@ -932,6 +953,8 @@ export default function App() {
             } finally {
                 URL.revokeObjectURL(url);
             }
+            setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
+            if (i === imagesToSave.length - 1) setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
         }, i * 300));
         
         setImages(prev => prev.map(img => {
@@ -1915,13 +1938,13 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center shrink-0 ${isDarkMode ? 'bg-gray-800/20 border-gray-800/50' : 'bg-gray-100/50 border-gray-200'} ${isImporting ? 'max-h-32 opacity-100 border-b' : 'max-h-0 opacity-0'}`}>
+                    <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center shrink-0 ${isDarkMode ? 'bg-gray-800/20 border-gray-800/50' : 'bg-gray-100/50 border-gray-200'} ${(isImporting || isSaving) ? 'max-h-32 opacity-100 border-b' : 'max-h-0 opacity-0'}`}>
                         <div className="w-full max-w-4xl p-4">
                             <div className={`p-4 rounded-2xl flex items-center gap-4 shadow-inner border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700/50' : 'bg-white border-indigo-200'}`}>
                                 <div className="w-6 h-6 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
                                 <div className="flex-1">
                                     <div className="flex justify-between items-center mb-1.5">
-                                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{importProgress === 100 ? t.completed : t.processingFiles}</span>
+                                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{importProgress === 100 ? t.completed : (isSaving ? t.savingInProgress : t.processingFiles)}</span>
                                         <span className="text-sm font-bold text-indigo-500">{importProgress}%</span>
                                     </div>
                                     <div className={`w-full rounded-full h-2 overflow-hidden shadow-sm ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
