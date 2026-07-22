@@ -1971,7 +1971,11 @@ export default function App() {
                     </div>
 
                     <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center shrink-0 ${isDarkMode ? 'bg-gray-800/20 border-gray-800/50' : 'bg-gray-100/50 border-gray-200'} ${(isImporting || isSaving) ? 'max-h-32 opacity-100 border-b' : 'max-h-0 opacity-0'}`}>
-                        <div className="w-full max-w-4xl p-4">
+                        {/* ITALIANO: piena larghezza con lo stesso rientro (p-4 md:p-5) della riga comandi,
+                                      cosi' la barra di avanzamento arriva agli stessi bordi dei due riquadri. */}
+                        {/* ENGLISH: full width with the command row's inset (p-4 md:p-5), so the progress bar
+                                     reaches the same edges as the two side boxes. */}
+                        <div className="w-full p-4 md:p-5">
                             <div className={`p-4 rounded-2xl flex items-center gap-4 shadow-inner border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700/50' : 'bg-white border-indigo-200'}`}>
                                 <div className="w-6 h-6 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
                                 <div className="flex-1">
