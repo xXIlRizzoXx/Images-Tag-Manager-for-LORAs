@@ -12,14 +12,22 @@
 *******************************************************************************
 *******************************************************************************/
 
-// ITALIANO: Lato massimo (in pixel) della miniatura. La galleria mostra le foto
-//           molto piccole, quindi ~420px bastano e avanzano anche in modalita'
-//           "quadrata" con lo zoom al massimo.
-// ENGLISH: Max side (px) of the thumbnail. The gallery shows photos very small,
-//          so ~420px is plenty, even in "square" mode at max zoom.
-const THUMB_MAX_SIDE = 420;
+// ITALIANO: Lato massimo (in pixel) della miniatura e qualita' di compressione.
+//           Erano 420px / 0.82: troppo pochi, perche' il cursore dello zoom arriva
+//           a 500px e le colonne della griglia si allargano ancora di piu' per
+//           riempire lo spazio (minmax(N, 1fr)). La miniatura veniva quindi
+//           ingrandita oltre la sua risoluzione e si vedeva sfocata.
+//           640px coprono lo zoom massimo con un margine, restando una frazione
+//           del peso dell'originale: la galleria resta veloce.
+// ENGLISH: Max side (px) of the thumbnail and compression quality. These were
+//          420px / 0.82: too low, because the zoom slider reaches 500px and the
+//          grid columns stretch even wider to fill the row (minmax(N, 1fr)), so
+//          thumbnails were scaled up past their own resolution and looked soft.
+//          640px covers max zoom with headroom while staying a small fraction of
+//          the original's weight, keeping the gallery fast.
+const THUMB_MAX_SIDE = 640;
 const THUMB_TYPE = 'image/webp';
-const THUMB_QUALITY = 0.82;
+const THUMB_QUALITY = 0.88;
 
 // ITALIANO: Percorso di riserva usato solo se il browser non ha createImageBitmap
 //           o se la decodifica fallisce: torna al vecchio comportamento (URL
