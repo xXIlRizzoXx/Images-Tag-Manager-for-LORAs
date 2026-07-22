@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
@@ -98,7 +98,7 @@ export default function App() {
     const [saveAsZip, setSaveAsZip] = useState(false); 
     const [dirHandle, setDirHandle] = useState<any>(null);
     
-    const [imageWidth, setImageWidth] = useState(250); 
+    const [imageWidth, setImageWidth] = useState(300);
     const [trashImageWidth, setTrashImageWidth] = useState(250);
     const [trashSortOrder, setTrashSortOrder] = useState('date-desc'); 
     
@@ -116,6 +116,9 @@ export default function App() {
     const [importProgress, setImportProgress] = useState(0);
 
     const [isStatsOpen, setIsStatsOpen] = useState(false);
+    // ITALIANO: "Appunti" dei tag: copiati da una foto, incollabili su un'altra.
+    // ENGLISH: Tag "clipboard": copied from one photo, pasteable onto another.
+    const [copiedTags, setCopiedTags] = useState<string[] | null>(null);
 
     // ITALIANO: Pulizia della sola chiave legacy 'customPrompt' (vecchia AI locale).
     //           NON rimuovere 'geminiApiKey' (getSecret la migra in safeStorage) né 'aiModel' (chiave viva).
@@ -426,6 +429,21 @@ export default function App() {
         soundManager.pop();
     };
 
+    // ITALIANO: Cestina la foto APERTA nel visualizzatore e passa direttamente alla
+    //           successiva (o alla precedente se era l'ultima), senza chiudere la finestra.
+    //           Chiude solo se non resta piu' nessuna foto. Il "prossimo" si calcola PRIMA
+    //           di cestinare, sulla lista visibile in quel momento.
+    // ENGLISH: Trash the OPEN photo in the viewer and jump straight to the next one (or the
+    //          previous if it was the last), without closing the window. Closes only if no
+    //          photo is left. "Next" is computed BEFORE trashing, on the currently shown list.
+    const handleTrashFromLightbox = (id: string) => {
+        const idx = displayedImages.findIndex(img => img.id === id);
+        const nextImg = idx === -1 ? null : (displayedImages[idx + 1] || displayedImages[idx - 1] || null);
+        setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
+        setSelectedImageId(nextImg ? nextImg.id : null);
+        soundManager.pop();
+    };
+
     const handleRestore = (id: string) => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: false } : img));
         soundManager.pop();
@@ -641,7 +659,11 @@ export default function App() {
     const handleLoadFolderClick = async () => {
         if ('showDirectoryPicker' in window) {
             try {
-                const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+                // ITALIANO: l'id fa ricordare al sistema l'ULTIMA cartella usata: la volta dopo
+                //           il selettore si riapre lì. startIn come riserva al primo utilizzo.
+                // ENGLISH: the id makes the system remember the LAST used folder: next time the
+                //          picker reopens there. startIn as a fallback on first use.
+                const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-project', startIn: 'pictures' });
                 
                 const imgFiles = [];
                 const txtFiles = [];
@@ -679,8 +701,91 @@ export default function App() {
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
         if (imgFiles.length === 0) return;
-        
+
         calculateImportSummary(imgFiles, txtFiles, null);
+    };
+
+    // ITALIANO: Carica SINGOLE immagini (una o piu'), non l'intera cartella. Se selezioni
+    //           anche i loro file .txt, i tag vengono abbinati per nome. Senza una cartella
+    //           collegata, il salvataggio avviene come download del .txt.
+    // ENGLISH: Load INDIVIDUAL images (one or more), not the whole folder. If you also pick
+    //          their .txt files, tags are matched by name. With no folder attached, saving
+    //          happens as a .txt download.
+    const imagesInputRef = useRef<HTMLInputElement>(null);
+    const handleImagesUpload = async (e: any) => {
+        const files = Array.from(e.target.files as FileList);
+        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
+        if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
+        calculateImportSummary(imgFiles, txtFiles, null);
+        if (imagesInputRef.current) imagesInputRef.current.value = '';
+    };
+
+    // ITALIANO: ESPORTA / IMPORTA i tag del progetto (punto 16). Il JSON serve a
+    //           reimportare tutto in modo pulito in un nuovo progetto; il TXT e' una
+    //           lista leggibile. L'import accetta entrambi e AGGIUNGE i tag alla palette
+    //           del progetto (senza doppioni).
+    // ENGLISH: EXPORT / IMPORT project tags (item 16). JSON re-imports cleanly into a
+    //          new project; TXT is a readable list. Import accepts both and ADDS the tags
+    //          to the project palette (no duplicates).
+    const projectTagsImportRef = useRef<HTMLInputElement>(null);
+
+    const downloadTextFile = (content: string, mime: string, fileName: string) => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        try {
+            const a = document.createElement('a');
+            a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        } finally { URL.revokeObjectURL(url); }
+    };
+
+    const handleExportProjectTags = (format: 'json' | 'txt') => {
+        // ITALIANO: trigger prima, poi il resto in ordine alfabetico (coerente col resto dell'app)
+        // ENGLISH: triggers first, then the rest alphabetical (consistent with the rest of the app)
+        const orderedTags = [
+            ...globalTriggers.filter(tag => allUniqueTags.includes(tag)),
+            ...allUniqueTags.filter(tag => !globalTriggers.includes(tag))
+        ];
+        if (orderedTags.length === 0) { showNotification(t.noTagsInProject, 'info'); return; }
+        if (format === 'json') {
+            const data = { app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: [...globalTriggers], tags: orderedTags };
+            downloadTextFile(JSON.stringify(data, null, 2), 'application/json', 'project-tags.json');
+        } else {
+            downloadTextFile(orderedTags.join('\n') + '\n', 'text/plain', 'project-tags.txt');
+        }
+        soundManager.chime();
+        showNotification(t.projectTagsExported, 'success');
+    };
+
+    const handleImportProjectTags = async (e: any) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = (await file.text()).trim();
+            let tags: string[] = [];
+            let triggers: string[] = [];
+            if (text.startsWith('{')) {
+                const data = JSON.parse(text);
+                if (Array.isArray(data.tags)) tags = data.tags;
+                if (Array.isArray(data.globalTriggers)) triggers = data.globalTriggers;
+            } else {
+                // ITALIANO: TXT: un tag per riga (accetto anche le virgole come separatore).
+                // ENGLISH: TXT: one tag per line (commas are also accepted as separators).
+                tags = text.split(/[\r\n,]+/);
+            }
+            // ITALIANO: i trigger del file entrano comunque nella palette del progetto.
+            // ENGLISH: the file's triggers also go into the project palette.
+            const clean = [...new Set([...tags, ...triggers].map((s: any) => String(s).trim()).filter(Boolean))];
+            if (clean.length === 0) { showNotification(t.importTagsError, 'error'); return; }
+            setCustomProjectTags(prev => [...new Set([...prev, ...clean])]);
+            soundManager.chime();
+            showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
+        } catch (err) {
+            showNotification(t.importTagsError, 'error');
+        } finally {
+            if (projectTagsImportRef.current) projectTagsImportRef.current.value = '';
+        }
     };
 
     const handleResetProject = () => {
@@ -743,7 +848,7 @@ export default function App() {
         if (!saveAsZip && isExportAll) {
             if ('showDirectoryPicker' in window) {
                 try {
-                    const exportHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+                    const exportHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-export', startIn: 'itm-project' });
                     showNotification(t.processingFiles, "info");
                     
                     for (const img of imagesToSave) {
@@ -864,14 +969,57 @@ export default function App() {
         // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
         //          (they would end up in the exported .txt and render two pills with the same React key).
         const uniqueTags = [...new Set(newTags)];
+        // ITALIANO: Ordine dei tag: prima le trigger word (nell'ordine impostato dall'utente,
+        //           convenzione LoRA), poi tutti gli altri in ORDINE ALFABETICO. Vale ovunque,
+        //           perche' questo e' l'unico punto in cui i tag di un'immagine vengono scritti.
+        // ENGLISH: Tag order: trigger words first (in the user's configured order, LoRA
+        //          convention), then everything else ALPHABETICALLY. Applies everywhere, since
+        //          this is the single place an image's tags are written.
         const orderedTags = [
             ...globalTriggers.filter(t => uniqueTags.includes(t)),
-            ...uniqueTags.filter(t => !globalTriggers.includes(t))
+            ...uniqueTags.filter(t => !globalTriggers.includes(t)).sort((a, b) => a.localeCompare(b))
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     };
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
+
+    // ITALIANO: Seleziona TUTTE le foto visibili; se sono gia' tutte selezionate, le deseleziona.
+    // ENGLISH: Select ALL visible photos; if they are all already selected, deselect them.
+    const toggleSelectAll = () => {
+        const visibleIds = displayedImages.map(img => img.id);
+        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedForBulk.includes(id));
+        setSelectedForBulk(allSelected ? [] : visibleIds);
+        soundManager.pop();
+    };
+
+    // ITALIANO: Chiude (scarica dalla vista) TUTTE le foto del progetto, ma CONSERVA il
+    //           vocabolario dei tag: i tag usati finora entrano tra i "tag del progetto"
+    //           cosi' li ritrovi caricando nuove foto. Non tocca i file su disco.
+    // ENGLISH: Closes (unloads) ALL project photos from the view, but KEEPS the tag
+    //          vocabulary: the tags used so far move into the "project tags" so you find
+    //          them again when loading new photos. Does not touch files on disk.
+    const handleCloseAllImages = () => {
+        if (images.length === 0) return;
+        setConfirmDialog({
+            isOpen: true,
+            title: t.closeAllTitle || 'Chiudere tutte le immagini?',
+            message: t.closeAllMsg || 'Le foto vengono tolte dalla vista ma i tag del progetto restano. I file su disco non vengono toccati.',
+            onConfirm: () => {
+                setCustomProjectTags(prev => [...new Set([...prev, ...allUniqueTags])]);
+                setImages([]);
+                setSelectedForBulk([]);
+                setStagedBulkTags([]);
+                setSelectedImageId(null);
+                setDirHandle(null);
+                try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+                soundManager.chime();
+                showNotification(t.closeAllDone || 'Immagini chiuse, tag del progetto conservati', 'success');
+                setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+            },
+            onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
+        });
+    };
 
     // ITALIANO: Tagga la singola immagine via Gemini API
     // ENGLISH: Tag a single image via Gemini API
@@ -1331,6 +1479,9 @@ export default function App() {
             )}
 
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
+            {/* ITALIANO: Selettore per singole immagini + relativi .txt (punto 12) */}
+            {/* ENGLISH: Picker for individual images + their .txt files (item 12) */}
+            <input type="file" accept="image/*,.txt,text/plain" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
             
             {isTrashOpen && (
                 <div className={`fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
@@ -1470,7 +1621,11 @@ export default function App() {
                     updateOriginalTags={updateOriginalTags}
                     dirHandle={dirHandle}
                     isDarkMode={isDarkMode}
-                    onMoveToTrash={handleMoveToTrash}
+                    onMoveToTrash={handleTrashFromLightbox}
+                    imageIndex={currentIndex}
+                    imageCount={displayedImages.length}
+                    copiedTags={copiedTags}
+                    onCopyTags={(tags: string[]) => { setCopiedTags([...tags]); showNotification(t.tagsCopiedNotif, 'success'); }}
                     lang={lang}
                     aiEnabled={aiEnabled}
                     aiBusy={isAIBusy}
@@ -1776,10 +1931,28 @@ export default function App() {
                                 <Folder size={16} />
                                 <span>{t.loadFolder}</span>
                             </button>
+                            {/* ITALIANO: Carica singole immagini (con eventuali .txt) invece della cartella intera */}
+                            {/* ENGLISH: Load individual images (with optional .txt) instead of the whole folder */}
+                            <button onClick={() => imagesInputRef.current?.click()} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
+                                <ImageIcon size={16} />
+                                <span>{t.loadImages}</span>
+                            </button>
                             <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
                                 <Trash size={16} />
                                 <span>{t.resetProject}</span>
                             </button>
+                            {/* ITALIANO: Statistiche (fuori dalle impostazioni) + Chiudi tutte le immagini */}
+                            {/* ENGLISH: Statistics (out of settings) + Close all images */}
+                            <div className="flex gap-2">
+                                <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`flex-1 h-[42px] flex justify-center items-center gap-1.5 px-2 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-xs ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
+                                    <BarChart3 size={15} />
+                                    <span>{t.projectStats}</span>
+                                </button>
+                                <button onClick={handleCloseAllImages} disabled={images.length === 0} className={`flex-1 h-[42px] flex justify-center items-center gap-1.5 px-2 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-xs ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-200 hover:bg-gray-300 text-gray-700')}`} title={t.closeAllImages || 'Chiudi tutte'}>
+                                    <X size={15} />
+                                    <span>{t.closeAllImages || 'Chiudi tutte'}</span>
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
@@ -1884,7 +2057,20 @@ export default function App() {
                     </div>
 
                     <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex justify-between items-center shrink-0`}>
-                        <div className={`flex-1 flex items-center gap-2 text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><ImageIcon size={16} /><span>{images.length} {images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}</span></div>
+                        <div className={`flex-1 flex items-center gap-3 text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            <div className="flex items-center gap-2"><ImageIcon size={16} /><span>{images.length} {images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}</span></div>
+                            {/* ITALIANO: Seleziona / deseleziona tutte le foto visibili */}
+                            {/* ENGLISH: Select / deselect all visible photos */}
+                            {displayedImages.length > 0 && (() => {
+                                const allSelected = displayedImages.every(img => selectedForBulk.includes(img.id));
+                                return (
+                                    <button onClick={toggleSelectAll} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${allSelected ? 'bg-indigo-500 border-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}`}>
+                                        <Check size={13} />
+                                        {allSelected ? (t.deselectAll || 'Deseleziona tutte') : (t.selectAll || 'Seleziona tutte')}
+                                    </button>
+                                );
+                            })()}
+                        </div>
                         <div className="flex-1 flex justify-center">
                             <div className={`flex items-center ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-1 rounded-lg shadow-inner`}>
                                 <button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><LayoutGrid size={14} /> {t.square}</button>
@@ -1936,6 +2122,11 @@ export default function App() {
 
                                         <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
                                         <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
+                                        {/* ITALIANO: Contatore tag della singola foto */}
+                                        {/* ENGLISH: Per-photo tag count */}
+                                        <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
+                                            <Tag size={11} />{img.tags?.length || 0}
+                                        </div>
                                     </div>
                                     <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                         {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
@@ -1963,6 +2154,26 @@ export default function App() {
                         <div className="absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl bg-gray-900/95 backdrop-blur-xl border border-gray-700 p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5">
                             <div className="w-full flex flex-col gap-3 h-full">
                                 <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className="p-1.5 bg-indigo-900/50 rounded-lg text-indigo-400"><Grid3X3 size={18} /></div><div><h3 className="text-sm font-bold text-gray-200 leading-tight">{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className="text-[10px] text-gray-500 uppercase tracking-wide">{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className="p-1.5 rounded-full border border-gray-600 text-gray-400 hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm"><X size={14} /></button></div>
+                                {/* ITALIANO: Scrivi un tag NUOVO e premi Invio: si aggiunge a quelli in preparazione
+                                              e verra' applicato a tutte le foto selezionate (col tasto Conferma). */}
+                                {/* ENGLISH: Type a NEW tag and press Enter: it joins the staged ones and gets
+                                             applied to all selected photos (via the Confirm button). */}
+                                <input
+                                    type="text"
+                                    placeholder={t.bulkAddPlaceholder}
+                                    className="shrink-0 w-full bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                    onKeyDown={(e: any) => {
+                                        if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault();
+                                            const newTag = e.target.value.trim().replace(/,$/, '');
+                                            if (newTag) {
+                                                setStagedBulkTags(prev => prev.includes(newTag) ? prev : [...prev, newTag]);
+                                                e.target.value = '';
+                                                soundManager.pop();
+                                            }
+                                        }
+                                    }}
+                                />
                                 <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y border-gray-800" style={{ scrollbarGutter: 'stable' }}>
                                     {(() => {
                                         const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
@@ -2037,7 +2248,7 @@ export default function App() {
                                     <Trash size={14} />
                                     {t.deleteAllTags}
                                 </button>
-                                <button 
+                                <button
                                     onClick={handleCleanUnusedTags}
                                     disabled={allUniqueTags.length === 0}
                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md border-0"
@@ -2045,6 +2256,20 @@ export default function App() {
                                     <RefreshCw size={14} />
                                     {t.cleanUnusedTags}
                                 </button>
+                            </div>
+                            {/* ITALIANO: Esporta i tag del progetto (JSON completo o TXT lista) e reimportali altrove */}
+                            {/* ENGLISH: Export the project tags (full JSON or TXT list) and re-import them elsewhere */}
+                            <div className="flex gap-2">
+                                <button onClick={() => handleExportProjectTags('json')} disabled={allUniqueTags.length === 0} title={`${t.exportProjectTags} (JSON)`} className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                    <Download size={14} /> JSON
+                                </button>
+                                <button onClick={() => handleExportProjectTags('txt')} disabled={allUniqueTags.length === 0} title={`${t.exportProjectTags} (TXT)`} className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                    <Download size={14} /> TXT
+                                </button>
+                                <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}>
+                                    <Upload size={14} /> {t.importProjectTags}
+                                </button>
+                                <input type="file" accept=".json,.txt,application/json,text/plain" ref={projectTagsImportRef} className="hidden" onChange={handleImportProjectTags} />
                             </div>
                         </div>
                         <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`} style={{ scrollbarGutter: 'stable' }}>

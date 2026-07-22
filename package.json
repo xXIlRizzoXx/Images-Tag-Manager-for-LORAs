@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "clean": "npx rimraf dist release",
     "lint": "tsc --noEmit",
+    "installer:art": "node scripts/make-installer-art.mjs",
     "electron:dev": "cross-env NODE_ENV=development concurrently \"npm run dev\" \"wait-on tcp:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder"
   },

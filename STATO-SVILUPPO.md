@@ -1,7 +1,7 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 20 luglio 2026
-**Versione attuale:** 3.8.0 (in lavorazione sul branch)
+**Ultimo aggiornamento:** 22 luglio 2026
+**Versione attuale:** 3.8.0 (con nuove funzioni 3.9.0 in lavorazione sul branch)
 **Ultima versione stabile:** 3.7.0 (su `main`)
 
 Questo file è il "diario" del progetto: a colpo d'occhio mostra cosa è già stato
@@ -31,6 +31,22 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 16 | Scelta lingua al primo avvio (v3.8.0) | Al **primissimo avvio** (sia portable sia installato) compare una schermata per scegliere la lingua, con già proposta quella del PC. La scelta ora **viene ricordata** (prima si riazzerava a italiano a ogni riavvio). |
 | 17 | Rientro uniforme della finestra (v3.8.0) | La finestra interna ora ha lo **stesso margine su tutti e quattro i lati** (24px) e usa tutta la larghezza: prima i lati erano più stretti e su schermi larghi restavano grandi fasce vuote. |
 | 18 | Anteprima lingua dal vivo (v3.8.0) | Nella schermata di scelta lingua al primo avvio, cliccando una bandiera **cambia lingua tutta la finestra** (titolo, sottotitolo, tasto di conferma, nota in basso), non più solo il tasto. Così si vede subito com'è la lingua prima di confermare. |
+| 19 | Miniature veloci (v3.9.0) | **Grosso miglioramento di velocità.** Prima ogni miniatura caricava la foto a piena risoluzione: con tante foto il programma si impallava. Ora crea vere anteprime piccole; l'immagine grande si carica solo quando apri la singola foto. |
+| 20 | Finestra foto a schermo pieno (v3.9.0) | Aprendo una foto singola, la finestra ora **riempie tutto lo schermo** anche sui monitor larghi (prima lasciava fasce vuote ai lati). |
+| 21 | Contatore foto (v3.9.0) | A foto aperta compare in alto la **posizione** (es. "3 / 120"). |
+| 22 | Tag scelti in ordine alfabetico (v3.9.0) | Nella foto aperta i tag scelti si mostrano sempre in **ordine alfabetico** (le trigger word restano prime). |
+| 23 | Traduzione dei tag al passaggio del mouse (v3.9.0) | Passando sopra un tag (scelto o disponibile) compare la **traduzione nella lingua impostata**, come per i tag suggeriti. Vale per i tag del dizionario (per ora l'italiano è completo); per i tag scritti a mano non c'è traduzione. |
+| 24 | Elimina e vai avanti (v3.9.0) | Cestinando la foto aperta si **passa direttamente alla successiva** senza chiudere la finestra (chiude solo se era l'ultima). |
+| 25 | Copia e incolla tag (v3.9.0) | Due tasti per **copiare i tag** da una foto e **incollarli** su un'altra (li aggiunge senza doppioni). |
+| 26 | Miniature più larghe (v3.9.0) | Le anteprime partono un po' **più grandi** (1-2 colonne in meno); regolabili col cursore dello zoom. |
+| 27 | Contatore tag su ogni miniatura (v3.9.0) | Ogni anteprima mostra un **pallino col numero di tag** di quella foto. |
+| 28 | Statistiche sulla pagina principale (v3.9.0) | Il tasto **Statistiche** è ora sulla pagina principale, fuori dal menu impostazioni. |
+| 29 | Seleziona / Deseleziona tutte (v3.9.0) | Un tasto per **selezionare tutte** le foto (e deselezionarle). |
+| 30 | Tag manuale sulle foto selezionate (v3.9.0) | Nel pannello delle foto selezionate si può **scrivere un tag nuovo** e applicarlo a tutte in una volta. |
+| 31 | Chiudi tutte le immagini (v3.9.0) | Un tasto **svuota la galleria** ma **conserva i tag del progetto** (i file su disco non si toccano). |
+| 32 | Carica singole immagini (v3.9.0) | Oltre alla cartella intera, si possono caricare **singole immagini** con i rispettivi file .txt (abbinati per nome). |
+| 33 | Ricorda l'ultima cartella (v3.9.0) | Alla apertura, il selettore si riapre sull'**ultima cartella** usata. |
+| 34 | Esporta / importa tag del progetto (v3.9.0) | Si possono **esportare** tutti i tag del progetto (file JSON completo o TXT lista) e **reimportarli** in un nuovo progetto. |
 
 ---
 

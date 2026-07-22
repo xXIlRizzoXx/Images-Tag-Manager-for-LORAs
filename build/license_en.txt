@@ -1,0 +1,59 @@
+TERMS OF USE
+Images Tag Manager for LORAs - by xXIlRizzoXx
+
+By installing and using this program you accept the terms below.
+
+
+1. USING THE PROGRAM
+
+The program is free and you can use it freely, including for work.
+You may not resell it or distribute it as if it were your own.
+
+
+2. NO WARRANTY
+
+The program is provided "as is", without any warranty.
+The author is not liable for data loss or for any direct or indirect
+damage arising from the use of the program.
+
+Practical tip: before working on a folder, make a backup copy of the
+images and of the .txt tag files.
+
+
+3. YOUR DATA STAYS ON YOUR COMPUTER
+
+The program does not collect statistics, does not track how you use it
+and does not send anything over the network on its own initiative.
+
+Settings, archive and emergency backups are kept in the folder
+%APPDATA%\images-tag-manager on your PC.
+
+
+4. ARTIFICIAL INTELLIGENCE FEATURES (optional)
+
+The AI features are turned off when the program is installed and are
+marked as experimental (Beta). If you decide to turn them on:
+
+ - you must enter your own personal Google Gemini key;
+ - the images you choose to analyze are sent to Google's servers to be
+   processed;
+ - Google's terms of use for that service apply, and any cost is at
+   your expense.
+
+The key is saved encrypted by the operating system and is never included
+in the program.
+
+
+5. RESPONSIBILITY FOR CONTENT
+
+You are responsible for the images you open, process and export, and for
+respecting third-party rights and applicable laws.
+
+
+6. TRADEMARKS
+
+This program is not affiliated with or endorsed by Google, Stability AI
+or other owners of the trademarks mentioned.
+
+
+If you do not accept these terms, close the installer.
