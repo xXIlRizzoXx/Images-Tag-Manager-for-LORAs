@@ -2004,9 +2004,11 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* ITALIANO: lg:items-start = i tre riquadri allineati in ALTO (prima erano centrati verticalmente) */}
-                    {/* ENGLISH: lg:items-start = the three panels aligned to the TOP (were vertically centered) */}
-                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-start gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
+                    {/* ITALIANO: lg:items-stretch = i tre riquadri si allungano tutti alla STESSA altezza (quella
+                                  del piu' alto), cosi' il riquadro di sinistra arriva in basso come quello di destra. */}
+                    {/* ENGLISH: lg:items-stretch = the three panels all stretch to the SAME height (the tallest),
+                                 so the left panel reaches the bottom like the right one. */}
+                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-stretch gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
                         <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: "Carica Cartella" e "Carica immagini" affiancati, stesso colore (blu). */}
