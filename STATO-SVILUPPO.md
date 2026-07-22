@@ -39,7 +39,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 22 | Tag scelti in ordine alfabetico (v3.9.0) | Nella foto aperta i tag scelti si mostrano sempre in **ordine alfabetico** (le trigger word restano prime). |
 | 23 | Traduzione dei tag al passaggio del mouse (v3.9.0) | Passando sopra un tag (scelto o disponibile) compare la **traduzione nella lingua impostata**, come per i tag suggeriti. Vale per i tag del dizionario (per ora l'italiano è completo); per i tag scritti a mano non c'è traduzione. |
 | 24 | Elimina e vai avanti (v3.9.0) | Cestinando la foto aperta si **passa direttamente alla successiva** senza chiudere la finestra (chiude solo se era l'ultima). |
-| 25 | Copia e incolla tag (v3.9.0) | Due tasti per **copiare i tag** da una foto e **incollarli** su un'altra (li aggiunge senza doppioni). |
+| 25 | Copia e incolla tag (v3.9.0 / 1.0.0) | Due tasti per **copiare i tag** da una foto e **incollarli** su un'altra (li aggiunge senza doppioni). Disponibile sia nella finestra della foto sia **direttamente sulle miniature** (al passaggio del mouse). |
 | 26 | Miniature più larghe (v3.9.0) | Le anteprime partono un po' **più grandi** (1-2 colonne in meno); regolabili col cursore dello zoom. |
 | 27 | Contatore tag su ogni miniatura (v3.9.0) | Ogni anteprima mostra un **pallino col numero di tag** di quella foto. |
 | 28 | Statistiche sulla pagina principale (v3.9.0) | Il tasto **Statistiche** è ora sulla pagina principale, fuori dal menu impostazioni. |

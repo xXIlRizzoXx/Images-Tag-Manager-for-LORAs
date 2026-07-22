@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
@@ -1039,6 +1039,25 @@ export default function App() {
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
     const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
 
+    // ITALIANO: Copia/incolla dei tag direttamente dalle MINIATURE (stesso "appunti"
+    //           del visualizzatore). Copia = mette i tag della foto negli appunti;
+    //           Incolla = li AGGIUNGE a un'altra foto senza doppioni.
+    // ENGLISH: Copy/paste tags straight from the THUMBNAILS (same clipboard as the
+    //          viewer). Copy = puts the photo's tags in the clipboard; Paste = ADDS
+    //          them to another photo without duplicates.
+    const handleCopyThumbTags = (img: any) => {
+        if (!img.tags || img.tags.length === 0) { showNotification(t.noTagsToCopy, 'info'); return; }
+        setCopiedTags([...img.tags]);
+        showNotification(`${t.tagsCopiedNotif} (${img.tags.length})`, 'success');
+        soundManager.click();
+    };
+    const handlePasteThumbTags = (img: any) => {
+        if (!copiedTags || copiedTags.length === 0) return;
+        updateImageTags(img.id, [...new Set([...(img.tags || []), ...copiedTags])]);
+        showNotification(t.tagsPastedNotif, 'success');
+        soundManager.pop();
+    };
+
     // ITALIANO: Seleziona TUTTE le foto visibili; se sono gia' tutte selezionate, le deseleziona.
     // ENGLISH: Select ALL visible photos; if they are all already selected, deselect them.
     const toggleSelectAll = () => {
@@ -1745,14 +1764,8 @@ export default function App() {
                                             <AppleToggle checked={isDarkMode} onChange={setIsDarkMode} colorClass="bg-indigo-500" iconOn={<Moon size={10}/>} iconOff={<Sun size={10}/>} />
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
-                                        <button
-                                            onClick={() => { setIsSettingsOpen(false); setIsStatsOpen(true); }}
-                                            className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                                        >
-                                            <LayoutGrid size={16} />
-                                            {t.projectStats}
-                                        </button>
-                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        {/* ITALIANO: Il tasto "Statistiche progetto" e' stato tolto da qui: ora sta sulla pagina principale (riquadro destro). */}
+                                        {/* ENGLISH: The "Project statistics" button was removed from here: it now lives on the main page (right panel). */}
                                         {/* ITALIANO: Sezione strumenti AI cloud (Gemini) */}
                                         {/* ENGLISH: Cloud AI tools section (Gemini) */}
                                         <div className="flex flex-col gap-2">
@@ -1994,16 +2007,18 @@ export default function App() {
                     <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-center gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
                         <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
-                            <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
-                                <Folder size={16} />
-                                <span>{t.loadFolder}</span>
-                            </button>
-                            {/* ITALIANO: Carica singole immagini (con eventuali .txt) invece della cartella intera */}
-                            {/* ENGLISH: Load individual images (with optional .txt) instead of the whole folder */}
-                            <button onClick={() => imagesInputRef.current?.click()} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'} rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
-                                <ImageIcon size={16} />
-                                <span>{t.loadImages}</span>
-                            </button>
+                            {/* ITALIANO: "Carica Cartella" e "Carica immagini" affiancati, stesso colore (blu). */}
+                            {/* ENGLISH: "Load Folder" and "Load images" side by side, same colour (blue). */}
+                            <div className="flex gap-2">
+                                <button onClick={handleLoadFolderClick} className={`flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
+                                    <Folder size={16} />
+                                    <span>{t.loadFolder}</span>
+                                </button>
+                                <button onClick={() => imagesInputRef.current?.click()} className={`flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
+                                    <ImageIcon size={16} />
+                                    <span>{t.loadImages}</span>
+                                </button>
+                            </div>
                             {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta — arancione */}
                             {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app — orange */}
                             <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
@@ -2199,6 +2214,12 @@ export default function App() {
                                         {/* ENGLISH: Per-photo tag count */}
                                         <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
                                             <Tag size={11} />{img.tags?.length || 0}
+                                        </div>
+                                        {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
+                                        {/* ENGLISH: Copy/paste ALL this photo's tags, from the gallery (on hover) */}
+                                        <div className="absolute bottom-2 right-2 z-20 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                            <button onClick={(e) => { e.stopPropagation(); handleCopyThumbTags(img); }} title={t.copyTags} className="p-1.5 bg-black/50 hover:bg-indigo-500 text-white rounded-full shadow-md transition-colors"><Copy size={13} /></button>
+                                            <button onClick={(e) => { e.stopPropagation(); handlePasteThumbTags(img); }} disabled={!copiedTags || copiedTags.length === 0} title={copiedTags && copiedTags.length > 0 ? `${t.pasteTags} (${copiedTags.length})` : t.pasteTags} className="p-1.5 bg-black/50 hover:bg-emerald-500 text-white rounded-full shadow-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black/50"><ClipboardPaste size={13} /></button>
                                         </div>
                                     </div>
                                     <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
