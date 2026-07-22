@@ -66,6 +66,24 @@
   BrandingText "${PRODUCT_NAME} ${VERSION} - by xXIlRizzoXx"
 
   !ifndef BUILD_UNINSTALLER
+    ; ITALIANO: Etichette tradotte del wizard. Le includo QUI perche' questa macro
+    ;           viene inserita dopo addLangs, quindi le costanti ${LANG_*} esistono.
+    ;           Il file e' a parte perche' contiene accenti e alfabeti non latini e
+    ;           dev'essere UTF-8 con BOM, mentre questo file resta ASCII puro.
+    ;           Percorso: serve ${BUILD_RESOURCES_DIR} (= cartella build/, definito da
+    ;           electron-builder). NON usare ${__FILEDIR__}: il corpo della macro viene
+    ;           espanso dentro lo script passato a makensis via stdin, dove quella
+    ;           variabile non punta piu' a questa cartella e la compilazione fallisce.
+    ; ENGLISH: Translated wizard labels. Included HERE because this macro is inserted
+    ;          after addLangs, so the ${LANG_*} constants exist. Kept in a separate
+    ;          file because it needs accents and non-Latin alphabets (UTF-8 with BOM),
+    ;          while this file stays pure ASCII.
+    ;          Path: use ${BUILD_RESOURCES_DIR} (= the build/ folder, defined by
+    ;          electron-builder). Do NOT use ${__FILEDIR__}: the macro body is expanded
+    ;          inside the script piped to makensis through stdin, where that variable no
+    ;          longer points here and compilation fails.
+    !include "${BUILD_RESOURCES_DIR}\lang-strings.nsh"
+
     ; ITALIANO: Avvia l'app al termine, NON con i privilegi dell'installer.
     ; ENGLISH: Launch the app at the end, NOT with installer privileges.
     Function StartAppAfterInstall
@@ -100,18 +118,45 @@
     !define MUI_FINISHPAGE_RUN_FUNCTION "StartAppAfterInstall"
 
     ; --- Casella 2: collegamento sul desktop / Checkbox 2: desktop shortcut ---
-    ; NOTA: l'etichetta resta in inglese perche' NSIS vuole le stringhe tradotte
-    ;       prima del caricamento delle lingue, cosa impossibile da uno script
-    ;       incluso da electron-builder. Il resto del wizard (Avanti, Installa,
-    ;       Annulla...) e' tradotto da NSIS nelle 9 lingue.
+    ; ITALIANO: etichetta TRADOTTA nelle 9 lingue. $(...) e' una stringa di lingua:
+    ;           NSIS la risolve a fine compilazione, quindi si puo' usare qui anche
+    ;           se le LangString sono definite piu' avanti (in customHeader, dopo il
+    ;           caricamento delle lingue). Cosi' tutto il wizard e' nella lingua
+    ;           scelta all'avvio, questa casella compresa.
+    ; ENGLISH: label TRANSLATED into all 9 languages. $(...) is a language string:
+    ;          NSIS resolves it at the end of compilation, so it can be used here even
+    ;          though the LangStrings are defined later (in customHeader, after the
+    ;          languages are loaded). The whole wizard, this checkbox included, now
+    ;          follows the language picked at startup.
     !define MUI_FINISHPAGE_SHOWREADME ""
-    !define MUI_FINISHPAGE_SHOWREADME_TEXT "Create a desktop shortcut"
+    !define MUI_FINISHPAGE_SHOWREADME_TEXT "$(DESKTOP_SHORTCUT_TEXT)"
     !define MUI_FINISHPAGE_SHOWREADME_FUNCTION "CreateDesktopShortcutNow"
 
     !insertmacro MUI_PAGE_FINISH
   !macroend
 
 !endif
+
+; ITALIANO: Lingua PREDEFINITA del wizard = INGLESE, qualunque sia la lingua di
+;           Windows. Senza questo, NSIS preseleziona la lingua di sistema (su un
+;           Windows italiano si apriva in italiano).
+;           $LANGUAGE va impostato PRIMA che compaia il selettore: electron-builder
+;           inserisce preInit dentro .onInit alla riga 55-56, mentre il selettore
+;           (MUI_LANGDLL_DISPLAY) arriva alla riga 60 - quindi qui siamo in tempo.
+;           Il selettore non salva la scelta nel registro (MUI_LANGDLL_REGISTRY non
+;           e' definito), percio' e' $LANGUAGE a decidere la voce preselezionata.
+;           L'utente resta liberissimo di scegliere un'altra lingua dall'elenco.
+; ENGLISH: DEFAULT wizard language = ENGLISH, whatever the Windows language is.
+;          Without this NSIS preselects the system language (on an Italian Windows it
+;          opened in Italian). $LANGUAGE must be set BEFORE the selector appears:
+;          electron-builder inserts preInit inside .onInit at lines 55-56, while the
+;          selector (MUI_LANGDLL_DISPLAY) comes at line 60 - so this is in time. The
+;          selector does not persist the choice (MUI_LANGDLL_REGISTRY is not defined),
+;          so $LANGUAGE decides the preselected entry. The user can still pick any
+;          other language from the list.
+!macro preInit
+  StrCpy $LANGUAGE ${LANG_ENGLISH}
+!macroend
 
 ; ITALIANO: Salta la pagina "Per chi installare?" e installa SEMPRE solo per
 ;           l'utente corrente (niente richiesta di privilegi amministratore).

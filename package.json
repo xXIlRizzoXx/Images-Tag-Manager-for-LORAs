@@ -40,8 +40,8 @@
       "multiLanguageInstaller": true,
       "displayLanguageSelector": true,
       "installerLanguages": [
-        "it_IT",
         "en_US",
+        "it_IT",
         "fr_FR",
         "es_ES",
         "de_DE",

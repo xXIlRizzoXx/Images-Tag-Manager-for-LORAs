@@ -5,6 +5,7 @@ node_modules/
 #          images): those must be tracked. Build output goes to release/.
 build/*
 !build/installer.nsh
+!build/lang-strings.nsh
 !build/*.bmp
 !build/*.ico
 !build/license_*.txt
