@@ -47,6 +47,8 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 30 | Tag manuale sulle foto selezionate (v3.9.0) | Nel pannello delle foto selezionate si può **scrivere un tag nuovo** e applicarlo a tutte in una volta. |
 | 31 | Chiudi progetto attuale (v3.9.0) | Un tasto **chiude il progetto**: toglie tutte le foto **e** cancella tutti i tag, riportando l'app come appena aperta. Se ci sono **modifiche non salvate** lo avvisa prima. I file su disco non si toccano. |
 | 35 | Statistiche nel riquadro di destra (v3.9.0) | Il tasto **Statistiche** è stato spostato nel riquadro di destra, subito sotto "Visualizza tutti i tag del progetto". |
+| 36 | Barra di avanzamento anche al salvataggio (1.0.0) | La barra di avanzamento (prima solo al caricamento) ora compare **anche quando si salva**, con la scritta "Salvataggio in corso..." e la percentuale. |
+| 37 | Barra dei comandi bilanciata (1.0.0) | I due riquadri laterali dei comandi hanno la **stessa larghezza** e l'area centrale (trigger words + tag suggeriti) **riempie lo spazio** con margini uguali e costanti verso i lati, a ogni larghezza di finestra. |
 | 32 | Carica singole immagini (v3.9.0) | Oltre alla cartella intera, si possono caricare **singole immagini** con i rispettivi file .txt (abbinati per nome). |
 | 33 | Ricorda l'ultima cartella (v3.9.0) | Alla apertura, il selettore si riapre sull'**ultima cartella** usata. |
 | 34 | Esporta / importa tag del progetto (v3.9.0) | Si possono **esportare** tutti i tag del progetto (file JSON completo o TXT lista) e **reimportarli** in un nuovo progetto. |

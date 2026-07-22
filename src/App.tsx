@@ -1957,7 +1957,7 @@ export default function App() {
 
                     <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-center gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
-                        <div className={`w-full lg:w-[300px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
                                 <Folder size={16} />
                                 <span>{t.loadFolder}</span>
@@ -1983,15 +1983,17 @@ export default function App() {
                         <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
-                            {/* ITALIANO: stessa larghezza (600px, centrato) del riquadro "Tag Suggeriti" qui sotto */}
-                            {/* ENGLISH: same width (600px, centered) as the "Suggested Tags" box below */}
-                            <div className="w-[600px] max-w-full mx-auto">
+                            {/* ITALIANO: riempie tutta la colonna centrale: lo spazio verso i due riquadri
+                                          laterali resta costante (il gap-6 della riga) a ogni larghezza schermo */}
+                            {/* ENGLISH: fills the whole centre column so the gap to the two side boxes stays
+                                         constant (the row's gap-6) at every screen width */}
+                            <div className="w-full">
                                 <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" isDarkMode={isDarkMode} />
                             </div>
                             
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
                             {/* ENGLISH: Toolbar with Suggested Tags + AI Auto-Tag (if enabled) */}
-                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2 w-[600px] max-w-full mx-auto`}>
+                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2 w-full`}>
                                 <div className="flex items-center justify-center gap-3 flex-wrap">
                                     {aiEnabled && (
                                         <button
