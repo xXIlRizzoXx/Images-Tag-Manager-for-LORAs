@@ -749,7 +749,14 @@ export default function App() {
         } finally { URL.revokeObjectURL(url); }
     };
 
-    const handleExportProjectTags = (format: 'json' | 'txt') => {
+    // ITALIANO: UN SOLO tasto Esporta. Il FORMATO (JSON o TXT) si sceglie nel menu a
+    //           tendina "Salva come" della finestra di salvataggio del sistema: scrivo il
+    //           contenuto in base all'estensione scelta. Se il browser non ha il selettore
+    //           di salvataggio, ripiego sul download in JSON.
+    // ENGLISH: A SINGLE Export button. The FORMAT (JSON or TXT) is chosen in the OS save
+    //          dialog's "Save as type" dropdown: I write the content based on the chosen
+    //          extension. If the browser lacks the save picker, fall back to a JSON download.
+    const handleExportProjectTags = async () => {
         // ITALIANO: trigger prima, poi il resto in ordine alfabetico (coerente col resto dell'app)
         // ENGLISH: triggers first, then the rest alphabetical (consistent with the rest of the app)
         const orderedTags = [
@@ -757,12 +764,33 @@ export default function App() {
             ...allUniqueTags.filter(tag => !globalTriggers.includes(tag))
         ];
         if (orderedTags.length === 0) { showNotification(t.noTagsInProject, 'info'); return; }
-        if (format === 'json') {
-            const data = { app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: [...globalTriggers], tags: orderedTags };
-            downloadTextFile(JSON.stringify(data, null, 2), 'application/json', 'project-tags.json');
-        } else {
-            downloadTextFile(orderedTags.join('\n') + '\n', 'text/plain', 'project-tags.txt');
+        const jsonContent = () => JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: [...globalTriggers], tags: orderedTags }, null, 2);
+        const txtContent = () => orderedTags.join('\n') + '\n';
+
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await (window as any).showSaveFilePicker({
+                    id: 'itm-tags-export',
+                    suggestedName: 'project-tags.json',
+                    types: [
+                        { description: t.exportFmtJson, accept: { 'application/json': ['.json'] } },
+                        { description: t.exportFmtTxt, accept: { 'text/plain': ['.txt'] } },
+                    ],
+                });
+                const isTxt = String(handle.name || '').toLowerCase().endsWith('.txt');
+                const writable = await handle.createWritable();
+                await writable.write(isTxt ? txtContent() : jsonContent());
+                await writable.close();
+                soundManager.chime();
+                showNotification(t.projectTagsExported, 'success');
+            } catch (err: any) {
+                if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.importTagsError, 'error'); }
+            }
+            return;
         }
+        // ITALIANO: riserva per browser senza selettore di salvataggio: scarica in JSON.
+        // ENGLISH: fallback for browsers without the save picker: download as JSON.
+        downloadTextFile(jsonContent(), 'application/json', 'project-tags.json');
         soundManager.chime();
         showNotification(t.projectTagsExported, 'success');
     };
@@ -2298,17 +2326,18 @@ export default function App() {
                                     {t.cleanUnusedTags}
                                 </button>
                             </div>
-                            {/* ITALIANO: Esporta i tag del progetto (JSON completo o TXT lista) e reimportali altrove */}
-                            {/* ENGLISH: Export the project tags (full JSON or TXT list) and re-import them elsewhere */}
+                            {/* ITALIANO: UN tasto Esporta (formato scelto nella finestra di salvataggio) + UN tasto Importa.
+                                          Etichette su due righe per spiegare meglio cosa fanno. */}
+                            {/* ENGLISH: ONE Export button (format chosen in the save dialog) + ONE Import button.
+                                         Two-line labels to explain them better. */}
                             <div className="flex gap-2">
-                                <button onClick={() => handleExportProjectTags('json')} disabled={allUniqueTags.length === 0} title={`${t.exportProjectTags} (JSON)`} className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
-                                    <Download size={14} /> JSON
+                                <button onClick={handleExportProjectTags} disabled={allUniqueTags.length === 0} title={t.exportProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Download size={14} /> {t.exportProjectTags}</span>
+                                    <span className="text-[9px] font-medium opacity-70 leading-none">{t.exportProjectTagsHint}</span>
                                 </button>
-                                <button onClick={() => handleExportProjectTags('txt')} disabled={allUniqueTags.length === 0} title={`${t.exportProjectTags} (TXT)`} className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
-                                    <Download size={14} /> TXT
-                                </button>
-                                <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}>
-                                    <Upload size={14} /> {t.importProjectTags}
+                                <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}>
+                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Upload size={14} /> {t.importProjectTags}</span>
+                                    <span className="text-[9px] font-medium opacity-70 leading-none">{t.importProjectTagsHint}</span>
                                 </button>
                                 <input type="file" accept=".json,.txt,application/json,text/plain" ref={projectTagsImportRef} className="hidden" onChange={handleImportProjectTags} />
                             </div>

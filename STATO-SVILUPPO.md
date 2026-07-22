@@ -52,7 +52,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 38 | Statistiche avanzate (1.0.0) | Le statistiche ora mostrano **6 dati** (immagini totali, tag unici, immagini con/senza tag, media tag per immagine, tag usati una volta sola), i grafici a torta e top-10, e soprattutto una **lista scorrevole di TUTTI i tag** con conteggio d'uso, barra di frequenza, **ricerca** e **ordinamento** (per frequenza o A-Z). |
 | 32 | Carica singole immagini (v3.9.0) | Oltre alla cartella intera, si possono caricare **singole immagini** con i rispettivi file .txt (abbinati per nome). |
 | 33 | Ricorda l'ultima cartella (v3.9.0) | Alla apertura, il selettore si riapre sull'**ultima cartella** usata. |
-| 34 | Esporta / importa tag del progetto (v3.9.0) | Si possono **esportare** tutti i tag del progetto (file JSON completo o TXT lista) e **reimportarli** in un nuovo progetto. |
+| 34 | Esporta / importa tag del progetto (v3.9.0 / 1.0.0) | Si possono **esportare** tutti i tag del progetto e **reimportarli** in un nuovo progetto. Un **unico tasto "Esporta"**: il formato (JSON completo o TXT lista) si sceglie nel menu a tendina della finestra di salvataggio del sistema. Tasti con etichetta a due righe più chiara. |
 
 ---
 
