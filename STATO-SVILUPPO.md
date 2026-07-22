@@ -43,7 +43,8 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 28 | Statistiche sulla pagina principale (v3.9.0) | Il tasto **Statistiche** è ora sulla pagina principale, fuori dal menu impostazioni. |
 | 29 | Seleziona / Deseleziona tutte (v3.9.0) | Un tasto per **selezionare tutte** le foto (e deselezionarle). |
 | 30 | Tag manuale sulle foto selezionate (v3.9.0) | Nel pannello delle foto selezionate si può **scrivere un tag nuovo** e applicarlo a tutte in una volta. |
-| 31 | Chiudi tutte le immagini (v3.9.0) | Un tasto **svuota la galleria** ma **conserva i tag del progetto** (i file su disco non si toccano). |
+| 31 | Chiudi progetto attuale (v3.9.0) | Un tasto **chiude il progetto**: toglie tutte le foto **e** cancella tutti i tag, riportando l'app come appena aperta. Se ci sono **modifiche non salvate** lo avvisa prima. I file su disco non si toccano. |
+| 35 | Statistiche nel riquadro di destra (v3.9.0) | Il tasto **Statistiche** è stato spostato nel riquadro di destra, subito sotto "Visualizza tutti i tag del progetto". |
 | 32 | Carica singole immagini (v3.9.0) | Oltre alla cartella intera, si possono caricare **singole immagini** con i rispettivi file .txt (abbinati per nome). |
 | 33 | Ricorda l'ultima cartella (v3.9.0) | Alla apertura, il selettore si riapre sull'**ultima cartella** usata. |
 | 34 | Esporta / importa tag del progetto (v3.9.0) | Si possono **esportare** tutti i tag del progetto (file JSON completo o TXT lista) e **reimportarli** in un nuovo progetto. |

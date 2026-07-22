@@ -1,4 +1,4 @@
-利用条件
+﻿利用条件
 Images Tag Manager for LORAs - 作者 xXIlRizzoXx
 
 このプログラムをインストールして使用すると、以下の条件に同意したことになります。

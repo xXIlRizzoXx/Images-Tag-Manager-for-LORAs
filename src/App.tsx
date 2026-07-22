@@ -993,28 +993,36 @@ export default function App() {
         soundManager.pop();
     };
 
-    // ITALIANO: Chiude (scarica dalla vista) TUTTE le foto del progetto, ma CONSERVA il
-    //           vocabolario dei tag: i tag usati finora entrano tra i "tag del progetto"
-    //           cosi' li ritrovi caricando nuove foto. Non tocca i file su disco.
-    // ENGLISH: Closes (unloads) ALL project photos from the view, but KEEPS the tag
-    //          vocabulary: the tags used so far move into the "project tags" so you find
-    //          them again when loading new photos. Does not touch files on disk.
-    const handleCloseAllImages = () => {
+    // ITALIANO: Chiude il PROGETTO ATTUALE: toglie tutte le foto E cancella tutti i tag,
+    //           riportando l'app come appena aperta. Se ci sono modifiche non salvate lo
+    //           segnala prima. Non tocca i file su disco (le foto e i .txt restano dove sono).
+    // ENGLISH: Closes the CURRENT PROJECT: removes all photos AND clears all tags, bringing
+    //          the app back to its just-opened state. Warns first if there are unsaved
+    //          changes. Does not touch files on disk (photos and .txt stay where they are).
+    const handleCloseProject = () => {
         if (images.length === 0) return;
+        const hasUnsaved = images.some(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
         setConfirmDialog({
             isOpen: true,
-            title: t.closeAllTitle || 'Chiudere tutte le immagini?',
-            message: t.closeAllMsg || 'Le foto vengono tolte dalla vista ma i tag del progetto restano. I file su disco non vengono toccati.',
+            title: t.closeAllTitle,
+            message: hasUnsaved ? t.closeAllUnsavedMsg : t.closeAllMsg,
             onConfirm: () => {
-                setCustomProjectTags(prev => [...new Set([...prev, ...allUniqueTags])]);
+                // ITALIANO: ferma un eventuale batch AI in corso, poi azzera TUTTO
+                // ENGLISH: stop any running AI batch, then clear EVERYTHING
+                aiCancelRequestedRef.current = true;
+                setAiCancelRequested(true);
+                aiAbortControllerRef.current?.abort();
+                try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
                 setImages([]);
+                setGlobalTriggers([]);
                 setSelectedForBulk([]);
                 setStagedBulkTags([]);
-                setSelectedImageId(null);
+                setCustomProjectTags([]);
                 setDirHandle(null);
-                try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+                setSelectedImageId(null);
+                setCopiedTags(null);
                 soundManager.chime();
-                showNotification(t.closeAllDone || 'Immagini chiuse, tag del progetto conservati', 'success');
+                showNotification(t.closeAllDone, 'success');
                 setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
             },
             onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
@@ -1941,18 +1949,12 @@ export default function App() {
                                 <Trash size={16} />
                                 <span>{t.resetProject}</span>
                             </button>
-                            {/* ITALIANO: Statistiche (fuori dalle impostazioni) + Chiudi tutte le immagini */}
-                            {/* ENGLISH: Statistics (out of settings) + Close all images */}
-                            <div className="flex gap-2">
-                                <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`flex-1 h-[42px] flex justify-center items-center gap-1.5 px-2 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-xs ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
-                                    <BarChart3 size={15} />
-                                    <span>{t.projectStats}</span>
-                                </button>
-                                <button onClick={handleCloseAllImages} disabled={images.length === 0} className={`flex-1 h-[42px] flex justify-center items-center gap-1.5 px-2 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-xs ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-200 hover:bg-gray-300 text-gray-700')}`} title={t.closeAllImages || 'Chiudi tutte'}>
-                                    <X size={15} />
-                                    <span>{t.closeAllImages || 'Chiudi tutte'}</span>
-                                </button>
-                            </div>
+                            {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta */}
+                            {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app */}
+                            <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-200 hover:bg-gray-300 text-gray-700')}`} title={t.closeAllImages}>
+                                <X size={16} />
+                                <span>{t.closeAllImages}</span>
+                            </button>
                         </div>
                         
                         <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
@@ -2020,7 +2022,7 @@ export default function App() {
                             <div className="flex gap-2">
                                 {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
                                 {/* ENGLISH: Button to view all project tags */}
-                                <button 
+                                <button
                                     onClick={() => setIsGlobalTagManagerOpen(true)}
                                     className="w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm"
                                 >
@@ -2028,6 +2030,12 @@ export default function App() {
                                     <span>{t.allTagsButton}</span>
                                 </button>
                             </div>
+                            {/* ITALIANO: Statistiche del progetto — sulla pagina principale, sotto "Visualizza tutti i tag" */}
+                            {/* ENGLISH: Project statistics — on the main page, below "View all project tags" */}
+                            <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
+                                <BarChart3 size={16} />
+                                <span>{t.projectStats}</span>
+                            </button>
                             <div className="w-full flex flex-col gap-1.5">
                                 <div className="w-full flex gap-3 items-start">
                                     {/* ITALIANO: Pulsante Salva Modifiche */}

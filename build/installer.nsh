@@ -113,6 +113,24 @@
 
 !endif
 
+; ITALIANO: Salta la pagina "Per chi installare?" e installa SEMPRE solo per
+;           l'utente corrente (niente richiesta di privilegi amministratore).
+;           electron-builder inserisce questa macro dentro la funzione della
+;           pagina di scelta modalita' (multiUserUi.nsh:41); mettendo
+;           $isForceCurrentInstall a "1" il codice subito dopo
+;           (multiUserUi.nsh:59-62) forza la modalita' utente e fa Abort della
+;           pagina, che quindi non viene mai mostrata. Vale anche per il
+;           disinstallatore, coerente con l'installazione per-utente.
+; ENGLISH: Skip the "Who should this be installed for?" page and ALWAYS install
+;          for the current user only (no admin elevation). electron-builder
+;          inserts this macro inside the install-mode page function
+;          (multiUserUi.nsh:41); setting $isForceCurrentInstall to "1" makes the
+;          following code (multiUserUi.nsh:59-62) force per-user mode and Abort
+;          the page, so it never shows. Also applies to the uninstaller.
+!macro customInstallMode
+  StrCpy $isForceCurrentInstall "1"
+!macroend
+
 ; ITALIANO: Alla disinstallazione togliamo anche il collegamento sul desktop
 ;           (electron-builder non lo fa: createDesktopShortcut e' false).
 ; ENGLISH: On uninstall also remove the desktop shortcut (electron-builder
