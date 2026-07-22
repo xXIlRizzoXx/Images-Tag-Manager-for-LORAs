@@ -120,7 +120,7 @@ export const TagSuggestionsPanel: React.FC<TagSuggestionsPanelProps> = ({ isOpen
             {isOpen && (
                 <div
                     onMouseDown={startResize}
-                    title={t.resizePanel || 'Trascina per ridimensionare'}
+                    title={t.resizePanel || 'Drag to resize'}
                     role="separator"
                     aria-orientation="vertical"
                     className={`absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize z-50 group/resize transition-colors ${isResizing ? (isDarkMode ? 'bg-indigo-500/70' : 'bg-indigo-500/70') : 'hover:bg-indigo-500/40'}`}
@@ -148,14 +148,14 @@ export const TagSuggestionsPanel: React.FC<TagSuggestionsPanelProps> = ({ isOpen
                             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md active:scale-95`}
                         >
                             <ChevronsDown size={14} />
-                            {t.expandAll || 'Espandi tutti'}
+                            {t.expandAll || 'Expand all'}
                         </button>
                         <button
                             onClick={collapseAll}
                             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-md active:scale-95`}
                         >
                             <ChevronsUp size={14} />
-                            {t.collapseAll || 'Comprimi tutti'}
+                            {t.collapseAll || 'Collapse all'}
                         </button>
                     </div>
                 {suggestedTagsData.map((category: TagCategoryList) => {
