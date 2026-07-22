@@ -714,18 +714,46 @@ export default function App() {
         calculateImportSummary(imgFiles, txtFiles, null);
     };
 
-    // ITALIANO: Carica SINGOLE immagini (una o piu'), non l'intera cartella. Se selezioni
-    //           anche i loro file .txt, i tag vengono abbinati per nome. Senza una cartella
-    //           collegata, il salvataggio avviene come download del .txt.
-    // ENGLISH: Load INDIVIDUAL images (one or more), not the whole folder. If you also pick
-    //          their .txt files, tags are matched by name. With no folder attached, saving
+    // ITALIANO: Carica SINGOLE immagini (una o piu'), non l'intera cartella. Nel selettore si
+    //           scelgono SOLO immagini: i file di testo non compaiono. Se accanto a una foto
+    //           c'e' un .txt con lo stesso nome, viene importato e abbinato in automatico;
+    //           se non c'e' (es. prima volta) l'immagine si carica senza tag. Senza una
+    //           cartella collegata, il salvataggio avviene come download del .txt.
+    // ENGLISH: Load INDIVIDUAL images (one or more), not the whole folder. The picker shows
+    //          ONLY images: text files do not appear. If a .txt with the same name sits next
+    //          to a photo it is imported and paired automatically; if there is none (e.g.
+    //          first time) the image loads without tags. With no folder attached, saving
     //          happens as a .txt download.
     const imagesInputRef = useRef<HTMLInputElement>(null);
+    // ITALIANO: Cerca, per ogni immagine scelta, il file di testo con lo STESSO nome che sta
+    //           accanto ad essa sul disco (foto.jpg -> foto.txt) e lo trasforma in un file
+    //           leggibile dall'import. Se non c'e' (o siamo nel browser, senza Electron)
+    //           torna una lista vuota: le immagini si caricano semplicemente senza tag.
+    // ENGLISH: For each picked image, look for the same-named text file sitting next to it on
+    //          disk (photo.jpg -> photo.txt) and turn it into a file the import can read. If
+    //          missing (or we are in the browser, without Electron) it returns an empty list:
+    //          the images simply load without tags.
+    const loadSidecarTxtFiles = async (imgFiles: any[]): Promise<any[]> => {
+        const api = (window as any).electronAPI;
+        if (!api || typeof api.getPathForFile !== 'function' || typeof api.readSidecarTags !== 'function') return [];
+        try {
+            const paths = imgFiles.map(f => api.getPathForFile(f)).filter(Boolean);
+            if (paths.length === 0) return [];
+            const sidecars = await api.readSidecarTags(paths);
+            return (sidecars || []).map((s: any) => new File([s.content], s.name, { type: 'text/plain' }));
+        } catch (err) {
+            console.warn('[Import] Tag .txt abbinati non leggibili, carico solo le immagini:', err);
+            return [];
+        }
+    };
+
     const handleImagesUpload = async (e: any) => {
         const files = Array.from(e.target.files as FileList);
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
-        const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
         if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
+        // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
+        // ENGLISH: .txt files are not picked by hand: I find them next to the images
+        const txtFiles = await loadSidecarTxtFiles(imgFiles);
         calculateImportSummary(imgFiles, txtFiles, null);
         if (imagesInputRef.current) imagesInputRef.current.value = '';
     };
@@ -1563,7 +1591,9 @@ export default function App() {
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
             {/* ITALIANO: Selettore per singole immagini + relativi .txt (punto 12) */}
             {/* ENGLISH: Picker for individual images + their .txt files (item 12) */}
-            <input type="file" accept="image/*,.txt,text/plain" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
+            {/* ITALIANO: accept solo immagini = nel selettore i file di testo NON si vedono */}
+            {/* ENGLISH: images-only accept = text files are NOT shown in the picker */}
+            <input type="file" accept="image/*" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
             
             {isTrashOpen && (
                 <div className={`fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>

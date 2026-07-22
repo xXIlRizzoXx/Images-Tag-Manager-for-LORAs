@@ -121,6 +121,57 @@ ipcMain.handle('secure-storage:delete', (_event, key) => {
     }
 });
 
+/* ITALIANO: TAG "GEMELLI" (.txt) DELLE IMMAGINI SCELTE
+   Quando l'utente sceglie delle immagini singole, il selettore mostra SOLO immagini.
+   Qui, per ogni immagine scelta, cerco accanto ad essa il file di testo con lo STESSO
+   nome (foto.jpg -> foto.txt) e, se c'e', lo leggo: cosi' i tag si abbinano da soli.
+   Se il .txt non c'e' (es. prima volta) non succede nulla: si carica solo l'immagine.
+
+   Limiti di sicurezza (il ponte resta stretto): leggo SOLO file .txt, SOLO se accanto
+   a un'immagine vera che esiste su disco, mai in scrittura e mai oltre 1 MB.
+
+   ENGLISH: SIDECAR .txt TAGS FOR THE PICKED IMAGES
+   When the user picks individual images the dialog shows ONLY images. Here, for each
+   picked image, I look next to it for the text file with the SAME name
+   (photo.jpg -> photo.txt) and read it if present, so tags pair up automatically.
+   If there is no .txt (e.g. first time) nothing happens: only the image is loaded.
+
+   Safety limits (the bridge stays narrow): read ONLY .txt files, ONLY when sitting next
+   to a real image that exists on disk, never write, never above 1 MB. */
+const SIDECAR_MAX_BYTES = 1024 * 1024;
+const SIDECAR_MAX_FILES = 5000;
+const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff']);
+
+ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
+    if (!Array.isArray(imagePaths)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const raw of imagePaths.slice(0, SIDECAR_MAX_FILES)) {
+        if (typeof raw !== 'string' || !raw) continue;
+        try {
+            // ITALIANO: dev'essere un'immagine VERA presente su disco
+            // ENGLISH: it must be a REAL image present on disk
+            if (!SIDECAR_IMAGE_EXT.has(path.extname(raw).toLowerCase())) continue;
+            const imgStat = fs.statSync(raw);
+            if (!imgStat.isFile()) continue;
+
+            const base = path.basename(raw, path.extname(raw));
+            const txtPath = path.join(path.dirname(raw), base + '.txt');
+            if (path.extname(txtPath).toLowerCase() !== '.txt') continue;
+            if (seen.has(txtPath)) continue;
+            seen.add(txtPath);
+
+            const txtStat = fs.statSync(txtPath);
+            if (!txtStat.isFile() || txtStat.size > SIDECAR_MAX_BYTES) continue;
+            out.push({ name: base + '.txt', content: fs.readFileSync(txtPath, 'utf8') });
+        } catch (_) {
+            // ITALIANO: nessun .txt accanto a questa immagine: e' normale, si prosegue
+            // ENGLISH: no .txt next to this image: that is normal, carry on
+        }
+    }
+    return out;
+});
+
 // ITALIANO: Header Content-Security-Policy applicato in produzione
 // ENGLISH: Content-Security-Policy header applied in production
 const applyContentSecurityPolicy = (sess) => {
