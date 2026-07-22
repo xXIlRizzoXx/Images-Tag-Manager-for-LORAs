@@ -135,6 +135,60 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
     );
 };
 
+/**
+ * ITALIANO: Finestra con TRE scelte, usata quando si chiude il progetto con modifiche
+ *   non salvate:
+ *     - Salva e chiudi        (verde)   salva i tag e poi chiude
+ *     - Chiudi senza salvare  (rosso)   chiude buttando via le modifiche
+ *     - Annulla               (arancio) non fa nulla, resta tutto com'e'
+ *   Il tasto verde si disabilita durante il salvataggio, per non farlo premere due volte.
+ *
+ * ENGLISH: THREE-choice dialog, used when closing the project with unsaved changes:
+ *     - Save and close        (green)  saves the tags, then closes
+ *     - Close without saving  (red)    closes and discards the changes
+ *     - Cancel                (orange) does nothing
+ *   The green button is disabled while saving, so it cannot be pressed twice.
+ */
+export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: any) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+            <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
+                <div className="p-6">
+                    <div className="flex items-center gap-3 mb-3 text-amber-500 dark:text-amber-400">
+                        <TriangleAlert size={24} />
+                        <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
+                    </div>
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} leading-relaxed ml-9`}>{message}</p>
+                </div>
+                <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex flex-col sm:flex-row gap-2.5 border-t`}>
+                    <button
+                        onClick={onSave}
+                        disabled={isSaving}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {t.saveAndClose}
+                    </button>
+                    <button
+                        onClick={onDiscard}
+                        disabled={isSaving}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {t.closeWithoutSaving}
+                    </button>
+                    <button
+                        onClick={onCancel}
+                        disabled={isSaving}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {t.cancel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ITALIANO: Finestra che mostra cosa è stato trovato durante l'importazione
 // ENGLISH: Window showing what was found during import
 export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode }: any) => {

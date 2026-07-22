@@ -32,7 +32,7 @@ import {
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
-import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
+import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
@@ -107,6 +107,9 @@ export default function App() {
     const [slideDirection, setSlideDirection] = useState('right');
     const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+    // ITALIANO: Finestra a tre scelte mostrata chiudendo il progetto con modifiche non salvate
+    // ENGLISH: Three-choice dialog shown when closing the project with unsaved changes
+    const [saveCloseDialog, setSaveCloseDialog] = useState({ isOpen: false, isSaving: false });
     const [importSummary, setImportSummary] = useState<{ isOpen: boolean, summary: any, pendingData: any }>({ isOpen: false, summary: null, pendingData: null });
     const [selectedForBulk, setSelectedForBulk] = useState<string[]>([]);
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
@@ -878,7 +881,13 @@ export default function App() {
 
     // ITALIANO: Funzione per salvare i file (sovrascrive o crea ZIP)
     // ENGLISH: Function to save files (overwrite or create ZIP)
-    const performSave = async (imagesToSave: any[], isExportAll = false) => {
+    // ITALIANO: Torna TRUE se il salvataggio e' andato a buon fine, FALSE se e' fallito o
+    //           e' stato annullato. Serve a "Salva e chiudi": se il salvataggio non riesce
+    //           il progetto NON deve essere chiuso, altrimenti i tag andrebbero persi.
+    // ENGLISH: Returns TRUE when the save succeeded, FALSE when it failed or was aborted.
+    //          Needed by "Save and close": if saving fails the project must NOT be closed,
+    //          otherwise the tags would be lost.
+    const performSave = async (imagesToSave: any[], isExportAll = false): Promise<boolean> => {
         // ITALIANO: Se abbiamo un riferimento alla cartella e stiamo salvando le modifiche (non esportando tutto), sovrascriviamo i file originali
         // ENGLISH: If we have a folder handle and we are saving changes (not exporting all), overwrite original files
         if (dirHandle && !saveAsZip && !isExportAll) {
@@ -904,13 +913,14 @@ export default function App() {
 
                 soundManager.chime();
                 showNotification(t.successSaveChanges, "success");
+                return true;
             } catch (err) {
                 console.error(err);
                 showNotification(t.dirError, "error");
+                return false;
             } finally {
                 setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
             }
-            return;
         }
 
         // ITALIANO: Se l'utente vuole esportare in una cartella specifica (non quella originale)
@@ -936,13 +946,13 @@ export default function App() {
 
                     soundManager.chime();
                     showNotification(t.exportFolderSuccess, "success");
-                    return;
+                    return true;
                 } catch (err: any) {
                     if (err.name !== 'AbortError') {
                         console.error(err);
                         showNotification(t.exportFolderError, "error");
                     }
-                    return;
+                    return false;
                 } finally {
                     setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
                 }
@@ -986,13 +996,14 @@ export default function App() {
                 
                 soundManager.chime();
                 showNotification(t.zipSuccess, "success");
+                return true;
             } catch (err) {
                 console.error(err);
                 showNotification(t.zipError, "error");
+                return false;
             } finally {
                 setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
             }
-            return;
         }
 
         // ITALIANO: Metodo di salvataggio di emergenza (download multipli nel browser)
@@ -1024,14 +1035,17 @@ export default function App() {
         
         soundManager.chime();
         showNotification(isExportAll ? t.successSave : t.successSaveChanges, "success");
+        return true;
     };
 
     // ITALIANO: Salva solo le immagini che hanno subito modifiche
     // ENGLISH: Save only the images that have undergone changes
-    const handleSaveChanges = () => {
+    // ITALIANO: Torna TRUE se non c'era nulla da salvare o se il salvataggio e' riuscito.
+    // ENGLISH: Returns TRUE when there was nothing to save or the save succeeded.
+    const handleSaveChanges = async (): Promise<boolean> => {
         const modifiedImages = images.filter(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
-        if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return; }
-        performSave(modifiedImages, false);
+        if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
+        return performSave(modifiedImages, false);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
@@ -1101,34 +1115,71 @@ export default function App() {
     // ENGLISH: Closes the CURRENT PROJECT: removes all photos AND clears all tags, bringing
     //          the app back to its just-opened state. Warns first if there are unsaved
     //          changes. Does not touch files on disk (photos and .txt stay where they are).
+    // ITALIANO: Chiusura vera e propria. Separata perche' la usano entrambe le strade:
+    //           la conferma semplice (niente da salvare) e la finestra a tre scelte.
+    // ENGLISH: The actual close. Split out because both paths use it: the simple
+    //          confirmation (nothing to save) and the three-choice dialog.
+    const closeProjectNow = () => {
+        // ITALIANO: ferma un eventuale batch AI in corso, poi azzera TUTTO
+        // ENGLISH: stop any running AI batch, then clear EVERYTHING
+        aiCancelRequestedRef.current = true;
+        setAiCancelRequested(true);
+        aiAbortControllerRef.current?.abort();
+        try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+        setImages([]);
+        setGlobalTriggers([]);
+        setSelectedForBulk([]);
+        setStagedBulkTags([]);
+        setCustomProjectTags([]);
+        setDirHandle(null);
+        setSelectedImageId(null);
+        setCopiedTags(null);
+        soundManager.chime();
+        showNotification(t.closeAllDone, 'success');
+    };
+
     const handleCloseProject = () => {
         if (images.length === 0) return;
         const hasUnsaved = images.some(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+
+        // ITALIANO: Con modifiche non salvate si sceglie fra TRE strade: salvare e chiudere,
+        //           chiudere buttando via le modifiche, oppure annullare.
+        // ENGLISH: With unsaved changes the user picks between THREE paths: save and close,
+        //          close discarding the changes, or cancel.
+        if (hasUnsaved) {
+            setSaveCloseDialog({ isOpen: true, isSaving: false });
+            return;
+        }
+
+        // ITALIANO: Niente da salvare: basta la conferma semplice di sempre.
+        // ENGLISH: Nothing to save: the usual simple confirmation is enough.
         setConfirmDialog({
             isOpen: true,
             title: t.closeAllTitle,
-            message: hasUnsaved ? t.closeAllUnsavedMsg : t.closeAllMsg,
+            message: t.closeAllMsg,
             onConfirm: () => {
-                // ITALIANO: ferma un eventuale batch AI in corso, poi azzera TUTTO
-                // ENGLISH: stop any running AI batch, then clear EVERYTHING
-                aiCancelRequestedRef.current = true;
-                setAiCancelRequested(true);
-                aiAbortControllerRef.current?.abort();
-                try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
-                setImages([]);
-                setGlobalTriggers([]);
-                setSelectedForBulk([]);
-                setStagedBulkTags([]);
-                setCustomProjectTags([]);
-                setDirHandle(null);
-                setSelectedImageId(null);
-                setCopiedTags(null);
-                soundManager.chime();
-                showNotification(t.closeAllDone, 'success');
+                closeProjectNow();
                 setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
             },
             onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
         });
+    };
+
+    // ITALIANO: Tasto VERDE "Salva e chiudi". Se il salvataggio fallisce (es. cartella non
+    //           piu' accessibile) il progetto NON viene chiuso e la finestra resta aperta,
+    //           cosi' non si perdono i tag: l'errore lo segnala gia' performSave.
+    // ENGLISH: GREEN "Save and close" button. If saving fails (e.g. folder no longer
+    //          reachable) the project is NOT closed and the dialog stays open, so no tags
+    //          are lost: performSave already reports the error.
+    const handleSaveAndCloseProject = async () => {
+        setSaveCloseDialog({ isOpen: true, isSaving: true });
+        const saved = await handleSaveChanges();
+        if (!saved) {
+            setSaveCloseDialog({ isOpen: true, isSaving: false });
+            return;
+        }
+        setSaveCloseDialog({ isOpen: false, isSaving: false });
+        closeProjectNow();
     };
 
     // ITALIANO: Tagga la singola immagine via Gemini API
@@ -1529,6 +1580,17 @@ export default function App() {
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
+            <SaveBeforeCloseDialog
+                isOpen={saveCloseDialog.isOpen}
+                isSaving={saveCloseDialog.isSaving}
+                title={t.closeAllTitle}
+                message={t.closeAllUnsavedMsg}
+                onSave={handleSaveAndCloseProject}
+                onDiscard={() => { setSaveCloseDialog({ isOpen: false, isSaving: false }); closeProjectNow(); }}
+                onCancel={() => setSaveCloseDialog({ isOpen: false, isSaving: false })}
+                t={t}
+                isDarkMode={isDarkMode}
+            />
             <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
