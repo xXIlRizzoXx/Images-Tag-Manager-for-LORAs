@@ -2004,7 +2004,9 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-center gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
+                    {/* ITALIANO: lg:items-start = i tre riquadri allineati in ALTO (prima erano centrati verticalmente) */}
+                    {/* ENGLISH: lg:items-start = the three panels aligned to the TOP (were vertically centered) */}
+                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-start gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
                         <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: "Carica Cartella" e "Carica immagini" affiancati, stesso colore (blu). */}
@@ -2226,7 +2228,11 @@ export default function App() {
                                         {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
                                         {/* ENGLISH: Tag area under the preview, aesthetically organized */}
                                         <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                            <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
+                                            {/* ITALIANO: area tag limitata in altezza CON scorrimento in ENTRAMBE le modalita'
+                                                          (prima in "Intere" cresceva all'infinito mostrando tutti i tag). */}
+                                            {/* ENGLISH: height-capped, scrollable tag area in BOTH view modes (in "original"
+                                                         it used to grow endlessly, showing every tag). */}
+                                            <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" isDarkMode={isDarkMode} />
                                         </div>
                                     </div>
                                 </div>
