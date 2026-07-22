@@ -121,6 +121,10 @@ export default function App() {
     const [isSaving, setIsSaving] = useState(false);
 
     const [isStatsOpen, setIsStatsOpen] = useState(false);
+    // ITALIANO: ricerca e ordinamento della lista completa dei tag nelle statistiche
+    // ENGLISH: search and sort for the full tag list in the statistics
+    const [statsSearch, setStatsSearch] = useState('');
+    const [statsSort, setStatsSort] = useState<'count' | 'name'>('count');
     // ITALIANO: "Appunti" dei tag: copiati da una foto, incollabili su un'altra.
     // ENGLISH: Tag "clipboard": copied from one photo, pasteable onto another.
     const [copiedTags, setCopiedTags] = useState<string[] | null>(null);
@@ -2331,7 +2335,7 @@ export default function App() {
 
             {isStatsOpen && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsStatsOpen(false)}>
-                    <div className={`w-[90vw] max-w-4xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
+                    <div className={`w-[90vw] max-w-5xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
                         <div className={`p-6 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} flex justify-between items-center shrink-0`}>
                             <h2 className={`text-xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={24} className="text-indigo-500"/> {t.projectStats}</h2>
                             <button onClick={() => setIsStatsOpen(false)} className={`hover:bg-red-500 hover:text-white rounded-full p-2 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><X size={20} /></button>
@@ -2363,29 +2367,56 @@ export default function App() {
                                     .slice(0, 10)
                                     .map(([name, value]) => ({ name, value }));
 
+                                // ITALIANO: metriche extra per le statistiche avanzate
+                                // ENGLISH: extra metrics for the advanced statistics
+                                const untaggedImages = totalImages - taggedImages;
+                                const usageValues = Object.values(tagUsage);
+                                const totalTagInstances = usageValues.reduce((a, b) => a + b, 0);
+                                const avgTagsPerImage = totalImages > 0 ? (totalTagInstances / totalImages).toFixed(1) : '0';
+                                const singletonCount = usageValues.filter(c => c === 1).length;
+                                const maxUsage = usageValues.length > 0 ? Math.max(...usageValues) : 0;
+
+                                // ITALIANO: lista COMPLETA dei tag (anche quelli mai usati = 0), filtrata e ordinata
+                                // ENGLISH: FULL tag list (including never-used ones = 0), filtered and sorted
+                                const fullTagList = allUniqueTags
+                                    .map(tag => ({ tag, count: tagUsage[tag] || 0 }))
+                                    .filter(x => x.tag.toLowerCase().includes(statsSearch.toLowerCase()))
+                                    .sort((a, b) => statsSort === 'name'
+                                        ? a.tag.localeCompare(b.tag)
+                                        : (b.count - a.count) || a.tag.localeCompare(b.tag));
+
                                 return (
                                     <div className="flex flex-col gap-8">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-indigo-50 border-indigo-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-indigo-500 rounded-lg text-white"><ImageIcon size={24} /></div>
-                                                <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalImages}</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalImages}</p>
-                                                </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-indigo-50 border-indigo-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-indigo-500 rounded-lg text-white"><ImageIcon size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalImages}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalImages}</p>
                                             </div>
-                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-purple-500 rounded-lg text-white"><Tag size={24} /></div>
-                                                <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalTags}</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalTags}</p>
-                                                </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-purple-500 rounded-lg text-white"><Tag size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalTags}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalTags}</p>
                                             </div>
-                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-emerald-50 border-emerald-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-emerald-500 rounded-lg text-white"><Check size={24} /></div>
-                                                <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTaggedImages}</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-sm font-normal opacity-70">({taggedPercentage}%)</span></p>
-                                                </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-emerald-50 border-emerald-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-emerald-500 rounded-lg text-white"><Check size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-xs font-normal opacity-70">({taggedPercentage}%)</span></p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTaggedImages}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-amber-50 border-amber-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-amber-500 rounded-lg text-white"><AlertTriangle size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{untaggedImages}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsUntaggedImages}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-cyan-50 border-cyan-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-cyan-500 rounded-lg text-white"><BarChart3 size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{avgTagsPerImage}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsAvgTagsPerImage}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-rose-50 border-rose-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-rose-500 rounded-lg text-white"><Sparkles size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{singletonCount}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsSingletonTags}</p>
                                             </div>
                                         </div>
 
@@ -2428,6 +2459,48 @@ export default function App() {
                                                         </RechartsBarChart>
                                                     </ResponsiveContainer>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ITALIANO: Lista COMPLETA e scorrevole di TUTTI i tag del progetto, con ricerca,
+                                                      ordinamento (per frequenza o A-Z), conteggio d'uso e barra di frequenza. */}
+                                        {/* ENGLISH: FULL scrollable list of ALL project tags, with search, sorting
+                                                     (by frequency or A-Z), usage count and a frequency bar. */}
+                                        <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                                                <h3 className={`text-lg font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}>
+                                                    <Tags size={20} className="text-indigo-500" /> {t.statsAllTags} <span className="text-sm font-normal opacity-60">({fullTagList.length})</span>
+                                                </h3>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="text" value={statsSearch} onChange={e => setStatsSearch(e.target.value)} placeholder={t.statsSearchTag}
+                                                        className={`w-40 px-3 py-1.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`} />
+                                                    <div className={`flex rounded-lg overflow-hidden border shrink-0 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                                                        <button onClick={() => setStatsSort('count')} className={`px-2.5 py-1.5 text-xs font-bold transition-colors ${statsSort === 'count' ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100')}`}>{t.statsSortCount}</button>
+                                                        <button onClick={() => setStatsSort('name')} className={`px-2.5 py-1.5 text-xs font-bold transition-colors ${statsSort === 'name' ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100')}`}>{t.statsSortName}</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="max-h-80 overflow-y-auto lightbox-scroll pr-1 flex flex-col gap-1.5" style={{ scrollbarGutter: 'stable' }}>
+                                                {fullTagList.length === 0 ? (
+                                                    <p className="text-sm text-gray-500 italic text-center py-6">{t.statsNoTagsMatch}</p>
+                                                ) : fullTagList.map(({ tag, count }) => {
+                                                    const category = getTagCategory(tag);
+                                                    const pct = maxUsage > 0 ? (count / maxUsage) * 100 : 0;
+                                                    const imgPct = totalImages > 0 ? Math.round((count / totalImages) * 100) : 0;
+                                                    return (
+                                                        <div key={tag} className="flex items-center gap-3">
+                                                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold max-w-[42%] truncate flex items-center ${getCategoryColor(category, isDarkMode)}`} title={tag}>
+                                                                {category === 'nsfw' && <span className="font-bold text-[8px] px-1 rounded-sm mr-0.5 bg-red-500 text-white shrink-0">+18</span>}
+                                                                <span className="truncate">{tag}</span>
+                                                            </span>
+                                                            <div className={`flex-1 h-2.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                                                                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                                            </div>
+                                                            <span className={`shrink-0 text-xs font-bold tabular-nums w-10 text-right ${count === 0 ? 'opacity-40' : ''} ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{count}</span>
+                                                            <span className={`shrink-0 text-[10px] tabular-nums w-9 text-right ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{imgPct}%</span>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     </div>
