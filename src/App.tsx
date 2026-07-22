@@ -2034,7 +2034,7 @@ export default function App() {
                                                         />
                                                     </div>
                                                     <p className={`text-[9px] italic mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                                                        ✓ free · ◐ limitato · $ pagamento · ★ consigliato
+                                                        {t.aiModelLegend}
                                                     </p>
                                                 </div>
                                             )}
