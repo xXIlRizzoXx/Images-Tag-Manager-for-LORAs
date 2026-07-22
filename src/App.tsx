@@ -167,7 +167,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('3.8.0');
+    const [appVersion, setAppVersion] = useState<string>('1.0.0');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -1945,15 +1945,15 @@ export default function App() {
                                 <ImageIcon size={16} />
                                 <span>{t.loadImages}</span>
                             </button>
+                            {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta — arancione */}
+                            {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app — orange */}
+                            <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
+                                <X size={16} />
+                                <span>{t.closeAllImages}</span>
+                            </button>
                             <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
                                 <Trash size={16} />
                                 <span>{t.resetProject}</span>
-                            </button>
-                            {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta */}
-                            {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app */}
-                            <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-200 hover:bg-gray-300 text-gray-700')}`} title={t.closeAllImages}>
-                                <X size={16} />
-                                <span>{t.closeAllImages}</span>
                             </button>
                         </div>
                         

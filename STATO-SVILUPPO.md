@@ -1,8 +1,10 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 22 luglio 2026
-**Versione attuale:** 3.8.0 (con nuove funzioni 3.9.0 in lavorazione sul branch)
-**Ultima versione stabile:** 3.7.0 (su `main`)
+**Versione attuale:** 1.0.0 (prima versione pubblica ufficiale)
+**Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
+la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
+nei traguardi qui sotto indicano solo l'ordine in cui le funzioni sono state fatte.
 
 Questo file è il "diario" del progetto: a colpo d'occhio mostra cosa è già stato
 fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
