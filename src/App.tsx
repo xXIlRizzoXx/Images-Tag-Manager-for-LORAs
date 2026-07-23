@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -145,7 +145,11 @@ export default function App() {
     // ITALIANO: Configurazione AI cloud (Gemini), persistente
     // ENGLISH: Cloud AI config (Gemini), persistent
     const [aiEnabled, setAiEnabled] = useState<boolean>(() => localStorage.getItem('aiEnabled') === 'true');
-    const [aiModel, setAiModel] = useState<string>(() => localStorage.getItem('aiModel') || DEFAULT_GEMINI_MODEL);
+    // ITALIANO: normalizeModelId riporta a un modello valido chi aveva salvato uno dei
+    //           modelli poi rimossi (altrimenti l'AI fallirebbe a ogni chiamata).
+    // ENGLISH: normalizeModelId brings anyone who saved a since-removed model back to a
+    //          valid one (otherwise every AI call would fail).
+    const [aiModel, setAiModel] = useState<string>(() => normalizeModelId(localStorage.getItem('aiModel')));
     const [aiMaxTags, setAiMaxTags] = useState<number>(() => {
         const v = parseInt(localStorage.getItem('aiMaxTags') || '30', 10);
         return Number.isFinite(v) ? Math.max(1, Math.min(80, v)) : 30;

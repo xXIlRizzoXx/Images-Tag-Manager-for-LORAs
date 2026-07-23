@@ -13,6 +13,20 @@
 *******************************************************************************/
 @import "tailwindcss";
 
+/* ITALIANO: Fa seguire alle classi "dark:" l'interruttore Tema dell'app invece del tema
+             di Windows. In Tailwind v4 "dark:" significa di default "@media
+             (prefers-color-scheme: dark)": con Windows in scuro, i riquadri dei tag
+             restavano scuri anche scegliendo il tema chiaro, perche' ignoravano
+             l'interruttore. L'app mette gia' la classe "dark" sul contenitore
+             principale (App.tsx), quindi basta agganciare la variante a quella classe.
+   ENGLISH: Makes the "dark:" utilities follow the app's Theme switch instead of the
+            Windows theme. In Tailwind v4 "dark:" defaults to "@media
+            (prefers-color-scheme: dark)": with Windows set to dark, the tag boxes stayed
+            dark even when the light theme was picked, because they ignored the switch.
+            The app already puts a "dark" class on its root container (App.tsx), so we
+            just bind the variant to that class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes zoomIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes slideInTop { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
