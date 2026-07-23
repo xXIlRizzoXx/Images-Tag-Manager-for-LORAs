@@ -1559,20 +1559,31 @@ export default function App() {
     }, [tempApiKey, t]);
     
     const applyBulkTags = () => {
+        const quante = selectedForBulk.length;
         setImages(prev => prev.map(img => {
             if (selectedForBulk.includes(img.id)) {
                 const combinedTags = [...new Set([...img.tags, ...stagedBulkTags])];
+                // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
+                // ENGLISH: same order as everywhere else: triggers first, then alphabetical
                 const orderedTags = [
                     ...globalTriggers.filter(t => combinedTags.includes(t)),
-                    ...combinedTags.filter(t => !globalTriggers.includes(t))
+                    ...combinedTags.filter(t => !globalTriggers.includes(t)).sort((a, b) => a.localeCompare(b))
                 ];
                 return { ...img, tags: orderedTags };
             }
             return img;
         }));
         soundManager.chime();
-        showNotification(`${t.added} ${stagedBulkTags.length} ${t.tagsTo} ${selectedForBulk.length} ${t.imagesLabel}!`, "success");
+        showNotification(`${t.added} ${stagedBulkTags.length} ${t.tagsTo} ${quante} ${t.imagesLabel}!`, "success");
         setStagedBulkTags([]);
+        // ITALIANO: finito il lavoro si deselezionano le immagini, e cosi' il pannello si chiude
+        //           da solo (compare solo quando c'e' almeno un'immagine selezionata). Prima
+        //           restava aperto con le foto ancora selezionate, e al clic successivo i tag
+        //           venivano riapplicati alle stesse immagini senza accorgersene.
+        // ENGLISH: once done the images are deselected, which closes the panel by itself (it only
+        //          shows while at least one image is selected). It used to stay open with the
+        //          photos still selected, so the next click silently re-applied tags to them.
+        setSelectedForBulk([]);
         setSelectedForBulk([]); 
     };
 
@@ -2423,7 +2434,20 @@ export default function App() {
                             <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
                                 {displayedImages.map((img) => (
                                 <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
-                                    <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
+                                    <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => {
+                                            // ITALIANO: se e' gia' in corso una selezione multipla, cliccare una foto
+                                            //           la aggiunge o la toglie dalla selezione invece di aprirla:
+                                            //           prima bisognava per forza centrare la casellina in alto.
+                                            // ENGLISH: when a multi-selection is already in progress, clicking a photo
+                                            //          adds or removes it from the selection instead of opening it:
+                                            //          you used to have to hit the small checkbox exactly.
+                                            if (selectedForBulk.length > 0) {
+                                                setSelectedForBulk(prev => prev.includes(img.id) ? prev.filter(x => x !== img.id) : [...prev, img.id]);
+                                                soundManager.click();
+                                            } else {
+                                                setSelectedImageId(img.id);
+                                            }
+                                        }}>
                                         <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
                                         
                                         {img.width * img.height < 1048576 && (
