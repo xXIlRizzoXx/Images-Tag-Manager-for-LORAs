@@ -1850,9 +1850,13 @@ export default function App() {
                                   traslucido, e angoli da 16px. */}
                     {/* ENGLISH: Card styled like the Windows startup screen (electron/splash.html):
                                  a solid indigo gradient instead of translucent grey, 16px corners. */}
-                    <div className={`relative w-full max-w-xl p-10 overflow-hidden border shadow-2xl rounded-2xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500 ${isDarkMode
-                        ? 'bg-gradient-to-br from-indigo-950 to-indigo-900 border-indigo-800/60'
-                        : 'bg-gradient-to-br from-white to-indigo-50 border-indigo-200'}`}>
+                    {/* ITALIANO: nessun bordo: sul fondo scuro si vedeva come un filo azzurrino
+                                  attorno al riquadro. Anche la schermata di Windows non ne ha. */}
+                    {/* ENGLISH: no border: on the dark background it showed as a thin light-blue
+                                 line around the card. The Windows screen has none either. */}
+                    <div className={`relative w-full max-w-xl p-10 overflow-hidden shadow-2xl rounded-2xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500 ${isDarkMode
+                        ? 'bg-gradient-to-br from-indigo-950 to-indigo-900'
+                        : 'bg-gradient-to-br from-white to-indigo-50'}`}>
                         <div className="relative flex items-center justify-center">
                             <img src="./logo.png" alt="Logo" className="w-28 h-28 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
