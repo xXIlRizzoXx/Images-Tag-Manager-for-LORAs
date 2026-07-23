@@ -28,8 +28,13 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 // ITALIANO: Campo di inserimento per i tag con suggerimenti e cancellazione
 // ENGLISH: Input field for tags with suggestions and deletion
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
+import { translateTag } from '../utils/tagTranslation';
 
-export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]", isDarkMode = true, readOnly = false }: any) => {
+// ITALIANO: `lang` serve a mostrare la traduzione del tag al passaggio del mouse: prima
+//           accadeva solo nel visualizzatore a foto singola, non sulle miniature.
+// ENGLISH: `lang` is what enables the hover translation of a tag: it used to happen only in
+//          the single-photo viewer, never on the gallery thumbnails.
+export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]", isDarkMode = true, readOnly = false, lang = 'it' }: any) => {
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     
@@ -71,8 +76,9 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
             const isNsfw = category === 'nsfw';
             const colorClass = getActiveCategoryColor(category);
             
+            const traduzione = translateTag(tag, lang);
             return (
-                <span key={index} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
+                <span key={index} title={traduzione ? `${tag} — ${traduzione}` : tag} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
                     {isNsfw && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm mr-0.5">+18</span>}
                     {tag}
                     {!readOnly && (

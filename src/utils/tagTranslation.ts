@@ -38,3 +38,31 @@ export const translateTag = (tag: string, lang: string): string | null => {
     if (value.toLowerCase() === tag.toLowerCase()) return null;
     return value;
 };
+
+// ITALIANO: Nomi delle CATEGORIE gia' tradotti nel dizionario dei Tag Suggeriti (27 su 31).
+// ENGLISH: CATEGORY names already translated in the Suggested Tags dictionary (27 of 31).
+const categoryNames = new Map<string, Record<string, string>>();
+for (const category of suggestedTagsData) categoryNames.set(category.id, category.name);
+
+/**
+ * ITALIANO: Nome leggibile di una categoria di tag nella lingua scelta, per le etichette
+ *   del grafico a torta delle statistiche (prima si vedeva l'identificativo grezzo, tipo
+ *   "face_details"). Le 4 categorie assenti dal dizionario (personaggi, colori, +18,
+ *   generici) arrivano dalle traduzioni dell'app, passate qui come `t`.
+ * ENGLISH: Human-readable name of a tag category in the chosen language, for the statistics
+ *   pie-chart labels (they used to show the raw id, e.g. "face_details"). The 4 categories
+ *   missing from the dictionary (characters, colours, adult, general) come from the app
+ *   translations, passed in as `t`.
+ */
+export const translateCategory = (categoryId: string, lang: string, t: any): string => {
+    const extra: Record<string, string> = {
+        characters: t?.catCharacters,
+        colors: t?.catColors,
+        nsfw: t?.catNsfw,
+        general: t?.catGeneral,
+    };
+    if (extra[categoryId]) return extra[categoryId];
+    const names = categoryNames.get(categoryId);
+    if (names) return names[lang] || names.en || categoryId;
+    return categoryId;
+};

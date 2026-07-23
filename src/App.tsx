@@ -36,6 +36,7 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
+import { translateTag, translateCategory } from './utils/tagTranslation';
 
 // ITALIANO: Lingue dell'interfaccia — usate sia dal selettore nelle impostazioni
 //           sia dalla schermata di scelta lingua al primo avvio.
@@ -1983,7 +1984,7 @@ export default function App() {
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                                        <TagInput tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} isDarkMode={isDarkMode} />
+                                                        <TagInput lang={lang} tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} isDarkMode={isDarkMode} />
                                                     </div>
                                                 </div>
                                             </div>
@@ -2358,7 +2359,7 @@ export default function App() {
                                               diventa mai piu' alta dei due riquadri laterali: la barra comandi resta bilanciata. */}
                                 {/* ENGLISH: capped at 120px (scrolls inside) so the centre section never grows taller
                                              than the two side panels: the command bar stays balanced. */}
-                                <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[120px]" isDarkMode={isDarkMode} />
+                                <TagInput lang={lang} tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[120px]" isDarkMode={isDarkMode} />
                             </div>
 
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
@@ -2568,7 +2569,7 @@ export default function App() {
                                                           (prima in "Intere" cresceva all'infinito mostrando tutti i tag). */}
                                             {/* ENGLISH: height-capped, scrollable tag area in BOTH view modes (in "original"
                                                          it used to grow endlessly, showing every tag). */}
-                                            <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" isDarkMode={isDarkMode} />
+                                            <TagInput lang={lang} tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" isDarkMode={isDarkMode} />
                                         </div>
                                     </div>
                                 </div>
@@ -2749,7 +2750,11 @@ export default function App() {
                                     const cat = getTagCategory(tag);
                                     categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
                                 });
-                                const pieData = Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
+                                // ITALIANO: nelle fette si mostra il NOME della categoria nella lingua scelta
+                                //           (prima compariva l'identificativo grezzo, es. "face_details").
+                                // ENGLISH: slices show the category NAME in the chosen language (the raw id,
+                                //          e.g. "face_details", used to be displayed instead).
+                                const pieData = Object.entries(categoryCounts).map(([name, value]) => ({ name: translateCategory(name, lang, t), value }));
                                 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28'];
 
                                 const tagUsage: Record<string, number> = {};
@@ -2830,7 +2835,28 @@ export default function App() {
                                                                 outerRadius={80}
                                                                 fill="#8884d8"
                                                                 dataKey="value"
-                                                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                                /* ITALIANO: etichette disegnate a mano per poterne scegliere il COLORE:
+                                                                   di serie Recharts le scrive scure, illeggibili sul tema scuro. */
+                                                                /* ENGLISH: hand-drawn labels so their COLOUR can be set: by default
+                                                                   Recharts writes them dark, unreadable on the dark theme. */
+                                                                label={(props: any) => {
+                                                                    const { cx, cy, midAngle, outerRadius, name, percent } = props;
+                                                                    const RAD = Math.PI / 180;
+                                                                    const r = outerRadius + 18;
+                                                                    const x = cx + r * Math.cos(-midAngle * RAD);
+                                                                    const y = cy + r * Math.sin(-midAngle * RAD);
+                                                                    return (
+                                                                        <text
+                                                                            x={x} y={y}
+                                                                            fill={isDarkMode ? '#e5e7eb' : '#374151'}
+                                                                            fontSize={11}
+                                                                            textAnchor={x > cx ? 'start' : 'end'}
+                                                                            dominantBaseline="central"
+                                                                        >
+                                                                            {`${name} ${(percent * 100).toFixed(0)}%`}
+                                                                        </text>
+                                                                    );
+                                                                }}
                                                             >
                                                                 {pieData.map((_, index) => (
                                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -2883,12 +2909,26 @@ export default function App() {
                                                     const category = getTagCategory(tag);
                                                     const pct = maxUsage > 0 ? (count / maxUsage) * 100 : 0;
                                                     const imgPct = totalImages > 0 ? Math.round((count / totalImages) * 100) : 0;
+                                                    const traduzione = translateTag(tag, lang);
                                                     return (
-                                                        <div key={tag} className="flex items-center gap-3">
-                                                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold max-w-[42%] truncate flex items-center ${getCategoryColor(category, isDarkMode)}`} title={tag}>
+                                                        <div key={tag} className="flex items-center gap-3 group/riga">
+                                                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold max-w-[42%] truncate flex items-center ${getCategoryColor(category, isDarkMode)}`} title={traduzione ? `${tag} — ${traduzione}` : tag}>
                                                                 {category === 'nsfw' && <span className="font-bold text-[8px] px-1 rounded-sm mr-0.5 bg-red-500 text-white shrink-0">+18</span>}
                                                                 <span className="truncate">{tag}</span>
                                                             </span>
+                                                            {/* ITALIANO: copia il singolo tag negli appunti (compare passandoci sopra) */}
+                                                            {/* ENGLISH: copies the single tag to the clipboard (appears on hover) */}
+                                                            <button
+                                                                onClick={() => {
+                                                                    navigator.clipboard?.writeText(tag)
+                                                                        .then(() => { soundManager.pop(); showNotification(`${t.statsTagCopied}: ${tag}`, 'success'); })
+                                                                        .catch(() => showNotification(t.importTagsError, 'error'));
+                                                                }}
+                                                                title={t.statsCopyTag}
+                                                                className={`shrink-0 p-1 rounded-md opacity-0 group-hover/riga:opacity-100 transition-all ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-200'}`}
+                                                            >
+                                                                <Copy size={12} />
+                                                            </button>
                                                             <div className={`flex-1 h-2.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
                                                                 <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                                                             </div>
