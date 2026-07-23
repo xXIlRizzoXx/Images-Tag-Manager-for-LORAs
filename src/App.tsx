@@ -1845,7 +1845,14 @@ export default function App() {
             {showSplash && (
                 <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-6 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
                     <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
-                    <div className={`relative w-full max-w-xl p-10 ${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500`}>
+                    {/* ITALIANO: Riquadro con lo STESSO stile della schermata di avvio di Windows
+                                  (electron/splash.html): indaco pieno in sfumatura invece del grigio
+                                  traslucido, e angoli da 16px. */}
+                    {/* ENGLISH: Card styled like the Windows startup screen (electron/splash.html):
+                                 a solid indigo gradient instead of translucent grey, 16px corners. */}
+                    <div className={`relative w-full max-w-xl p-10 overflow-hidden border shadow-2xl rounded-2xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500 ${isDarkMode
+                        ? 'bg-gradient-to-br from-indigo-950 to-indigo-900 border-indigo-800/60'
+                        : 'bg-gradient-to-br from-white to-indigo-50 border-indigo-200'}`}>
                         <div className="relative flex items-center justify-center">
                             <img src="./logo.png" alt="Logo" className="w-28 h-28 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
@@ -1853,12 +1860,15 @@ export default function App() {
                             </div>
                         </div>
                         <div className="text-center">
-                            <h1 className={`text-3xl font-black tracking-tight bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'}`}>
+                            {/* ITALIANO: stessa sfumatura del titolo della schermata di Windows (bianco -> indaco) */}
+                            {/* ENGLISH: same title gradient as the Windows screen (white -> indigo) */}
+                            <h1 className={`text-3xl font-black tracking-tight bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-indigo-300' : 'bg-gradient-to-r from-gray-900 to-indigo-600'}`}>
                                 {t.appTitle}
                             </h1>
-                            <p className={`mt-2 text-[10px] uppercase tracking-widest font-semibold ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
-                                For LORAs
-                            </p>
+                            {/* ITALIANO: niente sottotitolo "For LORAs": il titolo lo contiene gia'
+                                          ("Images Tag Manager for LORAs"), era scritto due volte. */}
+                            {/* ENGLISH: no "For LORAs" subtitle: the title already contains it
+                                         ("Images Tag Manager for LORAs"), it was written twice. */}
                             <p className={`mt-3 text-xs font-semibold tracking-wide ${isDarkMode ? 'text-indigo-300' : 'text-indigo-500'}`}>
                                 v{appVersion}
                             </p>
@@ -1882,7 +1892,7 @@ export default function App() {
                                 else window.open(GITHUB_PROFILE, '_blank', 'noopener');
                             }}
                             title="github.com/xXIlRizzoXx"
-                            className={`self-stretch -mx-10 -mb-10 mt-2 px-10 py-3 rounded-b-3xl text-xs font-semibold tracking-wide text-white transition-colors ${isDarkMode
+                            className={`self-stretch -mx-10 -mb-10 mt-2 px-10 py-3 rounded-b-2xl text-xs font-semibold tracking-wide text-white transition-colors ${isDarkMode
                                 ? 'bg-sky-600 hover:bg-sky-500'
                                 : 'bg-sky-400 hover:bg-sky-500'}`}
                         >
