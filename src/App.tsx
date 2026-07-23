@@ -2448,14 +2448,16 @@ export default function App() {
                                           serve proprio a lavorare sui file di tag da soli. */}
                             {/* ENGLISH: Tag editor — always available, even with no photos open: its whole
                                          point is working on tag files on their own. */}
-                            <button onClick={() => { setIsTagEditorOpen(true); soundManager.pop(); }} className="w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white" title={t.tagEditor}>
-                                <Tags size={16} />
-                                <span>{t.tagEditor}</span>
-                            </button>
-                            <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
-                                <BarChart3 size={16} />
-                                <span>{t.projectStats}</span>
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`flex-1 h-[42px] flex justify-center items-center gap-2 px-3 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
+                                    <BarChart3 size={16} />
+                                    <span>{t.projectStats}</span>
+                                </button>
+                                <button onClick={() => { setIsTagEditorOpen(true); soundManager.pop(); }} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white" title={t.tagEditor}>
+                                    <Tags size={16} />
+                                    <span>{t.tagEditor}</span>
+                                </button>
+                            </div>
                             <div className="w-full flex flex-col gap-1.5">
                                 <div className="w-full flex gap-3 items-start">
                                     {/* ITALIANO: Pulsante Salva Modifiche */}

@@ -191,8 +191,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const tastoBase = `flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed`;
 
     return (
-        <div className="fixed inset-0 z-[320] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
-            <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]`}>
+        // ITALIANO: La finestra riempie lo schermo lasciando su OGNI lato il DOPPIO del rientro
+        //           dell'app (l'app usa p-4 md:p-6 = 16/24 px, qui 32/48 px): serve spazio per
+        //           vedere molti tag insieme, e resta comunque incorniciata come una finestra.
+        // ENGLISH: The window fills the screen leaving on EVERY side DOUBLE the app's own inset
+        //          (the app uses p-4 md:p-6 = 16/24 px, here 32/48 px): room is needed to see many
+        //          tags at once, while still reading as a framed window.
+        <div className="fixed inset-0 z-[320] bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <div className={`absolute inset-8 md:inset-12 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col`}>
 
                 <div className={`p-5 border-b ${bordo} flex items-center justify-between shrink-0`}>
                     <div className="flex items-center gap-3 min-w-0">
