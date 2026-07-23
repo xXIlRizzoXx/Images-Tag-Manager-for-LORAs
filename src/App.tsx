@@ -2862,7 +2862,17 @@ export default function App() {
                                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                                 ))}
                                                             </Pie>
-                                                            <Tooltip contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000' }} />
+                                                            {/* ITALIANO: contentStyle colora solo il riquadro. Il titolo e i valori dentro
+                                                                la nuvoletta hanno un colore PROPRIO, che Recharts lascia scuro: sul tema
+                                                                scuro restavano illeggibili. Servono anche labelStyle e itemStyle. */}
+                                                            {/* ENGLISH: contentStyle only colours the box. The label and the values inside
+                                                                the tooltip carry their OWN colour, which Recharts leaves dark, so they were
+                                                                unreadable on the dark theme. labelStyle and itemStyle are needed too. */}
+                                                            <Tooltip
+                                                                contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', borderRadius: 10 }}
+                                                                labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#111827', fontWeight: 600 }}
+                                                                itemStyle={{ color: isDarkMode ? '#e5e7eb' : '#374151' }}
+                                                            />
                                                         </RechartsPieChart>
                                                     </ResponsiveContainer>
                                                 </div>
@@ -2876,7 +2886,12 @@ export default function App() {
                                                             <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} horizontal={false} />
                                                             <XAxis type="number" stroke={isDarkMode ? '#9ca3af' : '#4b5563'} />
                                                             <YAxis dataKey="name" type="category" width={100} stroke={isDarkMode ? '#9ca3af' : '#4b5563'} tick={{ fontSize: 11 }} />
-                                                            <Tooltip cursor={{ fill: isDarkMode ? '#374151' : '#f3f4f6' }} contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000' }} />
+                                                            <Tooltip
+                                                                cursor={{ fill: isDarkMode ? '#374151' : '#f3f4f6' }}
+                                                                contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', borderRadius: 10 }}
+                                                                labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#111827', fontWeight: 600 }}
+                                                                itemStyle={{ color: isDarkMode ? '#e5e7eb' : '#374151' }}
+                                                            />
                                                             <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
                                                         </RechartsBarChart>
                                                     </ResponsiveContainer>
