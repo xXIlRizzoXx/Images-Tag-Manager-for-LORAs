@@ -2458,33 +2458,23 @@ export default function App() {
                                     <span>{t.tagEditor}</span>
                                 </button>
                             </div>
-                            <div className="w-full flex flex-col gap-1.5">
-                                <div className="w-full flex gap-3 items-start">
-                                    {/* ITALIANO: Pulsante Salva Modifiche */}
-                                    {/* ENGLISH: Save Changes button */}
-                                    <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
-                                        <Save size={16} />
-                                        <span className="hidden sm:inline">{t.saveChanges}</span>
-                                        <span className="sm:hidden">{t.saveShort}</span>
-                                    </button>
-                                    
-                                    {/* ITALIANO: "Esporta tutti" produce SEMPRE un unico file .zip. L'interruttore
-                                                  che permetteva l'esportazione a file singoli e' stato tolto: creava
-                                                  centinaia di download separati ed era la scelta sbagliata quasi sempre. */}
-                                    {/* ENGLISH: "Export all" ALWAYS produces a single .zip. The toggle that allowed
-                                                 one-file-per-image export is gone: it produced hundreds of separate
-                                                 downloads and was almost always the wrong choice. */}
-                                    <div className="flex-1 flex flex-col gap-2">
-                                        <button onClick={handleExportAll} disabled={images.length === 0} className="w-full h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
-                                            <SaveAll size={16} />
-                                            <span className="hidden sm:inline">{t.exportAllTxt}</span>
-                                            <span className="sm:hidden">{t.exportShort}</span>
-                                        </button>
-                                        <div className="flex items-center justify-end gap-2 px-1">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>ZIP</span>
-                                        </div>
-                                    </div>
-                                </div>
+                            {/* ITALIANO: Stessa struttura della riga sopra (due tasti flex-1 con gap-2), cosi'
+                                          i quattro tasti piccoli hanno tutti la STESSA larghezza. L'etichetta
+                                          "ZIP" sotto e' stata tolta: ora il formato e' scritto nel tasto stesso. */}
+                            {/* ENGLISH: Same structure as the row above (two flex-1 buttons with gap-2), so the
+                                         four small buttons all share the SAME width. The "ZIP" caption below is
+                                         gone: the format is now written on the button itself. */}
+                            <div className="flex gap-2">
+                                <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                    <Save size={16} />
+                                    <span className="hidden sm:inline">{t.saveChanges}</span>
+                                    <span className="sm:hidden">{t.saveShort}</span>
+                                </button>
+                                <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                    <SaveAll size={16} />
+                                    <span className="hidden sm:inline">{t.exportAllTxt}</span>
+                                    <span className="sm:hidden">{t.exportShort}</span>
+                                </button>
                             </div>
                         </div>
                     </div>
