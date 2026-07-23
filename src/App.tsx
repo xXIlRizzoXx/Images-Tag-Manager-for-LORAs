@@ -2706,9 +2706,9 @@ export default function App() {
                     </div>
 
                     {selectedForBulk.length > 0 && (
-                        <div className="absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl bg-gray-900/95 backdrop-blur-xl border border-gray-700 p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5">
+                        <div className={`absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl backdrop-blur-xl border p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5 ${isDarkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
                             <div className="w-full flex flex-col gap-3 h-full">
-                                <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className="p-1.5 bg-indigo-900/50 rounded-lg text-indigo-400"><Grid3X3 size={18} /></div><div><h3 className="text-sm font-bold text-gray-200 leading-tight">{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className="text-[10px] text-gray-500 uppercase tracking-wide">{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className="p-1.5 rounded-full border border-gray-600 text-gray-400 hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm"><X size={14} /></button></div>
+                                <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}><Grid3X3 size={18} /></div><div><h3 className={`text-sm font-bold leading-tight ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className={`text-[10px] uppercase tracking-wide ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className={`p-1.5 rounded-full border hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm ${isDarkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'}`}><X size={14} /></button></div>
                                 {/* ITALIANO: Scrivi un tag NUOVO e premi Invio: si aggiunge a quelli in preparazione
                                               e verra' applicato a tutte le foto selezionate (col tasto Conferma). */}
                                 {/* ENGLISH: Type a NEW tag and press Enter: it joins the staged ones and gets
@@ -2716,7 +2716,7 @@ export default function App() {
                                 <input
                                     type="text"
                                     placeholder={t.bulkAddPlaceholder}
-                                    className="shrink-0 w-full bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className={`shrink-0 w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
                                     onKeyDown={(e: any) => {
                                         if (e.key === 'Enter' || e.key === ',') {
                                             e.preventDefault();
@@ -2729,7 +2729,7 @@ export default function App() {
                                         }
                                     }}
                                 />
-                                <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y border-gray-800" style={{ scrollbarGutter: 'stable' }}>
+                                <div className={`flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`} style={{ scrollbarGutter: 'stable' }}>
                                     {(() => {
                                         const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
                                         return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
@@ -2746,7 +2746,7 @@ export default function App() {
                                                 const textColorMatch = colorClass.match(/text-[a-z]+-\d+/);
                                                 const textColor = textColorMatch ? textColorMatch[0] : (isDarkMode ? 'text-gray-300' : 'text-gray-600');
                                                 const borderColor = textColor.replace('text-', 'border-');
-                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} hover:bg-gray-800/50 opacity-80`;
+                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} ${isDarkMode ? 'hover:bg-gray-800/50' : 'hover:bg-gray-100'} opacity-80`;
                                             } else {
                                                 buttonClass = `${colorClass} border border-transparent hover:brightness-110 shadow-sm`;
                                             }
@@ -2761,7 +2761,7 @@ export default function App() {
                                     })()}
                                 </div>
                                 <div className="flex justify-end gap-2 shrink-0 h-9 transition-all">
-                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className="px-4 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold transition-colors text-xs">{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}
+                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className={`px-4 py-1.5 rounded-lg font-semibold transition-colors text-xs ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}
                                 </div>
                             </div>
                         </div>
