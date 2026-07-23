@@ -327,14 +327,19 @@ export default function App() {
                     if (img.isTrashed) continue;
                     data[img.file.name] = { tags: img.tags };
                 }
-                // ITALIANO: Salviamo anche il nome cartella: il ripristino avviene SOLO se si reimporta
-                //           la stessa cartella, così i tag non finiscono su immagini omonime di un'altra
-                //           cartella (nei dataset LoRA nomi come '01.png' sono comunissimi).
-                // ENGLISH: Store the folder name too: restore happens ONLY when re-importing the same
-                //          folder, so tags never land on same-named images from a different folder
-                //          (in LoRA datasets names like '01.png' are very common).
+                // ITALIANO: Oltre al nome cartella salviamo una "impronta" del contenuto. Il solo nome
+                //           non basta: i dataset LoRA si chiamano quasi sempre allo stesso modo
+                //           (dataset, img, 10_soggetto), quindi chiudendo l'app su char1\dataset e
+                //           riaprendo char2\dataset i tag del primo venivano ripristinati sul secondo
+                //           e al primo salvataggio finivano su disco, cancellando quelli veri.
+                // ENGLISH: Besides the folder name we store a content "fingerprint". The name alone is
+                //          not enough: LoRA datasets are almost always named the same (dataset, img,
+                //          10_subject), so quitting on char1\dataset and reopening char2\dataset
+                //          restored the first one's tags onto the second, and the first save wrote them
+                //          to disk over the real ones.
                 const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, data }));
+                const signature = folderSignature(folder, Object.keys(data));
+                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, signature, data }));
             } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
         }, 1000);
         return () => clearTimeout(handle);
@@ -411,6 +416,18 @@ export default function App() {
     }, [trashedImages, trashSortOrder]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
+
+    // ITALIANO: "Impronta" di una cartella: nome + quante immagini + la prima e l'ultima in ordine
+    //           alfabetico. Serve a riconoscere che il backup anti-crash appartiene DAVVERO alla
+    //           cartella che si sta aprendo. Col solo nome, due dataset chiamati entrambi "dataset"
+    //           risultavano lo stesso progetto.
+    // ENGLISH: A folder "fingerprint": name + how many images + the alphabetically first and last
+    //          one. It tells whether the crash backup REALLY belongs to the folder being opened.
+    //          With the name alone, two datasets both called "dataset" looked like the same project.
+    const folderSignature = (folderName: string, fileNames: string[]): string => {
+        const sorted = [...fileNames].sort();
+        return `${folderName}|${sorted.length}|${sorted[0] || ''}|${sorted[sorted.length - 1] || ''}`;
+    };
 
     const handleDeleteAllTags = () => {
         setConfirmDialog({
@@ -609,19 +626,26 @@ export default function App() {
             await new Promise(r => setTimeout(r, 300));
 
             // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'.
-            //           Lo applichiamo SOLO se la cartella reimportata è la stessa del backup (match per nome):
-            //           evita di ripristinare tag su immagini omonime di un'altra cartella.
+            //           Lo applichiamo SOLO se l'IMPRONTA coincide (nome cartella + numero di immagini +
+            //           prima e ultima in ordine alfabetico). Prima bastava il nome della cartella, e
+            //           siccome i dataset LoRA si chiamano quasi tutti uguale ("dataset", "img"), i tag
+            //           di un progetto potevano essere ripristinati su un altro e poi scritti su disco.
+            //           I backup vecchi non hanno l'impronta: non vengono applicati, che e' il lato sicuro.
             // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect.
-            //          Apply it ONLY when the re-imported folder matches the backup's folder (by name):
-            //          prevents restoring tags onto same-named images from a different folder.
+            //          Applied ONLY when the FINGERPRINT matches (folder name + image count + first and
+            //          last name alphabetically). The folder name alone used to be enough, and since LoRA
+            //          datasets are nearly all named the same ("dataset", "img"), one project's tags could
+            //          be restored onto another and then written to disk. Older backups carry no
+            //          fingerprint: they are not applied, which is the safe side.
             let backupMap: Record<string, { tags?: unknown; caption?: unknown }> | null = null;
             const importFolder = (handle && handle.name) ? String(handle.name) : '';
+            const importSignature = folderSignature(importFolder, imgFiles.map(f => f.name));
             try {
                 const raw = localStorage.getItem('tagBackup');
                 if (raw) {
                     const parsed = JSON.parse(raw);
-                    const backupFolder = parsed && typeof parsed.folder === 'string' ? parsed.folder : '';
-                    const sameFolder = importFolder !== '' && backupFolder === importFolder;
+                    const backupSignature = parsed && typeof parsed.signature === 'string' ? parsed.signature : '';
+                    const sameFolder = importFolder !== '' && backupSignature !== '' && backupSignature === importSignature;
                     if (sameFolder && parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
                         backupMap = parsed.data;
                     }

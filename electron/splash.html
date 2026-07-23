@@ -179,41 +179,20 @@
                 <span id="loading-msg">Inizializzazione ambiente...</span>
             </div>
             <div class="version-info">
-                <p class="version" id="version-text">v2.1.0</p>
+                <!-- ITALIANO: vuoto di proposito: lo riempie splash.js con la versione vera.
+                                Prima c'era scritto "v2.1.0" a mano, e restava quello. -->
+                <!-- ENGLISH: intentionally empty: splash.js fills it with the real version.
+                              It used to read a hardcoded "v2.1.0", which is what stayed. -->
+                <p class="version" id="version-text"></p>
                 <p class="copyright">© xXIlRizzoXx</p>
             </div>
         </div>
     </div>
 
-    <script>
-        // Semplice animazione del testo di caricamento
-        const messages = [
-            "Inizializzazione ambiente...",
-            "Caricamento moduli AI...",
-            "Preparazione interfaccia...",
-            "Avvio in corso..."
-        ];
-        let i = 0;
-        const msgEl = document.getElementById('loading-msg');
-        
-        setInterval(() => {
-            i = (i + 1) % messages.length;
-            msgEl.style.opacity = 0;
-            setTimeout(() => {
-                msgEl.innerText = messages[i];
-                msgEl.style.opacity = 1;
-            }, 200);
-        }, 800);
-
-        // ITALIANO: Chiede la versione al processo principale tramite IPC sicuro (preload)
-        // ENGLISH: Asks the main process for the version via secure IPC (preload)
-        if (window.electronAPI && typeof window.electronAPI.getAppVersion === 'function') {
-            window.electronAPI.getAppVersion()
-                .then(function (v) {
-                    if (v) document.getElementById('version-text').innerText = 'v' + v;
-                })
-                .catch(function () { /* ITALIANO: fallback silenzioso — ENGLISH: silent fallback */ });
-        }
-    </script>
+    <!-- ITALIANO: script in un file a parte: quello scritto dentro la pagina veniva
+                    rifiutato dalla regola di sicurezza nell'app compilata (vedi splash.js) -->
+    <!-- ENGLISH: script in a separate file: an inline one was refused by the security rule
+                  in the packaged app (see splash.js) -->
+    <script src="./splash.js"></script>
 </body>
 </html>

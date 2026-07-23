@@ -189,7 +189,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
             soundManager.chime();
             if (showNotification) showNotification(t.successSaveSingle, "success");
         } catch (err) {
-            console.error("Errore salvataggio singolo");
+            // ITALIANO: prima qui non veniva mostrato NULLA: se la cartella era stata spostata,
+            //           il disco era pieno o il file era bloccato, il salvataggio falliva in
+            //           silenzio ed era indistinguibile da uno riuscito. Con decine di foto si
+            //           andava avanti convinti di aver salvato. Ora l'errore si vede.
+            // ENGLISH: nothing at all used to be shown here: if the folder had moved, the disk was
+            //          full or the file was locked, the save failed silently and looked exactly
+            //          like a successful one. With dozens of photos you would move on believing it
+            //          had been saved. The error is now visible.
+            console.error('Errore salvataggio singolo', err);
+            if (showNotification) showNotification(t.errorSaveGen || t.dirError, 'error');
         }
     };
 
