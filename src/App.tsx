@@ -37,6 +37,7 @@ import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
 import { translateTag, translateCategory } from './utils/tagTranslation';
+import { TagFileEditor } from './components/TagFileEditor';
 
 // ITALIANO: Lingue dell'interfaccia — usate sia dal selettore nelle impostazioni
 //           sia dalla schermata di scelta lingua al primo avvio.
@@ -111,6 +112,9 @@ export default function App() {
     // ITALIANO: Finestra a tre scelte mostrata chiudendo il progetto con modifiche non salvate
     // ENGLISH: Three-choice dialog shown when closing the project with unsaved changes
     const [saveCloseDialog, setSaveCloseDialog] = useState({ isOpen: false, isSaving: false });
+    // ITALIANO: Editor di tag: apre/crea file .txt e .json di tag, indipendente dal progetto
+    // ENGLISH: Tag editor: opens/creates .txt and .json tag files, independent of the project
+    const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
     const [importSummary, setImportSummary] = useState<{ isOpen: boolean, summary: any, pendingData: any }>({ isOpen: false, summary: null, pendingData: null });
     const [selectedForBulk, setSelectedForBulk] = useState<string[]>([]);
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
@@ -1800,6 +1804,14 @@ export default function App() {
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
+            <TagFileEditor
+                isOpen={isTagEditorOpen}
+                onClose={() => setIsTagEditorOpen(false)}
+                t={t}
+                isDarkMode={isDarkMode}
+                lang={lang}
+                showNotification={showNotification}
+            />
             <SaveBeforeCloseDialog
                 isOpen={saveCloseDialog.isOpen}
                 isSaving={saveCloseDialog.isSaving}
@@ -2432,6 +2444,14 @@ export default function App() {
                             </div>
                             {/* ITALIANO: Statistiche del progetto — sulla pagina principale, sotto "Visualizza tutti i tag" */}
                             {/* ENGLISH: Project statistics — on the main page, below "View all project tags" */}
+                            {/* ITALIANO: Editor di tag — sempre disponibile, anche senza foto aperte:
+                                          serve proprio a lavorare sui file di tag da soli. */}
+                            {/* ENGLISH: Tag editor — always available, even with no photos open: its whole
+                                         point is working on tag files on their own. */}
+                            <button onClick={() => { setIsTagEditorOpen(true); soundManager.pop(); }} className="w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white" title={t.tagEditor}>
+                                <Tags size={16} />
+                                <span>{t.tagEditor}</span>
+                            </button>
                             <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
                                 <BarChart3 size={16} />
                                 <span>{t.projectStats}</span>
