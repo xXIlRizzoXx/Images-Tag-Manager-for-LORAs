@@ -215,8 +215,22 @@ export default function App() {
             if (cancelled) return;
             if (value) setGeminiApiKey(value);
             apiKeyLoadedRef.current = true;
-        }).catch(() => { apiKeyLoadedRef.current = true; });
+            setChiaveApiCaricata(true);
+        }).catch(() => { apiKeyLoadedRef.current = true; setChiaveApiCaricata(true); });
         return () => { cancelled = true; };
+    }, []);
+
+    // ITALIANO: Segnale di "APP PRONTA": la pagina ha finito di caricare tutto (immagini, font
+    //           compresi) E la chiave cifrata e' stata letta. Serve alla schermata di
+    //           caricamento, che deve restare finche' l'app non e' davvero pronta.
+    // ENGLISH: "APP READY" signal: the page finished loading everything (images and fonts
+    //          included) AND the encrypted key has been read. The loading screen uses it to stay
+    //          up until the app is genuinely ready.
+    useEffect(() => {
+        if (document.readyState === 'complete') { setPaginaCaricata(true); return undefined; }
+        const onLoad = () => setPaginaCaricata(true);
+        window.addEventListener('load', onLoad, { once: true });
+        return () => window.removeEventListener('load', onLoad);
     }, []);
 
     // ITALIANO: Persisti la API key in safeStorage (cifrata) appena cambia
@@ -270,6 +284,10 @@ export default function App() {
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
     const [showSplash, setShowSplash] = useState(true);
     const [splashProgress, setSplashProgress] = useState(0);
+    // ITALIANO: i due pezzi del segnale "app pronta" usato dalla schermata di caricamento
+    // ENGLISH: the two halves of the "app ready" signal used by the loading screen
+    const [paginaCaricata, setPaginaCaricata] = useState(false);
+    const [chiaveApiCaricata, setChiaveApiCaricata] = useState(false);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
@@ -1737,20 +1755,37 @@ export default function App() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // ITALIANO: Quanto resta su la schermata di caricamento = il MAGGIORE fra due tempi:
+    //             - un minimo di 3 secondi, cosi' non lampeggia via quando l'app e' gia' pronta;
+    //             - il tempo che serve davvero a caricare, se e' piu' lungo.
+    //           Finche' l'app non e' pronta la barra si ferma al 95%: arriva al 100% solo quando
+    //           c'e' davvero tutto, cosi' non dice il falso.
+    //           Prima la barra avanzava a scatti casuali e spariva in poco piu' di un secondo,
+    //           senza alcun legame con il caricamento reale.
+    // ENGLISH: How long the loading screen stays = the LONGER of two times:
+    //            - a 3 second minimum, so it does not flash past when the app is already ready;
+    //            - the time loading actually takes, when that is longer.
+    //          Until the app is ready the bar stops at 95%: it only reaches 100% once everything
+    //          really is there, so it never tells a lie.
+    //          It used to advance in random jumps and vanish in barely over a second, with no
+    //          connection to the real loading at all.
+    const SPLASH_MIN_MS = 3000;
+    const appPronta = paginaCaricata && chiaveApiCaricata;
     useEffect(() => {
         if (!showSplash) return undefined;
-        let progress = 0;
+        const inizio = Date.now();
         const interval = setInterval(() => {
-            progress += Math.random() * 15;
-            if (progress >= 100) {
-                progress = 100;
+            const trascorso = Date.now() - inizio;
+            const perTempo = Math.min(100, (trascorso / SPLASH_MIN_MS) * 100);
+            setSplashProgress(appPronta ? perTempo : Math.min(95, perTempo));
+            if (trascorso >= SPLASH_MIN_MS && appPronta) {
+                setSplashProgress(100);
                 clearInterval(interval);
-                setTimeout(() => setShowSplash(false), 500);
+                setShowSplash(false);
             }
-            setSplashProgress(progress);
-        }, 100);
+        }, 50);
         return () => clearInterval(interval);
-    }, [showSplash]);
+    }, [showSplash, appPronta]);
 
     return (
         <div className={`h-screen transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
@@ -1801,33 +1836,34 @@ export default function App() {
                     </div>
                 </div>
             )}
+            {/* ITALIANO: Schermata di caricamento con la STESSA veste della scelta lingua: sfondo
+                          viola sfumato e finestra centrale sfocata con bordo e angoli tondi.
+                          Prima era una pagina piatta senza finestra. */}
+            {/* ENGLISH: Loading screen wearing the SAME look as the language picker: purple gradient
+                         background and a centred blurred card with border and rounded corners.
+                         It used to be a flat page with no card. */}
             {showSplash && (
-                <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-                    <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
+                <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-6 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
+                    <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
+                    <div className={`relative w-full max-w-xl p-10 ${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500`}>
                         <div className="relative flex items-center justify-center">
-                            <img src="./logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
+                            <img src="./logo.png" alt="Logo" className="w-28 h-28 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
                             <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
-                                <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
+                                <Tag size={72} className="text-indigo-500" strokeWidth={1.5} />
                             </div>
                         </div>
-                        {/* ITALIANO: stessa identita' della schermata di avvio di Windows (electron/splash.html):
-                                      titolo, "For LORAs" e la versione. Prima qui c'era scritto "AI Image Tagging"
-                                      e mancava la versione, quindi all'apertura si vedevano due schermate diverse. */}
-                        {/* ENGLISH: same identity as the Windows startup screen (electron/splash.html): title,
-                                     "For LORAs" and the version. This used to read "AI Image Tagging" with no
-                                     version, so startup showed two different-looking screens. */}
                         <div className="text-center">
-                            <h1 className={`text-4xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            <h1 className={`text-3xl font-black tracking-tight bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'}`}>
                                 {t.appTitle}
                             </h1>
-                            <p className="mt-2 text-sm font-medium tracking-widest uppercase text-indigo-400">
+                            <p className={`mt-2 text-[10px] uppercase tracking-widest font-semibold ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
                                 For LORAs
                             </p>
                             <p className={`mt-3 text-xs font-semibold tracking-wide ${isDarkMode ? 'text-indigo-300' : 'text-indigo-500'}`}>
                                 v{appVersion}
                             </p>
                         </div>
-                        <div className="w-64 h-1.5 mt-8 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                        <div className={`w-64 h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
                             <div
                                 className="h-full bg-indigo-500 transition-all duration-100 ease-out"
                                 style={{ width: `${splashProgress}%` }}
@@ -1842,7 +1878,7 @@ export default function App() {
                                 else window.open(GITHUB_PROFILE, '_blank', 'noopener');
                             }}
                             title="github.com/xXIlRizzoXx"
-                            className={`mt-6 text-[10px] transition-colors ${isDarkMode ? 'text-indigo-500 hover:text-indigo-300' : 'text-indigo-400 hover:text-indigo-600'} hover:underline`}
+                            className={`text-[10px] transition-colors ${isDarkMode ? 'text-indigo-500 hover:text-indigo-300' : 'text-indigo-400 hover:text-indigo-600'} hover:underline`}
                         >
                             © xXIlRizzoXx
                         </button>
