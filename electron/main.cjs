@@ -204,6 +204,26 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
     return { ok: true, trashed };
 });
 
+/* ITALIANO: APERTURA DI UN INDIRIZZO WEB NEL BROWSER DI SISTEMA
+   Serve ai link dell'app (es. il profilo GitHub sulla schermata di avvio). Accetto
+   SOLO http e https: cosi' il canale non puo' essere usato per lanciare programmi o
+   aprire file locali.
+   ENGLISH: OPEN A WEB ADDRESS IN THE SYSTEM BROWSER
+   Used by the app's links (e.g. the GitHub profile on the splash screen). Only http and
+   https are accepted, so this channel cannot be used to launch programs or open local
+   files. */
+ipcMain.handle('shell:open-external', async (_event, url) => {
+    if (typeof url !== 'string') return false;
+    try {
+        const target = new URL(url);
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') return false;
+        await shell.openExternal(target.href);
+        return true;
+    } catch (_) {
+        return false;
+    }
+});
+
 // ITALIANO: Header Content-Security-Policy applicato in produzione
 // ENGLISH: Content-Security-Policy header applied in production
 const applyContentSecurityPolicy = (sess) => {

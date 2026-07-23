@@ -37,4 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ITALIANO: sposta immagini e .txt nel Cestino di Windows (recuperabili), non li cancella
     // ENGLISH: moves images and .txt files to the Windows Recycle Bin (recoverable), not a hard delete
     trashFiles: (paths) => ipcRenderer.invoke('shell:trash-files', paths),
+    // ITALIANO: apre un indirizzo web nel browser di sistema (solo http/https)
+    // ENGLISH: opens a web address in the system browser (http/https only)
+    openExternal: (url) => ipcRenderer.invoke('shell:open-external', String(url)),
 });

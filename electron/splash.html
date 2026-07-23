@@ -157,10 +157,29 @@
             margin: 0 0 4px 0;
         }
 
+        /* ITALIANO: versione sotto al sottotitolo, discreta ma leggibile */
+        /* ENGLISH: version under the subtitle, discreet but legible */
+        .version-main {
+            margin: 14px 0 0 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: #a5b4fc;
+            letter-spacing: 1px;
+        }
+        /* ITALIANO: il copyright e' un link al profilo GitHub: si comporta da link */
+        /* ENGLISH: the copyright is a link to the GitHub profile: it behaves like one */
         .copyright {
             font-size: 10px;
             color: #6366f1;
             margin: 0;
+            cursor: pointer;
+            transition: color 0.2s ease;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .copyright:hover {
+            color: #c7d2fe;
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -172,6 +191,9 @@
             </div>
             <h1>Images Tag Manager</h1>
             <h2>For LORAs</h2>
+            <!-- ITALIANO: versione sotto al sottotitolo, riempita da splash.js -->
+            <!-- ENGLISH: version under the subtitle, filled in by splash.js -->
+            <p class="version-main" id="version-main"></p>
         </div>
         <div class="footer">
             <div class="loading-text">
@@ -179,12 +201,11 @@
                 <span id="loading-msg">Inizializzazione ambiente...</span>
             </div>
             <div class="version-info">
-                <!-- ITALIANO: vuoto di proposito: lo riempie splash.js con la versione vera.
-                                Prima c'era scritto "v2.1.0" a mano, e restava quello. -->
-                <!-- ENGLISH: intentionally empty: splash.js fills it with the real version.
-                              It used to read a hardcoded "v2.1.0", which is what stayed. -->
-                <p class="version" id="version-text"></p>
-                <p class="copyright">© xXIlRizzoXx</p>
+                <!-- ITALIANO: la versione sta sotto al sottotitolo (piu' visibile); qui resta
+                                solo il copyright, che apre il profilo GitHub. -->
+                <!-- ENGLISH: the version sits under the subtitle (more visible); only the
+                              copyright remains here, opening the GitHub profile. -->
+                <p class="copyright" id="copyright-link" title="github.com/xXIlRizzoXx">© xXIlRizzoXx</p>
             </div>
         </div>
     </div>

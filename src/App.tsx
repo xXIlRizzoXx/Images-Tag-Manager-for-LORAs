@@ -39,6 +39,10 @@ import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
 
+// ITALIANO: Profilo GitHub dell'autore, aperto dal copyright della schermata di avvio.
+// ENGLISH: The author's GitHub profile, opened from the splash screen's copyright line.
+const GITHUB_PROFILE = 'https://github.com/xXIlRizzoXx';
+
 // ITALIANO: Lingue dell'interfaccia — usate sia dal selettore nelle impostazioni
 //           sia dalla schermata di scelta lingua al primo avvio.
 // ENGLISH: UI languages — used by both the settings selector and the first-run picker.
@@ -1806,20 +1810,42 @@ export default function App() {
                                 <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
                             </div>
                         </div>
+                        {/* ITALIANO: stessa identita' della schermata di avvio di Windows (electron/splash.html):
+                                      titolo, "For LORAs" e la versione. Prima qui c'era scritto "AI Image Tagging"
+                                      e mancava la versione, quindi all'apertura si vedevano due schermate diverse. */}
+                        {/* ENGLISH: same identity as the Windows startup screen (electron/splash.html): title,
+                                     "For LORAs" and the version. This used to read "AI Image Tagging" with no
+                                     version, so startup showed two different-looking screens. */}
                         <div className="text-center">
                             <h1 className={`text-4xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                                 {t.appTitle}
                             </h1>
-                            <p className={`mt-2 text-sm font-medium tracking-widest uppercase ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                                AI Image Tagging
+                            <p className="mt-2 text-sm font-medium tracking-widest uppercase text-indigo-400">
+                                For LORAs
+                            </p>
+                            <p className={`mt-3 text-xs font-semibold tracking-wide ${isDarkMode ? 'text-indigo-300' : 'text-indigo-500'}`}>
+                                v{appVersion}
                             </p>
                         </div>
                         <div className="w-64 h-1.5 mt-8 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                            <div 
+                            <div
                                 className="h-full bg-indigo-500 transition-all duration-100 ease-out"
                                 style={{ width: `${splashProgress}%` }}
                             />
                         </div>
+                        {/* ITALIANO: come nella schermata di Windows, il copyright apre il profilo GitHub */}
+                        {/* ENGLISH: as on the Windows screen, the copyright opens the GitHub profile */}
+                        <button
+                            onClick={() => {
+                                const api = (window as any).electronAPI;
+                                if (api && typeof api.openExternal === 'function') api.openExternal(GITHUB_PROFILE);
+                                else window.open(GITHUB_PROFILE, '_blank', 'noopener');
+                            }}
+                            title="github.com/xXIlRizzoXx"
+                            className={`mt-6 text-[10px] transition-colors ${isDarkMode ? 'text-indigo-500 hover:text-indigo-300' : 'text-indigo-400 hover:text-indigo-600'} hover:underline`}
+                        >
+                            © xXIlRizzoXx
+                        </button>
                     </div>
                 </div>
             )}
