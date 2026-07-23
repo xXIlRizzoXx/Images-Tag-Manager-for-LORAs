@@ -465,23 +465,64 @@ export default function App() {
         soundManager.pop();
     };
 
+    // ITALIANO: Elimina l'immagine e il suo .txt. Prima si prova il CESTINO DI WINDOWS, cosi' un
+    //           ripensamento e' sempre recuperabile; solo se non e' possibile (fuori da Electron,
+    //           o percorso del file non ricavabile) si ripiega sulla cancellazione diretta.
+    //           Si usa SEMPRE la cartella della singola immagine, non una cartella globale.
+    // ENGLISH: Deletes the image and its .txt. It first tries the WINDOWS RECYCLE BIN, so a change
+    //          of mind is always recoverable; only when that is impossible (outside Electron, or the
+    //          file path cannot be resolved) does it fall back to a direct delete. It always uses
+    //          the individual image's own folder, never a global one.
+    const deleteImageFiles = async (img: any): Promise<boolean> => {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.getPathForFile === 'function' && typeof api.trashFiles === 'function') {
+            try {
+                const imgPath = api.getPathForFile(img.file);
+                if (imgPath) {
+                    const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
+                    const res = await api.trashFiles([imgPath, txtPath]);
+                    if (res && res.ok) return true;
+                }
+            } catch (err) {
+                console.warn('[Cestino] Cestino di sistema non disponibile, uso la cancellazione diretta:', err);
+            }
+        }
+        // ITALIANO: ripiego — cancellazione diretta dalla cartella dell'immagine
+        // ENGLISH: fallback — direct delete from the image's own folder
+        const folder = img.dirHandle;
+        if (!folder) return true; // ITALIANO: nessun file su disco da togliere — ENGLISH: no file on disk to remove
+        const safeName = sanitizeFileName(img.file.name);
+        await folder.removeEntry(safeName);
+        const txtName = buildTagFileName(img.file.name);
+        try { await folder.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
+        return true;
+    };
+
+    // ITALIANO: Le anteprime vivono in memoria finche' non le si libera esplicitamente. Non veniva
+    //           fatto da nessuna parte: chiudendo un progetto da 2000 foto restavano occupati
+    //           ~200 MB per tutta la sessione, e cambiando dataset piu' volte l'app finiva la
+    //           memoria. Va chiamata ogni volta che delle immagini escono dall'elenco.
+    // ENGLISH: Thumbnails stay in memory until explicitly released. Nothing ever did: closing a
+    //          2000-photo project left ~200 MB pinned for the whole session, and switching datasets
+    //          a few times exhausted the renderer. Call this whenever images leave the list.
+    const releaseThumbnails = (imgs: any[]) => {
+        for (const img of imgs || []) {
+            if (img && typeof img.thumb === 'string' && img.thumb.startsWith('blob:')) {
+                try { URL.revokeObjectURL(img.thumb); } catch (_) { /* ignore */ }
+            }
+        }
+    };
+
     const handleDeletePermanently = async (id: string) => {
         const img = images.find(i => i.id === id);
         if (!img) return;
 
-        if (dirHandle) {
-            try {
-                // ITALIANO: removeEntry accetta solo nomi senza separatori di path
-                // ENGLISH: removeEntry only accepts names without path separators
-                const safeName = sanitizeFileName(img.file.name);
-                await dirHandle.removeEntry(safeName);
-                const txtName = buildTagFileName(img.file.name);
-                try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
-            } catch (error) {
-                console.error(error);
-                showNotification(t.deleteError, 'error');
-                return;
-            }
+        try {
+            await deleteImageFiles(img);
+        } catch (error) {
+            console.error(error);
+            showNotification(t.deleteError, 'error');
+            return;
         }
 
         setImages(prev => prev.filter(i => i.id !== id));
@@ -493,16 +534,11 @@ export default function App() {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsTrashOpen(false);
 
-        if (dirHandle) {
-            for (const img of trashedImages) {
-                try {
-                    const safeName = sanitizeFileName(img.file.name);
-                    await dirHandle.removeEntry(safeName);
-                    const txtName = buildTagFileName(img.file.name);
-                    try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore */ }
-                } catch (error) {
-                    console.error("Failed to delete", img.file.name);
-                }
+        for (const img of trashedImages) {
+            try {
+                await deleteImageFiles(img);
+            } catch (error) {
+                console.error("Failed to delete", img.file.name);
             }
         }
 
@@ -526,7 +562,13 @@ export default function App() {
 
     const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
-        setDirHandle(handle);
+        // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
+        //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
+        //           "Carica immagini" la metteva a null e i salvataggi degradavano a download.
+        // ENGLISH: the global folder is only the "current folder" hint (crash backup, lightbox).
+        //          We do NOT clear it when this import has none — "Load images" used to set it to
+        //          null, silently degrading every later save into browser downloads.
+        if (handle) setDirHandle(handle);
         setIsImporting(true);
         setImportProgress(0);
         let skippedTxtCount = 0;
@@ -623,6 +665,15 @@ export default function App() {
                     height: thumbData?.height || 0,
                     tags: finalTags,
                     originalTags: [...orderedTags],
+                    // ITALIANO: OGNI immagine si porta dietro la cartella da cui proviene. Prima
+                    //           esisteva una sola cartella globale: aprendo una seconda cartella
+                    //           senza chiudere la prima, i tag della prima venivano scritti dentro
+                    //           la seconda (e svuotando il cestino si cancellavano i file sbagliati).
+                    // ENGLISH: EVERY image carries the folder it came from. There used to be a single
+                    //          global folder: opening a second folder without closing the first wrote
+                    //          the first folder's tags into the second one (and emptying the trash
+                    //          deleted the wrong files).
+                    dirHandle: handle || null,
                 });
                 setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
                 if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
@@ -868,17 +919,27 @@ export default function App() {
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
             try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+            releaseThumbnails(images);
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
+            setHistory([]); setHistoryIndex(-1);
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
     };
 
     // Helper function to order tags with global triggers first
+    // ITALIANO: Ordine con cui i tag finiscono nel file .txt: prima le trigger word (nell'ordine
+    //           scelto dall'utente, convenzione LoRA), poi TUTTI GLI ALTRI IN ORDINE ALFABETICO.
+    //           L'ordinamento alfabetico mancava qui mentre il visualizzatore lo applicava: la
+    //           stessa foto produceva due file diversi a seconda del tasto usato per salvarla.
+    // ENGLISH: The order tags are written into the .txt: trigger words first (in the user's chosen
+    //          order, LoRA convention), then EVERYTHING ELSE ALPHABETICALLY. The alphabetical sort
+    //          was missing here while the lightbox applied it, so the same photo produced two
+    //          different files depending on which save button was used.
     const getOrderedTagString = (tags: string[]) => {
         const orderedTags = [
             ...globalTriggers.filter(t => tags.includes(t)),
-            ...tags.filter(t => !globalTriggers.includes(t))
+            ...tags.filter(t => !globalTriggers.includes(t)).sort((a, b) => a.localeCompare(b))
         ];
         return orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
     };
@@ -894,30 +955,48 @@ export default function App() {
     const performSave = async (imagesToSave: any[], isExportAll = false): Promise<boolean> => {
         // ITALIANO: Se abbiamo un riferimento alla cartella e stiamo salvando le modifiche (non esportando tutto), sovrascriviamo i file originali
         // ENGLISH: If we have a folder handle and we are saving changes (not exporting all), overwrite original files
-        if (dirHandle && !saveAsZip && !isExportAll) {
+        // ITALIANO: Ogni immagine viene riscritta nella SUA cartella (img.dirHandle), non in una
+        //           cartella globale: con due cartelle aperte insieme i tag finivano nel posto
+        //           sbagliato. Le immagini senza cartella (caricate come file singoli) proseguono
+        //           verso i rami successivi.
+        // ENGLISH: Each image is written back into ITS OWN folder (img.dirHandle), not a single
+        //          global one: with two folders open at once the tags ended up in the wrong place.
+        //          Images with no folder (loaded as individual files) fall through to the paths below.
+        const withFolder = (!saveAsZip && !isExportAll) ? imagesToSave.filter(img => img.dirHandle) : [];
+        if (withFolder.length > 0) {
+            const withoutFolder = imagesToSave.filter(img => !img.dirHandle);
             setIsSaving(true); setImportProgress(0);
             try {
                 showNotification(t.processingFiles, "info");
-                for (let i = 0; i < imagesToSave.length; i++) {
-                    const img = imagesToSave[i];
+                for (let i = 0; i < withFolder.length; i++) {
+                    const img = withFolder[i];
                     const tagString = getOrderedTagString(img.tags);
                     const fileName = buildTagFileName(img.file.name);
 
-                    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+                    const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
                     const writable = await fileHandle.createWritable();
                     await writable.write(tagString);
                     await writable.close();
-                    setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
+                    setImportProgress(Math.round(((i + 1) / withFolder.length) * 100));
                 }
 
+                // ITALIANO: segno come salvati i tag DAVVERO scritti (quelli dello snapshot), non
+                //           quelli attuali: un tag aggiunto mentre il salvataggio era in corso
+                //           risultava gia' salvato e non finiva mai su disco.
+                // ENGLISH: mark as saved the tags actually WRITTEN (from the snapshot), not the
+                //          current ones: a tag added while the save was running was recorded as
+                //          already saved and never reached the disk.
                 setImages(prev => prev.map(img => {
-                    if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
-                    return img;
+                    const saved = withFolder.find(s => s.id === img.id);
+                    return saved ? { ...img, originalTags: [...saved.tags] } : img;
                 }));
 
                 soundManager.chime();
                 showNotification(t.successSaveChanges, "success");
-                return true;
+                if (withoutFolder.length === 0) return true;
+                // ITALIANO: restano immagini senza cartella: le gestiscono i rami sotto.
+                // ENGLISH: images without a folder remain: the branches below handle them.
+                imagesToSave = withoutFolder;
             } catch (err) {
                 console.error(err);
                 showNotification(t.dirError, "error");
@@ -994,7 +1073,8 @@ export default function App() {
                 }
                 
                 setImages(prev => prev.map(img => {
-                    if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
+                    const saved = imagesToSave.find(s => s.id === img.id);
+            if (saved) return { ...img, originalTags: [...saved.tags] };
                     return img;
                 }));
                 
@@ -1012,34 +1092,55 @@ export default function App() {
 
         // ITALIANO: Metodo di salvataggio di emergenza (download multipli nel browser)
         // ENGLISH: Fallback save method (multiple downloads in the browser)
+        // ITALIANO: Prima i download venivano solo PROGRAMMATI con setTimeout e la funzione
+        //           rispondeva subito "salvato". "Salva e chiudi" svuotava quindi il progetto e
+        //           cancellava il backup anti-crash mentre i file non erano ancora stati scritti:
+        //           bastava chiudere l'app o annullare un download per perdere i tag.
+        //           Ora si aspetta davvero la fine di tutti i file prima di dire che e' fatto.
+        // ENGLISH: The downloads used to be merely SCHEDULED with setTimeout while the function
+        //          immediately reported success. "Save and close" therefore emptied the project and
+        //          deleted the crash backup while nothing had been written yet: quitting the app or
+        //          cancelling one download lost the tags. It now really waits for every file.
         showNotification(t.infoSaveFallback, "info");
         if (imagesToSave.length > 0) { setIsSaving(true); setImportProgress(0); }
-        imagesToSave.forEach((img, i) => setTimeout(() => {
-            const tagString = getOrderedTagString(img.tags);
-            const blob = new Blob([tagString], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            try {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = buildTagFileName(img.file.name);
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            } finally {
-                URL.revokeObjectURL(url);
+        try {
+            for (let i = 0; i < imagesToSave.length; i++) {
+                const img = imagesToSave[i];
+                const tagString = getOrderedTagString(img.tags);
+                const blob = new Blob([tagString], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                try {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = buildTagFileName(img.file.name);
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } finally {
+                    URL.revokeObjectURL(url);
+                }
+                setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
+                // ITALIANO: respiro fra un download e l'altro, il browser non li accetta a raffica
+                // ENGLISH: breathing room between downloads, the browser rejects rapid-fire ones
+                await new Promise(r => setTimeout(r, 300));
             }
-            setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
-            if (i === imagesToSave.length - 1) setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
-        }, i * 300));
-        
-        setImages(prev => prev.map(img => {
-            if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
-            return img;
-        }));
-        
-        soundManager.chime();
-        showNotification(isExportAll ? t.successSave : t.successSaveChanges, "success");
-        return true;
+
+            setImages(prev => prev.map(img => {
+                const saved = imagesToSave.find(s => s.id === img.id);
+                if (saved) return { ...img, originalTags: [...saved.tags] };
+                return img;
+            }));
+
+            soundManager.chime();
+            showNotification(isExportAll ? t.successSave : t.successSaveChanges, "success");
+            return true;
+        } catch (err) {
+            console.error(err);
+            showNotification(t.errorSaveGen || t.dirError, "error");
+            return false;
+        } finally {
+            setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
+        }
     };
 
     // ITALIANO: Salva solo le immagini che hanno subito modifiche
@@ -1130,6 +1231,11 @@ export default function App() {
         setAiCancelRequested(true);
         aiAbortControllerRef.current?.abort();
         try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+        // ITALIANO: libera le anteprime, altrimenti restano in memoria per tutta la sessione
+        //           (con 2000 foto sono centinaia di MB che non tornano piu' indietro).
+        // ENGLISH: free the thumbnails, otherwise they stay in memory for the whole session
+        //          (with 2000 photos that is hundreds of MB that never come back).
+        releaseThumbnails(images);
         setImages([]);
         setGlobalTriggers([]);
         setSelectedForBulk([]);
@@ -1138,6 +1244,14 @@ export default function App() {
         setDirHandle(null);
         setSelectedImageId(null);
         setCopiedTags(null);
+        // ITALIANO: azzera anche la cronologia: senza questo, dopo aver chiuso il progetto un
+        //           Ctrl+Z riportava indietro tutte le foto ma ormai scollegate dalla cartella,
+        //           e i salvataggi successivi non toccavano piu' i file originali.
+        // ENGLISH: also clear the undo history: without this, after closing the project a Ctrl+Z
+        //          brought every photo back but detached from its folder, so later saves no longer
+        //          touched the original files.
+        setHistory([]);
+        setHistoryIndex(-1);
         soundManager.chime();
         showNotification(t.closeAllDone, 'success');
     };
@@ -1177,7 +1291,18 @@ export default function App() {
     //          are lost: performSave already reports the error.
     const handleSaveAndCloseProject = async () => {
         setSaveCloseDialog({ isOpen: true, isSaving: true });
-        const saved = await handleSaveChanges();
+        let saved = false;
+        try {
+            saved = await handleSaveChanges();
+        } catch (err) {
+            // ITALIANO: senza questo, un errore imprevisto lasciava la finestra con i tre tasti
+            //           disabilitati per sempre, bloccando l'app sopra il progetto.
+            // ENGLISH: without this, an unexpected error left the dialog with all three buttons
+            //          disabled forever, freezing the app on top of the project.
+            console.error('[Chiudi progetto] salvataggio fallito:', err);
+            showNotification(t.errorSaveGen || t.dirError, 'error');
+            saved = false;
+        }
         if (!saved) {
             setSaveCloseDialog({ isOpen: true, isSaving: false });
             return;
@@ -1797,7 +1922,7 @@ export default function App() {
                     slideDirection={slideDirection}
                     showNotification={showNotification}
                     updateOriginalTags={updateOriginalTags}
-                    dirHandle={dirHandle}
+                    dirHandle={displayedImages.find(img => img.id === selectedImageId)?.dirHandle || null}
                     isDarkMode={isDarkMode}
                     onMoveToTrash={handleTrashFromLightbox}
                     imageIndex={currentIndex}

@@ -34,4 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ITALIANO: legge i .txt con lo stesso nome accanto alle immagini scelte
     // ENGLISH: reads the same-named .txt files sitting next to the picked images
     readSidecarTags: (paths) => ipcRenderer.invoke('images:read-sidecar-tags', paths),
+    // ITALIANO: sposta immagini e .txt nel Cestino di Windows (recuperabili), non li cancella
+    // ENGLISH: moves images and .txt files to the Windows Recycle Bin (recoverable), not a hard delete
+    trashFiles: (paths) => ipcRenderer.invoke('shell:trash-files', paths),
 });

@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-const { app, BrowserWindow, ipcMain, safeStorage, session, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, session, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -172,6 +172,38 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     return out;
 });
 
+/* ITALIANO: CESTINO DI SISTEMA
+   Sposta i file nel Cestino di Windows invece di cancellarli per sempre, cosi' un
+   ripensamento resta sempre recuperabile. Accetto solo immagini e .txt: il canale non
+   deve poter diventare un "cancella qualsiasi cosa". I file inesistenti (es. il .txt di
+   una foto che non ne ha) vengono ignorati senza errore.
+
+   ENGLISH: SYSTEM RECYCLE BIN
+   Moves files to the Windows Recycle Bin instead of deleting them for good, so a change of
+   mind stays recoverable. Only images and .txt files are accepted: this channel must not
+   become a "delete anything" primitive. Missing files (e.g. the .txt of a photo that has
+   none) are skipped without error. */
+const TRASH_ALLOWED_EXT = new Set([...SIDECAR_IMAGE_EXT, '.txt']);
+const TRASH_MAX_FILES = 5000;
+
+ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
+    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0 };
+    let trashed = 0;
+    for (const raw of filePaths.slice(0, TRASH_MAX_FILES)) {
+        if (typeof raw !== 'string' || !raw) continue;
+        if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) continue;
+        try {
+            if (!fs.statSync(raw).isFile()) continue;
+            await shell.trashItem(raw);
+            trashed++;
+        } catch (_) {
+            // ITALIANO: file assente o non spostabile: si prosegue
+            // ENGLISH: file missing or not movable: carry on
+        }
+    }
+    return { ok: true, trashed };
+});
+
 // ITALIANO: Header Content-Security-Policy applicato in produzione
 // ENGLISH: Content-Security-Policy header applied in production
 const applyContentSecurityPolicy = (sess) => {
@@ -249,13 +281,22 @@ function createMainWindow() {
         },
     });
 
-    // ITALIANO: Blocca la navigazione verso URL esterni (apertura nella finestra dell'app)
-    // ENGLISH: Block navigation to external URLs (opening inside the app window)
+    /* ITALIANO: Blocca QUALSIASI navigazione fuori dall'app.
+       Prima erano ammessi tutti gli URL "file:", non solo la pagina dell'app: bastava
+       trascinare una foto sulla finestra e Chromium ci navigava sopra, sostituendo il
+       programma con l'immagine. Con il menu disattivato non si tornava indietro: progetto,
+       cestino e cronologia persi. La pagina dell'app viene caricata con loadFile, che NON
+       emette will-navigate, quindi qui possiamo bloccare tutto senza effetti collaterali.
+       ENGLISH: Block ANY navigation away from the app.
+       Every "file:" URL used to be allowed, not just the app's own page: dropping a photo on
+       the window made Chromium navigate to it, replacing the program with the image. With the
+       menu disabled there was no way back: project, trash and undo history all lost. The app's
+       page is loaded via loadFile, which does NOT emit will-navigate, so blocking everything
+       here is safe. */
     mainWindow.webContents.on('will-navigate', (event, url) => {
         const target = new URL(url);
         const allowedDevHost = isDev && target.host === 'localhost:3000';
-        const allowedFileProto = target.protocol === 'file:';
-        if (!allowedDevHost && !allowedFileProto) {
+        if (!allowedDevHost) {
             event.preventDefault();
         }
     });
