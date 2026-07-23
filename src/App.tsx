@@ -1845,50 +1845,50 @@ export default function App() {
             {showSplash && (
                 <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-6 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
                     <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
-                    {/* ITALIANO: Riquadro con lo STESSO stile della schermata di avvio di Windows
-                                  (electron/splash.html): indaco pieno in sfumatura invece del grigio
-                                  traslucido, e angoli da 16px. */}
-                    {/* ENGLISH: Card styled like the Windows startup screen (electron/splash.html):
-                                 a solid indigo gradient instead of translucent grey, 16px corners. */}
-                    {/* ITALIANO: nessun bordo: sul fondo scuro si vedeva come un filo azzurrino
-                                  attorno al riquadro. Anche la schermata di Windows non ne ha. */}
-                    {/* ENGLISH: no border: on the dark background it showed as a thin light-blue
-                                 line around the card. The Windows screen has none either. */}
+                    {/* ITALIANO: Riquadro sullo stile della schermata di avvio di Windows: tinta piena
+                                  in sfumatura, angoli da 16px e nessun bordo (il bordo si vedeva come
+                                  un filo chiaro). Tutta la tavolozza e' sul VIOLA: niente toni che
+                                  tirano all'azzurro. */}
+                    {/* ENGLISH: Card in the style of the Windows startup screen: a solid gradient, 16px
+                                 corners and no border (a border showed as a light hairline). The whole
+                                 palette stays VIOLET: no tones drifting towards light blue. */}
                     <div className={`relative w-full max-w-xl p-10 overflow-hidden shadow-2xl rounded-2xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500 ${isDarkMode
-                        ? 'bg-gradient-to-br from-indigo-950 to-indigo-900'
-                        : 'bg-gradient-to-br from-white to-indigo-50'}`}>
+                        ? 'bg-gradient-to-br from-violet-950 to-violet-900'
+                        : 'bg-gradient-to-br from-white to-violet-50'}`}>
+                        {/* ITALIANO: il logo "respira" come nella schermata di Windows (vedi .logo-pulse) */}
+                        {/* ENGLISH: the logo "breathes" like on the Windows screen (see .logo-pulse) */}
                         <div className="relative flex items-center justify-center">
-                            <img src="./logo.png" alt="Logo" className="w-28 h-28 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
-                            <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
-                                <Tag size={72} className="text-indigo-500" strokeWidth={1.5} />
+                            <img src="./logo.png" alt="Logo" className="logo-pulse w-28 h-28 object-contain relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
+                            <div id="fallback-splash-logo" className={`logo-pulse p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-violet-500/10 shadow-[0_0_40px_rgba(139,92,246,0.25)]' : 'bg-violet-50 shadow-xl'}`}>
+                                <Tag size={72} className="text-violet-400" strokeWidth={1.5} />
                             </div>
                         </div>
                         <div className="text-center">
-                            {/* ITALIANO: stessa sfumatura del titolo della schermata di Windows (bianco -> indaco) */}
-                            {/* ENGLISH: same title gradient as the Windows screen (white -> indigo) */}
-                            <h1 className={`text-3xl font-black tracking-tight bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-indigo-300' : 'bg-gradient-to-r from-gray-900 to-indigo-600'}`}>
+                            <h1 className={`text-3xl font-black tracking-tight bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-violet-300' : 'bg-gradient-to-r from-gray-900 to-violet-600'}`}>
                                 {t.appTitle}
                             </h1>
                             {/* ITALIANO: niente sottotitolo "For LORAs": il titolo lo contiene gia'
                                           ("Images Tag Manager for LORAs"), era scritto due volte. */}
                             {/* ENGLISH: no "For LORAs" subtitle: the title already contains it
                                          ("Images Tag Manager for LORAs"), it was written twice. */}
-                            <p className={`mt-3 text-xs font-semibold tracking-wide ${isDarkMode ? 'text-indigo-300' : 'text-indigo-500'}`}>
+                            <p className={`mt-3 text-xs font-semibold tracking-wide ${isDarkMode ? 'text-violet-300' : 'text-violet-500'}`}>
                                 v{appVersion}
                             </p>
                         </div>
-                        <div className={`w-64 h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                        <div className={`w-64 h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-violet-950' : 'bg-violet-100'}`}>
                             <div
-                                className="h-full bg-indigo-500 transition-all duration-100 ease-out"
+                                className="h-full bg-violet-500 transition-all duration-100 ease-out"
                                 style={{ width: `${splashProgress}%` }}
                             />
                         </div>
-                        {/* ITALIANO: Il copyright sta in una fascia AZZURRA a se', attaccata al fondo della
-                                      finestra: i margini negativi la fanno arrivare fino ai bordi, e gli angoli
-                                      bassi seguono quelli della finestra. Apre il profilo GitHub. */}
-                        {/* ENGLISH: The copyright sits in its own LIGHT-BLUE strip attached to the bottom of the
-                                     card: negative margins let it reach the edges, and its bottom corners follow
-                                     the card's. It opens the GitHub profile. */}
+                        {/* ITALIANO: Il copyright sta in una fascia a se', attaccata al fondo della finestra:
+                                      i margini negativi la fanno arrivare fino ai bordi e gli angoli bassi
+                                      seguono quelli della finestra. Viola PIU' SCURO del riquadro, cosi' si
+                                      stacca senza introdurre azzurro. Apre il profilo GitHub. */}
+                        {/* ENGLISH: The copyright sits in its own strip welded to the bottom of the card:
+                                     negative margins carry it to the edges and its bottom corners follow the
+                                     card's. A DARKER violet than the card, so it separates without bringing
+                                     any light blue in. It opens the GitHub profile. */}
                         <button
                             onClick={() => {
                                 const api = (window as any).electronAPI;
@@ -1896,9 +1896,9 @@ export default function App() {
                                 else window.open(GITHUB_PROFILE, '_blank', 'noopener');
                             }}
                             title="github.com/xXIlRizzoXx"
-                            className={`self-stretch -mx-10 -mb-10 mt-2 px-10 py-3 rounded-b-2xl text-xs font-semibold tracking-wide text-white transition-colors ${isDarkMode
-                                ? 'bg-sky-600 hover:bg-sky-500'
-                                : 'bg-sky-400 hover:bg-sky-500'}`}
+                            className={`self-stretch -mx-10 -mb-10 mt-2 px-10 py-3 rounded-b-2xl text-xs font-semibold tracking-wide transition-colors ${isDarkMode
+                                ? 'bg-violet-950 text-violet-200 hover:bg-violet-900 hover:text-white'
+                                : 'bg-violet-200 text-violet-900 hover:bg-violet-300'}`}
                         >
                             © xXIlRizzoXx
                         </button>

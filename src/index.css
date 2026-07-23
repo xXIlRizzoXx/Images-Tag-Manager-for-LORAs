@@ -49,6 +49,20 @@
 ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border: 4px solid rgba(0,0,0,0); background-clip: padding-box; border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.8); border: 4px solid rgba(0,0,0,0); background-clip: padding-box; }
 
+/* ITALIANO: Pulsazione del logo nella schermata di caricamento — stessa animazione della
+             schermata di avvio di Windows (electron/splash.html): un respiro lento, con
+             l'alone violaceo sotto. */
+/* ENGLISH: Logo pulse on the loading screen — the same animation as the Windows startup
+            screen (electron/splash.html): a slow breath, with a violet glow beneath. */
+@keyframes logoPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+.logo-pulse {
+    animation: logoPulse 2s ease-in-out infinite;
+    filter: drop-shadow(0 10px 25px rgba(139, 92, 246, 0.45));
+}
+
 .lightbox-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
 .lightbox-scroll::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); border-radius: 9999px; }
 .lightbox-scroll::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border: 2px solid transparent; background-clip: padding-box; border-radius: 9999px; }
