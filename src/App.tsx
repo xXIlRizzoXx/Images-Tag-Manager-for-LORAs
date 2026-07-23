@@ -1869,8 +1869,12 @@ export default function App() {
                                 style={{ width: `${splashProgress}%` }}
                             />
                         </div>
-                        {/* ITALIANO: come nella schermata di Windows, il copyright apre il profilo GitHub */}
-                        {/* ENGLISH: as on the Windows screen, the copyright opens the GitHub profile */}
+                        {/* ITALIANO: Il copyright sta in una fascia AZZURRA a se', attaccata al fondo della
+                                      finestra: i margini negativi la fanno arrivare fino ai bordi, e gli angoli
+                                      bassi seguono quelli della finestra. Apre il profilo GitHub. */}
+                        {/* ENGLISH: The copyright sits in its own LIGHT-BLUE strip attached to the bottom of the
+                                     card: negative margins let it reach the edges, and its bottom corners follow
+                                     the card's. It opens the GitHub profile. */}
                         <button
                             onClick={() => {
                                 const api = (window as any).electronAPI;
@@ -1878,7 +1882,9 @@ export default function App() {
                                 else window.open(GITHUB_PROFILE, '_blank', 'noopener');
                             }}
                             title="github.com/xXIlRizzoXx"
-                            className={`text-[10px] transition-colors ${isDarkMode ? 'text-indigo-500 hover:text-indigo-300' : 'text-indigo-400 hover:text-indigo-600'} hover:underline`}
+                            className={`self-stretch -mx-10 -mb-10 mt-2 px-10 py-3 rounded-b-3xl text-xs font-semibold tracking-wide text-white transition-colors ${isDarkMode
+                                ? 'bg-sky-600 hover:bg-sky-500'
+                                : 'bg-sky-400 hover:bg-sky-500'}`}
                         >
                             © xXIlRizzoXx
                         </button>
