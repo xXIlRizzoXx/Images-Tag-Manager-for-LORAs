@@ -163,7 +163,12 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
 
             const txtStat = fs.statSync(txtPath);
             if (!txtStat.isFile() || txtStat.size > SIDECAR_MAX_BYTES) continue;
-            out.push({ name: base + '.txt', content: fs.readFileSync(txtPath, 'utf8') });
+            // ITALIANO: torno anche la cartella del .txt: cosi' il rinnovo lato app puo' abbinare
+            //           ogni testo alla SUA immagine anche se due foto scelte hanno lo stesso nome
+            //           ma stanno in cartelle diverse.
+            // ENGLISH: also return the .txt's folder: this lets the app pair each text with ITS
+            //          image even when two picked photos share a name but sit in different folders.
+            out.push({ name: base + '.txt', content: fs.readFileSync(txtPath, 'utf8'), dir: path.dirname(txtPath) });
         } catch (_) {
             // ITALIANO: nessun .txt accanto a questa immagine: e' normale, si prosegue
             // ENGLISH: no .txt next to this image: that is normal, carry on
