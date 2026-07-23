@@ -439,6 +439,33 @@ export default function App() {
         soundManager.click();
     };
 
+    // ITALIANO: CHIUDE una singola immagine: la toglie dalla vista senza cestinarla e senza
+    //           toccare nulla su disco — l'equivalente di "Chiudi progetto" per una sola foto.
+    //           Se ha modifiche non salvate lo dice prima, cosi' non si perdono per distrazione.
+    // ENGLISH: CLOSES a single image: removes it from view without trashing it and without
+    //          touching anything on disk — the single-photo equivalent of "Close project".
+    //          If it has unsaved changes it says so first, so they are not lost by accident.
+    const handleCloseImage = (id: string) => {
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+        const chiudi = () => {
+            releaseThumbnails([img]);
+            setImages(prev => prev.filter(i => i.id !== id));
+            setSelectedForBulk(prev => prev.filter(x => x !== id));
+            if (selectedImageId === id) setSelectedImageId(null);
+            soundManager.pop();
+        };
+        const nonSalvata = JSON.stringify(img.tags) !== JSON.stringify(img.originalTags);
+        if (!nonSalvata) return chiudi();
+        setConfirmDialog({
+            isOpen: true,
+            title: t.closeImageTitle,
+            message: t.closeImageUnsavedMsg,
+            onConfirm: () => { chiudi(); setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }); },
+            onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
+        });
+    };
+
     const handleMoveToTrash = (id: string) => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
         if (selectedImageId === id) setSelectedImageId(null);
@@ -560,7 +587,7 @@ export default function App() {
     const TXT_MAX_TAGS_PER_FILE = 200;
     const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -673,7 +700,7 @@ export default function App() {
                     //          global folder: opening a second folder without closing the first wrote
                     //          the first folder's tags into the second one (and emptying the trash
                     //          deleted the wrong files).
-                    dirHandle: handle || null,
+                    dirHandle: (folderOf && folderOf.get(imgFiles[i])) || handle || null,
                 });
                 setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
                 if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
@@ -697,7 +724,7 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
         const txtBases = new Set(txtFiles.map(f => f.name.split('.').slice(0, -1).join('.')));
         let withText = 0;
         let withoutText = 0;
@@ -719,7 +746,7 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle }
+            pendingData: { imgFiles, txtFiles, handle, folderOf }
         });
     };
 
@@ -731,27 +758,41 @@ export default function App() {
                 // ENGLISH: the id makes the system remember the LAST used folder: next time the
                 //          picker reopens there. startIn as a fallback on first use.
                 const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-project', startIn: 'pictures' });
-                
-                const imgFiles = [];
-                const txtFiles = [];
-                
-                for await (const entry of handle.values()) {
-                    if (entry.kind === 'file') {
-                        const file = await entry.getFile();
-                        if (file.type.startsWith('image/')) {
-                            imgFiles.push(file);
-                        } else if (file.name.toLowerCase().endsWith('.txt')) {
-                            txtFiles.push(file);
+
+                const imgFiles: any[] = [];
+                const txtFiles: any[] = [];
+                // ITALIANO: Ogni immagine ricorda la SOTTOCARTELLA in cui si trova, cosi' il suo
+                //           .txt viene riscritto li' dentro e non nella cartella principale.
+                //           I dataset LoRA sono spesso divisi in sottocartelle (es. "10_soggetto").
+                // ENGLISH: Each image remembers the SUBFOLDER it lives in, so its .txt is written
+                //          back there and not into the top folder. LoRA datasets are often split
+                //          into subfolders (e.g. "10_subject").
+                const folderOf = new Map<any, any>();
+
+                const MAX_DEPTH = 8;
+                const scan = async (dir: any, depth: number) => {
+                    for await (const entry of dir.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            if (file.type.startsWith('image/')) {
+                                imgFiles.push(file);
+                                folderOf.set(file, dir);
+                            } else if (file.name.toLowerCase().endsWith('.txt')) {
+                                txtFiles.push(file);
+                            }
+                        } else if (entry.kind === 'directory' && depth < MAX_DEPTH) {
+                            await scan(entry, depth + 1);
                         }
                     }
-                }
-                
+                };
+                await scan(handle, 0);
+
                 if (imgFiles.length === 0) {
                     return showNotification(t.noImagesTitle, "info");
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle);
-                
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf);
+
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
@@ -1155,14 +1196,52 @@ export default function App() {
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
     // ENGLISH: Export tags for all images in the project
+    // ITALIANO: Crea un unico .zip con un .txt per immagine. La barra di avanzamento segue la
+    //           compressione, cosi' su dataset grandi si vede che il programma sta lavorando.
+    // ENGLISH: Builds a single .zip holding one .txt per image. The progress bar follows the
+    //          compression, so on large datasets it is visible that the app is working.
+    const exportAllAsZip = async (imagesToExport: any[]): Promise<boolean> => {
+        setIsSaving(true); setImportProgress(0);
+        try {
+            showNotification(t.zipProcessing, "info");
+            const zip = new JSZip();
+            imagesToExport.forEach((img) => {
+                zip.file(buildTagFileName(img.file.name), getOrderedTagString(img.tags));
+            });
+            const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
+                setImportProgress(Math.round(metadata.percent));
+            });
+            const url = URL.createObjectURL(blob);
+            try {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "tags_tutti.zip";
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+            soundManager.chime();
+            showNotification(t.zipSuccess, "success");
+            return true;
+        } catch (err) {
+            console.error(err);
+            showNotification(t.zipError, "error");
+            return false;
+        } finally {
+            setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
+        }
+    };
+
+    // ITALIANO: "Esporta tutti" crea SEMPRE un unico archivio .zip (niente piu' file singoli).
+    // ENGLISH: "Export all" ALWAYS creates a single .zip archive (no more one-file-per-image).
     const handleExportAll = () => {
         const imagesWithTags = images.filter(img => img.tags && img.tags.length > 0);
-        
+
         if (imagesWithTags.length === 0) {
             return showNotification(t.errorNoTagsToExport, "info");
         }
-        
-        performSave(imagesWithTags, true);
+
+        exportAllAsZip(imagesWithTags);
     };
 
     const updateImageTags = (id: string, newTags: string[]) => {
@@ -1731,7 +1810,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -2366,8 +2445,12 @@ export default function App() {
                                         <span className="sm:hidden">{t.saveShort}</span>
                                     </button>
                                     
-                                    {/* ITALIANO: Sezione Esporta con opzione ZIP sotto */}
-                                    {/* ENGLISH: Export section with ZIP option below */}
+                                    {/* ITALIANO: "Esporta tutti" produce SEMPRE un unico file .zip. L'interruttore
+                                                  che permetteva l'esportazione a file singoli e' stato tolto: creava
+                                                  centinaia di download separati ed era la scelta sbagliata quasi sempre. */}
+                                    {/* ENGLISH: "Export all" ALWAYS produces a single .zip. The toggle that allowed
+                                                 one-file-per-image export is gone: it produced hundreds of separate
+                                                 downloads and was almost always the wrong choice. */}
                                     <div className="flex-1 flex flex-col gap-2">
                                         <button onClick={handleExportAll} disabled={images.length === 0} className="w-full h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                             <SaveAll size={16} />
@@ -2375,8 +2458,7 @@ export default function App() {
                                             <span className="sm:hidden">{t.exportShort}</span>
                                         </button>
                                         <div className="flex items-center justify-end gap-2 px-1">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.exportAsZip}</span>
-                                            <AppleToggle checked={saveAsZip} onChange={setSaveAsZip} colorClass="bg-indigo-500" />
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>ZIP</span>
                                         </div>
                                     </div>
                                 </div>
@@ -2463,6 +2545,9 @@ export default function App() {
 
                                         <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
                                         <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
+                                        {/* ITALIANO: chiude la foto (la toglie dalla vista) senza cestinarla ne' toccarla su disco */}
+                                        {/* ENGLISH: closes the photo (removes it from view) without trashing it or touching the disk */}
+                                        <button onClick={(e) => { e.stopPropagation(); handleCloseImage(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
                                         {/* ITALIANO: Contatore tag della singola foto */}
                                         {/* ENGLISH: Per-photo tag count */}
                                         <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
@@ -2614,11 +2699,11 @@ export default function App() {
                                          Two-line labels to explain them better. */}
                             <div className="flex gap-2">
                                 <button onClick={handleExportProjectTags} disabled={allUniqueTags.length === 0} title={t.exportProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
-                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Download size={14} /> {t.exportProjectTags}</span>
+                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Upload size={14} /> {t.exportProjectTags}</span>
                                     <span className="text-[9px] font-medium opacity-70 leading-none">{t.exportProjectTagsHint}</span>
                                 </button>
                                 <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}>
-                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Upload size={14} /> {t.importProjectTags}</span>
+                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Download size={14} /> {t.importProjectTags}</span>
                                     <span className="text-[9px] font-medium opacity-70 leading-none">{t.importProjectTagsHint}</span>
                                 </button>
                                 <input type="file" accept=".json,.txt,application/json,text/plain" ref={projectTagsImportRef} className="hidden" onChange={handleImportProjectTags} />
