@@ -2,6 +2,9 @@
 
 **Ultimo aggiornamento:** 23 luglio 2026
 **Versione attuale:** 1.0.0 (prima versione pubblica ufficiale)
+**Ultima consegna:** 23 luglio 2026 — portable + installer aggiornati in `Release\`,
+con dentro la nuova schermata di caricamento (logo animato, tutto viola, versione,
+link GitHub) e tutte le correzioni fino al traguardo n. 62.
 **Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
 la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
 nei traguardi qui sotto indicano solo l'ordine in cui le funzioni sono state fatte.
@@ -52,6 +55,10 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 40 | Sezione centrale in un riquadro (1.0.0) | La sezione centrale della barra comandi (trigger words + tag suggeriti) è ora dentro un **riquadro** con lo stesso stile dei due pannelli laterali: la barra comandi ha così tre riquadri coerenti. |
 | 41 | Riquadro centrale con altezza limitata (1.0.0) | La sezione centrale era l'unica che si allungava aggiungendo tante trigger words, diventando **più alta dei due riquadri laterali**. Ora è **limitata in altezza**: le trigger words scorrono dentro il riquadro (come i tag delle miniature) e la barra comandi resta sempre bilanciata. |
 | 42 | Tre riquadri della stessa altezza (1.0.0) | I tre riquadri della barra comandi ora si **allungano tutti alla stessa altezza** (quella del più alto): il riquadro di sinistra arriva in basso come quello di destra, per un aspetto ordinato e allineato. |
+| 62 | Schermata di caricamento all'avvio (1.0.0) | All'apertura l'app mostra una **schermata di caricamento** dentro un riquadro, nello stesso stile della scelta lingua: logo che "respira", titolo, **numero di versione** e barra di avanzamento. Dura **almeno 3 secondi** anche se l'app è già pronta; se invece ci mette di più, resta finché il caricamento non è finito davvero. |
+| 61 | Colori della schermata di avvio (1.0.0) | La schermata di caricamento è tutta sul **viola**: tolto ogni tono che tirava all'azzurro, tolto il bordino chiaro attorno al riquadro, e la fascia del copyright in basso è di un viola più scuro. Cliccandoci sopra si apre la **pagina GitHub** dell'autore nel browser. |
+| 60 | Chiudi una singola foto (1.0.0) | Nuovo tasto per **togliere una sola foto dal progetto** senza cancellarla dal disco (prima si poteva solo cestinare). Se quella foto ha modifiche non salvate, l'app avvisa prima di toglierla. |
+| 59 | "Esporta tutti" sempre in .Zip (1.0.0) | Il tasto ora si chiama **"Esporta tutti (.Zip)"** e crea sempre un archivio zip, senza scelte da fare. I quattro tasti piccoli della barra comandi sono ora **tutti della stessa larghezza**, in griglia 2×2. Scambiate le icone di esporta e importa, che erano invertite. |
 | 58 | Salvataggio singolo: gli errori si vedono (1.0.0) | Salvando il .txt di una singola foto dal visualizzatore, se qualcosa andava storto (cartella spostata, disco pieno, file bloccato) **non compariva nulla**: sembrava tutto a posto. Ora l'errore viene segnalato. |
 | 57 | Backup anti-crash legato alla cartella giusta (1.0.0) | Il backup automatico veniva riconosciuto **dal solo nome della cartella**. Siccome i dataset si chiamano quasi tutti uguale ("dataset", "img"), chiudendo l'app su un progetto e aprendone un altro, i tag del primo venivano ripristinati sul secondo e poi scritti su disco. Ora si controlla anche **quante foto ci sono e quali**. |
 | 56 | Schermata di avvio: versione corretta (1.0.0) | La schermata iniziale mostrava sempre **"v2.1.0"** invece della versione vera, e solo nell'app installata (non in prova). |
@@ -80,7 +87,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 | Priorità | Traguardo | In parole semplici | Versione |
 |----------|-----------|--------------------|----------|
-| — | (nessuno in coda) | Il prossimo lo decidi tu. | — |
+| Media | Velocità con dataset molto grandi | Con **migliaia di foto** la galleria si ferma per un attimo a ogni modifica e il cursore dello zoom diventa scattoso, perché l'app ridisegna tutte le anteprime ogni volta invece delle sole cambiate. Da rivedere anche la creazione delle miniature durante l'importazione, che oggi avviene una foto alla volta. | 1.0.x |
 
 ---
 
