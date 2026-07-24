@@ -127,6 +127,69 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
 const asDirHandle = (dir: any): any =>
     (dir && typeof dir.getFileHandle === 'function') ? dir : null;
 
+// ITALIANO: PRESTAZIONI — una singola card della galleria, MEMORIZZATA con React.memo. Prima le
+//           miniature erano tutte inline nel corpo di App: ogni piccola modifica (es. un tag su UNA
+//           foto) ridisegnava TUTTE le card, e con migliaia di foto la galleria scattava. Ora ogni
+//           card si ridisegna SOLO se cambiano le sue proprieta' (il suo oggetto `img`, la sua
+//           selezione, ecc.): modificando i tag di una foto si ridisegna solo la sua card. Le
+//           funzioni passate come prop sono "stabili" (useCallback in App), condizione necessaria
+//           perche' il memo funzioni. content-visibility:auto evita anche di DISEGNARE le card fuori
+//           schermo. Nessuna funzione cambia: e' identica alla versione inline di prima.
+// ENGLISH: PERF — a single gallery card, MEMOIZED with React.memo. The thumbnails used to be all
+//          inline in App's body: any small change (e.g. a tag on ONE photo) re-rendered EVERY card,
+//          and with thousands of photos the gallery stuttered. Now each card re-renders ONLY when
+//          its own props change (its `img` object, its selection, etc.): editing one photo's tags
+//          re-renders only that card. The functions passed as props are "stable" (useCallback in
+//          App), which the memo needs. content-visibility:auto also skips PAINTING off-screen cards.
+//          No behavior changes: it is identical to the previous inline version.
+const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
+    const lowQuality = img.width * img.height < 1048576;
+    return (
+        <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 320px' }}>
+            <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
+                <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${isSelected ? 'opacity-80' : ''}`} />
+
+                {lowQuality && (
+                    <div className="absolute top-2 right-2 z-30 group/alert">
+                        <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
+                            <AlertTriangle size={16} strokeWidth={2.5} />
+                        </div>
+                        <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
+                            {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                        </div>
+                    </div>
+                )}
+
+                <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); onSelectToggle(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{isSelected && <Check size={14} className="text-white" />}</div></div>
+                <button onClick={(e) => { e.stopPropagation(); onTrash(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
+                {/* ITALIANO: chiude la foto (la toglie dalla vista) senza cestinarla ne' toccarla su disco */}
+                {/* ENGLISH: closes the photo (removes it from view) without trashing it or touching the disk */}
+                <button onClick={(e) => { e.stopPropagation(); onClose(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
+                {/* ITALIANO: Contatore tag della singola foto */}
+                {/* ENGLISH: Per-photo tag count */}
+                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
+                    <Tag size={11} />{img.tags?.length || 0}
+                </div>
+                {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
+                {/* ENGLISH: Copy/paste ALL this photo's tags, from the gallery (on hover) */}
+                <div className="absolute bottom-2 right-2 z-20 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={(e) => { e.stopPropagation(); onCopy(img); }} title={t.copyTags} className="p-1.5 bg-black/50 hover:bg-indigo-500 text-white rounded-full shadow-md transition-colors"><Copy size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onPaste(img); }} disabled={copiedCount === 0} title={copiedCount > 0 ? `${t.pasteTags} (${copiedCount})` : t.pasteTags} className="p-1.5 bg-black/50 hover:bg-emerald-500 text-white rounded-full shadow-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black/50"><ClipboardPaste size={13} /></button>
+                </div>
+            </div>
+            <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
+                {/* ENGLISH: Tag area under the preview, aesthetically organized */}
+                <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
+                    {/* ITALIANO: area tag limitata in altezza CON scorrimento in ENTRAMBE le modalita' */}
+                    {/* ENGLISH: height-capped, scrollable tag area in BOTH view modes */}
+                    <TagInput lang={lang} tags={img.tags} setTags={(newTags: string[]) => onUpdateTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" isDarkMode={isDarkMode} />
+                </div>
+            </div>
+        </div>
+    );
+});
+
 export default function App() {
     const [lang, setLang] = useState<string>(detectInitialLang);
     const t = translations[lang as keyof typeof translations];
@@ -257,7 +320,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.5');
+    const [appVersion, setAppVersion] = useState<string>('1.0.6');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -399,6 +462,15 @@ export default function App() {
 
     useEffect(() => { imagesRef.current = images; }, [images]);
 
+    // ITALIANO: PRESTAZIONI — copia "sempre aggiornata" della selezione, per far leggere lo stato ai
+    //           gestori della galleria SENZA doverli ricreare ad ogni cambio di selezione (cosi' le
+    //           card memorizzate non si ridisegnano tutte). Vedi GalleryCard piu' in basso.
+    // ENGLISH: PERF — an always-current copy of the selection, so the gallery handlers can read the
+    //          state WITHOUT being recreated on every selection change (keeping the memoized cards
+    //          from all re-rendering). See GalleryCard below.
+    const selectedForBulkRef = useRef<string[]>([]);
+    useEffect(() => { selectedForBulkRef.current = selectedForBulk; }, [selectedForBulk]);
+
     // ITALIANO: quando la selezione in blocco si svuota (deseleziona tutto, si toglie l'ultima foto,
     //           si cestina/chiude/elimina l'ultima selezionata) azzero anche i tag "in preparazione".
     //           Prima restavano armati: riaprendo il pannello per un ALTRO gruppo di foto comparivano
@@ -512,6 +584,12 @@ export default function App() {
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
+    // ITALIANO: PRESTAZIONI — selezione come Set per un test O(1) "questa foto e' selezionata?".
+    //           Serve alle card memorizzate della galleria (prop booleana isSelected).
+    // ENGLISH: PERF — selection as a Set for an O(1) "is this photo selected?" test. Used by the
+    //          memoized gallery cards (isSelected boolean prop).
+    const selectedForBulkSet = useMemo(() => new Set(selectedForBulk), [selectedForBulk]);
+
     const sortedTrashedImages = useMemo(() => {
         let sorted = [...trashedImages];
         if (trashSortOrder === 'name-asc') {
@@ -578,8 +656,8 @@ export default function App() {
     // ENGLISH: CLOSES a single image: removes it from view without trashing it and without
     //          touching anything on disk — the single-photo equivalent of "Close project".
     //          If it has unsaved changes it says so first, so they are not lost by accident.
-    const handleCloseImage = (id: string) => {
-        const img = images.find(i => i.id === id);
+    const handleCloseImage = useCallback((id: string) => {
+        const img = imagesRef.current.find(i => i.id === id);
         if (!img) return;
         const chiudi = () => {
             // ITALIANO: NON libero qui la miniatura. Chiudere una foto e' un'azione ANNULLABILE
@@ -592,7 +670,7 @@ export default function App() {
             //          bulk on project close/reset.
             setImages(prev => prev.filter(i => i.id !== id));
             setSelectedForBulk(prev => prev.filter(x => x !== id));
-            if (selectedImageId === id) setSelectedImageId(null);
+            setSelectedImageId(prev => prev === id ? null : prev);
             soundManager.pop();
         };
         const nonSalvata = JSON.stringify(img.tags) !== JSON.stringify(img.originalTags);
@@ -604,7 +682,7 @@ export default function App() {
             onConfirm: () => { chiudi(); setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }); },
             onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
         });
-    };
+    }, [t]);
 
     // ITALIANO: Quando l'editor di tag salva un file, se quel file e' DAVVERO il .txt di una foto
     //           del progetto ne allineo i tag in memoria (sia tags sia originalTags). Senza questo,
@@ -655,19 +733,20 @@ export default function App() {
         });
     };
 
-    const handleMoveToTrash = (id: string) => {
+    // ITALIANO: useCallback con identita' STABILE (nessuna dipendenza): cosi' passandolo a tutte le
+    //           card memorizzate della galleria non le fa ridisegnare. Uso la forma "funzionale" di
+    //           setSelectedImageId per non dover leggere selectedImageId (che lo renderebbe instabile).
+    // ENGLISH: useCallback with a STABLE identity (no deps): so passing it to every memoized gallery
+    //          card does not force them to re-render. I use the functional form of setSelectedImageId
+    //          to avoid reading selectedImageId (which would make it unstable).
+    const handleMoveToTrash = useCallback((id: string) => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
-        // ITALIANO: tolgo la foto anche dalla selezione in blocco. Senza questo, una foto cestinata
-        //           restava selezionata: il pannello continuava a contarla e "Conferma" le applicava
-        //           i tag, che al salvataggio finivano nel suo .txt su disco — una foto che l'utente
-        //           credeva esclusa dal dataset.
-        // ENGLISH: also drop the photo from the bulk selection. Without this a trashed photo stayed
-        //          selected: the panel kept counting it and "Confirm" applied tags to it, which the
-        //          save then wrote into its .txt on disk — a photo the user thought was excluded.
+        // ITALIANO: tolgo la foto anche dalla selezione in blocco (o resterebbe taggabile/riscrivibile).
+        // ENGLISH: also drop the photo from the bulk selection (else it stays taggable/writable).
         setSelectedForBulk(prev => prev.filter(x => x !== id));
-        if (selectedImageId === id) setSelectedImageId(null);
+        setSelectedImageId(prev => prev === id ? null : prev);
         soundManager.pop();
-    };
+    }, []);
 
     // ITALIANO: Cestina la foto APERTA nel visualizzatore e passa direttamente alla
     //           successiva (o alla precedente se era l'ultima), senza chiudere la finestra.
@@ -871,14 +950,35 @@ export default function App() {
                 setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
             }
 
+            // ITALIANO: PRESTAZIONI — le miniature si generano a piccoli GRUPPI in PARALLELO, non
+            //           piu' una alla volta. La decodifica delle immagini e' il collo di bottiglia
+            //           dell'importazione: farla in serie, con tante foto, era lentissima. Il limite
+            //           di concorrenza tiene bassa la memoria (poche immagini decodificate insieme).
+            //           Il risultato e' identico: ogni foto riceve la sua miniatura.
+            // ENGLISH: PERF — thumbnails are generated in small PARALLEL batches, no longer one at a
+            //          time. Image decoding is the import bottleneck: doing it serially with many
+            //          photos was very slow. The concurrency limit keeps memory bounded (few images
+            //          decoded at once). The result is identical: each photo gets its own thumbnail.
+            const THUMB_CONCURRENCY = 6;
+            const thumbs: any[] = new Array(imgFiles.length).fill(null);
+            let thumbsDone = 0;
+            for (let start = 0; start < imgFiles.length; start += THUMB_CONCURRENCY) {
+                const batch = [];
+                for (let i = start; i < Math.min(start + THUMB_CONCURRENCY, imgFiles.length); i++) {
+                    const idx = i;
+                    batch.push(
+                        generateThumbnail(imgFiles[idx])
+                            .then((td: any) => { thumbs[idx] = td; })
+                            .catch((e: any) => { console.warn('[Import] Thumbnail failed for', imgFiles[idx]?.name, e); })
+                            .finally(() => { thumbsDone++; setImportProgress(50 + Math.round((thumbsDone / imgFiles.length) * 50)); })
+                    );
+                }
+                await Promise.all(batch);
+            }
+
             const newImages = [];
             for (let i = 0; i < imgFiles.length; i++) {
-                let thumbData: any = null;
-                try {
-                    thumbData = await generateThumbnail(imgFiles[i]);
-                } catch (e) {
-                    console.warn('[Import] Thumbnail failed for', imgFiles[i]?.name, e);
-                }
+                const thumbData: any = thumbs[i];
                 const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(folderKeyOf(imgFiles[i])) || [])])];
                 const orderedTags = [
                     ...globalTriggers.filter(t => combinedTags.includes(t)),
@@ -924,8 +1024,6 @@ export default function App() {
                     //          deleted the wrong files).
                     dirHandle: asDirHandle(folderOf && folderOf.get(imgFiles[i])) || handle || null,
                 });
-                setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
-                if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
             }
 
             setImages(prev => {
@@ -1515,7 +1613,11 @@ export default function App() {
         exportAllAsZip(imagesWithTags);
     };
 
-    const updateImageTags = (id: string, newTags: string[]) => {
+    // ITALIANO: useCallback (dip. solo dalle trigger word): identita' stabile mentre si modificano i
+    //           tag, cosi' passandolo alle card della galleria non le fa ridisegnare tutte.
+    // ENGLISH: useCallback (deps only the trigger words): stable identity while editing tags, so
+    //          passing it to the gallery cards does not force them all to re-render.
+    const updateImageTags = useCallback((id: string, newTags: string[]) => {
         // ITALIANO: Deduplica alla fonte — incollando "sunset, sunset" o simili non si creano tag
         //           doppi (che finirebbero nel .txt esportato e darebbero due pillole con la stessa key React).
         // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
@@ -1528,13 +1630,28 @@ export default function App() {
         //          convention), then everything else ALPHABETICALLY. Applies everywhere, since
         //          this is the single place an image's tags are written.
         const orderedTags = [
-            ...globalTriggers.filter(t => uniqueTags.includes(t)),
-            ...uniqueTags.filter(t => !globalTriggers.includes(t)).sort((a, b) => a.localeCompare(b))
+            ...globalTriggers.filter(tag => uniqueTags.includes(tag)),
+            ...uniqueTags.filter(tag => !globalTriggers.includes(tag)).sort((a, b) => a.localeCompare(b))
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
-    };
+    }, [globalTriggers]);
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
-    const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
+    const toggleImageSelection = useCallback((id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]), []);
+
+    // ITALIANO: clic su una miniatura: se c'e' gia' una selezione multipla la aggiunge/toglie,
+    //           altrimenti apre la foto. Legge la selezione da un REF, cosi' resta stabile e non fa
+    //           ridisegnare tutte le card memorizzate ad ogni cambio di selezione.
+    // ENGLISH: click on a thumbnail: if a multi-selection is in progress add/remove it, otherwise
+    //          open the photo. Reads the selection from a REF, so it stays stable and does not force
+    //          every memoized card to re-render on each selection change.
+    const handleCardClick = useCallback((id: string) => {
+        if (selectedForBulkRef.current.length > 0) {
+            setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+            soundManager.click();
+        } else {
+            setSelectedImageId(id);
+        }
+    }, []);
 
     // ITALIANO: Copia/incolla dei tag direttamente dalle MINIATURE (stesso "appunti"
     //           del visualizzatore). Copia = mette i tag della foto negli appunti;
@@ -1542,18 +1659,18 @@ export default function App() {
     // ENGLISH: Copy/paste tags straight from the THUMBNAILS (same clipboard as the
     //          viewer). Copy = puts the photo's tags in the clipboard; Paste = ADDS
     //          them to another photo without duplicates.
-    const handleCopyThumbTags = (img: any) => {
+    const handleCopyThumbTags = useCallback((img: any) => {
         if (!img.tags || img.tags.length === 0) { showNotification(t.noTagsToCopy, 'info'); return; }
         setCopiedTags([...img.tags]);
         showNotification(`${t.tagsCopiedNotif} (${img.tags.length})`, 'success');
         soundManager.click();
-    };
-    const handlePasteThumbTags = (img: any) => {
+    }, [t]);
+    const handlePasteThumbTags = useCallback((img: any) => {
         if (!copiedTags || copiedTags.length === 0) return;
         updateImageTags(img.id, [...new Set([...(img.tags || []), ...copiedTags])]);
         showNotification(t.tagsPastedNotif, 'success');
         soundManager.pop();
-    };
+    }, [copiedTags, updateImageTags, t]);
 
     // ITALIANO: Seleziona TUTTE le foto visibili; se sono gia' tutte selezionate, le deseleziona.
     // ENGLISH: Select ALL visible photos; if they are all already selected, deselect them.
@@ -2881,63 +2998,23 @@ export default function App() {
                             {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> : 
                             <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
                                 {displayedImages.map((img) => (
-                                <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
-                                    <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => {
-                                            // ITALIANO: se e' gia' in corso una selezione multipla, cliccare una foto
-                                            //           la aggiunge o la toglie dalla selezione invece di aprirla:
-                                            //           prima bisognava per forza centrare la casellina in alto.
-                                            // ENGLISH: when a multi-selection is already in progress, clicking a photo
-                                            //          adds or removes it from the selection instead of opening it:
-                                            //          you used to have to hit the small checkbox exactly.
-                                            if (selectedForBulk.length > 0) {
-                                                setSelectedForBulk(prev => prev.includes(img.id) ? prev.filter(x => x !== img.id) : [...prev, img.id]);
-                                                soundManager.click();
-                                            } else {
-                                                setSelectedImageId(img.id);
-                                            }
-                                        }}>
-                                        <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
-                                        
-                                        {img.width * img.height < 1048576 && (
-                                            <div className="absolute top-2 right-2 z-30 group/alert">
-                                                <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
-                                                    <AlertTriangle size={16} strokeWidth={2.5} />
-                                                </div>
-                                                <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                                    {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
-                                        <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
-                                        {/* ITALIANO: chiude la foto (la toglie dalla vista) senza cestinarla ne' toccarla su disco */}
-                                        {/* ENGLISH: closes the photo (removes it from view) without trashing it or touching the disk */}
-                                        <button onClick={(e) => { e.stopPropagation(); handleCloseImage(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
-                                        {/* ITALIANO: Contatore tag della singola foto */}
-                                        {/* ENGLISH: Per-photo tag count */}
-                                        <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
-                                            <Tag size={11} />{img.tags?.length || 0}
-                                        </div>
-                                        {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
-                                        {/* ENGLISH: Copy/paste ALL this photo's tags, from the gallery (on hover) */}
-                                        <div className="absolute bottom-2 right-2 z-20 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                            <button onClick={(e) => { e.stopPropagation(); handleCopyThumbTags(img); }} title={t.copyTags} className="p-1.5 bg-black/50 hover:bg-indigo-500 text-white rounded-full shadow-md transition-colors"><Copy size={13} /></button>
-                                            <button onClick={(e) => { e.stopPropagation(); handlePasteThumbTags(img); }} disabled={!copiedTags || copiedTags.length === 0} title={copiedTags && copiedTags.length > 0 ? `${t.pasteTags} (${copiedTags.length})` : t.pasteTags} className="p-1.5 bg-black/50 hover:bg-emerald-500 text-white rounded-full shadow-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black/50"><ClipboardPaste size={13} /></button>
-                                        </div>
-                                    </div>
-                                    <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                                        {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
-                                        {/* ENGLISH: Tag area under the preview, aesthetically organized */}
-                                        <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                            {/* ITALIANO: area tag limitata in altezza CON scorrimento in ENTRAMBE le modalita'
-                                                          (prima in "Intere" cresceva all'infinito mostrando tutti i tag). */}
-                                            {/* ENGLISH: height-capped, scrollable tag area in BOTH view modes (in "original"
-                                                         it used to grow endlessly, showing every tag). */}
-                                            <TagInput lang={lang} tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" isDarkMode={isDarkMode} />
-                                        </div>
-                                    </div>
-                                </div>
+                                    <GalleryCard
+                                        key={img.id}
+                                        img={img}
+                                        isDarkMode={isDarkMode}
+                                        viewMode={viewMode}
+                                        lang={lang}
+                                        t={t}
+                                        isSelected={selectedForBulkSet.has(img.id)}
+                                        copiedCount={copiedTags?.length || 0}
+                                        onCardClick={handleCardClick}
+                                        onSelectToggle={toggleImageSelection}
+                                        onTrash={handleMoveToTrash}
+                                        onClose={handleCloseImage}
+                                        onCopy={handleCopyThumbTags}
+                                        onPaste={handlePasteThumbTags}
+                                        onUpdateTags={updateImageTags}
+                                    />
                                 ))}
                             </div>}
                         </div>
