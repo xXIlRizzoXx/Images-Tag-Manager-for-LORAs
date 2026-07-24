@@ -38,12 +38,16 @@ const OUT_DIR = path.join(ROOT, 'build');
 /* ------------------------------------------------------------------ colori */
 /* Valori presi da dist/assets/*.css (palette Tailwind v4, formato OKLCH). */
 const TW = {
-    gray900: [0.21, 0.034, 264.665],
-    slate900: [0.208, 0.042, 265.755],
+    // ITALIANO: palette tutta sul VIOLA, come l'app (niente piu' toni grigio/azzurro).
+    // ENGLISH: all-VIOLET palette, matching the app (no more gray/blue tones).
+    violet950: [0.283, 0.141, 291.089],
+    violet900: [0.379, 0.146, 292.717],
+    violet700: [0.491, 0.27, 292.581],
+    violet500: [0.606, 0.25, 292.717],
+    violet400: [0.702, 0.183, 293.541],
     purple950: [0.291, 0.149, 302.717],
-    indigo500: [0.585, 0.233, 277.117],
     purple600: [0.558, 0.288, 302.321],
-    slate400: [0.704, 0.04, 256.788],
+    slate400: [0.704, 0.04, 256.788], // ITALIANO: solo per la versione disinstalla (grigio neutro) — ENGLISH: uninstall only (neutral grey)
 };
 
 /** OKLCH -> sRGB 0..255 (Bjorn Ottosson, https://bottosson.github.io/posts/oklab/) */
@@ -247,6 +251,36 @@ function writeBmp24(file, canvas) {
     return 54 + pixels.length;
 }
 
+/** PNG RGB 8bit (solo per ANTEPRIMA: non entra nell'installer, serve a vedere il risultato). */
+function writePngPreview(file, canvas, scale = 2) {
+    const W = canvas.w * scale, H = canvas.h * scale;
+    const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+    const crc32 = (buf) => { let c = 0xffffffff; for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+    const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type, 'ascii'), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, crc]); };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2; // RGB
+    const raw = Buffer.alloc((W * 3 + 1) * H);
+    let o = 0;
+    for (let y = 0; y < H; y++) {
+        raw[o++] = 0; // filtro none
+        const sy = Math.floor(y / scale);
+        for (let x = 0; x < W; x++) {
+            const sx = Math.floor(x / scale);
+            const i = (sy * canvas.w + sx) * 3;
+            raw[o++] = Math.max(0, Math.min(255, Math.round(canvas.px[i])));
+            raw[o++] = Math.max(0, Math.min(255, Math.round(canvas.px[i + 1])));
+            raw[o++] = Math.max(0, Math.min(255, Math.round(canvas.px[i + 2])));
+        }
+    }
+    const png = Buffer.concat([
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+        chunk('IHDR', ihdr),
+        chunk('IDAT', zlib.deflateSync(raw)),
+        chunk('IEND', Buffer.alloc(0)),
+    ]);
+    fs.writeFileSync(file, png);
+}
+
 /* ------------------------------------------------------------ disegno */
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -344,27 +378,37 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     const W = 164, H = 314;
     const cv = new Canvas(W * SS, H * SS);
 
-    paintGradient(cv, [C.gray900, C.purple950, C.slate900]);
+    paintGradient(cv, [C.violet900, C.purple950, C.violet950]);
 
-    const cx = cv.w / 2, cy = cv.h * 0.33;
-    paintGlow(cv, cx, cy, cv.w * 0.95, uninstall ? C.slate400 : C.indigo500, uninstall ? 0.16 : 0.30);
-    paintGlow(cv, cv.w * 0.85, cv.h * 0.86, cv.w * 0.7, C.purple600, 0.16);
+    const cx = cv.w / 2, cy = cv.h * 0.31;
+    paintGlow(cv, cx, cy, cv.w * 0.95, uninstall ? C.slate400 : C.violet500, uninstall ? 0.16 : 0.32);
+    paintGlow(cv, cv.w * 0.85, cv.h * 0.86, cv.w * 0.7, C.purple600, 0.18);
+    // ITALIANO: un secondo alone in basso a sinistra riempie l'angolo scuro sotto i tag.
+    // ENGLISH: a second glow bottom-left fills the dark corner under the tag cloud.
+    paintGlow(cv, cv.w * 0.12, cv.h * 0.9, cv.w * 0.6, C.violet700, 0.16);
 
-    // Nuvola di "tag" che sfuma verso il basso: dice cosa fa il programma.
-    // x, y, larghezza (frazioni della tela) + tinta: 1 = indaco acceso.
+    // ITALIANO: Nuvola di "tag" piu' fitta e piu' visibile sotto il logo: e' cio' che l'utente
+    //           voleva "arricchire". Righe: x, y, larghezza (frazioni della tela) + tinta
+    //           (1 = pillola viola accesa, 0 = pillola chiara). Piu' file, piu' contrasto.
+    // ENGLISH: A denser, more visible "tag" cloud under the logo — what the user asked to enrich.
+    //          Rows: x, y, width (canvas fractions) + tint (1 = bright violet pill, 0 = light pill).
+    //          More rows, more contrast.
     const rows = [
-        [0.09, 0.575, 0.34, 1], [0.48, 0.575, 0.24, 0],
-        [0.09, 0.645, 0.26, 0], [0.39, 0.645, 0.33, 1],
-        [0.14, 0.715, 0.31, 0], [0.49, 0.715, 0.22, 0],
-        [0.09, 0.785, 0.23, 1], [0.36, 0.785, 0.29, 0],
-        [0.17, 0.855, 0.27, 0], [0.50, 0.855, 0.19, 0],
+        [0.09, 0.545, 0.30, 1], [0.44, 0.545, 0.27, 0],
+        [0.09, 0.610, 0.22, 0], [0.35, 0.610, 0.36, 1],
+        [0.09, 0.675, 0.33, 1], [0.47, 0.675, 0.20, 0],
+        [0.13, 0.740, 0.26, 0], [0.44, 0.740, 0.28, 1],
+        [0.09, 0.805, 0.24, 1], [0.38, 0.805, 0.21, 0], [0.63, 0.805, 0.14, 0],
+        [0.14, 0.870, 0.30, 0], [0.49, 0.870, 0.23, 1],
+        [0.11, 0.930, 0.20, 0], [0.36, 0.930, 0.27, 0],
     ];
     rows.forEach(([fx, fy, fw, tint]) => {
-        // Sbiadiscono scendendo: l'occhio resta sul logo.
-        const fade = 1 - smooth(clamp01((fy - 0.575) / 0.34)) * 0.75;
-        const base = (uninstall ? 0.055 : 0.085) * (tint ? 1.35 : 1) * fade;
-        paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.0205 * cv.h,
-            tint ? C.indigo500 : [255, 255, 255], base);
+        // ITALIANO: sbiadiscono scendendo, ma meno di prima, cosi' la nuvola "riempie" davvero.
+        // ENGLISH: they fade going down, but less than before, so the cloud actually fills the space.
+        const fade = 1 - smooth(clamp01((fy - 0.545) / 0.42)) * 0.5;
+        const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
+        paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
+            tint ? C.violet500 : [235, 230, 255], base);
     });
 
     const logoW = Math.round(cv.w * 0.52);
@@ -376,8 +420,8 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     for (let x = 0; x < cv.w; x++) {
         const t = Math.abs(x - cx) / (cv.w * 0.42);
         if (t >= 1) continue;
-        const a = (1 - t) ** 2 * (uninstall ? 0.28 : 0.5);
-        for (let y = lineY; y < lineY + SS; y++) cv.blend(x, y, ...(uninstall ? C.slate400 : C.indigo500), a);
+        const a = (1 - t) ** 2 * (uninstall ? 0.28 : 0.55);
+        for (let y = lineY; y < lineY + SS; y++) cv.blend(x, y, ...(uninstall ? C.slate400 : C.violet400), a);
     }
 
     paintVignette(cv, 0.32);
@@ -402,11 +446,11 @@ function buildHeader(logo) {
     const dx = cv.w - size - Math.round(cv.w * 0.06);
     paintLogo(cv, logo, dx, Math.round((cv.h - size) / 2), size, size);
 
-    // Accento verticale indaco a sinistra del logo
+    // Accento verticale viola a sinistra del logo
     const bx = dx - Math.round(cv.w * 0.045);
     for (let y = Math.round(cv.h * 0.24); y < Math.round(cv.h * 0.76); y++) {
         for (let x = bx; x < bx + Math.max(1, Math.round(SS * 0.75)); x++) {
-            cv.blend(x, y, ...C.indigo500, 0.55);
+            cv.blend(x, y, ...C.violet500, 0.55);
         }
     }
     return cv.downsample(W, H);
@@ -415,7 +459,7 @@ function buildHeader(logo) {
 /* ------------------------------------------------------------------- main */
 const logo = decodePng(LOGO);
 console.log(`logo: ${logo.w}x${logo.h} RGBA`);
-console.log(`palette: indigo-500 rgb(${C.indigo500}) · purple-950 rgb(${C.purple950}) · gray-900 rgb(${C.gray900})`);
+console.log(`palette: violet-500 rgb(${C.violet500}) · violet-950 rgb(${C.violet950}) · purple-950 rgb(${C.purple950})`);
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const jobs = [
@@ -426,4 +470,12 @@ const jobs = [
 for (const [name, cv] of jobs) {
     const bytes = writeBmp24(path.join(OUT_DIR, name), cv);
     console.log(`OK  build/${name}  ${cv.w}x${cv.h}  24bpp  ${(bytes / 1024).toFixed(1)} KB`);
+}
+
+// ITALIANO: anteprima PNG solo se richiesta con la variabile ITM_PREVIEW (non entra mai
+//           nell'installer). Serve a guardare il risultato in fase di sviluppo.
+// ENGLISH: PNG preview only when asked via the ITM_PREVIEW env var (never ships). For dev viewing.
+if (process.env.ITM_PREVIEW) {
+    writePngPreview(process.env.ITM_PREVIEW, jobs[0][1], 2);
+    console.log('anteprima PNG:', process.env.ITM_PREVIEW);
 }
