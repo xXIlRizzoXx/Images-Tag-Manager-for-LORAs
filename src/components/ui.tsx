@@ -34,7 +34,7 @@ import { translateTag } from '../utils/tagTranslation';
 //           accadeva solo nel visualizzatore a foto singola, non sulle miniature.
 // ENGLISH: `lang` is what enables the hover translation of a tag: it used to happen only in
 //          the single-photo viewer, never on the gallery thumbnails.
-export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGlobal = false, maxHeight = "max-h-[120px]", isDarkMode = true, readOnly = false, lang = 'it' }: any) => {
+export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, maxHeight = "max-h-[120px]", isDarkMode = true, readOnly = false, lang = 'it' }: any) => {
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     
@@ -95,7 +95,7 @@ export const TagInput = ({ tags, setTags, placeholder = "Scrivi tag...", isGloba
                 onChange={(e) => setInputValue(e.target.value)} 
                 onKeyDown={handleKeyDown} 
                 onPaste={handlePaste}
-                placeholder={tags.length === 0 ? placeholder : "Scrivi tag..."} 
+                placeholder={placeholder}
                 className={`w-full bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-700 dark:placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
             />
         )}

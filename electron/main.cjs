@@ -285,7 +285,7 @@ const applyContentSecurityPolicy = (sess) => {
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https://flagcdn.com",
+        "img-src 'self' data: blob:",
         "font-src 'self' data:",
         "connect-src 'self' https://generativelanguage.googleapis.com",
         "worker-src 'self' blob:",
