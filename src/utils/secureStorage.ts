@@ -18,7 +18,6 @@ type ElectronSecureStorage = {
     get: (key: string) => Promise<string>;
     set: (key: string, value: string) => Promise<boolean>;
     delete: (key: string) => Promise<boolean>;
-    isAvailable: () => Promise<boolean>;
 };
 
 type ElectronAPI = {

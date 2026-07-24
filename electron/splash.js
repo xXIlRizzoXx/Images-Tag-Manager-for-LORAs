@@ -10,19 +10,32 @@
    version therefore stayed stuck on the hardcoded text and the messages never rotated.
    It was invisible in development, where the rule is not applied. */
 
-// ITALIANO: "Caricamento moduli AI" era un residuo dell'AI locale, rimossa tempo fa:
-//           l'app non carica piu' nessun modulo AI all'avvio.
-// ENGLISH: "Loading AI modules" was a leftover from the local AI, removed long ago:
-//          the app no longer loads any AI module at startup.
-const messages = [
-    'Inizializzazione ambiente...',
-    'Preparazione interfaccia...',
-    'Quasi pronto...',
-    'Avvio in corso...',
-];
+// ITALIANO: Messaggi della schermata di avvio in tutte le 9 lingue dell'app. La lingua arriva
+//           dal processo principale come parametro ?lang=xx (letto dal file salvato dall'app);
+//           al primissimo avvio non c'e' e si usa l'inglese. Prima erano solo in italiano, quindi
+//           8 lingue su 9 vedevano testo straniero a ogni avvio.
+// ENGLISH: Splash messages in all 9 app languages. The language arrives from the main process as a
+//          ?lang=xx parameter (read from the file the app saves); on the very first launch there is
+//          none and English is used. They used to be Italian only, so 8 of 9 languages saw foreign
+//          text at every launch.
+const MESSAGES = {
+    en: ['Initializing environment...', 'Preparing the interface...', 'Almost ready...', 'Starting up...'],
+    it: ['Inizializzazione ambiente...', 'Preparazione interfaccia...', 'Quasi pronto...', 'Avvio in corso...'],
+    fr: ["Initialisation de l'environnement...", "Préparation de l'interface...", 'Presque prêt...', 'Démarrage en cours...'],
+    es: ['Inicializando el entorno...', 'Preparando la interfaz...', 'Casi listo...', 'Iniciando...'],
+    de: ['Umgebung wird initialisiert...', 'Oberfläche wird vorbereitet...', 'Fast fertig...', 'Wird gestartet...'],
+    zh: ['正在初始化环境…', '正在准备界面…', '即将就绪…', '正在启动…'],
+    ja: ['環境を初期化しています…', 'インターフェースを準備しています…', 'まもなく完了します…', '起動しています…'],
+    pt: ['Inicializando o ambiente...', 'Preparando a interface...', 'Quase pronto...', 'Iniciando...'],
+    ru: ['Инициализация среды...', 'Подготовка интерфейса...', 'Почти готово...', 'Запуск...'],
+};
+
+const paramLang = new URLSearchParams(window.location.search).get('lang');
+const messages = MESSAGES[paramLang] || MESSAGES.en;
 
 let i = 0;
 const msgEl = document.getElementById('loading-msg');
+if (msgEl && messages[0]) msgEl.innerText = messages[0];
 
 if (msgEl) {
     setInterval(function () {
@@ -58,5 +71,21 @@ const copyrightEl = document.getElementById('copyright-link');
 if (copyrightEl && window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
     copyrightEl.addEventListener('click', function () {
         window.electronAPI.openExternal(PROFILO_GITHUB);
+    });
+}
+
+// ITALIANO: Riserva del logo. Prima stava come onerror="..." dentro l'HTML, ma la regola di
+//           sicurezza (script-src 'self') rifiuta i gestori scritti nell'HTML nell'app compilata:
+//           era codice morto. Qui, dallo script vero, funziona.
+// ENGLISH: Logo fallback. It used to be an inline onerror="..." in the HTML, but the security rule
+//          (script-src 'self') refuses handlers written in the HTML in the packaged app: it was dead
+//          code. Here, from the real script, it works.
+const logoEl = document.getElementById('splash-logo');
+if (logoEl) {
+    logoEl.addEventListener('error', function () {
+        if (!logoEl.dataset.fallbackDone) {
+            logoEl.dataset.fallbackDone = '1';
+            logoEl.src = '../public/icon.png';
+        }
     });
 }

@@ -15,7 +15,44 @@ const { app, BrowserWindow, ipcMain, safeStorage, session, Menu, shell } = requi
 const path = require('path');
 const fs = require('fs');
 
-const isDev = process.env.NODE_ENV === 'development';
+// ITALIANO: "sviluppo" si decide dal fatto che l'app NON sia impacchettata, non da una
+//           variabile d'ambiente. NODE_ENV puo' essere impostata da chiunque avvii l'exe:
+//           con essa un semplice avvio da riga di comando poteva disattivare le protezioni
+//           di produzione (CSP, blocco navigazione, menu). app.isPackaged e' vero solo nell'app
+//           installata/portable e non e' influenzabile dall'esterno.
+// ENGLISH: "development" is decided by the app NOT being packaged, not by an env var. NODE_ENV
+//          can be set by whoever launches the exe: with it, a plain command-line launch could
+//          disable the production protections (CSP, navigation lock, menu). app.isPackaged is
+//          true only in the installed/portable app and cannot be influenced from outside.
+const isDev = !app.isPackaged;
+
+// ITALIANO: Lingua scelta dall'utente, salvata in un file di userData dal renderer. Serve alla
+//           schermata di avvio (che e' una finestra a parte e non vede il localStorage dell'app)
+//           per mostrare i propri testi nella lingua giusta gia' al primo istante.
+// ENGLISH: The user's chosen language, saved to a userData file by the renderer. The splash screen
+//          (a separate window that cannot see the app's localStorage) uses it to show its own text
+//          in the right language from the very first moment.
+const getUiLangPath = () => path.join(app.getPath('userData'), 'ui-lang.json');
+const readUiLang = () => {
+    try {
+        const raw = fs.readFileSync(getUiLangPath(), 'utf8');
+        const parsed = JSON.parse(raw);
+        const lang = parsed && typeof parsed.lang === 'string' ? parsed.lang : '';
+        return /^[a-z]{2}$/.test(lang) ? lang : '';
+    } catch (_) {
+        return '';
+    }
+};
+ipcMain.handle('app:persist-lang', (_event, lang) => {
+    if (typeof lang !== 'string' || !/^[a-z]{2}$/.test(lang)) return false;
+    try {
+        fs.writeFileSync(getUiLangPath(), JSON.stringify({ lang }), { encoding: 'utf8' });
+        return true;
+    } catch (e) {
+        console.error('Failed to persist ui language', e);
+        return false;
+    }
+});
 
 // ITALIANO: Lettura della versione una sola volta all'avvio
 // ENGLISH: Read the version once at startup
@@ -71,10 +108,6 @@ const writeSecrets = (data) => {
         return false;
     }
 };
-
-ipcMain.handle('secure-storage:available', () => {
-    try { return safeStorage.isEncryptionAvailable(); } catch { return false; }
-});
 
 ipcMain.handle('secure-storage:get', (_event, key) => {
     if (typeof key !== 'string' || !key) return '';
@@ -192,21 +225,36 @@ const TRASH_ALLOWED_EXT = new Set([...SIDECAR_IMAGE_EXT, '.txt']);
 const TRASH_MAX_FILES = 5000;
 
 ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
-    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0 };
+    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0 };
     let trashed = 0;
+    let failed = 0;
     for (const raw of filePaths.slice(0, TRASH_MAX_FILES)) {
         if (typeof raw !== 'string' || !raw) continue;
         if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) continue;
+        // ITALIANO: un file assente (es. il .txt di una foto senza tag) e' NORMALE: si salta e
+        //           non conta come errore. Un file che ESISTE ma non si riesce a cestinare
+        //           (bloccato, permessi) e' un errore vero.
+        // ENGLISH: a missing file (e.g. the .txt of a photo with no tags) is NORMAL: skip it and do
+        //          not count it as an error. A file that EXISTS but cannot be trashed (locked,
+        //          permissions) is a real error.
+        let exists = false;
+        try { exists = fs.statSync(raw).isFile(); } catch (_) { exists = false; }
+        if (!exists) continue;
         try {
-            if (!fs.statSync(raw).isFile()) continue;
             await shell.trashItem(raw);
             trashed++;
-        } catch (_) {
-            // ITALIANO: file assente o non spostabile: si prosegue
-            // ENGLISH: file missing or not movable: carry on
+        } catch (e) {
+            // ITALIANO: NON annunciamo un successo falso: prima si ritornava sempre ok:true, cosi'
+            //           una foto che il cestino NON era riuscito a spostare veniva comunque tolta dal
+            //           progetto e il ripiego non partiva mai. Ora ok e' falso se qualcosa e' fallito.
+            // ENGLISH: do NOT report a false success: it used to always return ok:true, so a photo the
+            //          Recycle Bin FAILED to move was still dropped from the project and the fallback
+            //          never ran. Now ok is false if anything failed.
+            console.error('trash-files: could not trash', raw, e);
+            failed++;
         }
     }
-    return { ok: true, trashed };
+    return { ok: failed === 0, trashed, failed };
 });
 
 /* ITALIANO: APERTURA DI UN INDIRIZZO WEB NEL BROWSER DI SISTEMA
@@ -281,7 +329,12 @@ function createSplashWindow() {
             sandbox: true,
         },
     });
-    splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+    // ITALIANO: passo allo splash la lingua salvata (se c'e'), cosi' i suoi testi compaiono
+    //           gia' tradotti. Al primissimo avvio non c'e' ancora: lo splash usa l'inglese.
+    // ENGLISH: pass the saved language (if any) to the splash so its text shows already translated.
+    //          On the very first launch there is none yet: the splash falls back to English.
+    const uiLang = readUiLang();
+    splashWindow.loadFile(path.join(__dirname, 'splash.html'), uiLang ? { query: { lang: uiLang } } : undefined);
     splashWindow.on('closed', () => { splashWindow = null; });
 }
 
@@ -300,9 +353,13 @@ function createMainWindow() {
             sandbox: true,
             webSecurity: true,
             allowRunningInsecureContent: false,
-            // ITALIANO: DevTools sempre disponibili (Ctrl+Shift+I) per ispezionare i log AI
-            // ENGLISH: DevTools always available (Ctrl+Shift+I) to inspect AI logs
-            devTools: true,
+            // ITALIANO: DevTools solo in sviluppo. In produzione la scorciatoia Ctrl+Shift+I e'
+            //           comunque tolta col menu, quindi lasciarli attivi non serviva e allargava
+            //           inutilmente la superficie: ora sono spenti nell'app distribuita.
+            // ENGLISH: DevTools only in development. In production the Ctrl+Shift+I shortcut is
+            //          removed with the menu anyway, so leaving them on served no purpose and only
+            //          widened the surface: they are now off in the shipped app.
+            devTools: isDev,
         },
     });
 
@@ -345,21 +402,57 @@ function createMainWindow() {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 
-    // ITALIANO: Quando la finestra è pronta, chiudi lo splash, massimizza (finestra piena,
-    //           con barra del titolo — non a schermo intero) e mostra l'app. Il 1280x800
-    //           sopra resta la dimensione "ripristinata" quando l'utente riduce la finestra.
-    // ENGLISH: When the window is ready, close the splash, maximize it (full window with the
-    //          title bar — not fullscreen) and show the app. The 1280x800 above stays as the
-    //          "restored" size when the user un-maximizes.
-    mainWindow.once('ready-to-show', () => {
-        if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
+    // ITALIANO: Mostra l'app e chiude lo splash. Protetto da un flag perche' puo' essere chiamato
+    //           da piu' strade (pronto, errore di caricamento, timeout): deve agire una volta sola.
+    // ENGLISH: Shows the app and closes the splash. Guarded by a flag because it can be called from
+    //          several paths (ready, load failure, timeout): it must act only once.
+    let appMostrata = false;
+    const mostraApp = (maximizza) => {
+        if (appMostrata) return;
+        appMostrata = true;
+        if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+        if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            if (maximizza) mainWindow.maximize();
+            mainWindow.show();
         }
-        mainWindow.maximize();
-        mainWindow.show();
+    };
+
+    // ITALIANO: Percorso normale: quando la finestra è pronta, chiudi lo splash, massimizza
+    //           (finestra piena, con barra del titolo — non a schermo intero) e mostra l'app.
+    //           Il 1280x800 sopra resta la dimensione "ripristinata" quando si riduce la finestra.
+    // ENGLISH: Normal path: when the window is ready, close the splash, maximize (full window with
+    //          the title bar — not fullscreen) and show the app. The 1280x800 above stays as the
+    //          "restored" size when the window is un-maximized.
+    mainWindow.once('ready-to-show', () => mostraApp(true));
+
+    // ITALIANO: Reti di sicurezza. Prima, se la pagina non arrivava MAI a "pronto" (renderer
+    //           andato in errore, pagina che non si carica), lo splash — senza cornice e sempre
+    //           in primo piano — restava per sempre e l'app era inavviabile senza Task Manager.
+    //           Ora: se il caricamento fallisce, o il processo grafico muore, o passano 20
+    //           secondi, mostriamo comunque la finestra (o chiudiamo lo splash) invece di
+    //           lasciare l'utente bloccato.
+    // ENGLISH: Safety nets. Before, if the page NEVER reached "ready" (renderer crashed, page
+    //          fails to load), the frameless always-on-top splash stayed forever and the app was
+    //          unlaunchable without Task Manager. Now: if the load fails, or the render process
+    //          dies, or 20 seconds pass, we show the window anyway (or close the splash) instead of
+    //          leaving the user stuck.
+    let watchdog = setTimeout(() => mostraApp(true), 20000);
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+        if (isMainFrame) {
+            console.error('main window failed to load', code, desc, url);
+            mostraApp(false);
+        }
+    });
+    mainWindow.webContents.on('render-process-gone', (_e, details) => {
+        console.error('main window render process gone', details);
+        if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
     });
 
-    mainWindow.on('closed', () => { mainWindow = null; });
+    mainWindow.on('closed', () => {
+        if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+        mainWindow = null;
+    });
 }
 
 app.on('second-instance', () => {

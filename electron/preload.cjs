@@ -20,11 +20,15 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
     isElectron: true,
     getAppVersion: () => ipcRenderer.invoke('app:get-version'),
+    // ITALIANO: salva la lingua scelta in un file, cosi' la schermata di avvio (finestra a parte)
+    //           puo' mostrare i suoi testi tradotti gia' al lancio successivo
+    // ENGLISH: persists the chosen language to a file, so the splash screen (a separate window) can
+    //          show its text translated already on the next launch
+    persistLang: (lang) => ipcRenderer.invoke('app:persist-lang', String(lang || '')),
     secureStorage: {
         get: (key) => ipcRenderer.invoke('secure-storage:get', String(key)),
         set: (key, value) => ipcRenderer.invoke('secure-storage:set', String(key), String(value ?? '')),
         delete: (key) => ipcRenderer.invoke('secure-storage:delete', String(key)),
-        isAvailable: () => ipcRenderer.invoke('secure-storage:available'),
     },
     // ITALIANO: percorso su disco di un file scelto dall'utente (da Electron 32 al posto di File.path)
     // ENGLISH: on-disk path of a file the user picked (replaces File.path since Electron 32)
