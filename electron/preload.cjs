@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ITALIANO: legge i .txt con lo stesso nome accanto alle immagini scelte
     // ENGLISH: reads the same-named .txt files sitting next to the picked images
     readSidecarTags: (paths) => ipcRenderer.invoke('images:read-sidecar-tags', paths),
+    // ITALIANO: scrive il .txt accanto alle immagini scelte (salvataggio vero delle foto caricate
+    //           come file singoli), tornando l'esito reale per ogni file
+    // ENGLISH: writes the .txt next to the picked images (real save for photos loaded as individual
+    //          files), returning the real per-file outcome
+    writeSidecarTags: (items) => ipcRenderer.invoke('images:write-sidecar-tags', items),
     // ITALIANO: sposta immagini e .txt nel Cestino di Windows (recuperabili), non li cancella
     // ENGLISH: moves images and .txt files to the Windows Recycle Bin (recoverable), not a hard delete
     trashFiles: (paths) => ipcRenderer.invoke('shell:trash-files', paths),

@@ -27,6 +27,15 @@ export interface TrashResult {
     failed: number;
 }
 
+export interface WriteSidecarResult {
+    ok: boolean;
+    written: number;
+    failed: number;
+    // ITALIANO: esito per ogni file, NELLO STESSO ORDINE degli item passati (true = scritto)
+    // ENGLISH: per-file outcome, IN THE SAME ORDER as the passed items (true = written)
+    results: boolean[];
+}
+
 export interface ElectronAPI {
     isElectron: true;
     getAppVersion: () => Promise<string>;
@@ -34,6 +43,7 @@ export interface ElectronAPI {
     secureStorage: ElectronSecureStorage;
     getPathForFile: (file: File) => string;
     readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content: string; dir?: string }>>;
+    writeSidecarTags: (items: Array<{ imagePath: string; content: string }>) => Promise<WriteSidecarResult>;
     trashFiles: (paths: string[]) => Promise<TrashResult>;
     openExternal: (url: string) => Promise<boolean>;
 }

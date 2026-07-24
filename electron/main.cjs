@@ -210,6 +210,55 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     return out;
 });
 
+/* ITALIANO: SCRITTURA DEL .txt "GEMELLO" (per le foto caricate con "Carica immagini")
+   Le foto scelte come file singoli non hanno un handle di cartella scrivibile: prima il loro
+   salvataggio degradava a un DOWNLOAD del browser che, in Electron, apre una finestra "Salva
+   con nome" annullabile. La funzione pero' dava per "salvato" senza sapere se il file fosse
+   stato davvero scritto, e "Salva e chiudi" cancellava il backup: bastava annullare per perdere
+   i tag. Questo canale scrive il .txt SUL POSTO (accanto all'immagine vera) e torna l'esito
+   REALE per ogni file. Contratto stretto identico alla lettura: si scrive SOLO un .txt accanto
+   a un'immagine che esiste davvero su disco — non puo' diventare un "scrivi qualsiasi file".
+   ENGLISH: WRITE THE SIDECAR .txt (for photos loaded via "Load images")
+   Photos picked as individual files have no writable folder handle: their save used to degrade
+   to a browser DOWNLOAD which, in Electron, opens a cancellable "Save as" dialog. The function
+   reported "saved" without knowing whether the file was actually written, and "Save and close"
+   then deleted the backup: cancelling was enough to lose the tags. This channel writes the .txt
+   IN PLACE (next to the real image) and returns the REAL per-file outcome. Narrow contract, same
+   as reading: it writes ONLY a .txt next to an image that truly exists on disk — it cannot become
+   a "write any file" primitive. */
+const WRITE_MAX_BYTES = 1024 * 1024;
+const WRITE_MAX_FILES = 5000;
+
+ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
+    if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
+    let written = 0;
+    let failed = 0;
+    const results = [];
+    for (const it of items.slice(0, WRITE_MAX_FILES)) {
+        const imagePath = it && typeof it.imagePath === 'string' ? it.imagePath : '';
+        const content = it && typeof it.content === 'string' ? it.content : '';
+        try {
+            // ITALIANO: dev'essere un'immagine VERA presente su disco (stesso contratto della lettura)
+            // ENGLISH: it must be a REAL image present on disk (same contract as reading)
+            if (!imagePath || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
+            if (Buffer.byteLength(content, 'utf8') > WRITE_MAX_BYTES) { failed++; results.push(false); continue; }
+            const imgStat = fs.statSync(imagePath);
+            if (!imgStat.isFile()) { failed++; results.push(false); continue; }
+            const base = path.basename(imagePath, path.extname(imagePath));
+            const txtPath = path.join(path.dirname(imagePath), base + '.txt');
+            if (path.extname(txtPath).toLowerCase() !== '.txt') { failed++; results.push(false); continue; }
+            fs.writeFileSync(txtPath, content, 'utf8');
+            written++;
+            results.push(true);
+        } catch (e) {
+            console.error('write-sidecar-tags: could not write next to', imagePath, e);
+            failed++;
+            results.push(false);
+        }
+    }
+    return { ok: failed === 0, written, failed, results };
+});
+
 /* ITALIANO: CESTINO DI SISTEMA
    Sposta i file nel Cestino di Windows invece di cancellarli per sempre, cosi' un
    ripensamento resta sempre recuperabile. Accetto solo immagini e .txt: il canale non

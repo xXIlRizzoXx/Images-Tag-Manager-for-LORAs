@@ -1,16 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 24 luglio 2026
-**Versione attuale:** 1.0.3
-**Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.3 in `Release\` (tenute solo
-le 1.0.3, tolte le versioni precedenti). Novità 1.0.3: l'editor dei tag, quando salva, aggiorna
-i tag della foto nel progetto **solo se quel file è DAVVERO il testo di quella foto** (stessa
-cartella, verificato per identità reale), non più solo perché ha lo stesso nome: così un file
-con lo stesso nome aperto da un'altra cartella non può più far scrivere tag sbagliati sul file
-di testo vero della foto. Novità 1.0.2: immagine dell'installer arricchita (nuvola di tag viola
-sotto il logo) e correzione di un problema tecnico interno del file principale. Restano valide
-le novità 1.0.1: sfondi tutti viola pieno senza righe ai lati, tasto lingua selezionato senza
-frangia colorata, e il caricamento che compare DOPO aver scelto la lingua.
+**Versione attuale:** 1.0.4
+**Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.4 in `Release\` (tenute solo
+le 1.0.4, tolte le versioni precedenti). Novità 1.0.4: risolti **8 difetti** trovati da un
+ulteriore controllo a più agenti sul codice attuale (vedi traguardo 74): salvataggio più onesto
+e a prova di perdita dati, statistiche e selezione in blocco che ignorano il cestino, backup
+anti-crash che non si scarta più da solo, export ZIP che non perde i tag con nomi doppi, e la
+torta delle statistiche con le categorie giuste. Novità 1.0.3: l'editor dei tag sincronizza col
+progetto solo il file GIUSTO (identità reale). Novità 1.0.2: immagine installer arricchita.
+Restano valide le novità 1.0.1: sfondi viola pieni, tasto lingua senza frangia, caricamento
+dopo la scelta lingua.
 **Regola versione:** da ora ogni modifica alza la versione di 0.0.1.
 **Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
 la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
@@ -62,6 +62,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 40 | Sezione centrale in un riquadro (1.0.0) | La sezione centrale della barra comandi (trigger words + tag suggeriti) è ora dentro un **riquadro** con lo stesso stile dei due pannelli laterali: la barra comandi ha così tre riquadri coerenti. |
 | 41 | Riquadro centrale con altezza limitata (1.0.0) | La sezione centrale era l'unica che si allungava aggiungendo tante trigger words, diventando **più alta dei due riquadri laterali**. Ora è **limitata in altezza**: le trigger words scorrono dentro il riquadro (come i tag delle miniature) e la barra comandi resta sempre bilanciata. |
 | 42 | Tre riquadri della stessa altezza (1.0.0) | I tre riquadri della barra comandi ora si **allungano tutti alla stessa altezza** (quella del più alto): il riquadro di sinistra arriva in basso come quello di destra, per un aspetto ordinato e allineato. |
+| 74 | Riparati 8 difetti dal controllo agenti (1.0.4) | Un controllo a più agenti sul codice attuale ha confermato 9 difetti (uno, i tag scambiati tra foto omonime, era già stato risolto). Sistemati gli altri 8: **1)** salvataggio delle foto caricate con "Carica immagini" ora scrive DAVVERO il file di testo sul posto e sa se è andato a buon fine (prima poteva dire "salvato" e poi cancellare il backup senza aver scritto nulla → perdita tag). **2)** Il salvataggio non si ferma più al primo file che dà errore: prova tutti, salva quelli riusciti e dice quali no. **3)** Le statistiche contano solo le foto attive, non quelle nel cestino. **4)** Le foto cestinate escono dalla selezione: non vengono più taggate in blocco né riscritte su disco. **5)** I tag "in preparazione" del pannello si azzerano quando svuoti la selezione. **6)** La torta delle statistiche mostra le categorie giuste (vestiti, capelli, occhi, calzature…) invece di ammucchiare tutto in "Generale". **7)** L'export ZIP non perde più i tag quando due foto hanno lo stesso nome in cartelle diverse (le distingue e avvisa). **8)** Il backup anti-crash non si scarta più da solo dopo aver cestinato una foto o con nomi ripetuti. |
 | 73 | Editor tag: sincronizza col progetto solo il file GIUSTO (1.0.3) | L'editor dei tag apre qualsiasi file. Prima, salvando un file, l'app cercava nel progetto una foto **con lo stesso nome** e le sostituiva i tag: ma nei dataset LoRA capita spessissimo di avere foto con lo stesso nome in cartelle diverse (es. `10_viso\img.txt` e un `img.txt` scaricato altrove). Così poteva finire i tag sbagliati sulla foto sbagliata e, al salvataggio, **distruggerne il file di testo vero**. Ora l'app controlla l'**identità reale** del file (stessa cartella, non solo il nome) e aggiorna solo la foto il cui file di testo è **esattamente quello salvato**; se non può esserne certa, non tocca nulla. |
 | 72 | Immagine installer arricchita + file più pulito (1.0.2) | L'immagine a sinistra del programma di installazione ora, **sotto il logo**, mostra una fitta **nuvola di tag viola** che riempie tutto lo spazio (prima era quasi vuota), tutta in tinta viola coordinata. Corretto anche un piccolo problema tecnico interno (un carattere invisibile fuori posto) che faceva vedere il file principale come "illeggibile" agli strumenti di controllo. |
 | 71 | Controllo agenti + correzioni (1.0.0) | Un controllo automatico con tanti "revisori" indipendenti ha passato al setaccio tutto il programma; ogni problema segnalato è stato ri-verificato da 3 controllori prima di essere accettato. Da qui sono nate le correzioni dei traguardi 63-70 qui sotto. |
@@ -106,7 +107,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | Priorità | Traguardo | In parole semplici | Versione |
 |----------|-----------|--------------------|----------|
 | Media | Velocità con dataset molto grandi | Con **migliaia di foto** la galleria si ferma per un attimo a ogni modifica e il cursore dello zoom diventa scattoso, perché l'app ridisegna tutte le anteprime ogni volta invece delle sole cambiate. Da rivedere anche la creazione delle miniature durante l'importazione, che oggi avviene una foto alla volta. | 1.0.x |
-| Bassa | Tradurre il dizionario dei tag | I ~1050 tag suggeriti hanno la traduzione solo in italiano e inglese: nelle altre 7 lingue restano in inglese. Tradurli tutti è un lavoro grosso e delicato (va fatto bene, non a macchina): da decidere se e come affrontarlo. | 1.0.x |
+| Bassa | Tradurre il dizionario dei tag | I ~1050 tag suggeriti (e i 27 nomi di categoria) hanno la traduzione solo in italiano e inglese: nelle altre 7 lingue restano in inglese. In 1.0.4 la **torta delle statistiche** è stata resa coerente (fuori da it/en è tutta in inglese, non più mezza tradotta e mezza no), ma **tradurre davvero tutti i ~1080 testi nelle 7 lingue** resta un lavoro grosso e delicato (va fatto bene, non a macchina): da decidere se e come affrontarlo (traduzione umana/professionale, oppure accettare l'inglese). | 1.0.x |
 
 ---
 

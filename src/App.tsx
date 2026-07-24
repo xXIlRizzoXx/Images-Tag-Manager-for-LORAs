@@ -249,7 +249,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.3');
+    const [appVersion, setAppVersion] = useState<string>('1.0.4');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -391,6 +391,18 @@ export default function App() {
 
     useEffect(() => { imagesRef.current = images; }, [images]);
 
+    // ITALIANO: quando la selezione in blocco si svuota (deseleziona tutto, si toglie l'ultima foto,
+    //           si cestina/chiude/elimina l'ultima selezionata) azzero anche i tag "in preparazione".
+    //           Prima restavano armati: riaprendo il pannello per un ALTRO gruppo di foto comparivano
+    //           gia' pronti col tasto Conferma attivo, e un clic li applicava a foto sbagliate.
+    // ENGLISH: when the bulk selection becomes empty (deselect-all, unticking the last photo,
+    //          trashing/closing/deleting the last selected one) also clear the STAGED tags. They
+    //          used to survive: reopening the panel for a DIFFERENT set of photos showed them already
+    //          armed with Confirm live, and one click applied them to the wrong photos.
+    useEffect(() => {
+        if (selectedForBulk.length === 0 && stagedBulkTags.length > 0) setStagedBulkTags([]);
+    }, [selectedForBulk.length, stagedBulkTags.length]);
+
     // ITALIANO: Backup automatico (debounce 1s) di tag e didascalie in localStorage —
     //           rete anti-crash: al re-import della cartella le modifiche non salvate vengono ripristinate.
     //           Non si svuota mai da solo: viene cancellato solo dal Reset progetto.
@@ -417,7 +429,19 @@ export default function App() {
                 //          restored the first one's tags onto the second, and the first save wrote them
                 //          to disk over the real ones.
                 const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-                const signature = folderSignature(folder, Object.keys(data));
+                // ITALIANO: l'impronta va calcolata sulla STESSA popolazione dell'import (TUTTE le
+                //           immagini, comprese quelle nel cestino — che sono ancora su disco finche'
+                //           non si svuota il cestino — e coi nomi ripetuti). Prima si usavano le sole
+                //           chiavi di `data` (senza cestinate, senza doppioni): bastava cestinare una
+                //           foto e al riavvio il conteggio non combaciava piu', cosi' il recupero
+                //           anti-crash veniva scartato in silenzio e i tag non salvati andavano persi.
+                // ENGLISH: the fingerprint must be computed from the SAME population as the import
+                //          (ALL images, including trashed ones — still on disk until the trash is
+                //          emptied — and with repeated names kept). It used to use only `data`'s keys
+                //          (trash-filtered, de-duplicated): trashing a single photo made the count
+                //          diverge on restart, so the crash recovery was silently discarded and any
+                //          unsaved tags were lost.
+                const signature = folderSignature(folder, images.map(img => img.file.name));
                 localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, signature, data }));
             } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
         }, 1000);
@@ -618,6 +642,14 @@ export default function App() {
 
     const handleMoveToTrash = (id: string) => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
+        // ITALIANO: tolgo la foto anche dalla selezione in blocco. Senza questo, una foto cestinata
+        //           restava selezionata: il pannello continuava a contarla e "Conferma" le applicava
+        //           i tag, che al salvataggio finivano nel suo .txt su disco — una foto che l'utente
+        //           credeva esclusa dal dataset.
+        // ENGLISH: also drop the photo from the bulk selection. Without this a trashed photo stayed
+        //          selected: the panel kept counting it and "Confirm" applied tags to it, which the
+        //          save then wrote into its .txt on disk — a photo the user thought was excluded.
+        setSelectedForBulk(prev => prev.filter(x => x !== id));
         if (selectedImageId === id) setSelectedImageId(null);
         soundManager.pop();
     };
@@ -633,6 +665,9 @@ export default function App() {
         const idx = displayedImages.findIndex(img => img.id === id);
         const nextImg = idx === -1 ? null : (displayedImages[idx + 1] || displayedImages[idx - 1] || null);
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
+        // ITALIANO: come sopra, tolgo la foto cestinata dalla selezione in blocco.
+        // ENGLISH: as above, drop the trashed photo from the bulk selection.
+        setSelectedForBulk(prev => prev.filter(x => x !== id));
         setSelectedImageId(nextImg ? nextImg.id : null);
         soundManager.pop();
     };
@@ -703,6 +738,11 @@ export default function App() {
         }
 
         setImages(prev => prev.filter(i => i.id !== id));
+        // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
+        //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
+        // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
+        //          would keep counting it and acting on an id that is gone.
+        setSelectedForBulk(prev => prev.filter(x => x !== id));
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
     };
@@ -711,6 +751,7 @@ export default function App() {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsTrashOpen(false);
 
+        const removedIds = new Set(trashedImages.map(img => img.id));
         for (const img of trashedImages) {
             try {
                 await deleteImageFiles(img);
@@ -720,6 +761,11 @@ export default function App() {
         }
 
         setImages(prev => prev.filter(i => !i.isTrashed));
+        // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
+        //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
+        // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
+        //          the panel counter would over-report.
+        setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
     };
@@ -1212,109 +1258,131 @@ export default function App() {
         //          Images with no folder (loaded as individual files) fall through to the download
         //          fallback below.
         const withFolder = imagesToSave.filter(img => img.dirHandle);
-        if (withFolder.length > 0) {
-            const withoutFolder = imagesToSave.filter(img => !img.dirHandle);
-            setIsSaving(true); setImportProgress(0);
-            try {
-                showNotification(t.processingFiles, "info");
-                for (let i = 0; i < withFolder.length; i++) {
-                    const img = withFolder[i];
-                    const tagString = getOrderedTagString(img.tags);
-                    const fileName = buildTagFileName(img.file.name);
+        const withoutFolder = imagesToSave.filter(img => !img.dirHandle);
+        const savedIds = new Set<string>();
+        const failedNames: string[] = [];
+        const total = imagesToSave.length;
+        let done = 0;
+        const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, Math.round((done / total) * 100))); };
 
-                    const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(tagString);
-                    await writable.close();
-                    setImportProgress(Math.round(((i + 1) / withFolder.length) * 100));
-                }
-
-                // ITALIANO: segno come salvati i tag DAVVERO scritti (quelli dello snapshot), non
-                //           quelli attuali: un tag aggiunto mentre il salvataggio era in corso
-                //           risultava gia' salvato e non finiva mai su disco.
-                // ENGLISH: mark as saved the tags actually WRITTEN (from the snapshot), not the
-                //          current ones: a tag added while the save was running was recorded as
-                //          already saved and never reached the disk.
-                setImages(prev => prev.map(img => {
-                    const saved = withFolder.find(s => s.id === img.id);
-                    return saved ? { ...img, originalTags: [...saved.tags] } : img;
-                }));
-
-                soundManager.chime();
-                showNotification(t.successSaveChanges, "success");
-                if (withoutFolder.length === 0) return true;
-                // ITALIANO: restano immagini senza cartella: le gestiscono i rami sotto.
-                // ENGLISH: images without a folder remain: the branches below handle them.
-                imagesToSave = withoutFolder;
-            } catch (err) {
-                console.error(err);
-                showNotification(t.dirError, "error");
-                return false;
-            } finally {
-                setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
-            }
-        }
-
-        // ITALIANO: (Qui prima c'erano due rami mai raggiunti — "esporta in una cartella scelta" e
-        //           "salva come ZIP" — comandati da isExportAll e saveAsZip, che non venivano mai
-        //           attivati: l'unico chiamante passa sempre "nessuna esportazione" e il ZIP vero e'
-        //           gestito da exportAllAsZip. Rimossi per non confondere questa funzione critica.)
-        // ENGLISH: (Two never-reached branches used to live here — "export into a chosen folder" and
-        //          "save as ZIP" — gated by isExportAll and saveAsZip, which were never turned on: the
-        //          only caller always passes "no export", and the real ZIP is handled by
-        //          exportAllAsZip. Removed to keep this critical function clear.)
-
-        // ITALIANO: Metodo di salvataggio di emergenza (download multipli nel browser)
-        // ENGLISH: Fallback save method (multiple downloads in the browser)
-        // ITALIANO: Prima i download venivano solo PROGRAMMATI con setTimeout e la funzione
-        //           rispondeva subito "salvato". "Salva e chiudi" svuotava quindi il progetto e
-        //           cancellava il backup anti-crash mentre i file non erano ancora stati scritti:
-        //           bastava chiudere l'app o annullare un download per perdere i tag.
-        //           Ora si aspetta davvero la fine di tutti i file prima di dire che e' fatto.
-        // ENGLISH: The downloads used to be merely SCHEDULED with setTimeout while the function
-        //          immediately reported success. "Save and close" therefore emptied the project and
-        //          deleted the crash backup while nothing had been written yet: quitting the app or
-        //          cancelling one download lost the tags. It now really waits for every file.
-        showNotification(t.infoSaveFallback, "info");
-        if (imagesToSave.length > 0) { setIsSaving(true); setImportProgress(0); }
+        if (total > 0) { setIsSaving(true); setImportProgress(0); }
         try {
-            for (let i = 0; i < imagesToSave.length; i++) {
-                const img = imagesToSave[i];
-                const tagString = getOrderedTagString(img.tags);
-                const blob = new Blob([tagString], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                try {
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = buildTagFileName(img.file.name);
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                } finally {
-                    URL.revokeObjectURL(url);
+            // ITALIANO: 1) Immagini con una cartella scrivibile: ognuna nel SUO handle di cartella.
+            //           Ogni file ha il PROPRIO try/catch: una foto che fallisce (bloccata, permessi,
+            //           disco pieno) NON ferma le altre. Prima al primo errore si interrompeva tutto,
+            //           le foto gia' scritte non risultavano salvate e le successive non erano tentate.
+            // ENGLISH: 1) Images with a writable folder: each into ITS OWN folder handle. Every file
+            //          has its OWN try/catch: one failing photo (locked, permissions, disk full) does
+            //          NOT stop the others. It used to abort at the first error, leaving already-written
+            //          photos unmarked and the rest never attempted.
+            if (withFolder.length > 0) {
+                showNotification(t.processingFiles, "info");
+                for (const img of withFolder) {
+                    try {
+                        const tagString = getOrderedTagString(img.tags);
+                        const fileName = buildTagFileName(img.file.name);
+                        const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(tagString);
+                        await writable.close();
+                        savedIds.add(img.id);
+                    } catch (err) {
+                        console.error('[Salvataggio] impossibile scrivere', img.file.name, err);
+                        failedNames.push(img.file.name);
+                    }
+                    bump();
                 }
-                setImportProgress(Math.round(((i + 1) / imagesToSave.length) * 100));
-                // ITALIANO: respiro fra un download e l'altro, il browser non li accetta a raffica
-                // ENGLISH: breathing room between downloads, the browser rejects rapid-fire ones
-                await new Promise(r => setTimeout(r, 300));
             }
 
-            setImages(prev => prev.map(img => {
-                const saved = imagesToSave.find(s => s.id === img.id);
-                if (saved) return { ...img, originalTags: [...saved.tags] };
-                return img;
-            }));
+            // ITALIANO: 2) Immagini senza cartella (caricate con "Carica immagini"): in Electron scrivo
+            //           il .txt SUL POSTO accanto all'immagine vera, con esito REALE per ogni file.
+            //           Prima degradavano a un download del browser che in Electron apre una finestra
+            //           "Salva con nome" annullabile, ma la funzione dava per "salvato" senza sapere se
+            //           il file fosse stato scritto: annullare bastava a perdere i tag (e "Salva e
+            //           chiudi" cancellava il backup). Ora l'esito e' vero.
+            // ENGLISH: 2) Images without a folder (loaded via "Load images"): in Electron write the
+            //          .txt IN PLACE next to the real image, with a REAL per-file outcome. They used to
+            //          degrade to a browser download which in Electron pops a cancellable "Save as"
+            //          dialog, yet the function reported "saved" without knowing whether the file was
+            //          written: cancelling was enough to lose the tags (and "Save and close" cleared the
+            //          backup). Now the outcome is real.
+            const api = (window as any).electronAPI;
+            let remaining = withoutFolder;
+            if (remaining.length > 0 && api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
+                showNotification(t.processingFiles, "info");
+                const items = remaining.map(img => ({ imagePath: api.getPathForFile(img.file) || '', content: getOrderedTagString(img.tags) }));
+                try {
+                    const res = await api.writeSidecarTags(items);
+                    const flags: boolean[] = Array.isArray(res && res.results) ? res.results : [];
+                    remaining.forEach((img, i) => { if (flags[i]) savedIds.add(img.id); else failedNames.push(img.file.name); });
+                } catch (err) {
+                    console.error('[Salvataggio] scrittura sidecar fallita', err);
+                    remaining.forEach(img => failedNames.push(img.file.name));
+                }
+                bump(remaining.length);
+                remaining = [];
+            }
 
-            soundManager.chime();
-            showNotification(t.successSaveChanges, "success");
-            return true;
-        } catch (err) {
-            console.error(err);
-            showNotification(t.errorSaveGen || t.dirError, "error");
-            return false;
+            // ITALIANO: 3) Vero ripiego BROWSER (fuori da Electron): un download e' un'ESPORTAZIONE, non
+            //           un salvataggio verificato. NON le segno come salvate (originalTags resta) e le
+            //           conto come NON riuscite, cosi' "Salva e chiudi" non chiude e non cancella il
+            //           backup su file che potrebbero non essere mai stati scritti.
+            // ENGLISH: 3) True BROWSER fallback (outside Electron): a download is an EXPORT, not a
+            //          verified save. I do NOT mark them saved (originalTags stays) and count them as
+            //          NOT succeeded, so "Save and close" won't close nor clear the backup on files that
+            //          may never have been written.
+            if (remaining.length > 0) {
+                showNotification(t.infoSaveFallback, "info");
+                for (const img of remaining) {
+                    const tagString = getOrderedTagString(img.tags);
+                    const blob = new Blob([tagString], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    try {
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = buildTagFileName(img.file.name);
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    } finally {
+                        URL.revokeObjectURL(url);
+                    }
+                    bump();
+                    // ITALIANO: respiro fra un download e l'altro, il browser non li accetta a raffica
+                    // ENGLISH: breathing room between downloads, the browser rejects rapid-fire ones
+                    await new Promise(r => setTimeout(r, 300));
+                }
+                remaining.forEach(img => failedNames.push(img.file.name));
+                remaining = [];
+            }
         } finally {
             setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
         }
+
+        // ITALIANO: segno come salvati SOLO i file davvero scritti, coi tag dello SNAPSHOT (non quelli
+        //           attuali): un tag aggiunto durante il salvataggio non risulta gia' salvato.
+        // ENGLISH: mark as saved ONLY the files really written, with the SNAPSHOT tags (not the live
+        //          ones): a tag added while saving is not counted as already saved.
+        if (savedIds.size > 0) {
+            setImages(prev => prev.map(img => {
+                if (!savedIds.has(img.id)) return img;
+                const snap = imagesToSave.find(s => s.id === img.id);
+                return snap ? { ...img, originalTags: [...snap.tags] } : img;
+            }));
+        }
+
+        if (failedNames.length === 0) {
+            soundManager.chime();
+            showNotification(t.successSaveChanges, "success");
+            return true;
+        }
+        // ITALIANO: qualcosa non e' stato salvato: dico quante si e quante no (coi primi nomi) e torno
+        //           FALSE, cosi' "Salva e chiudi" NON chiude e NON cancella il backup anti-crash.
+        // ENGLISH: something was not saved: report how many did and did not (with the first names) and
+        //          return FALSE, so "Save and close" does NOT close nor clear the crash backup.
+        const primi = failedNames.slice(0, 3).join(', ') + (failedNames.length > 3 ? '…' : '');
+        showNotification(`${t.savePartial} ${savedIds.size}/${total} — ${t.saveFailedList}: ${primi}`, "error");
+        return false;
     };
 
     // ITALIANO: Salva solo le immagini che hanno subito modifiche
@@ -1322,7 +1390,11 @@ export default function App() {
     // ITALIANO: Torna TRUE se non c'era nulla da salvare o se il salvataggio e' riuscito.
     // ENGLISH: Returns TRUE when there was nothing to save or the save succeeded.
     const handleSaveChanges = async (): Promise<boolean> => {
-        const modifiedImages = images.filter(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        // ITALIANO: NON salvo le foto nel cestino: i loro .txt non vanno scritti su disco (l'utente le
+        //           ha escluse dal dataset). Salvo solo le foto attive con modifiche.
+        // ENGLISH: do NOT save trashed photos: their .txt must not be written to disk (the user
+        //          excluded them from the dataset). Save only active photos with changes.
+        const modifiedImages = images.filter(img => !img.isTrashed && JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
         if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
         return performSave(modifiedImages);
     };
@@ -1338,8 +1410,37 @@ export default function App() {
         try {
             showNotification(t.zipProcessing, "info");
             const zip = new JSZip();
+            // ITALIANO: due foto con lo STESSO nome in sottocartelle diverse (tipico dei dataset LoRA:
+            //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e JSZip
+            //           SOVRASCRIVE l'omonimo: uno dei due .txt spariva in silenzio. Ora, se il nome e'
+            //           gia' occupato, distinguo il file con la sua sottocartella (es. "10_viso/img.txt")
+            //           o, se serve, con un suffisso numerico; nessun .txt viene piu' perso, e avviso.
+            // ENGLISH: two photos with the SAME name in different subfolders (typical LoRA layout:
+            //          10_face\img.png and 20_body\img.png) produced the same archive entry name, and
+            //          JSZip OVERWRITES a same-named entry: one of the two .txt vanished silently. Now,
+            //          if the name is already taken, I disambiguate the file with its subfolder (e.g.
+            //          "10_face/img.txt") or, if needed, a numeric suffix; no .txt is lost, and I warn.
+            const usedNames = new Set<string>();
+            let collisionCount = 0;
             imagesToExport.forEach((img) => {
-                zip.file(buildTagFileName(img.file.name), getOrderedTagString(img.tags));
+                const baseName = buildTagFileName(img.file.name);
+                let name = baseName;
+                if (usedNames.has(name)) {
+                    collisionCount++;
+                    const dir = (img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
+                    if (dir && !usedNames.has(`${dir}/${baseName}`)) {
+                        name = `${dir}/${baseName}`;
+                    } else {
+                        const dot = baseName.lastIndexOf('.');
+                        const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
+                        const ext = dot > 0 ? baseName.slice(dot) : '';
+                        let n = 2;
+                        while (usedNames.has(`${stem} (${n})${ext}`)) n++;
+                        name = `${stem} (${n})${ext}`;
+                    }
+                }
+                usedNames.add(name);
+                zip.file(name, getOrderedTagString(img.tags));
             });
             const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
                 setImportProgress(Math.round(metadata.percent));
@@ -1354,7 +1455,15 @@ export default function App() {
                 URL.revokeObjectURL(url);
             }
             soundManager.chime();
-            showNotification(t.zipSuccess, "success");
+            // ITALIANO: se c'erano nomi doppi lo dico: i file sono TUTTI nell'archivio (rinominati),
+            //           cosi' l'utente sa perche' alcuni .txt hanno un nome diverso dalla loro foto.
+            // ENGLISH: if there were duplicate names I say so: all files ARE in the archive (renamed),
+            //          so the user knows why some .txt have a different name than their photo.
+            if (collisionCount > 0) {
+                showNotification(`${t.zipSuccess} — ${collisionCount} ${t.zipNameCollisionWarn}`, "info");
+            } else {
+                showNotification(t.zipSuccess, "success");
+            }
             return true;
         } catch (err) {
             console.error(err);
@@ -1771,9 +1880,15 @@ export default function App() {
     }, [tempApiKey, t]);
     
     const applyBulkTags = () => {
-        const quante = selectedForBulk.length;
+        // ITALIANO: applico i tag SOLO alle foto selezionate e NON cestinate. La guardia !isTrashed
+        //           e' una seconda rete: anche se un id cestinato restasse per errore nella
+        //           selezione, non gli si scrivono tag (e quindi non finiscono nel suo .txt).
+        // ENGLISH: apply tags ONLY to selected and NON-trashed photos. The !isTrashed guard is a
+        //          safety net: even if a trashed id lingered in the selection, no tags are written
+        //          to it (so none reach its .txt).
+        const quante = images.filter(img => selectedForBulk.includes(img.id) && !img.isTrashed).length;
         setImages(prev => prev.map(img => {
-            if (selectedForBulk.includes(img.id)) {
+            if (selectedForBulk.includes(img.id) && !img.isTrashed) {
                 const combinedTags = [...new Set([...img.tags, ...stagedBulkTags])];
                 // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
                 // ENGLISH: same order as everywhere else: triggers first, then alphabetical
@@ -2961,13 +3076,24 @@ export default function App() {
                         
                         <div className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                             {(() => {
-                                const totalImages = images.length;
-                                const totalTags = allUniqueTags.length;
-                                const taggedImages = images.filter(img => img.tags && img.tags.length > 0).length;
+                                // ITALIANO: le statistiche contano SOLO le foto attive, non quelle nel
+                                //           cestino. Prima leggevano l'elenco grezzo `images` (che tiene
+                                //           anche le cestinate): "Totale immagini", "Senza tag", media e
+                                //           conteggi includevano foto gia' buttate, e l'utente cercava
+                                //           foto senza tag che nella galleria non esistevano piu'.
+                                // ENGLISH: statistics count ONLY active photos, not trashed ones. They
+                                //          used to read the raw `images` list (which keeps trashed
+                                //          entries): "Total images", "Untagged", the average and the
+                                //          counts all included already-discarded photos.
+                                const statsImages = images.filter(img => !img.isTrashed);
+                                const statsUniqueTags = [...new Set([...statsImages.flatMap(img => img.tags), ...customProjectTags])].sort((a, b) => a.localeCompare(b));
+                                const totalImages = statsImages.length;
+                                const totalTags = statsUniqueTags.length;
+                                const taggedImages = statsImages.filter(img => img.tags && img.tags.length > 0).length;
                                 const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};
-                                allUniqueTags.forEach(tag => {
+                                statsUniqueTags.forEach(tag => {
                                     const cat = getTagCategory(tag);
                                     categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
                                 });
@@ -2979,7 +3105,7 @@ export default function App() {
                                 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28'];
 
                                 const tagUsage: Record<string, number> = {};
-                                images.forEach(img => {
+                                statsImages.forEach(img => {
                                     img.tags.forEach((tag: string) => {
                                         tagUsage[tag] = (tagUsage[tag] || 0) + 1;
                                     });
@@ -3000,7 +3126,7 @@ export default function App() {
 
                                 // ITALIANO: lista COMPLETA dei tag (anche quelli mai usati = 0), filtrata e ordinata
                                 // ENGLISH: FULL tag list (including never-used ones = 0), filtered and sorted
-                                const fullTagList = allUniqueTags
+                                const fullTagList = statsUniqueTags
                                     .map(tag => ({ tag, count: tagUsage[tag] || 0 }))
                                     .filter(x => x.tag.toLowerCase().includes(statsSearch.toLowerCase()))
                                     .sort((a, b) => statsSort === 'name'

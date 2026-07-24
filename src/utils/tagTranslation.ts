@@ -54,14 +54,35 @@ for (const category of suggestedTagsData) categoryNames.set(category.id, categor
  *   missing from the dictionary (characters, colours, adult, general) come from the app
  *   translations, passed in as `t`.
  */
+// ITALIANO: il dizionario dei Tag Suggeriti e' tradotto SOLO in italiano e inglese. Per le altre
+//           7 lingue i 27 nomi di categoria del dizionario ripiegano sull'inglese: se le 4
+//           categorie dell'app (personaggi/colori/+18/generici) restassero tradotte, la torta
+//           mostrerebbe DUE lingue nello stesso grafico (es. tedesco + inglese). Percio' fuori da
+//           it/en mostro TUTTA la torta in inglese: un solo idioma, coerente.
+// ENGLISH: the Suggested Tags dictionary is translated ONLY into Italian and English. For the
+//          other 7 languages the 27 dictionary category names fall back to English; if the 4
+//          app categories (characters/colors/+18/general) stayed localized, the pie would show
+//          TWO languages in one chart. So outside it/en I render the WHOLE pie in English: one
+//          consistent language.
+const DICTIONARY_LANGS = new Set(['it', 'en']);
+const extraCategoryEnglish: Record<string, string> = {
+    characters: 'Characters',
+    colors: 'Colors',
+    nsfw: 'Adult (+18)',
+    general: 'General',
+};
+
 export const translateCategory = (categoryId: string, lang: string, t: any): string => {
-    const extra: Record<string, string> = {
+    const localized: Record<string, string> = {
         characters: t?.catCharacters,
         colors: t?.catColors,
         nsfw: t?.catNsfw,
         general: t?.catGeneral,
     };
-    if (extra[categoryId]) return extra[categoryId];
+    if (categoryId in extraCategoryEnglish) {
+        if (DICTIONARY_LANGS.has(lang) && localized[categoryId]) return localized[categoryId];
+        return extraCategoryEnglish[categoryId];
+    }
     const names = categoryNames.get(categoryId);
     if (names) return names[lang] || names.en || categoryId;
     return categoryId;
