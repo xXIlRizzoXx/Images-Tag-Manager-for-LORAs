@@ -30,6 +30,15 @@ export const parseTagFile = (text: string, fileName: string): string[] => {
         if (Array.isArray(parsed)) raw = parsed;
         else if (parsed && Array.isArray(parsed.tags)) raw = [...(parsed.globalTriggers || []), ...parsed.tags];
         else throw new Error('JSON senza elenco di tag');
+        // ITALIANO: i tag devono essere testo (o numeri), non oggetti/array. Senza questo controllo
+        //           un elenco di oggetti diventava un unico tag "[object Object]" e, salvando, il
+        //           file originale veniva distrutto senza alcun avviso.
+        // ENGLISH: tags must be text (or numbers), not objects/arrays. Without this check a list of
+        //          objects became a single "[object Object]" tag and, on save, the original file was
+        //          destroyed with no warning.
+        if (raw.some(x => x !== null && typeof x === 'object')) {
+            throw new Error('JSON senza elenco di tag');
+        }
     } else {
         raw = text.split(/[,\n\r]+/);
     }
@@ -38,19 +47,45 @@ export const parseTagFile = (text: string, fileName: string): string[] => {
     )];
 };
 
-export const serializeTagFile = (tags: string[], fileName: string): string => {
+// ITALIANO: le trigger word eventualmente presenti nel formato progetto ({globalTriggers, tags}).
+//           Servono a RISCRIVERLE tali e quali al salvataggio, invece di appiattirle tra i tag.
+// ENGLISH: the trigger words possibly present in the project shape ({globalTriggers, tags}). Used to
+//          WRITE THEM BACK unchanged on save, instead of flattening them into the plain tag list.
+export const parseTagTriggers = (text: string, fileName: string): string[] => {
+    const isJson = fileName.toLowerCase().endsWith('.json') || /^\s*[[{]/.test(text);
+    if (!isJson) return [];
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && Array.isArray(parsed.globalTriggers)) {
+            const puliti = (parsed.globalTriggers as unknown[]).map(x => String(x).trim()).filter(Boolean);
+            return [...new Set(puliti)];
+        }
+    } catch (_) { /* ITALIANO: gestito da parseTagFile — ENGLISH: handled by parseTagFile */ }
+    return [];
+};
+
+export const serializeTagFile = (tags: string[], fileName: string, triggers: string[] = []): string => {
     if (fileName.toLowerCase().endsWith('.json')) {
-        return JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: [], tags }, null, 2);
+        // ITALIANO: conservo la distinzione trigger/tag: le trigger ancora presenti nell'elenco
+        //           restano in globalTriggers, il resto va in tags. Prima globalTriggers era sempre
+        //           vuoto, quindi ri-salvare un file di progetto ne cancellava le trigger word.
+        // ENGLISH: keep the trigger/tag split: triggers still present in the list stay in
+        //          globalTriggers, the rest go to tags. globalTriggers used to be always empty, so
+        //          re-saving a project file wiped its trigger words.
+        const trig = triggers.filter(x => tags.includes(x));
+        const rest = tags.filter(x => !trig.includes(x));
+        return JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: trig, tags: rest }, null, 2);
     }
     return tags.length > 0 ? tags.join(', ') + ',' : '';
 };
 
-export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification }: any) => {
+export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved }: any) => {
     const [tags, setTags] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string>('');
     const [inputValue, setInputValue] = useState('');
     const [dirty, setDirty] = useState(false);
     const handleRef = useRef<any>(null);
+    const triggersRef = useRef<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
     const fallbackInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,24 +93,37 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
 
     if (!isOpen) return null;
 
+    // ITALIANO: chiede conferma se ci sono modifiche non salvate, prima di buttarle via.
+    // ENGLISH: asks for confirmation when there are unsaved edits, before discarding them.
+    const confermaScarta = (): boolean =>
+        !dirty || window.confirm(t.tagEditorDiscardConfirm || 'Discard unsaved changes?');
+
     const nuovo = () => {
-        setTags([]); setFileName(''); handleRef.current = null; setDirty(false);
+        if (!confermaScarta()) return;
+        setTags([]); setFileName(''); handleRef.current = null; triggersRef.current = []; setDirty(false);
         soundManager.pop();
     };
 
+    // ITALIANO: fa il parsing PRIMA di toccare qualsiasi stato: se il file e' illeggibile lancia,
+    //           e chi chiama NON aggiorna l'handle di scrittura. Cosi' contenuto mostrato e file di
+    //           destinazione restano sempre lo stesso file (prima potevano divergere: un file
+    //           illeggibile lasciava l'handle sul nuovo file e i tag sul vecchio, e "Salva"
+    //           sovrascriveva il file nuovo coi tag vecchi).
+    // ENGLISH: parse BEFORE touching any state: an unreadable file throws, and the caller does NOT
+    //          update the write handle. Shown content and save target thus always stay the same file
+    //          (they could diverge before: an unreadable file left the handle on the new file and the
+    //          tags on the old one, and "Save" overwrote the new file with the old tags).
     const caricaTesto = (testo: string, nome: string) => {
-        try {
-            setTags(parseTagFile(testo, nome));
-            setFileName(nome);
-            setDirty(false);
-            soundManager.chime();
-        } catch (err) {
-            console.error('[Editor tag] file illeggibile', err);
-            showNotification(t.tagEditorOpenError, 'error');
-        }
+        const nuoviTag = parseTagFile(testo, nome);       // ITALIANO: puo' lanciare — ENGLISH: may throw
+        triggersRef.current = parseTagTriggers(testo, nome);
+        setTags(nuoviTag);
+        setFileName(nome);
+        setDirty(false);
+        soundManager.chime();
     };
 
     const apri = async () => {
+        if (!confermaScarta()) return;
         // ITALIANO: selettore moderno se disponibile: cosi' possiamo anche RISALVARE
         //           sullo stesso file senza richiedere di nuovo dove metterlo.
         // ENGLISH: modern picker when available: it also lets us SAVE BACK into the same
@@ -87,11 +135,15 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                     types: [{ description: `${t.tagEditor} (.txt, .json)`, accept: { 'text/plain': ['.txt'], 'application/json': ['.json'] } }],
                 });
                 const file = await handle.getFile();
-                handleRef.current = handle;
+                // ITALIANO: prima il parse (puo' lanciare), poi affido l'handle: se il file non e'
+                //           leggibile l'handle di scrittura NON cambia.
+                // ENGLISH: parse first (may throw), then adopt the handle: if the file is unreadable
+                //          the write handle does NOT change.
                 caricaTesto(await file.text(), file.name);
+                handleRef.current = handle;
             } catch (err: any) {
                 if (err && err.name !== 'AbortError') {
-                    console.error(err);
+                    console.error('[Editor tag] file illeggibile', err);
                     showNotification(t.tagEditorOpenError, 'error');
                 }
             }
@@ -102,15 +154,21 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
 
     const apriDaInput = async (e: any) => {
         const file = e.target.files?.[0];
-        if (!file) return;
-        handleRef.current = null; // ITALIANO: senza handle si salva con "Salva come" — ENGLISH: no handle: saving goes through "Save as"
-        caricaTesto(await file.text(), file.name);
         e.target.value = '';
+        if (!file) return;
+        try {
+            const testo = await file.text();
+            caricaTesto(testo, file.name);
+            handleRef.current = null; // ITALIANO: senza handle si salva con "Salva come" — ENGLISH: no handle: saving goes through "Save as"
+        } catch (err) {
+            console.error('[Editor tag] file illeggibile', err);
+            showNotification(t.tagEditorOpenError, 'error');
+        }
     };
 
     const salva = async (forzaNuovoFile = false) => {
         const nome = fileName || 'tags.txt';
-        const contenuto = serializeTagFile(tags, nome);
+        const contenuto = serializeTagFile(tags, nome, triggersRef.current);
 
         if (!forzaNuovoFile && handleRef.current) {
             try {
@@ -120,6 +178,13 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 setDirty(false);
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
+                // ITALIANO: se il file appena scritto e' il .txt di una foto aperta nel progetto,
+                //           allineo i suoi tag in memoria: altrimenti un successivo salvataggio del
+                //           progetto lo riscriverebbe coi tag vecchi, annullando questa modifica.
+                // ENGLISH: if the file just written is a photo's .txt open in the project, sync its
+                //          in-memory tags: otherwise a later project save would rewrite it with the
+                //          old tags, undoing this edit.
+                if (onFileSaved) onFileSaved(nome, tags);
                 return;
             } catch (err) {
                 console.error('[Editor tag] salvataggio fallito', err);
@@ -141,13 +206,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 // ITALIANO: il formato lo decide l'estensione scelta nella finestra di salvataggio
                 // ENGLISH: the format follows the extension chosen in the save dialog
                 const writable = await handle.createWritable();
-                await writable.write(serializeTagFile(tags, handle.name));
+                await writable.write(serializeTagFile(tags, handle.name, triggersRef.current));
                 await writable.close();
                 handleRef.current = handle;
                 setFileName(handle.name);
                 setDirty(false);
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${handle.name}`, 'success');
+                if (onFileSaved) onFileSaved(handle.name, tags);
             } catch (err: any) {
                 if (err && err.name !== 'AbortError') {
                     console.error(err);
@@ -169,6 +235,10 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
         } finally { URL.revokeObjectURL(url); }
     };
+
+    // ITALIANO: chiusura con avviso se ci sono modifiche non salvate (tasto X e sfondo).
+    // ENGLISH: close with a warning when there are unsaved edits (X button and backdrop).
+    const chiudi = () => { if (confermaScarta()) onClose(); };
 
     const aggiungiTag = () => {
         const nuovi = inputValue.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
@@ -210,7 +280,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                             </p>
                         </div>
                     </div>
-                    <button onClick={onClose} className={`p-1.5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>
+                    <button onClick={chiudi} className={`p-1.5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>
                         <X size={18} />
                     </button>
                 </div>
