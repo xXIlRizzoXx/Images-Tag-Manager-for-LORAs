@@ -249,7 +249,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.1');
+    const [appVersion, setAppVersion] = useState<string>('1.0.2');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
