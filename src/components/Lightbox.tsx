@@ -116,7 +116,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         const translation = translateTag(tag, lang);
         return (
             <div key={key} className="relative group/tag">
-                <button onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
+                {/* ITALIANO: title nativo come rete di sicurezza — il tooltip grafico qui sotto puo'
+                              essere tagliato dal riquadro scorrevole dei tag; il title no. */}
+                {/* ENGLISH: native title as a safety net — the graphical tooltip below can be clipped
+                             by the scrollable tag box; the native title is not. */}
+                <button onClick={() => toggleTag(tag)} title={translation ? `${tag} — ${translation}` : tag} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
                     {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${selected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
                     {tag}
                 </button>

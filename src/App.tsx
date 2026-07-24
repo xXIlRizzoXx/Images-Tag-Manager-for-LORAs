@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, FlipHorizontal2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
@@ -180,10 +180,14 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
             <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                 {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
                 {/* ENGLISH: Tag area under the preview, aesthetically organized */}
-                <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                    {/* ITALIANO: area tag limitata in altezza CON scorrimento in ENTRAMBE le modalita' */}
-                    {/* ENGLISH: height-capped, scrollable tag area in BOTH view modes */}
-                    <TagInput lang={lang} tags={img.tags} setTags={(newTags: string[]) => onUpdateTags(img.id, newTags)} placeholder={t.addTag} maxHeight="max-h-[180px]" isDarkMode={isDarkMode} />
+                <div className={`flex-1 rounded-xl border p-1 min-h-0 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
+                    {/* ITALIANO: in "Intere" l'area tag RIEMPIE lo spazio libero della card (prima restava
+                                  un grosso vuoto sotto); in "Quadrate" resta limitata a 180px. In entrambi
+                                  i casi scorre se i tag sono tanti. */}
+                    {/* ENGLISH: in "original/Intere" mode the tag area FILLS the card's free space (there
+                                 used to be a big empty gap below); in "square" it stays capped at 180px.
+                                 Both scroll when there are many tags. */}
+                    <TagInput lang={lang} tags={img.tags} setTags={(newTags: string[]) => onUpdateTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
                 </div>
             </div>
         </div>
@@ -256,6 +260,17 @@ export default function App() {
     // ITALIANO: ricerca e ordinamento della lista completa dei tag nelle statistiche
     // ENGLISH: search and sort for the full tag list in the statistics
     const [statsSearch, setStatsSearch] = useState('');
+    // ITALIANO: ricerca dentro il pannello di selezione in blocco (filtra le pillole dei tag).
+    // ENGLISH: search inside the bulk-selection panel (filters the tag pills).
+    const [bulkSearch, setBulkSearch] = useState('');
+    // ITALIANO: ricerca per tag nella PAGINA PRINCIPALE (filtra le immagini). Uno o piu' tag separati
+    //           da virgola/spazio; un'immagine passa se contiene TUTTI i termini indicati.
+    // ENGLISH: tag search on the MAIN PAGE (filters images). One or more tags separated by comma/space;
+    //          an image passes if it contains ALL the given terms.
+    const [tagSearch, setTagSearch] = useState('');
+    // ITALIANO: true mentre si trascinano file sopra la finestra (per mostrare l'area di rilascio).
+    // ENGLISH: true while files are dragged over the window (to show the drop overlay).
+    const [isDragging, setIsDragging] = useState(false);
     // ITALIANO: PRESTAZIONI — la ricerca nella lista tag delle statistiche usa un valore "differito":
     //           mentre scrivi, la casella resta immediata ma il filtro/ordinamento e il ridisegno
     //           della lista (potenzialmente decine di migliaia di righe) vengono aggiornati con calma,
@@ -320,7 +335,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.6');
+    const [appVersion, setAppVersion] = useState<string>('1.0.7');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -570,6 +585,21 @@ export default function App() {
 
     const displayedImages = useMemo(() => {
         let sorted = [...images].filter(img => !img.isTrashed);
+        // ITALIANO: RICERCA PER TAG (pagina principale). Uno o piu' termini separati da VIRGOLA (i tag
+        //           possono contenere spazi, es. "open eyes", quindi NON divido sugli spazi). Un'immagine
+        //           passa se contiene TUTTI i termini (confronto per sottostringa, non distingue maiuscole).
+        //           Cosi' "Seleziona tutte" (che opera su displayedImages) seleziona SOLO le filtrate.
+        // ENGLISH: TAG SEARCH (main page). One or more terms separated by COMMA (tags may contain spaces,
+        //          e.g. "open eyes", so I do NOT split on spaces). An image passes if it contains ALL the
+        //          terms (case-insensitive substring). This way "Select all" (which works on
+        //          displayedImages) selects ONLY the filtered ones.
+        const terms = tagSearch.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if (terms.length > 0) {
+            sorted = sorted.filter(img => {
+                const lower = (img.tags || []).map((tg: string) => tg.toLowerCase());
+                return terms.every(term => lower.some((tg: string) => tg.includes(term)));
+            });
+        }
         if (sortOrder === 'name-asc') {
             sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
         } else if (sortOrder === 'name-desc') {
@@ -580,7 +610,7 @@ export default function App() {
             sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
         }
         return sorted;
-    }, [images, sortOrder]);
+    }, [images, sortOrder, tagSearch]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
@@ -1225,6 +1255,103 @@ export default function App() {
         if (imagesInputRef.current) imagesInputRef.current.value = '';
     };
 
+    // ITALIANO: TRASCINAMENTO (drag & drop) di immagini nell'app. Il .txt gemello viene riconosciuto
+    //           da solo: sia se trascinato ASSIEME all'immagine, sia se semplicemente PRESENTE nella
+    //           stessa cartella su disco — perche' loadSidecarTxtFiles legge il file con lo stesso
+    //           nome accanto a ciascuna immagine (via percorso Electron). Nel browser (senza Electron,
+    //           niente accesso al disco) uso i .txt effettivamente trascinati, abbinati per nome.
+    // ENGLISH: DRAG & DROP of images into the app. The sidecar .txt is recognized automatically:
+    //          whether dragged TOGETHER with the image or simply PRESENT in the same folder on disk —
+    //          because loadSidecarTxtFiles reads the same-named file next to each image (via the
+    //          Electron path). In the browser (no Electron, no disk access) I use the .txt files
+    //          actually dropped, paired by name.
+    const handleDroppedFiles = useCallback(async (fileList: FileList) => {
+        const files = Array.from(fileList || []);
+        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imgFiles.length === 0) { showNotification(t.dropOnlyImages, 'info'); return; }
+        const droppedTxt = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
+        const { txtFiles: diskTxt, folderOf } = await loadSidecarTxtFiles(imgFiles);
+        if (diskTxt.length > 0) {
+            calculateImportSummary(imgFiles, diskTxt, null, folderOf);
+        } else {
+            // ITALIANO: niente sidecar dal disco (browser o nessun .txt accanto): uso quelli trascinati.
+            // ENGLISH: no disk sidecars (browser or no adjacent .txt): use the dropped ones.
+            calculateImportSummary(imgFiles, droppedTxt, null, null);
+        }
+    }, [t]);
+    // ITALIANO: riferimento SEMPRE aggiornato al gestore, cosi' i listener globali (sotto) restano
+    //           registrati una volta sola ma chiamano sempre la versione corrente.
+    // ENGLISH: an always-current ref to the handler, so the global listeners (below) subscribe once
+    //          but always call the latest version.
+    const dropHandlerRef = useRef(handleDroppedFiles);
+    dropHandlerRef.current = handleDroppedFiles;
+
+    // ITALIANO: gestione GLOBALE del trascinamento file. I due preventDefault sono FONDAMENTALI:
+    //           senza di essi il rilascio di un file farebbe "navigare" la finestra al file (in
+    //           passato questo rompeva l'app). Il contatore dragDepth evita che passare sopra un
+    //           elemento figlio spenga l'area di rilascio. Rilasciando, importo i file trascinati.
+    // ENGLISH: GLOBAL drag & drop handling. The two preventDefault calls are ESSENTIAL: without them
+    //          dropping a file would make the window "navigate" to it (this used to break the app).
+    //          The dragDepth counter prevents moving over a child element from turning the overlay
+    //          off. On drop, I import the dropped files.
+    useEffect(() => {
+        let dragDepth = 0;
+        const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+        const onDragEnter = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; setIsDragging(true); };
+        const onDragOver = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); };
+        const onDragLeave = (e: DragEvent) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (dragDepth === 0) setIsDragging(false); };
+        const onDrop = (e: DragEvent) => {
+            e.preventDefault();
+            dragDepth = 0;
+            setIsDragging(false);
+            const dt = e.dataTransfer;
+            if (dt && dt.files && dt.files.length > 0) dropHandlerRef.current(dt.files);
+        };
+        window.addEventListener('dragenter', onDragEnter);
+        window.addEventListener('dragover', onDragOver);
+        window.addEventListener('dragleave', onDragLeave);
+        window.addEventListener('drop', onDrop);
+        return () => {
+            window.removeEventListener('dragenter', onDragEnter);
+            window.removeEventListener('dragover', onDragOver);
+            window.removeEventListener('dragleave', onDragLeave);
+            window.removeEventListener('drop', onDrop);
+        };
+    }, []);
+
+    // ITALIANO: se l'immagine APERTA nel visualizzatore viene modificata ESTERNAMENTE su disco (es.
+    //           ritoccata in un altro programma), quando si torna sull'app (focus finestra) la
+    //           ri-leggo dal disco e, se e' cambiata (data di modifica piu' recente), aggiorno
+    //           anteprima e immagine piena. Funziona per le foto aperte da CARTELLA (che portano il
+    //           loro handle scrivibile); il Lightbox rigenera l'immagine perche' dipende da file.
+    // ENGLISH: if the image OPEN in the viewer is changed EXTERNALLY on disk (e.g. retouched in
+    //          another app), when the user returns to the app (window focus) I re-read it from disk
+    //          and, if it changed (newer modified time), refresh the thumbnail and the full image.
+    //          Works for photos opened from a FOLDER (which carry their writable handle); the Lightbox
+    //          regenerates the image because it depends on file.
+    useEffect(() => {
+        const ricontrolla = async () => {
+            const id = selectedImageId;
+            if (!id) return;
+            const img = imagesRef.current.find(i => i.id === id);
+            if (!img || !img.dirHandle || typeof img.dirHandle.getFileHandle !== 'function') return;
+            try {
+                const fh = await img.dirHandle.getFileHandle(img.file.name);
+                const fresh = await fh.getFile();
+                if (fresh.lastModified > (img.file.lastModified || 0)) {
+                    let thumbData: any = null;
+                    try { thumbData = await generateThumbnail(fresh); } catch (_) { /* tengo la vecchia anteprima */ }
+                    // ITALIANO: NON revoco la vecchia anteprima (potrebbe essere nella cronologia annulla).
+                    // ENGLISH: do NOT revoke the old thumbnail (it may live in the undo history).
+                    setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
+                    showNotification(t.imageReloaded, 'info');
+                }
+            } catch (_) { /* file spostato/illeggibile: ignoro */ }
+        };
+        window.addEventListener('focus', ricontrolla);
+        return () => window.removeEventListener('focus', ricontrolla);
+    }, [selectedImageId, t]);
+
     // ITALIANO: ESPORTA / IMPORTA i tag del progetto (punto 16). Il JSON serve a
     //           reimportare tutto in modo pulito in un nuovo progetto; il TXT e' una
     //           lista leggibile. L'import accetta entrambi e AGGIUNGE i tag alla palette
@@ -1678,6 +1805,23 @@ export default function App() {
         const visibleIds = displayedImages.map(img => img.id);
         const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedForBulk.includes(id));
         setSelectedForBulk(allSelected ? [] : visibleIds);
+        soundManager.pop();
+    };
+
+    // ITALIANO: INVERTE la selezione sulle immagini VISIBILI (quelle mostrate/filtrate): quelle
+    //           selezionate si deselezionano e viceversa. Utile dopo una ricerca per tag.
+    // ENGLISH: INVERTS the selection over the VISIBLE images (those shown/filtered): selected ones
+    //          get deselected and vice versa. Handy after a tag search.
+    const invertSelection = () => {
+        const visibleIds = displayedImages.map(img => img.id);
+        setSelectedForBulk(prev => {
+            const prevSet = new Set(prev);
+            // ITALIANO: tengo eventuali selezioni non visibili (fuori dal filtro) e inverto le visibili.
+            // ENGLISH: keep any non-visible selections (outside the filter) and invert the visible ones.
+            const hiddenSelected = prev.filter(id => !visibleIds.includes(id));
+            const invertedVisible = visibleIds.filter(id => !prevSet.has(id));
+            return [...hiddenSelected, ...invertedVisible];
+        });
         soundManager.pop();
     };
 
@@ -2269,6 +2413,18 @@ export default function App() {
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
+            {/* ITALIANO: area di RILASCIO che appare mentre si trascinano file sopra la finestra. */}
+            {/* ENGLISH: DROP overlay shown while files are dragged over the window. */}
+            {isDragging && (
+                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-indigo-950/70 backdrop-blur-sm pointer-events-none animate-in fade-in">
+                    <div className="flex flex-col items-center gap-4 px-12 py-10 rounded-3xl border-4 border-dashed border-indigo-400 bg-indigo-900/40 shadow-2xl">
+                        <ImageIcon size={56} className="text-indigo-300" />
+                        <p className="text-xl font-bold text-white">{t.dropImagesHere}</p>
+                        <p className="text-sm text-indigo-200">{t.dropReleaseHint}</p>
+                    </div>
+                </div>
+            )}
+
             <TagFileEditor
                 isOpen={isTagEditorOpen}
                 onClose={() => setIsTagEditorOpen(false)}
@@ -2277,6 +2433,15 @@ export default function App() {
                 lang={lang}
                 showNotification={showNotification}
                 onFileSaved={handleTagEditorSaved}
+                projectTags={allUniqueTags}
+                onImportTagsToProject={(tagsFromEditor: string[]) => {
+                    // ITALIANO: i tag aperti/importati nell'editor entrano anche nella palette del
+                    //           progetto (riquadro di selezione in blocco), senza doppioni.
+                    // ENGLISH: tags opened/imported in the editor also enter the project palette
+                    //          (bulk-selection panel), without duplicates.
+                    const puliti = [...new Set(tagsFromEditor.map(s => String(s).trim()).filter(Boolean))];
+                    if (puliti.length > 0) setCustomProjectTags(prev => [...new Set([...prev, ...puliti])]);
+                }}
             />
             <SaveBeforeCloseDialog
                 isOpen={saveCloseDialog.isOpen}
@@ -2950,17 +3115,38 @@ export default function App() {
                     </div>
 
                     <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex justify-between items-center shrink-0`}>
-                        <div className={`flex-1 flex items-center gap-3 text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            <div className="flex items-center gap-2"><ImageIcon size={16} /><span>{images.length} {images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}</span></div>
-                            {/* ITALIANO: Seleziona / deseleziona tutte le foto visibili */}
-                            {/* ENGLISH: Select / deselect all visible photos */}
+                        <div className={`flex-1 flex items-center gap-2 text-sm font-medium min-w-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {/* ITALIANO: conteggio — se c'e' una ricerca per tag mostro "filtrate / totali" */}
+                            {/* ENGLISH: count — if a tag search is active I show "filtered / total" */}
+                            <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${images.filter(i => !i.isTrashed).length}` : `${images.length} ${images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
+                            {/* ITALIANO: ricerca per TAG — filtra le immagini mostrate (uno o piu' tag separati da virgola) */}
+                            {/* ENGLISH: TAG search — filters the shown images (one or more comma-separated tags) */}
+                            <div className="relative flex-1 min-w-0 max-w-xs">
+                                <Search size={14} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                                <input
+                                    type="text"
+                                    value={tagSearch}
+                                    onChange={e => setTagSearch(e.target.value)}
+                                    placeholder={t.tagSearchPlaceholder}
+                                    className={`w-full border rounded-lg pl-8 pr-7 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-200 text-gray-700 placeholder-gray-400'}`}
+                                />
+                                {tagSearch && <button onClick={() => setTagSearch('')} title={t.cancel} className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}><X size={12} /></button>}
+                            </div>
+                            {/* ITALIANO: Seleziona / deseleziona + INVERTI le foto visibili (filtrate) */}
+                            {/* ENGLISH: Select / deselect + INVERT the visible (filtered) photos */}
                             {displayedImages.length > 0 && (() => {
                                 const allSelected = displayedImages.every(img => selectedForBulk.includes(img.id));
                                 return (
-                                    <button onClick={toggleSelectAll} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${allSelected ? 'bg-indigo-500 border-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}`}>
-                                        <Check size={13} />
-                                        {allSelected ? (t.deselectAll || 'Deseleziona tutte') : (t.selectAll || 'Seleziona tutte')}
-                                    </button>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button onClick={toggleSelectAll} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${allSelected ? 'bg-indigo-500 border-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}`}>
+                                            <Check size={13} />
+                                            {allSelected ? (t.deselectAll || 'Deseleziona tutte') : (t.selectAll || 'Seleziona tutte')}
+                                        </button>
+                                        <button onClick={invertSelection} title={t.invertSelection} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                            <FlipHorizontal2 size={13} />
+                                            <span className="hidden lg:inline">{t.invertSelection}</span>
+                                        </button>
+                                    </div>
                                 );
                             })()}
                         </div>
@@ -2995,8 +3181,13 @@ export default function App() {
 
                     <div className="flex-1 flex flex-row overflow-hidden relative">
                         <div className={`p-4 md:p-6 ${isDarkMode ? 'bg-black/20' : 'bg-gray-200/40'} flex-1 overflow-y-auto min-h-0 relative`}>
-                            {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> : 
-                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
+                            {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> :
+                            // ITALIANO: col pannello di selezione aperto lascio SOTTO (pb-[52vh]) spazio per scorrere
+                            //           TUTTE le card sopra il pannello: prima le ultime restavano coperte e non si
+                            //           riusciva a scrivere/toccare i loro tag.
+                            // ENGLISH: with the selection panel open I leave space BELOW (pb-[52vh]) to scroll ALL
+                            //          cards above the panel: the last ones used to stay covered and unusable.
+                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[52vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
                                 {displayedImages.map((img) => (
                                     <GalleryCard
                                         key={img.id}
@@ -3030,74 +3221,111 @@ export default function App() {
                     </div>
 
                     {selectedForBulk.length > 0 && (
-                        <div className={`absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl backdrop-blur-xl border p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5 ${isDarkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
-                            <div className="w-full flex flex-col gap-3 h-full">
+                        <div className={`absolute bottom-6 left-0 right-0 mx-auto w-[95%] max-w-6xl backdrop-blur-xl border p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[46vh] rounded-2xl ring-1 ring-black/5 ${isDarkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
+                            <div className="w-full flex flex-col gap-3 h-full min-h-0">
                                 <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}><Grid3X3 size={18} /></div><div><h3 className={`text-sm font-bold leading-tight ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className={`text-[10px] uppercase tracking-wide ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className={`p-1.5 rounded-full border hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm ${isDarkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'}`}><X size={14} /></button></div>
-                                {/* ITALIANO: Scrivi un tag NUOVO e premi Invio: si aggiunge a quelli in preparazione
-                                              e verra' applicato a tutte le foto selezionate (col tasto Conferma). */}
-                                {/* ENGLISH: Type a NEW tag and press Enter: it joins the staged ones and gets
-                                             applied to all selected photos (via the Confirm button). */}
-                                <input
-                                    type="text"
-                                    placeholder={t.bulkAddPlaceholder}
-                                    className={`shrink-0 w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
-                                    onKeyDown={(e: any) => {
-                                        if (e.key === 'Enter' || e.key === ',') {
-                                            e.preventDefault();
-                                            const newTag = e.target.value.trim().replace(/,$/, '');
-                                            if (newTag) {
-                                                setStagedBulkTags(prev => prev.includes(newTag) ? prev : [...prev, newTag]);
-                                                e.target.value = '';
-                                                soundManager.pop();
+                                {/* ITALIANO: riga responsive — a sinistra scrivi un tag NUOVO (Invio) da applicare alle
+                                              foto selezionate; a destra un motore di RICERCA che filtra le pillole sotto. */}
+                                {/* ENGLISH: responsive row — left: type a NEW tag (Enter) to apply to the selected
+                                             photos; right: a SEARCH box that filters the pills below. */}
+                                <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                                    <input
+                                        type="text"
+                                        placeholder={t.bulkAddPlaceholder}
+                                        className={`flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                                        onKeyDown={(e: any) => {
+                                            if (e.key === 'Enter' || e.key === ',') {
+                                                e.preventDefault();
+                                                const newTag = e.target.value.trim().replace(/,$/, '');
+                                                if (newTag) {
+                                                    setStagedBulkTags(prev => prev.includes(newTag) ? prev : [...prev, newTag]);
+                                                    e.target.value = '';
+                                                    soundManager.pop();
+                                                }
                                             }
-                                        }
-                                    }}
-                                />
-                                <div className={`flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`} style={{ scrollbarGutter: 'stable' }}>
+                                        }}
+                                    />
+                                    <div className="relative sm:w-72 shrink-0">
+                                        <Search size={15} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                                        <input
+                                            type="text"
+                                            value={bulkSearch}
+                                            onChange={e => setBulkSearch(e.target.value)}
+                                            placeholder={t.bulkSearchPlaceholder}
+                                            className={`w-full border rounded-lg pl-8 pr-7 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                                        />
+                                        {bulkSearch && <button onClick={() => setBulkSearch('')} className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}><X size={13} /></button>}
+                                    </div>
+                                </div>
+                                <div className={`flex-1 min-h-0 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`} style={{ scrollbarGutter: 'stable' }}>
                                     {(() => {
-                                        const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
+                                        const q = bulkSearch.trim().toLowerCase();
+                                        const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])]
+                                            .filter(tag => !q || tag.toLowerCase().includes(q))
+                                            .sort((a, b) => a.localeCompare(b));
                                         // ITALIANO: PRESTAZIONI — l'insieme dei tag presenti su almeno una foto selezionata si
-                                        //           calcola UNA volta sola. Prima, per OGNI tag mostrato (anche migliaia) si
-                                        //           riscorreva l'intera selezione facendo per giunta una .find() su tutte le
-                                        //           immagini: con dataset grandi il pannello scattava. Stesso identico esito,
-                                        //           ma con una ricerca istantanea in un Set.
+                                        //           calcola UNA volta sola (ricerca istantanea in un Set), non per ogni pillola.
                                         // ENGLISH: PERF — the set of tags present on at least one selected photo is computed
-                                        //           ONCE. Before, for EVERY displayed tag (even thousands) it re-scanned the whole
-                                        //           selection AND did a .find() over all images: with big datasets the panel
-                                        //           stuttered. Same exact result, now an instant Set lookup.
+                                        //           ONCE (instant Set lookup), not per pill.
                                         const selectedIdSet = new Set(selectedForBulk);
                                         const tagsOnSelected = new Set<string>();
                                         for (const im of images) {
                                             if (!selectedIdSet.has(im.id)) continue;
                                             for (const tg of im.tags) tagsOnSelected.add(tg);
                                         }
-                                        return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
+                                        return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{q ? t.statsNoTagsMatch : t.noTagsInProject}</p> : displayTags.map(tag => {
                                             const category = getTagCategory(tag);
                                             const colorClass = getCategoryColor(category, isDarkMode);
                                             const activeColorClass = getActiveCategoryColor(category);
                                             const isStaged = stagedBulkTags.includes(tag);
                                             const isPartiallySelected = tagsOnSelected.has(tag);
-                                            
+
+                                            // ITALIANO: TRE stati ben distinti (vedi legenda sotto):
+                                            //   1) DA AGGIUNGERE (staged): pieno acceso + anello + spunta.
+                                            //   2) GIA' SU ALCUNE: contorno tratteggiato, sfondo trasparente.
+                                            //   3) DISPONIBILE: pieno tenue.
+                                            // ENGLISH: THREE clearly distinct states (see legend below):
+                                            //   1) TO ADD (staged): vivid fill + ring + check.
+                                            //   2) ON SOME: dashed outline, transparent bg.
+                                            //   3) AVAILABLE: soft fill.
                                             let buttonClass = '';
                                             if (isStaged) {
-                                                buttonClass = `${activeColorClass} scale-105 font-bold`;
+                                                buttonClass = `${activeColorClass} scale-105 font-bold ring-2 ring-offset-1 ${isDarkMode ? 'ring-white/50 ring-offset-gray-900' : 'ring-black/20 ring-offset-white'}`;
                                             } else if (isPartiallySelected) {
                                                 const textColorMatch = colorClass.match(/text-[a-z]+-\d+/);
                                                 const textColor = textColorMatch ? textColorMatch[0] : (isDarkMode ? 'text-gray-300' : 'text-gray-600');
                                                 const borderColor = textColor.replace('text-', 'border-');
-                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} ${isDarkMode ? 'hover:bg-gray-800/50' : 'hover:bg-gray-100'} opacity-80`;
+                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} ${isDarkMode ? 'hover:bg-gray-800/50' : 'hover:bg-gray-100'} opacity-90`;
                                             } else {
                                                 buttonClass = `${colorClass} border border-transparent hover:brightness-110 shadow-sm`;
                                             }
-                                            
+
                                             return (
                                                 <button key={tag} onClick={() => setStagedBulkTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1 ${buttonClass}`}>
                                                     {category === 'nsfw' && <span className={`font-bold text-[9px] px-1 rounded-sm ${isStaged ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                                                    {isStaged && <Check size={12} strokeWidth={3} />}
                                                     {tag}
                                                 </button>
                                             );
                                         });
                                     })()}
+                                </div>
+                                {/* ITALIANO: LEGENDA degli stati delle pillole (non solo il tratteggiato). */}
+                                {/* ENGLISH: LEGEND of the pill states (not just the dashed one). */}
+                                <div className={`shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    <span className="font-bold uppercase tracking-wide">{t.legendTitle}</span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white ring-2 ring-offset-1 ${isDarkMode ? 'ring-white/50 ring-offset-gray-900' : 'ring-black/20 ring-offset-white'}`}><Check size={10} strokeWidth={3} />tag</span>
+                                        {t.legendStaged}
+                                    </span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] bg-transparent border-2 border-dashed ${isDarkMode ? 'text-gray-300 border-gray-500' : 'text-gray-600 border-gray-400'}`}>tag</span>
+                                        {t.legendOnSome}
+                                    </span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] shadow-sm ${isDarkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-100 text-blue-700'}`}>tag</span>
+                                        {t.legendAvailable}
+                                    </span>
                                 </div>
                                 <div className="flex justify-end gap-2 shrink-0 h-9 transition-all">
                                     {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className={`px-4 py-1.5 rounded-lg font-semibold transition-colors text-xs ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}

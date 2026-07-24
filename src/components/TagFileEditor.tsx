@@ -11,7 +11,7 @@
 **  tag is shown as a pill: type to add one, click the X to remove it.        **
 ******************************************************************************/
 import { useState, useRef, useEffect } from 'react';
-import { X, FilePlus2, FolderOpen, Save, Tag as TagIcon } from 'lucide-react';
+import { X, FilePlus2, FolderOpen, Save, Tag as TagIcon, ListPlus } from 'lucide-react';
 import { getTagCategory, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { soundManager } from '../utils/soundManager';
@@ -83,11 +83,16 @@ export const serializeTagFile = (tags: string[], fileName: string, triggers: str
     return tags.length > 0 ? tags.join(', ') + ',' : '';
 };
 
-export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved }: any) => {
+export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject }: any) => {
     const [tags, setTags] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string>('');
     const [inputValue, setInputValue] = useState('');
     const [dirty, setDirty] = useState(false);
+    // ITALIANO: azione in sospeso quando ci sono modifiche non salvate: se != null mostro la finestra
+    //           di conferma A TEMA (non piu' il window.confirm di sistema, che stonava con l'app).
+    // ENGLISH: pending action when there are unsaved edits: if != null I show the THEMED confirm
+    //          dialog (no longer the system window.confirm, which clashed with the app).
+    const [discardAction, setDiscardAction] = useState<null | (() => void)>(null);
     const handleRef = useRef<any>(null);
     const triggersRef = useRef<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -97,16 +102,19 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
 
     if (!isOpen) return null;
 
-    // ITALIANO: chiede conferma se ci sono modifiche non salvate, prima di buttarle via.
-    // ENGLISH: asks for confirmation when there are unsaved edits, before discarding them.
-    const confermaScarta = (): boolean =>
-        !dirty || window.confirm(t.tagEditorDiscardConfirm || 'Discard unsaved changes?');
+    // ITALIANO: esegue l'azione subito se non ci sono modifiche non salvate; altrimenti chiede prima
+    //           conferma con la finestra a tema. Sostituisce il vecchio window.confirm sincrono.
+    // ENGLISH: runs the action immediately when there are no unsaved edits; otherwise asks for
+    //          confirmation first with the themed dialog. Replaces the old synchronous window.confirm.
+    const guardDiscard = (action: () => void) => {
+        if (!dirty) { action(); return; }
+        setDiscardAction(() => action);
+    };
 
-    const nuovo = () => {
-        if (!confermaScarta()) return;
+    const nuovo = () => guardDiscard(() => {
         setTags([]); setFileName(''); handleRef.current = null; triggersRef.current = []; setDirty(false);
         soundManager.pop();
-    };
+    });
 
     // ITALIANO: fa il parsing PRIMA di toccare qualsiasi stato: se il file e' illeggibile lancia,
     //           e chi chiama NON aggiorna l'handle di scrittura. Cosi' contenuto mostrato e file di
@@ -123,11 +131,13 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         setTags(nuoviTag);
         setFileName(nome);
         setDirty(false);
+        // ITALIANO: rendo questi tag disponibili anche nel pannello di selezione in blocco del progetto.
+        // ENGLISH: also make these tags available in the project's bulk-selection panel.
+        if (onImportTagsToProject) onImportTagsToProject(nuoviTag);
         soundManager.chime();
     };
 
-    const apri = async () => {
-        if (!confermaScarta()) return;
+    const apri = () => guardDiscard(async () => {
         // ITALIANO: selettore moderno se disponibile: cosi' possiamo anche RISALVARE
         //           sullo stesso file senza richiedere di nuovo dove metterlo.
         // ENGLISH: modern picker when available: it also lets us SAVE BACK into the same
@@ -159,7 +169,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             return;
         }
         fallbackInputRef.current?.click();
-    };
+    });
 
     const apriDaInput = async (e: any) => {
         const file = e.target.files?.[0];
@@ -252,15 +262,25 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         } finally { URL.revokeObjectURL(url); }
     };
 
-    // ITALIANO: chiusura con avviso se ci sono modifiche non salvate (tasto X e sfondo).
-    // ENGLISH: close with a warning when there are unsaved edits (X button and backdrop).
-    const chiudi = () => { if (confermaScarta()) onClose(); };
+    // ITALIANO: chiusura con avviso a tema se ci sono modifiche non salvate (tasto X e sfondo).
+    // ENGLISH: close with a themed warning when there are unsaved edits (X button and backdrop).
+    const chiudi = () => guardDiscard(onClose);
 
     const aggiungiTag = () => {
         const nuovi = inputValue.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
         if (!nuovi.length) return;
         setTags(prev => [...new Set([...prev, ...nuovi])]);
         setInputValue('');
+        setDirty(true);
+        soundManager.pop();
+    };
+
+    // ITALIANO: inserisce nell'editor TUTTI i tag conosciuti del progetto attuale (senza doppioni).
+    // ENGLISH: inserts ALL the current project's known tags into the editor (without duplicates).
+    const aggiungiTagProgetto = () => {
+        const nuovi = [...new Set((projectTags as any[]).map(s => String(s).trim()).filter(Boolean))];
+        if (!nuovi.length) { showNotification(t.noTagsInProject, 'info'); return; }
+        setTags(prev => [...new Set([...prev, ...nuovi])]);
         setDirty(true);
         soundManager.pop();
     };
@@ -308,6 +328,11 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                     <button onClick={apri} className={`${tastoBase} bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white shadow-md`}>
                         <FolderOpen size={14} /> {t.tagEditorOpen}
                     </button>
+                    {/* ITALIANO: inserisce tutti i tag conosciuti del progetto attuale */}
+                    {/* ENGLISH: inserts all known tags of the current project */}
+                    <button onClick={aggiungiTagProgetto} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                        <ListPlus size={14} /> {t.tagEditorAddProjectTags}
+                    </button>
                     <div className="flex-1" />
                     <button onClick={() => salva(false)} disabled={tags.length === 0} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
                         <Save size={14} /> {t.tagEditorSave}
@@ -344,7 +369,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                         type="text"
                         value={inputValue}
                         onChange={e => setInputValue(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); aggiungiTag(); } }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); aggiungiTag(); } }}
                         placeholder={t.tagEditorPlaceholder}
                         className={`flex-1 px-3 py-2 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/50 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'}`}
                     />
@@ -355,6 +380,20 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
 
                 <input ref={fallbackInputRef} type="file" accept=".txt,.json,text/plain,application/json" className="hidden" onChange={apriDaInput} />
             </div>
+
+            {/* ITALIANO: conferma "scarta modifiche" A TEMA (prima era il window.confirm di sistema). */}
+            {/* ENGLISH: THEMED "discard changes" confirm (used to be the system window.confirm). */}
+            {discardAction && (
+                <div className="fixed inset-0 z-[340] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setDiscardAction(null)}>
+                    <div className={`w-[90%] max-w-sm rounded-2xl shadow-2xl border p-5 flex flex-col gap-4 animate-in zoom-in-95 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
+                        <p className={`text-sm ${testo}`}>{t.tagEditorDiscardConfirm}</p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setDiscardAction(null)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
+                            <button onClick={() => { const a = discardAction; setDiscardAction(null); if (a) a(); }} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.closeWithoutSaving}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
