@@ -1,11 +1,12 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 24 luglio 2026
-**Versione attuale:** 1.0.0 (prima versione pubblica ufficiale)
-**Ultima consegna:** 24 luglio 2026 — portable + installer aggiornati in `Release\`,
-con tutte le correzioni nate dal controllo automatico con agenti (traguardi 63-71):
-foto con nomi uguali, editor di tag più sicuro, cestino onesto, avvio a prova di blocco,
-bandiere offline, ultimi testi tradotti, programma più leggero.
+**Versione attuale:** 1.0.1
+**Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.1 in `Release\`. Oltre alle
+correzioni del controllo agenti (traguardi 63-71): sfondi tutti viola pieno senza righe ai lati,
+tasto lingua selezionato senza frangia colorata, e il caricamento che ora compare DOPO aver
+scelto la lingua (non più consumato dietro la scelta lingua).
+**Regola versione:** da ora ogni modifica alza la versione di 0.0.1.
 **Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
 la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
 nei traguardi qui sotto indicano solo l'ordine in cui le funzioni sono state fatte.
