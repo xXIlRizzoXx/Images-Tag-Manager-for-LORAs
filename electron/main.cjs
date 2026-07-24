@@ -171,6 +171,24 @@ ipcMain.handle('secure-storage:delete', (_event, key) => {
 
    Safety limits (the bridge stays narrow): read ONLY .txt files, ONLY when sitting next
    to a real image that exists on disk, never write, never above 1 MB. */
+// ITALIANO: I percorsi arrivano dal renderer (ricavati dai file scelti dall'utente): sono sempre
+//           percorsi LOCALI e ASSOLUTI. Come difesa in profondita' scarto tutto il resto — percorsi
+//           di rete UNC (\\server\share), percorsi "device" (\\?\...) e qualsiasi segmento ".." di
+//           risalita — cosi' questi canali non possono essere spinti a leggere/scrivere/cestinare
+//           file fuori da dove l'utente ha davvero puntato.
+// ENGLISH: Paths come from the renderer (derived from the user's picked files): they are always
+//          LOCAL, ABSOLUTE paths. As defense in depth I reject everything else — UNC network paths
+//          (\\server\share), device paths (\\?\...) and any ".." traversal segment — so these
+//          channels cannot be steered into reading/writing/trashing files outside what the user
+//          actually pointed at.
+const isSafeLocalPath = (p) => {
+    if (typeof p !== 'string' || !p) return false;
+    if (/^[\\/]{2}/.test(p)) return false;        // UNC / device / //host
+    if (!path.isAbsolute(p)) return false;
+    if (p.split(/[\\/]+/).includes('..')) return false;
+    return true;
+};
+
 const SIDECAR_MAX_BYTES = 1024 * 1024;
 const SIDECAR_MAX_FILES = 5000;
 const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff']);
@@ -180,7 +198,7 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     const out = [];
     const seen = new Set();
     for (const raw of imagePaths.slice(0, SIDECAR_MAX_FILES)) {
-        if (typeof raw !== 'string' || !raw) continue;
+        if (!isSafeLocalPath(raw)) continue;
         try {
             // ITALIANO: dev'essere un'immagine VERA presente su disco
             // ENGLISH: it must be a REAL image present on disk
@@ -240,7 +258,7 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
         try {
             // ITALIANO: dev'essere un'immagine VERA presente su disco (stesso contratto della lettura)
             // ENGLISH: it must be a REAL image present on disk (same contract as reading)
-            if (!imagePath || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
+            if (!isSafeLocalPath(imagePath) || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
             if (Buffer.byteLength(content, 'utf8') > WRITE_MAX_BYTES) { failed++; results.push(false); continue; }
             const imgStat = fs.statSync(imagePath);
             if (!imgStat.isFile()) { failed++; results.push(false); continue; }
@@ -278,7 +296,7 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
     let trashed = 0;
     let failed = 0;
     for (const raw of filePaths.slice(0, TRASH_MAX_FILES)) {
-        if (typeof raw !== 'string' || !raw) continue;
+        if (!isSafeLocalPath(raw)) continue;
         if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) continue;
         // ITALIANO: un file assente (es. il .txt di una foto senza tag) e' NORMALE: si salta e
         //           non conta come errore. Un file che ESISTE ma non si riesce a cestinare

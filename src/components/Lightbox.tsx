@@ -178,6 +178,35 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 if (showNotification) showNotification(t.successSaveSingle, "success");
                 return;
             }
+            // ITALIANO: foto senza cartella (caricata con "Carica immagini"): in Electron scrivo il
+            //           .txt SUL POSTO accanto all'immagine vera, con esito REALE. Prima anche qui si
+            //           passava dal download del browser e si diceva "salvato" senza sapere se il file
+            //           fosse stato scritto: stesso rischio del salvataggio in blocco (gia' corretto in
+            //           App.performSave), che qui era rimasto.
+            // ENGLISH: folder-less photo (loaded via "Load images"): in Electron write the .txt IN
+            //          PLACE next to the real image, with a REAL outcome. This path also used to go
+            //          through a browser download and claim "saved" without knowing whether the file
+            //          was written: same risk as the bulk save (already fixed in App.performSave) that
+            //          was still present here.
+            const api = (window as any).electronAPI;
+            if (api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
+                const imagePath = api.getPathForFile(image.file) || '';
+                const res = await api.writeSidecarTags([{ imagePath, content: tagString }]);
+                if (res && Array.isArray(res.results) && res.results[0]) {
+                    updateOriginalTags(image.id, currentTags);
+                    soundManager.chime();
+                    if (showNotification) showNotification(t.successSaveSingle, "success");
+                } else if (showNotification) {
+                    showNotification(t.errorSaveGen || t.dirError, 'error');
+                }
+                return;
+            }
+            // ITALIANO: vero ripiego BROWSER: il download e' un'ESPORTAZIONE, non un salvataggio
+            //           verificato. NON segno la foto come salvata (resta "modificata"): cosi' non si
+            //           perde la modifica se il download viene annullato.
+            // ENGLISH: true BROWSER fallback: the download is an EXPORT, not a verified save. I do NOT
+            //          mark the photo as saved (it stays "modified"), so the edit is not lost if the
+            //          download is cancelled.
             const blob = new Blob([tagString], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             try {
@@ -185,9 +214,8 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 a.href = url; a.download = fileName;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
             } finally { URL.revokeObjectURL(url); }
-            updateOriginalTags(image.id, currentTags);
             soundManager.chime();
-            if (showNotification) showNotification(t.successSaveSingle, "success");
+            if (showNotification) showNotification(t.infoSaveFallback, "info");
         } catch (err) {
             // ITALIANO: prima qui non veniva mostrato NULLA: se la cartella era stata spostata,
             //           il disco era pieno o il file era bloccato, il salvataggio falliva in

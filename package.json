@@ -1,7 +1,7 @@
 {
   "name": "images-tag-manager",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Privacy-focused desktop tool to manage, edit and auto-generate tags for image datasets used in LoRA / Stable Diffusion training.",
   "author": {
     "name": "xXIlRizzoXx",
@@ -70,7 +70,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "public/**/*"
+      "public/**/*",
+      "!node_modules/**/*"
     ],
     "asar": true
   },

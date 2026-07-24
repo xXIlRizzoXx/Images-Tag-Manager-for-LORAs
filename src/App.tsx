@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
@@ -193,6 +193,14 @@ export default function App() {
     // ITALIANO: ricerca e ordinamento della lista completa dei tag nelle statistiche
     // ENGLISH: search and sort for the full tag list in the statistics
     const [statsSearch, setStatsSearch] = useState('');
+    // ITALIANO: PRESTAZIONI — la ricerca nella lista tag delle statistiche usa un valore "differito":
+    //           mentre scrivi, la casella resta immediata ma il filtro/ordinamento e il ridisegno
+    //           della lista (potenzialmente decine di migliaia di righe) vengono aggiornati con calma,
+    //           senza far scattare la digitazione. Il comportamento e' identico, solo piu' fluido.
+    // ENGLISH: PERF — the stats tag-list search uses a DEFERRED value: while you type the input stays
+    //          immediate, but the filter/sort and the (potentially tens-of-thousands-of-rows) list
+    //          re-render are updated lazily, so typing does not stutter. Same behavior, just smoother.
+    const deferredStatsSearch = useDeferredValue(statsSearch);
     const [statsSort, setStatsSort] = useState<'count' | 'name'>('count');
     // ITALIANO: "Appunti" dei tag: copiati da una foto, incollabili su un'altra.
     // ENGLISH: Tag "clipboard": copied from one photo, pasteable onto another.
@@ -249,7 +257,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.4');
+    const [appVersion, setAppVersion] = useState<string>('1.0.5');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -574,7 +582,14 @@ export default function App() {
         const img = images.find(i => i.id === id);
         if (!img) return;
         const chiudi = () => {
-            releaseThumbnails([img]);
+            // ITALIANO: NON libero qui la miniatura. Chiudere una foto e' un'azione ANNULLABILE
+            //           (Ctrl+Z la riporta): se ne revocassi subito l'anteprima, all'annulla la foto
+            //           tornerebbe con l'immagine ROTTA. Come per il cestino, l'anteprima resta valida
+            //           e viene liberata in blocco alla chiusura/reset del progetto.
+            // ENGLISH: do NOT free the thumbnail here. Closing a photo is an UNDOABLE action (Ctrl+Z
+            //          brings it back): revoking its preview now would make the photo come back with a
+            //          BROKEN image on undo. Like the trash, the preview stays valid and is freed in
+            //          bulk on project close/reset.
             setImages(prev => prev.filter(i => i.id !== id));
             setSelectedForBulk(prev => prev.filter(x => x !== id));
             if (selectedImageId === id) setSelectedImageId(null);
@@ -1181,6 +1196,13 @@ export default function App() {
         const file = e.target.files?.[0];
         if (!file) return;
         try {
+            // ITALIANO: stessi limiti di prudenza dei sidecar: un file legittimo di tag pesa pochi KB.
+            //           Oltre 1 MB e' sospetto (JSON gigante/ostile) e potrebbe bloccare l'app: lo
+            //           rifiuto. Poi limito lunghezza e numero dei tag, come nell'import delle foto.
+            // ENGLISH: same safety caps as the sidecars: a legit tag file weighs a few KB. Over 1 MB is
+            //          suspicious (huge/hostile JSON) and could freeze the app: reject it. Then clamp
+            //          each tag's length and the total count, like the photo import does.
+            if (file.size > 1024 * 1024) { showNotification(t.importTagsError, 'error'); return; }
             const text = (await file.text()).trim();
             let tags: string[] = [];
             let triggers: string[] = [];
@@ -1193,9 +1215,16 @@ export default function App() {
                 // ENGLISH: TXT: one tag per line (commas are also accepted as separators).
                 tags = text.split(/[\r\n,]+/);
             }
-            // ITALIANO: i trigger del file entrano comunque nella palette del progetto.
-            // ENGLISH: the file's triggers also go into the project palette.
-            const clean = [...new Set([...tags, ...triggers].map((s: any) => String(s).trim()).filter(Boolean))];
+            // ITALIANO: i trigger del file entrano comunque nella palette del progetto. Ogni tag e'
+            //           ripulito dai caratteri di controllo, tagliato a 100 caratteri, e in tutto se
+            //           ne tengono al massimo 5000.
+            // ENGLISH: the file's triggers also go into the project palette. Each tag is stripped of
+            //          control chars, clamped to 100 chars, and at most 5000 are kept in total.
+            const clean = [...new Set(
+                [...tags, ...triggers]
+                    .map((s: any) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, 100))
+                    .filter(Boolean)
+            )].slice(0, 5000);
             if (clean.length === 0) { showNotification(t.importTagsError, 'error'); return; }
             setCustomProjectTags(prev => [...new Set([...prev, ...clean])]);
             soundManager.chime();
@@ -2950,12 +2979,27 @@ export default function App() {
                                 <div className={`flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`} style={{ scrollbarGutter: 'stable' }}>
                                     {(() => {
                                         const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
+                                        // ITALIANO: PRESTAZIONI — l'insieme dei tag presenti su almeno una foto selezionata si
+                                        //           calcola UNA volta sola. Prima, per OGNI tag mostrato (anche migliaia) si
+                                        //           riscorreva l'intera selezione facendo per giunta una .find() su tutte le
+                                        //           immagini: con dataset grandi il pannello scattava. Stesso identico esito,
+                                        //           ma con una ricerca istantanea in un Set.
+                                        // ENGLISH: PERF — the set of tags present on at least one selected photo is computed
+                                        //           ONCE. Before, for EVERY displayed tag (even thousands) it re-scanned the whole
+                                        //           selection AND did a .find() over all images: with big datasets the panel
+                                        //           stuttered. Same exact result, now an instant Set lookup.
+                                        const selectedIdSet = new Set(selectedForBulk);
+                                        const tagsOnSelected = new Set<string>();
+                                        for (const im of images) {
+                                            if (!selectedIdSet.has(im.id)) continue;
+                                            for (const tg of im.tags) tagsOnSelected.add(tg);
+                                        }
                                         return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
                                             const category = getTagCategory(tag);
                                             const colorClass = getCategoryColor(category, isDarkMode);
                                             const activeColorClass = getActiveCategoryColor(category);
                                             const isStaged = stagedBulkTags.includes(tag);
-                                            const isPartiallySelected = selectedForBulk.some(id => images.find(i => i.id === id)?.tags.includes(tag));
+                                            const isPartiallySelected = tagsOnSelected.has(tag);
                                             
                                             let buttonClass = '';
                                             if (isStaged) {
@@ -3128,7 +3172,7 @@ export default function App() {
                                 // ENGLISH: FULL tag list (including never-used ones = 0), filtered and sorted
                                 const fullTagList = statsUniqueTags
                                     .map(tag => ({ tag, count: tagUsage[tag] || 0 }))
-                                    .filter(x => x.tag.toLowerCase().includes(statsSearch.toLowerCase()))
+                                    .filter(x => x.tag.toLowerCase().includes(deferredStatsSearch.toLowerCase()))
                                     .sort((a, b) => statsSort === 'name'
                                         ? a.tag.localeCompare(b.tag)
                                         : (b.count - a.count) || a.tag.localeCompare(b.tag));
@@ -3273,7 +3317,17 @@ export default function App() {
                                                     const imgPct = totalImages > 0 ? Math.round((count / totalImages) * 100) : 0;
                                                     const traduzione = translateTag(tag, lang);
                                                     return (
-                                                        <div key={tag} className="flex items-center gap-3 group/riga">
+                                                        // ITALIANO: content-visibility:auto — il browser NON disegna le righe fuori
+                                                        //           dallo schermo finche' non le scorri. Con decine di migliaia di tag
+                                                        //           la lista resta scorrevole tutta (nessuna funzione tolta), ma pesa
+                                                        //           come poche righe. contain-intrinsic-size tiene giusta la barra di
+                                                        //           scorrimento riservando l'altezza stimata di ogni riga.
+                                                        // ENGLISH: content-visibility:auto — the browser does NOT paint off-screen rows
+                                                        //          until you scroll to them. With tens of thousands of tags the whole
+                                                        //          list is still scrollable (no feature removed) but costs like a few
+                                                        //          rows. contain-intrinsic-size keeps the scrollbar correct by reserving
+                                                        //          each row's estimated height.
+                                                        <div key={tag} className="flex items-center gap-3 group/riga" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 28px' }}>
                                                             <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold max-w-[42%] truncate flex items-center ${getCategoryColor(category, isDarkMode)}`} title={traduzione ? `${tag} — ${traduzione}` : tag}>
                                                                 {category === 'nsfw' && <span className="font-bold text-[8px] px-1 rounded-sm mr-0.5 bg-red-500 text-white shrink-0">+18</span>}
                                                                 <span className="truncate">{tag}</span>

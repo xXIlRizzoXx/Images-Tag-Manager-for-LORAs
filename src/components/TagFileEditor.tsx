@@ -22,6 +22,10 @@ import { soundManager } from '../utils/soundManager';
 // ENGLISH: Reads tags out of a text. JSON accepts both the app's exported shape
 //          ({tags: [...]}) and a plain list ["a","b"]. TXT uses commas or newlines,
 //          like the photo sidecars.
+// ITALIANO: tetto di dimensione per i file aperti nell'editor (come i sidecar delle foto).
+// ENGLISH: size cap for files opened in the editor (same as the photo sidecars).
+const EDITOR_MAX_BYTES = 1024 * 1024;
+
 export const parseTagFile = (text: string, fileName: string): string[] => {
     const isJson = fileName.toLowerCase().endsWith('.json') || /^\s*[[{]/.test(text);
     let raw: unknown[] = [];
@@ -135,6 +139,11 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                     types: [{ description: `${t.tagEditor} (.txt, .json)`, accept: { 'text/plain': ['.txt'], 'application/json': ['.json'] } }],
                 });
                 const file = await handle.getFile();
+                // ITALIANO: un file di tag legittimo pesa pochi KB. Oltre 1 MB e' sospetto (file
+                //           enorme/sbagliato) e leggerlo tutto potrebbe bloccare l'app: lo rifiuto.
+                // ENGLISH: a legit tag file weighs a few KB. Over 1 MB is suspicious (huge/wrong
+                //          file) and reading it all could freeze the app: reject it.
+                if (file.size > EDITOR_MAX_BYTES) { showNotification(t.tagEditorOpenError, 'error'); return; }
                 // ITALIANO: prima il parse (puo' lanciare), poi affido l'handle: se il file non e'
                 //           leggibile l'handle di scrittura NON cambia.
                 // ENGLISH: parse first (may throw), then adopt the handle: if the file is unreadable
@@ -157,6 +166,9 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         e.target.value = '';
         if (!file) return;
         try {
+            // ITALIANO: stesso limite dell'altra via: niente file oltre 1 MB.
+            // ENGLISH: same cap as the other path: no files over 1 MB.
+            if (file.size > EDITOR_MAX_BYTES) { showNotification(t.tagEditorOpenError, 'error'); return; }
             const testo = await file.text();
             caricaTesto(testo, file.name);
             handleRef.current = null; // ITALIANO: senza handle si salva con "Salva come" — ENGLISH: no handle: saving goes through "Save as"
