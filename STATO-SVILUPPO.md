@@ -1,10 +1,11 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 23 luglio 2026
+**Ultimo aggiornamento:** 24 luglio 2026
 **Versione attuale:** 1.0.0 (prima versione pubblica ufficiale)
-**Ultima consegna:** 23 luglio 2026 — portable + installer aggiornati in `Release\`,
-con dentro la nuova schermata di caricamento (logo animato, tutto viola, versione,
-link GitHub) e tutte le correzioni fino al traguardo n. 62.
+**Ultima consegna:** 24 luglio 2026 — portable + installer aggiornati in `Release\`,
+con tutte le correzioni nate dal controllo automatico con agenti (traguardi 63-71):
+foto con nomi uguali, editor di tag più sicuro, cestino onesto, avvio a prova di blocco,
+bandiere offline, ultimi testi tradotti, programma più leggero.
 **Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
 la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
 nei traguardi qui sotto indicano solo l'ordine in cui le funzioni sono state fatte.
@@ -55,6 +56,15 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 40 | Sezione centrale in un riquadro (1.0.0) | La sezione centrale della barra comandi (trigger words + tag suggeriti) è ora dentro un **riquadro** con lo stesso stile dei due pannelli laterali: la barra comandi ha così tre riquadri coerenti. |
 | 41 | Riquadro centrale con altezza limitata (1.0.0) | La sezione centrale era l'unica che si allungava aggiungendo tante trigger words, diventando **più alta dei due riquadri laterali**. Ora è **limitata in altezza**: le trigger words scorrono dentro il riquadro (come i tag delle miniature) e la barra comandi resta sempre bilanciata. |
 | 42 | Tre riquadri della stessa altezza (1.0.0) | I tre riquadri della barra comandi ora si **allungano tutti alla stessa altezza** (quella del più alto): il riquadro di sinistra arriva in basso come quello di destra, per un aspetto ordinato e allineato. |
+| 71 | Controllo agenti + correzioni (1.0.0) | Un controllo automatico con tanti "revisori" indipendenti ha passato al setaccio tutto il programma; ogni problema segnalato è stato ri-verificato da 3 controllori prima di essere accettato. Da qui sono nate le correzioni dei traguardi 63-70 qui sotto. |
+| 70 | Foto con lo stesso nome in cartelle diverse (1.0.0) | Due foto chiamate uguale ma in sottocartelle diverse (es. `10_viso\img.png` e `20_corpo\img.png`) si scambiavano i tag, e salvando si sovrascriveva il file di testo **vero** dell'altra foto. Ora ogni foto è abbinata solo al testo della **sua** cartella. |
+| 69 | Editor di tag più sicuro (1.0.0) | Se si apriva un file illeggibile, "Salva" poteva sovrascrivere il file sbagliato coi tag di un altro: corretto. Un file JSON strano non diventa più un tag inutile. Le trigger word non vengono più cancellate risalvando. E prima di buttare via modifiche non salvate ora compare un avviso. |
+| 68 | Cestino: niente falsi "fatto" (1.0.0) | Se una foto non riusciva a finire nel cestino (file bloccato), il programma diceva comunque "eliminata" e la toglieva dal progetto. Ora, se il cestino fallisce, lo segnala e prova una seconda strada. |
+| 67 | Avvio a prova di blocco (1.0.0) | Se la finestra principale non partiva, la schermata di caricamento poteva restare per sempre e serviva il Task Manager. Ora, se qualcosa va storto o dopo 20 secondi, l'app si mostra comunque. La schermata di avvio ora è anche **tradotta** in tutte le 9 lingue. |
+| 66 | Bandiere senza internet (1.0.0) | Le bandierine delle lingue venivano scaricate da un sito esterno a ogni avvio: senza internet si rompevano e, per un programma pensato offline, era una piccola fuga di privacy. Ora sono **dentro l'app**: nessuna richiesta a internet. |
+| 65 | Ultimi testi tradotti (1.0.0) | Corretti alcuni testi che restavano in italiano o inglese in tutte le lingue (segnaposto "Scrivi tag...", avviso sulla chiave, nomi degli archivi zip). Tolte 51 scritte tradotte ma non più usate (residui delle funzioni vecchie). |
+| 64 | Programma più leggero e sicuro (1.0.0) | Tolti ~100 MB di strumenti che servivano solo a costruire il programma e finivano inutilmente dentro l'exe. Le protezioni di sicurezza ora non sono più disattivabili dall'esterno. Rimosso codice vecchio non più raggiungibile e aggiornata la descrizione del progetto (README). |
+| 63 | La schermata di avvio non riparte più (1.0.0) | La barra di caricamento poteva tornare improvvisamente a 0% quando l'app era pronta: ora conta dal vero momento di apertura e non "salta indietro". |
 | 62 | Schermata di caricamento all'avvio (1.0.0) | All'apertura l'app mostra una **schermata di caricamento** dentro un riquadro, nello stesso stile della scelta lingua: logo che "respira", titolo, **numero di versione** e barra di avanzamento. Dura **almeno 3 secondi** anche se l'app è già pronta; se invece ci mette di più, resta finché il caricamento non è finito davvero. |
 | 61 | Colori della schermata di avvio (1.0.0) | La schermata di caricamento è tutta sul **viola**: tolto ogni tono che tirava all'azzurro, tolto il bordino chiaro attorno al riquadro, e la fascia del copyright in basso è di un viola più scuro. Cliccandoci sopra si apre la **pagina GitHub** dell'autore nel browser. |
 | 60 | Chiudi una singola foto (1.0.0) | Nuovo tasto per **togliere una sola foto dal progetto** senza cancellarla dal disco (prima si poteva solo cestinare). Se quella foto ha modifiche non salvate, l'app avvisa prima di toglierla. |
@@ -88,6 +98,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | Priorità | Traguardo | In parole semplici | Versione |
 |----------|-----------|--------------------|----------|
 | Media | Velocità con dataset molto grandi | Con **migliaia di foto** la galleria si ferma per un attimo a ogni modifica e il cursore dello zoom diventa scattoso, perché l'app ridisegna tutte le anteprime ogni volta invece delle sole cambiate. Da rivedere anche la creazione delle miniature durante l'importazione, che oggi avviene una foto alla volta. | 1.0.x |
+| Bassa | Tradurre il dizionario dei tag | I ~1050 tag suggeriti hanno la traduzione solo in italiano e inglese: nelle altre 7 lingue restano in inglese. Tradurli tutti è un lavoro grosso e delicato (va fatto bene, non a macchina): da decidere se e come affrontarlo. | 1.0.x |
 
 ---
 
