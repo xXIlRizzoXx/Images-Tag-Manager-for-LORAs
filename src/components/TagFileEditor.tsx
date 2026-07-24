@@ -181,10 +181,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 // ITALIANO: se il file appena scritto e' il .txt di una foto aperta nel progetto,
                 //           allineo i suoi tag in memoria: altrimenti un successivo salvataggio del
                 //           progetto lo riscriverebbe coi tag vecchi, annullando questa modifica.
+                //           Passo l'handle del file: cosi' App verifica l'IDENTITA' vera (stessa
+                //           cartella), non solo il nome, e un file omonimo non dirotta la foto.
                 // ENGLISH: if the file just written is a photo's .txt open in the project, sync its
                 //          in-memory tags: otherwise a later project save would rewrite it with the
-                //          old tags, undoing this edit.
-                if (onFileSaved) onFileSaved(nome, tags);
+                //          old tags, undoing this edit. I pass the file handle so App can verify the
+                //          real IDENTITY (same folder), not just the name, so a same-named file
+                //          can't hijack the photo.
+                if (onFileSaved) onFileSaved(nome, tags, handleRef.current);
                 return;
             } catch (err) {
                 console.error('[Editor tag] salvataggio fallito', err);
@@ -213,7 +217,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 setDirty(false);
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${handle.name}`, 'success');
-                if (onFileSaved) onFileSaved(handle.name, tags);
+                if (onFileSaved) onFileSaved(handle.name, tags, handle);
             } catch (err: any) {
                 if (err && err.name !== 'AbortError') {
                     console.error(err);

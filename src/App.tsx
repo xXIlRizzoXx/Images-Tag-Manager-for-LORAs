@@ -249,7 +249,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.2');
+    const [appVersion, setAppVersion] = useState<string>('1.0.3');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -567,29 +567,51 @@ export default function App() {
         });
     };
 
-    // ITALIANO: Quando l'editor di tag salva un file, se quel file e' il .txt di una foto APERTA nel
-    //           progetto ne allineo i tag in memoria (sia tags sia originalTags). Senza questo, un
-    //           successivo salvataggio del progetto riscriverebbe quel .txt con i tag vecchi,
-    //           annullando in silenzio la modifica fatta nell'editor. Abbino per nome-base; se
-    //           nessuna o piu' foto combaciano (nome ambiguo) non tocco nulla, per prudenza.
-    // ENGLISH: When the tag editor saves a file, if that file is a photo's .txt OPEN in the project I
-    //          sync its in-memory tags (both tags and originalTags). Without this, a later project
-    //          save would rewrite that .txt with the old tags, silently undoing the editor's change.
-    //          Matched by base name; if zero or several photos match (ambiguous name) I touch nothing,
-    //          to stay safe.
-    const handleTagEditorSaved = (savedName: string, savedTags: string[]) => {
+    // ITALIANO: Quando l'editor di tag salva un file, se quel file e' DAVVERO il .txt di una foto
+    //           del progetto ne allineo i tag in memoria (sia tags sia originalTags). Senza questo,
+    //           un successivo salvataggio del progetto riscriverebbe quel .txt con i tag vecchi,
+    //           annullando in silenzio la modifica fatta nell'editor.
+    //           SICUREZZA: l'editor apre QUALSIASI file, quindi NON basta il nome. Due foto (o due
+    //           .txt) chiamate uguale in cartelle diverse sono comunissime nei dataset LoRA: abbinare
+    //           per solo nome farebbe dirottare i tag della foto sbagliata e, al salvataggio, ne
+    //           distruggerebbe il .txt vero. Percio' confronto l'IDENTITA' reale del file salvato con
+    //           il sidecar della foto (stessa cartella) tramite isSameEntry sugli handle: allineo solo
+    //           la foto il cui sidecar E' ESATTAMENTE quel file. Se l'identita' non e' verificabile
+    //           (niente handle dall'editor, foto senza cartella, sidecar non ancora su disco) NON
+    //           tocco nulla: meglio non sincronizzare che corrompere.
+    // ENGLISH: When the tag editor saves a file, if that file is TRULY a project photo's .txt I sync
+    //          its in-memory tags (both tags and originalTags). Without this, a later project save
+    //          would rewrite that .txt with the old tags, silently undoing the editor's change.
+    //          SAFETY: the editor opens ANY file, so the name alone is NOT enough. Two photos (or two
+    //          .txt) with the same name in different folders are extremely common in LoRA datasets:
+    //          matching by name alone would hijack the wrong photo's tags and, on save, destroy its
+    //          real .txt. So I compare the saved file's REAL IDENTITY with the photo's sidecar (same
+    //          folder) via isSameEntry on the handles: I sync only the photo whose sidecar IS EXACTLY
+    //          that file. If identity can't be verified (no handle from the editor, folder-less photo,
+    //          sidecar not yet on disk) I touch NOTHING: better not to sync than to corrupt.
+    const handleTagEditorSaved = async (savedName: string, savedTags: string[], savedHandle?: any) => {
+        if (!savedHandle || typeof savedHandle.isSameEntry !== 'function') return;
         const base = savedName.split('.').slice(0, -1).join('.');
+        // ITALIANO: cerco la foto la cui cartella contiene ESATTAMENTE questo file salvato.
+        // ENGLISH: find the photo whose folder contains EXACTLY this saved file.
+        let matchId: string | null = null;
+        for (const img of images) {
+            if (img.file.name.split('.').slice(0, -1).join('.') !== base) continue;
+            const dir = img.dirHandle;
+            if (!dir || typeof dir.getFileHandle !== 'function') continue;
+            try {
+                const sidecar = await dir.getFileHandle(savedName);
+                if (await savedHandle.isSameEntry(sidecar)) { matchId = img.id; break; }
+            } catch { /* ITALIANO: sidecar assente o non confrontabile: salto, per prudenza */ }
+        }
+        if (!matchId) return;
         setImages(prev => {
-            const matches = prev.filter(i => i.file.name.split('.').slice(0, -1).join('.') === base);
-            if (matches.length !== 1) return prev;
             const ordered = [
                 ...globalTriggers.filter(tag => savedTags.includes(tag)),
                 ...savedTags.filter(tag => !globalTriggers.includes(tag)),
             ];
             return prev.map(i =>
-                i.file.name.split('.').slice(0, -1).join('.') === base
-                    ? { ...i, tags: ordered, originalTags: [...ordered] }
-                    : i
+                i.id === matchId ? { ...i, tags: ordered, originalTags: [...ordered] } : i
             );
         });
     };

@@ -1,14 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 24 luglio 2026
-**Versione attuale:** 1.0.2
-**Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.2 in `Release\` (tenute solo
-le 1.0.2, tolte le versioni precedenti). Novità 1.0.2: l'immagine a sinistra dell'installer è
-stata **arricchita** (sotto il logo una nuvola di tag viola che riempie lo spazio, tutta in
-tinta viola) e corretto un problema tecnico interno che rendeva illeggibili le differenze del
-file principale. Restano valide le novità 1.0.1: sfondi tutti viola pieno senza righe ai lati,
-tasto lingua selezionato senza frangia colorata, e il caricamento che compare DOPO aver
-scelto la lingua.
+**Versione attuale:** 1.0.3
+**Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.3 in `Release\` (tenute solo
+le 1.0.3, tolte le versioni precedenti). Novità 1.0.3: l'editor dei tag, quando salva, aggiorna
+i tag della foto nel progetto **solo se quel file è DAVVERO il testo di quella foto** (stessa
+cartella, verificato per identità reale), non più solo perché ha lo stesso nome: così un file
+con lo stesso nome aperto da un'altra cartella non può più far scrivere tag sbagliati sul file
+di testo vero della foto. Novità 1.0.2: immagine dell'installer arricchita (nuvola di tag viola
+sotto il logo) e correzione di un problema tecnico interno del file principale. Restano valide
+le novità 1.0.1: sfondi tutti viola pieno senza righe ai lati, tasto lingua selezionato senza
+frangia colorata, e il caricamento che compare DOPO aver scelto la lingua.
 **Regola versione:** da ora ogni modifica alza la versione di 0.0.1.
 **Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
 la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
@@ -60,6 +62,7 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 | 40 | Sezione centrale in un riquadro (1.0.0) | La sezione centrale della barra comandi (trigger words + tag suggeriti) è ora dentro un **riquadro** con lo stesso stile dei due pannelli laterali: la barra comandi ha così tre riquadri coerenti. |
 | 41 | Riquadro centrale con altezza limitata (1.0.0) | La sezione centrale era l'unica che si allungava aggiungendo tante trigger words, diventando **più alta dei due riquadri laterali**. Ora è **limitata in altezza**: le trigger words scorrono dentro il riquadro (come i tag delle miniature) e la barra comandi resta sempre bilanciata. |
 | 42 | Tre riquadri della stessa altezza (1.0.0) | I tre riquadri della barra comandi ora si **allungano tutti alla stessa altezza** (quella del più alto): il riquadro di sinistra arriva in basso come quello di destra, per un aspetto ordinato e allineato. |
+| 73 | Editor tag: sincronizza col progetto solo il file GIUSTO (1.0.3) | L'editor dei tag apre qualsiasi file. Prima, salvando un file, l'app cercava nel progetto una foto **con lo stesso nome** e le sostituiva i tag: ma nei dataset LoRA capita spessissimo di avere foto con lo stesso nome in cartelle diverse (es. `10_viso\img.txt` e un `img.txt` scaricato altrove). Così poteva finire i tag sbagliati sulla foto sbagliata e, al salvataggio, **distruggerne il file di testo vero**. Ora l'app controlla l'**identità reale** del file (stessa cartella, non solo il nome) e aggiorna solo la foto il cui file di testo è **esattamente quello salvato**; se non può esserne certa, non tocca nulla. |
 | 72 | Immagine installer arricchita + file più pulito (1.0.2) | L'immagine a sinistra del programma di installazione ora, **sotto il logo**, mostra una fitta **nuvola di tag viola** che riempie tutto lo spazio (prima era quasi vuota), tutta in tinta viola coordinata. Corretto anche un piccolo problema tecnico interno (un carattere invisibile fuori posto) che faceva vedere il file principale come "illeggibile" agli strumenti di controllo. |
 | 71 | Controllo agenti + correzioni (1.0.0) | Un controllo automatico con tanti "revisori" indipendenti ha passato al setaccio tutto il programma; ogni problema segnalato è stato ri-verificato da 3 controllori prima di essere accettato. Da qui sono nate le correzioni dei traguardi 63-70 qui sotto. |
 | 70 | Foto con lo stesso nome in cartelle diverse (1.0.0) | Due foto chiamate uguale ma in sottocartelle diverse (es. `10_viso\img.png` e `20_corpo\img.png`) si scambiavano i tag, e salvando si sovrascriveva il file di testo **vero** dell'altra foto. Ora ogni foto è abbinata solo al testo della **sua** cartella. |
