@@ -342,6 +342,60 @@ function paintPill(cv, x, y, w, h, color, alpha) {
     }
 }
 
+/**
+ * ITALIANO: Distanza con segno da un rettangolo con angoli arrotondati (negativa dentro).
+ *           Serve a disegnare cornici morbide senza scalettature.
+ * ENGLISH: Signed distance to a rounded rectangle (negative inside). Used to draw soft frames
+ *          without jaggies.
+ */
+function sdRoundRect(px, py, x, y, w, h, r) {
+    const qx = Math.abs(px - (x + w / 2)) - (w / 2 - r);
+    const qy = Math.abs(py - (y + h / 2)) - (h / 2 - r);
+    const ax = Math.max(qx, 0), ay = Math.max(qy, 0);
+    return Math.sqrt(ax * ax + ay * ay) + Math.min(Math.max(qx, qy), 0) - r;
+}
+
+/**
+ * ITALIANO: Piccola "fotografia": cornice arrotondata con dentro un sole e un profilo di
+ *           montagna, cioe' il simbolo universale dell'immagine. Riempie la parte bassa della
+ *           fascia dicendo che questo programma lavora su FOTO, mentre le pillole sopra dicono
+ *           che ci mette i TAG. Resta molto tenue: e' sfondo, non deve rubare la scena al logo.
+ * ENGLISH: A small "photo": rounded frame holding a sun and a mountain outline, the universal
+ *          picture symbol. It fills the lower part of the sidebar saying this program works on
+ *          PHOTOS, while the pills above say it puts TAGS on them. Kept very faint: it is
+ *          background, it must not steal the scene from the logo.
+ */
+function paintPhoto(cv, x, y, w, h, color, alpha) {
+    const r = Math.min(w, h) * 0.22;
+    const stroke = Math.max(1, SS * 0.9);
+    const sunX = x + w * 0.30, sunY = y + h * 0.32, sunR = Math.min(w, h) * 0.13;
+    // profilo di montagna: due vertici in basso e una punta
+    const mx0 = x + w * 0.14, mx1 = x + w * 0.86, myBase = y + h * 0.80;
+    const peakX = x + w * 0.52, peakY = y + h * 0.40;
+
+    for (let py = Math.floor(y) - 2; py < Math.ceil(y + h) + 2; py++) {
+        for (let px = Math.floor(x) - 2; px < Math.ceil(x + w) + 2; px++) {
+            const d = sdRoundRect(px, py, x, y, w, h, r);
+            // cornice: anello attorno al bordo
+            const cornice = clamp01(stroke / 2 - Math.abs(d) + 0.5);
+            let a = cornice;
+
+            if (d < 0) {
+                // sole
+                const ds = Math.sqrt((px - sunX) ** 2 + (py - sunY) ** 2);
+                a = Math.max(a, clamp01(sunR - ds + 0.5) * 0.9);
+                // montagna (triangolo pieno)
+                if (py <= myBase && py >= peakY) {
+                    const t = (myBase - py) / (myBase - peakY);
+                    const halfW = (mx1 - mx0) / 2 * (1 - t);
+                    if (Math.abs(px - peakX) <= halfW) a = Math.max(a, 0.75);
+                }
+            }
+            if (a > 0) cv.blend(px, py, color[0], color[1], color[2], alpha * a);
+        }
+    }
+}
+
 /** Vignettatura: scurisce i bordi, stacca l'immagine dalla finestra bianca. */
 function paintVignette(cv, strength) {
     for (let y = 0; y < cv.h; y++) {
@@ -398,17 +452,36 @@ function buildSidebar(logo, { uninstall = false } = {}) {
         [0.09, 0.610, 0.22, 0], [0.35, 0.610, 0.36, 1],
         [0.09, 0.675, 0.33, 1], [0.47, 0.675, 0.20, 0],
         [0.13, 0.740, 0.26, 0], [0.44, 0.740, 0.28, 1],
-        [0.09, 0.805, 0.24, 1], [0.38, 0.805, 0.21, 0], [0.63, 0.805, 0.14, 0],
-        [0.14, 0.870, 0.30, 0], [0.49, 0.870, 0.23, 1],
-        [0.11, 0.930, 0.20, 0], [0.36, 0.930, 0.27, 0],
+        [0.09, 0.800, 0.24, 1], [0.38, 0.800, 0.21, 0], [0.63, 0.800, 0.14, 0],
     ];
     rows.forEach(([fx, fy, fw, tint]) => {
-        // ITALIANO: sbiadiscono scendendo, ma meno di prima, cosi' la nuvola "riempie" davvero.
-        // ENGLISH: they fade going down, but less than before, so the cloud actually fills the space.
-        const fade = 1 - smooth(clamp01((fy - 0.545) / 0.42)) * 0.5;
+        // ITALIANO: sbiadiscono appena scendendo: la nuvola deve riempire, non svanire.
+        // ENGLISH: they fade only slightly going down: the cloud must fill, not vanish.
+        const fade = 1 - smooth(clamp01((fy - 0.545) / 0.42)) * 0.35;
         const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
         paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
             tint ? C.violet500 : [235, 230, 255], base);
+    });
+
+    // ITALIANO: FONDO — una fila di piccole fotografie sotto la nuvola di tag. Prima li' sotto
+    //           restava un'area quasi vuota; ora la fascia racconta tutto il programma: FOTO
+    //           (queste) a cui si mettono TAG (le pillole sopra). Le tre cornici sono sfalsate
+    //           in altezza e di dimensione diversa, cosi' sembrano una galleria e non una
+    //           griglia rigida. Restano tenui: e' sfondo dietro al testo di benvenuto.
+    // ENGLISH: BOTTOM — a row of small photos under the tag cloud. That area used to be nearly
+    //          empty; now the sidebar tells the whole story: PHOTOS (these) that get TAGS (the
+    //          pills above). The three frames are staggered and differently sized so they read
+    //          as a gallery, not a rigid grid. Kept faint: it is background behind the welcome
+    //          text.
+    const photos = [
+        [0.10, 0.858, 0.24, 0.062, 1],
+        [0.395, 0.842, 0.28, 0.072, 0],
+        [0.725, 0.862, 0.20, 0.055, 1],
+    ];
+    photos.forEach(([fx, fy, fw, fh, tint]) => {
+        const alpha = (uninstall ? 0.11 : 0.19) * (tint ? 1 : 0.8);
+        paintPhoto(cv, fx * cv.w, fy * cv.h, fw * cv.w, fh * cv.h,
+            tint ? C.violet400 : [235, 230, 255], alpha);
     });
 
     const logoW = Math.round(cv.w * 0.52);
