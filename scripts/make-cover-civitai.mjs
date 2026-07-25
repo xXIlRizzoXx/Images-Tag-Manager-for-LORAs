@@ -34,9 +34,11 @@ const H = parseInt(argOf('h', '900'), 10);
 const RAPPORTO = 2 / 3;
 const CROP_W = Math.round(H * RAPPORTO);
 const CROP_X = Math.round((W - CROP_W) / 2);
+// ITALIANO: quanto in basso arriva il titolo dell'articolo sulla scheda / ENGLISH: how far up the card's title reaches
+const ZONA_TITOLO = Math.round(H * 0.30);
 
 const SINISTRA = path.join(IMG, argOf('left', '01-gallery.png'));
-const DESTRA = path.join(IMG, argOf('right', '04-lightbox.png'));
+const DESTRA = path.join(IMG, argOf('right', '06-statistics.png'));
 
 const dataUrl = file => 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
 
@@ -82,8 +84,15 @@ const html = () => `<!doctype html>
       rgba(26,11,61,.97) 0%, rgba(26,11,61,.93) 42%, rgba(26,11,61,.55) 72%, rgba(26,11,61,.25) 100%);
   }
 
+  /* ITALIANO: nella scheda di Civitai il titolo dell'articolo si appoggia SOPRA il fondo
+     dell'immagine. Percio' il blocco non sta a meta' altezza ma piu' in alto: sotto resta
+     una fascia vuota (la ZONA_TITOLO qui sotto) che il titolo puo' coprire senza mangiare
+     ne' il nome ne' la frase. */
+  /* ENGLISH: on a Civitai card the article title sits ON TOP of the bottom of the image. So the
+     block is not at mid-height but higher up: the strip left below (ZONA_TITOLO) is free for the
+     title to cover without eating the name or the tagline. */
   .centro {
-    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    position: absolute; left: 50%; top: 36%; transform: translate(-50%, -50%);
     width: ${CROP_W - 60}px; z-index: 4; text-align: center;
     display: flex; flex-direction: column; align-items: center;
   }
@@ -141,6 +150,28 @@ app.whenReady().then(async () => {
     const fRitaglio = path.join(IMG, 'civitai-cover-anteprima.jpg');
     fs.writeFileSync(fRitaglio, ritaglio.toJPEG(93));
     console.log('->', path.relative(ROOT, fRitaglio), ritaglio.getSize().width + 'x' + ritaglio.getSize().height, '(come si vedra nella griglia)');
+
+    // ITALIANO: terza uscita di CONTROLLO: la stessa anteprima con disegnata sopra la fascia
+    //   dove Civitai mette il titolo. Serve solo a guardare, non va caricata.
+    // ENGLISH: a third CHECK output: the same preview with the band where Civitai puts the title
+    //   drawn on top. For looking at only, not for uploading.
+    await win.webContents.executeJavaScript(`(() => {
+        const d = document.createElement('div');
+        d.style.cssText = 'position:absolute;left:${CROP_X}px;top:0;width:${CROP_W}px;height:${H}px;z-index:9;pointer-events:none;';
+        d.innerHTML = '<div style="position:absolute;left:0;right:0;bottom:0;height:${ZONA_TITOLO}px;'
+            + 'background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.72) 55%, transparent);'
+            + 'display:flex;flex-direction:column;justify-content:flex-end;padding:22px 20px;">'
+            + '<div style="font:800 26px system-ui;color:#fff;line-height:1.15;">Images Tag Manager<br>for LORAs</div>'
+            + '<div style="font:600 15px system-ui;color:#c9c2e8;margin-top:8px;">Tool &middot; Utility &nbsp;&bull;&nbsp; 0 downloads</div>'
+            + '</div>';
+        document.body.appendChild(d);
+        return true;
+    })()`);
+    await new Promise(r => setTimeout(r, 400));
+    const conGuida = await win.webContents.capturePage({ x: CROP_X, y: 0, width: CROP_W, height: H });
+    const fGuida = path.join(IMG, 'civitai-cover-controllo.jpg');
+    fs.writeFileSync(fGuida, conGuida.toJPEG(92));
+    console.log('->', path.relative(ROOT, fGuida), '(con la fascia del titolo simulata: serve solo a controllare)');
 
     app.quit();
 });
