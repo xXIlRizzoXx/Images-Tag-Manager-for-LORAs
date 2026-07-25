@@ -1,12 +1,12 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.13
+**Versione attuale:** 1.0.14
 Novità 1.0.13 (traguardo 83): estetica **uniforme dei pulsanti**. I tasti del pannello dei tag e
 di quello di selezione avevano due aspetti diversi (alcuni pieni con ombra, altri piatti col
 bordo): ora hanno tutti la stessa forma e cambia solo il colore. Nella **fascia laterale
 dell’installer** la parte bassa non è più quasi vuota: sotto la nuvola di tag c’è una fila di
-piccole fotografie, così l’immagine racconta il programma per intero — foto a cui si mettono tag.
+tre fotografie uguali in proporzione corretta 4:3, allineate e distanziate in modo regolare.
 Novità 1.0.12 (traguardo 82): l'intelligenza artificiale passa a **Gemini 3.6 Flash** (la sigla è
 stata verificata sulla documentazione ufficiale di Google: versione stabile, accetta le immagini).
 Chi aveva già salvato il modello vecchio viene riportato in automatico su quello nuovo. Nel
@@ -38,9 +38,9 @@ l'editor coi tag del file precedente, e Salva resta disabilitato finché la rile
 Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
 schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
 vengono più saltate.
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.13** in `Release\` (solo questa
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.14** in `Release\` (solo questa
 coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.13 comprende tutto il lavoro dalla 1.0.6 in poi.
+versione riciclata. La 1.0.14 comprende tutto il lavoro dalla 1.0.6 in poi.
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di

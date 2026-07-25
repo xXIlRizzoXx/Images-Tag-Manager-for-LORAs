@@ -447,42 +447,34 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     // ENGLISH: A denser, more visible "tag" cloud under the logo — what the user asked to enrich.
     //          Rows: x, y, width (canvas fractions) + tint (1 = bright violet pill, 0 = light pill).
     //          More rows, more contrast.
-    const rows = [
-        [0.09, 0.545, 0.30, 1], [0.44, 0.545, 0.27, 0],
-        [0.09, 0.610, 0.22, 0], [0.35, 0.610, 0.36, 1],
-        [0.09, 0.675, 0.33, 1], [0.47, 0.675, 0.20, 0],
-        [0.13, 0.740, 0.26, 0], [0.44, 0.740, 0.28, 1],
-        [0.09, 0.800, 0.24, 1], [0.38, 0.800, 0.21, 0], [0.63, 0.800, 0.14, 0],
-    ];
-    rows.forEach(([fx, fy, fw, tint]) => {
-        // ITALIANO: sbiadiscono appena scendendo: la nuvola deve riempire, non svanire.
-        // ENGLISH: they fade only slightly going down: the cloud must fill, not vanish.
-        const fade = 1 - smooth(clamp01((fy - 0.545) / 0.42)) * 0.35;
-        const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
-        paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
-            tint ? C.violet500 : [235, 230, 255], base);
-    });
-
-    // ITALIANO: FONDO — una fila di piccole fotografie sotto la nuvola di tag. Prima li' sotto
-    //           restava un'area quasi vuota; ora la fascia racconta tutto il programma: FOTO
-    //           (queste) a cui si mettono TAG (le pillole sopra). Le tre cornici sono sfalsate
-    //           in altezza e di dimensione diversa, cosi' sembrano una galleria e non una
-    //           griglia rigida. Restano tenui: e' sfondo dietro al testo di benvenuto.
-    // ENGLISH: BOTTOM — a row of small photos under the tag cloud. That area used to be nearly
-    //          empty; now the sidebar tells the whole story: PHOTOS (these) that get TAGS (the
-    //          pills above). The three frames are staggered and differently sized so they read
-    //          as a gallery, not a rigid grid. Kept faint: it is background behind the welcome
-    //          text.
-    const photos = [
-        [0.10, 0.858, 0.24, 0.062, 1],
-        [0.395, 0.842, 0.28, 0.072, 0],
-        [0.725, 0.862, 0.20, 0.055, 1],
-    ];
-    photos.forEach(([fx, fy, fw, fh, tint]) => {
-        const alpha = (uninstall ? 0.11 : 0.19) * (tint ? 1 : 0.8);
-        paintPhoto(cv, fx * cv.w, fy * cv.h, fw * cv.w, fh * cv.h,
-            tint ? C.violet400 : [235, 230, 255], alpha);
-    });
+    // ITALIANO: PARTE BASSA — tre fotografie, e basta. Prima c'era anche una nuvola di pillole
+    //           (i "tag"), ma facevano confusione: sembravano righe di caricamento. Ora restano
+    //           solo le foto, TUTTE UGUALI e in proporzione corretta 4:3 — la forma di una
+    //           fotografia vera — allineate sulla stessa base e distanziate in modo regolare.
+    //           L'altezza si ricava dalla larghezza in PIXEL, non in frazioni di tela: la tela e'
+    //           piu' alta che larga, quindi usare frazioni per entrambi i lati le avrebbe
+    //           schiacciate. La fila e' centrata nello spazio sotto il filo luminoso.
+    // ENGLISH: LOWER PART — three photos, nothing else. There used to be a cloud of pills (the
+    //          "tags") as well, but they were confusing: they read as loading bars. Only the
+    //          photos remain, ALL EQUAL and in a correct 4:3 ratio — the shape of a real
+    //          photograph — sharing one baseline and evenly spaced. The height is derived from
+    //          the width in PIXELS, not in canvas fractions: the canvas is taller than it is
+    //          wide, so using fractions for both sides would have squashed them. The row is
+    //          centred in the space below the glowing line.
+    const photoW = cv.w * 0.26;
+    const photoH = photoW * 0.75;              // 4:3
+    const photoGap = cv.w * 0.055;
+    const rowW = photoW * 3 + photoGap * 2;
+    const photoX0 = (cv.w - rowW) / 2;
+    const photoY = cv.h * 0.75 - photoH / 2;
+    for (let i = 0; i < 3; i++) {
+        // ITALIANO: quella centrale un filo piu' accesa, cosi' l'occhio ha un punto di riposo.
+        // ENGLISH: the middle one slightly brighter, so the eye has a resting point.
+        const acceso = i === 1;
+        const alpha = (uninstall ? 0.13 : 0.22) * (acceso ? 1 : 0.78);
+        paintPhoto(cv, photoX0 + i * (photoW + photoGap), photoY, photoW, photoH,
+            acceso ? C.violet400 : [235, 230, 255], alpha);
+    }
 
     const logoW = Math.round(cv.w * 0.52);
     paintLogo(cv, logo, Math.round(cx - logoW / 2), Math.round(cy - logoW / 2), logoW, logoW,
