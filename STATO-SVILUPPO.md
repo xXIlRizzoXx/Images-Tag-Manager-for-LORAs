@@ -2,6 +2,14 @@
 
 **Ultimo aggiornamento:** 25 luglio 2026
 **Versione attuale:** 1.1.0
+Novità (traguardo 86): **pagina di presentazione del progetto rifatta**. In cima c'è ora una
+**copertina** (logo, nome del programma e la finestra vera inclinata in prospettiva) e sotto
+**dieci schede**, una per ogni funzione: a sinistra il titolo con tre righe che spiegano, a destra
+la schermata del programma intera e dritta — e ad ogni scheda testo e immagine si scambiano di
+lato. Le schermate sono state prese con una **cartella vera già taggata** (Sisu), con il programma
+in **inglese**. Non sono immagini fatte a mano: tre programmini le **rigenerano da sole**, quindi
+se domani cambia un pulsante basta rilanciarli invece di rifare gli screenshot a mano. Copertina e
+schede sono salvate in JPEG, così la pagina pesa 1,4 MB invece di 6.
 Novità 1.1.0 (traguardo 85): **prima versione "tonda"**. Non è un cambiamento singolo: è il numero
 che raccoglie tutto il lavoro fatto dalla 1.0.6 in poi (tre giri di controllo automatico con le
 riparazioni, l'intelligenza artificiale portata a Gemini 3.6 Flash, il tasto "Elimina selezionate",

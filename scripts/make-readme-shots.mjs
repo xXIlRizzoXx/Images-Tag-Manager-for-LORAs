@@ -298,6 +298,14 @@ window.__shot = {
         }
         return out;
     },
+    invio(sel, index) {
+        const el = document.querySelectorAll(sel)[index || 0];
+        if (!el) return false;
+        el.focus();
+        ['keydown', 'keypress', 'keyup'].forEach(t => el.dispatchEvent(
+            new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })));
+        return true;
+    },
     hit(sel, index, up) {
         let el = document.querySelectorAll(sel)[index || 0];
         for (let i = 0; i < (up || 0) && el; i++) el = el.parentElement;
@@ -400,7 +408,7 @@ async function main() {
     //   secondo ma evita che un pannello rimasto aperto sporchi la foto successiva.
     // ENGLISH: every shot starts from scratch (reload + re-import). It costs a few seconds but
     //   stops a panel left open from spoiling the next picture.
-    const daCapo = async ({ lingua = 'en', conImmagini = true, primoAvvio = false } = {}) => {
+    const daCapo = async ({ lingua = 'en', conImmagini = true, primoAvvio = false, conferma = true } = {}) => {
         await run(`try {
             localStorage.setItem('lang', '${lingua}');
             ${primoAvvio ? `localStorage.removeItem('langChosen');` : `localStorage.setItem('langChosen','1');`}
@@ -415,6 +423,7 @@ async function main() {
         if (!conImmagini) return;
         if (elenco) await run(seedRealJs(elenco)); else await run(SEED_FILES);
         await sleep(3800);
+        if (!conferma) return;   // resto sul riepilogo / stay on the summary dialog
         await run(`window.__shot.click('Import') || window.__shot.click('Importa')`);
         await sleep(4000);
         console.log('   griglia:', JSON.stringify(await run(`window.__shot.zoomPerColonne(5)`)));
@@ -479,9 +488,11 @@ async function main() {
     await run(`window.__shot.click('Settings')`);
     await sleep(1200);
     console.log('   interruttore tema:', await run(`window.__shot.temaChiaro()`));
-    await sleep(900);
+    await sleep(2500);
     await run(`window.__shot.click('Settings')`); // richiudo il pannello / close the panel again
-    await sleep(1200);
+    // il passaggio al chiaro ha delle transizioni: se scatto subito restano pezzi scuri
+    // switching to light has CSS transitions: shooting too early leaves dark patches
+    await sleep(4000);
     await shot('08-light-theme');
 
     // --- 9. cestino ----------------------------------------------------------
@@ -499,6 +510,43 @@ async function main() {
     // --- 10. scelta della lingua --------------------------------------------
     await daCapo({ conImmagini: false, primoAvvio: true });
     await shot('10-languages');
+
+    // --- 11. tag suggeriti ---------------------------------------------------
+    await daCapo();
+    await run(`window.__shot.click('Suggested Tags')`);
+    await sleep(2000);
+    // apro una categoria, altrimenti si vedono solo i titoli chiusi
+    // open one category, otherwise only the collapsed headings show
+    await run(`window.__shot.click('Camera Shots')`);
+    await sleep(1600);
+    await shot('11-suggested-tags');
+
+    // --- 12. tutti i tag del progetto ---------------------------------------
+    await daCapo();
+    await run(`window.__shot.click('View all project tags')`);
+    await sleep(2200);
+    await shot('12-project-tags');
+
+    // --- 13. vista a immagini intere ----------------------------------------
+    await daCapo();
+    await run(`window.__shot.clickEsatto('Original') || window.__shot.click('Original')`);
+    await sleep(2200);
+    await shot('13-original-view');
+
+    // --- 14. riepilogo dell'importazione ------------------------------------
+    await daCapo({ conferma: false });
+    await sleep(1200);
+    await shot('14-import-summary');
+
+    // --- 15. trigger words su tutte le foto ---------------------------------
+    await daCapo();
+    for (const parola of ['sisu_ratld', 'masterpiece', 'best quality']) {
+        await run(`window.__shot.set('input[placeholder*="Trigger"]', ${JSON.stringify(parola)})`);
+        await sleep(500);
+        await run(`window.__shot.invio('input[placeholder*="Trigger"]')`);
+        await sleep(800);
+    }
+    await shot('15-trigger-words');
 
     console.log('fine');
     app.quit();

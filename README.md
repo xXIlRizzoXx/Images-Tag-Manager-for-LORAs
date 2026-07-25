@@ -26,25 +26,35 @@ It runs entirely on your machine and sends **no telemetry**. Cloud AI tagging is
 
 <img src="docs/img/features/01-gallery.jpg" alt="The gallery: your whole dataset on one screen, every image next to its own tags" width="100%" />
 
-<img src="docs/img/features/02-bulk-tagging.jpg" alt="Bulk tagging: tag hundreds of images at once, with a legend explaining each tag pill" width="100%" />
+<img src="docs/img/features/02-import.jpg" alt="Import: the app counts images and .txt files and shows a summary before importing anything" width="100%" />
 
-<img src="docs/img/features/03-tag-search.jpg" alt="Tag search: type one or more tags and the gallery keeps only the images that carry them" width="100%" />
+<img src="docs/img/features/03-bulk-tagging.jpg" alt="Bulk tagging: tag hundreds of images at once, with a legend explaining each tag pill" width="100%" />
 
-<img src="docs/img/features/04-lightbox.jpg" alt="Full-screen viewer: the photo at full quality with every tag of the project one click away" width="100%" />
+<img src="docs/img/features/04-tag-search.jpg" alt="Tag search: type one or more tags and the gallery keeps only the images that carry them" width="100%" />
 
-<img src="docs/img/features/05-tag-editor.jpg" alt="Tag file editor: open, create and rewrite any .txt or .json tag file" width="100%" />
+<img src="docs/img/features/05-suggested-tags.jpg" alt="Suggested tags: twenty-seven categories of ready-made tags, about a thousand of them" width="100%" />
 
-<img src="docs/img/features/06-statistics.jpg" alt="Statistics: six metrics, category pie chart, top 10 tags and a searchable list of every tag" width="100%" />
+<img src="docs/img/features/06-trigger-words.jpg" alt="Trigger words: one word typed once lands in front of the tag list of every image" width="100%" />
 
-<img src="docs/img/features/07-ai-settings.jpg" alt="Optional AI: Gemini writes the first draft, off by default, with your own encrypted API key" width="100%" />
+<img src="docs/img/features/07-project-tags.jpg" alt="Project tags: the whole vocabulary of the project in one list, exportable as JSON or TXT" width="100%" />
 
-<img src="docs/img/features/08-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />
+<img src="docs/img/features/08-lightbox.jpg" alt="Full-screen viewer: the photo at full quality with every tag of the project one click away" width="100%" />
 
-<img src="docs/img/features/09-light-theme.jpg" alt="Light and dark theme, chosen by hand rather than following Windows" width="100%" />
+<img src="docs/img/features/09-tag-editor.jpg" alt="Tag file editor: open, create and rewrite any .txt or .json tag file" width="100%" />
 
-<img src="docs/img/features/10-languages.jpg" alt="Nine languages, installer included" width="100%" />
+<img src="docs/img/features/10-statistics.jpg" alt="Statistics: six metrics, category pie chart, top 10 tags and a searchable list of every tag" width="100%" />
 
-Plus: curated tag suggestions by category, global trigger words, project-wide tag manager, NSFW `+18` badges, ZIP / JSON / TXT export, copy & paste tags between photos, undo & redo, and a crash-recovery backup.
+<img src="docs/img/features/11-views.jpg" alt="Two views: square crops or the whole frame, with zoom and sorting" width="100%" />
+
+<img src="docs/img/features/12-ai.jpg" alt="Optional AI: Gemini writes the first draft, off by default, with your own encrypted API key" width="100%" />
+
+<img src="docs/img/features/13-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />
+
+<img src="docs/img/features/14-light-theme.jpg" alt="Light and dark theme, chosen by hand rather than following Windows" width="100%" />
+
+<img src="docs/img/features/15-languages.jpg" alt="Nine languages, installer included" width="100%" />
+
+Plus: NSFW `+18` badges, ZIP / JSON / TXT export, copy & paste tags between photos, undo & redo, tag names translated on hover, and a crash-recovery backup that survives a power cut.
 
 ---
 
@@ -77,52 +87,6 @@ Get a key at [Google AI Studio](https://aistudio.google.com/app/apikey) → *Cre
 *   The Gemini API key is stored encrypted through Electron `safeStorage` (OS keychain) — never in plain `localStorage`, never inside the bundle.
 *   File paths reaching the disk IPC are validated (no UNC, no `..`, no relative paths), and names written to disk or into ZIP archives are sanitized against path traversal and Windows reserved names.
 *   A React `ErrorBoundary` shows a recovery screen instead of a blank window.
-
----
-
-## 🛠️ Build from source
-
-Requires [Node.js](https://nodejs.org/) 18 or newer.
-
-```bash
-npm install
-```
-
-Run it in the browser for development:
-
-```bash
-npm run dev
-```
-
-Run it as a real desktop app:
-
-```bash
-npm run electron:dev
-```
-
-Produce the portable `.exe` and the installer (both land in `release/`):
-
-```bash
-npm run electron:build
-```
-
-### Regenerating the images of this page
-
-The cover and the feature cards above are generated, not hand-made. With the dev server running:
-
-```bash
-npx electron scripts/make-readme-shots.mjs --folder "C:\path\to\a\tagged\dataset"
-```
-
-```bash
-npx electron scripts/make-cover.mjs
-```
-
-```bash
-npx electron scripts/make-feature-cards.mjs
-```
-
-Without `--folder` the first script draws its own sample images, so it works on any machine.
 
 ---
 
