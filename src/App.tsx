@@ -3295,13 +3295,29 @@ export default function App() {
                                 );
                             })()}
                         </div>
-                        <div className="flex-1 flex justify-center min-w-0">
+                        {/* ITALIANO: shrink-0: questo gruppo NON deve poter essere schiacciato. Prima era
+                                      flex-1 e con justify-center, quando lo spazio non bastava (parole lunghe:
+                                      russo, tedesco) il contenuto sbordava SIMMETRICAMENTE dai due lati, finendo
+                                      sotto "Ordina per" e persino fuori dal bordo sinistro della finestra.
+                                      Non potendosi stringere, e' il flex-wrap della riga a mandarlo a capo. */}
+                        {/* ENGLISH: shrink-0: this group must NOT be squeezable. It used to be flex-1 and, with
+                                     justify-center, whenever space ran short (long words: Russian, German) the
+                                     content overflowed SYMMETRICALLY on both sides, landing under "Sort by" and
+                                     even past the window's left edge. Since it cannot shrink, the row's
+                                     flex-wrap moves it to its own line instead. */}
+                        <div className="shrink-0 flex justify-center">
                             <div className={`flex items-center ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-1 rounded-lg shadow-inner`}>
                                 <button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><LayoutGrid size={14} /> {t.square}</button>
                                 <button onClick={() => setViewMode('original')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'original' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><Grid3X3 size={14} /> {t.original}</button>
                             </div>
                         </div>
-                        <div className="shrink-0 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 min-w-0">
+                        {/* ITALIANO: questa colonna invece DEVE potersi stringere: cosi' il suo flex-wrap
+                                      interno manda lo zoom sotto l'ordinamento prima che la riga trabocchi.
+                                      Con shrink-0 restava larga quanto il suo contenuto e rubava lo spazio. */}
+                        {/* ENGLISH: this column MUST be able to shrink: that way its inner flex-wrap moves
+                                     the zoom below the sort control before the row overflows. With shrink-0
+                                     it stayed at its content width and hogged the space. */}
+                        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
                                 <span className={`text-[10px] uppercase font-bold tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.sortBy}:</span>
                                 <select 
