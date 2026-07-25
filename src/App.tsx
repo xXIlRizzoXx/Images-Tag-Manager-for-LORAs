@@ -389,7 +389,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.12');
+    const [appVersion, setAppVersion] = useState<string>('1.1.0');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -746,6 +746,27 @@ export default function App() {
     //          It used to be enough to be "not visible", but displayedImages already excludes
     //          trashed ones, so a photo sent back to the trash (e.g. by Undo) was counted as
     //          "hidden by the search" and the warning promised tags applyBulkTags would never write.
+    // ITALIANO: forma UNICA per tutti i tasti del pannello di selezione (Elimina / Annulla /
+    //           Conferma): stessa altezza, stessi angoli, stessa ombra e stesso peso del testo,
+    //           come i tasti grandi della barra comandi. Cambia solo il COLORE, che e' l'unica
+    //           cosa che deve distinguerli. Tenerla in un posto solo evita che col tempo tornino
+    //           ad avere aspetti diversi fra loro.
+    // ENGLISH: ONE shape for every button in the selection panel (Delete / Cancel / Confirm): same
+    //          height, corners, shadow and text weight as the big command-bar buttons. Only the
+    //          COLOUR changes, which is the only thing that should tell them apart. Keeping it in
+    //          one place stops them from drifting apart again over time.
+    const bulkPanelBtn = 'h-[34px] shrink-0 flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-xs';
+
+    // ITALIANO: stessa idea per i quattro tasti del pannello "tutti i tag del progetto" (elimina
+    //           tutti / pulisci inutilizzati / esporta / importa): forma unica, cambia solo il
+    //           colore. Prima due erano a tinta piena con ombra e due piatti col bordo, e sembravano
+    //           appartenere a schermate diverse.
+    // ENGLISH: same idea for the four buttons of the "all project tags" panel (delete all / clean
+    //          unused / export / import): one shape, only the colour changes. Two used to be solid
+    //          with a shadow and two flat with a border, so they looked like they belonged to
+    //          different screens.
+    const tagPanelBtn = 'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold text-white shadow-md border-0 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
+
     const hiddenSelectedCount = useMemo(() => {
         if (selectedForBulk.length === 0) return 0;
         const attive = new Set(images.filter(img => !img.isTrashed).map(img => img.id));
@@ -2644,23 +2665,14 @@ export default function App() {
                                 style={{ width: `${splashProgress}%` }}
                             />
                         </div>
-                        {/* ITALIANO: Nota sull'ANTIVIRUS. Il programma non ha una firma digitale (il
-                                      certificato e' a pagamento), quindi Windows SmartScreen puo' dire
-                                      "editore sconosciuto" e qualche antivirus puo' insospettirsi. La
-                                      nota sta QUI, nella schermata di avvio, perche' e' l'unico punto
-                                      che vedono SIA la versione portable SIA quella installata (la
-                                      pagina di benvenuto dell'installer non esiste nel portable).
-                                      Deve restare BREVE: la schermata dura pochi secondi. */}
-                        {/* ENGLISH: ANTIVIRUS note. The program is not code-signed (the certificate
-                                     costs money), so Windows SmartScreen may say "unknown publisher"
-                                     and some antivirus may get suspicious. The note lives HERE, on the
-                                     startup screen, because it is the only place seen by BOTH the
-                                     portable and the installed version (the installer's welcome page
-                                     does not exist in the portable). Keep it SHORT: the screen only
-                                     stays up for a few seconds. */}
-                        <p className={`max-w-md text-center text-[11px] leading-relaxed ${isDarkMode ? 'text-violet-300/70' : 'text-violet-500/80'}`}>
-                            {t.splashAvNotice}
-                        </p>
+                        {/* ITALIANO: qui c'era la nota sull'antivirus. Tolta su richiesta: la schermata di
+                                      avvio dura pochi secondi e quel testo la appesantiva. L'avviso resta
+                                      dove c'e' il tempo di leggerlo, cioe' nella pagina di benvenuto
+                                      dell'installer (build/lang-strings.nsh, AV_NOTICE_TEXT). */}
+                        {/* ENGLISH: the antivirus note used to be here. Removed on request: the startup
+                                     screen only lasts a few seconds and that text weighed it down. The
+                                     notice stays where there is time to read it, i.e. the installer's
+                                     welcome page (build/lang-strings.nsh, AV_NOTICE_TEXT). */}
                         {/* ITALIANO: Il copyright sta in una fascia a se', attaccata al fondo della finestra:
                                       i margini negativi la fanno arrivare fino ai bordi e gli angoli bassi
                                       seguono quelli della finestra. Viola PIU' SCURO del riquadro, cosi' si
@@ -3624,7 +3636,21 @@ export default function App() {
                                 </div>
                                 {/* ITALIANO: LEGENDA degli stati delle pillole (non solo il tratteggiato). */}
                                 {/* ENGLISH: LEGEND of the pill states (not just the dashed one). */}
-                                <div className={`shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {/* ITALIANO: riga finale — a SINISTRA "Elimina selezionate" (stesso aspetto di
+                                              "Resetta Progetto", cosi' si riconosce subito come azione forte), a
+                                              DESTRA la legenda dei tre stati delle pillole. Il tasto sposta nel
+                                              CESTINO dell'app: e' reversibile, le foto si ripristinano e nessun
+                                              file viene toccato su disco finche' non si svuota il cestino. */}
+                                {/* ENGLISH: final row — LEFT "Delete selected" (same look as "Reset project", so it
+                                             reads at once as a strong action), RIGHT the legend of the three pill
+                                             states. The button moves photos to the app's TRASH: reversible, they can
+                                             be restored, and no file on disk is touched until the trash is emptied. */}
+                                <div className="shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                                    <button onClick={handleMoveSelectedToTrash} title={t.moveToTrash} className={`${bulkPanelBtn} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white`}>
+                                        <Trash size={15} />
+                                        <span>{t.deleteSelected}</span>
+                                    </button>
+                                    <div className={`flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                     <span className="font-bold uppercase tracking-wide">{t.legendTitle}</span>
                                     <span className="flex items-center gap-1.5">
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white ring-2 ring-offset-1 ${isDarkMode ? 'ring-white/50 ring-offset-gray-900' : 'ring-black/20 ring-offset-white'}`}><Check size={10} strokeWidth={3} />tag</span>
@@ -3638,23 +3664,20 @@ export default function App() {
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] shadow-sm ${isDarkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-100 text-blue-700'}`}>tag</span>
                                         {t.legendAvailable}
                                     </span>
+                                    </div>
                                 </div>
-                                <div className="flex justify-between items-center gap-2 shrink-0 h-9 transition-all">
-                                    {/* ITALIANO: "Elimina selezionate" sposta nel CESTINO dell'app tutte le foto
-                                                  selezionate: e' reversibile, si possono ripristinare, e nessun file
-                                                  viene toccato su disco finche' non si svuota il cestino. Sta qui a
-                                                  sinistra, staccato da Conferma/Annulla che riguardano i tag, per non
-                                                  farlo premere per sbaglio al posto di Conferma. */}
-                                    {/* ENGLISH: "Delete selected" moves every selected photo to the app's TRASH: it is
-                                                 reversible, they can be restored, and no file on disk is touched until
-                                                 the trash is emptied. It sits here on the left, away from
-                                                 Confirm/Cancel which are about tags, so it is not hit by mistake. */}
-                                    <button onClick={handleMoveSelectedToTrash} title={t.moveToTrash} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95 ${isDarkMode ? 'border-red-800/60 bg-red-900/25 text-red-300 hover:bg-red-500 hover:border-red-500 hover:text-white' : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-500 hover:border-red-500 hover:text-white'}`}>
-                                        <Trash2 size={14} />
-                                        {t.deleteSelected}
-                                    </button>
-                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className={`px-4 py-1.5 rounded-lg font-semibold transition-colors text-xs ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <span />}
-                                </div>
+                                {stagedBulkTags.length > 0 && (
+                                    <div className="flex justify-end items-center gap-2 shrink-0 animate-in slide-in-from-right-4">
+                                        <button onClick={() => setStagedBulkTags([])} className={`${bulkPanelBtn} ${isDarkMode ? 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-gray-100' : 'bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800'}`}>
+                                            <X size={15} />
+                                            <span>{t.cancel}</span>
+                                        </button>
+                                        <button onClick={applyBulkTags} className={`${bulkPanelBtn} bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white`}>
+                                            <Check size={15} />
+                                            <span>{t.confirm}</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -3690,7 +3713,7 @@ export default function App() {
                                 <button 
                                     onClick={handleDeleteAllTags}
                                     disabled={allUniqueTags.length === 0}
-                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md border-0"
+                                    className={`${tagPanelBtn} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700`}
                                 >
                                     <Trash size={14} />
                                     {t.deleteAllTags}
@@ -3698,7 +3721,7 @@ export default function App() {
                                 <button
                                     onClick={handleCleanUnusedTags}
                                     disabled={allUniqueTags.length === 0}
-                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md border-0"
+                                    className={`${tagPanelBtn} bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600`}
                                 >
                                     <RefreshCw size={14} />
                                     {t.cleanUnusedTags}
@@ -3709,11 +3732,11 @@ export default function App() {
                             {/* ENGLISH: ONE Export button (format chosen in the save dialog) + ONE Import button.
                                          Two-line labels to explain them better. */}
                             <div className="flex gap-2">
-                                <button onClick={handleExportProjectTags} disabled={allUniqueTags.length === 0} title={t.exportProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                <button onClick={handleExportProjectTags} disabled={allUniqueTags.length === 0} title={t.exportProjectTags} className={`${tagPanelBtn} flex-col gap-0.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700`}>
                                     <span className="flex items-center gap-1.5 text-xs font-bold"><Upload size={14} /> {t.exportProjectTags}</span>
                                     <span className="text-[9px] font-medium opacity-70 leading-none">{t.exportProjectTagsHint}</span>
                                 </button>
-                                <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}>
+                                <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`${tagPanelBtn} flex-col gap-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700`}>
                                     <span className="flex items-center gap-1.5 text-xs font-bold"><Download size={14} /> {t.importProjectTags}</span>
                                     <span className="text-[9px] font-medium opacity-70 leading-none">{t.importProjectTagsHint}</span>
                                 </button>

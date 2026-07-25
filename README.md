@@ -1,8 +1,9 @@
 <div align="center">
-  <img src="public/logo.png" alt="Logo" width="120" height="120" />
-  <h1>Images Tag Manager for LORAs</h1>
-  <p>A powerful, intuitive, and privacy-focused desktop application for managing, editing, and auto-generating tags for image datasets.</p>
+  <img src="docs/img/cover.jpg" alt="Images Tag Manager for LORAs — a Windows desktop app to prepare tagged image datasets for LoRA training" width="100%" />
 
+  <br /><br />
+
+  [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6.svg)](#-download)
   [![React](https://img.shields.io/badge/React-19-blue.svg)](https://reactjs.org/)
   [![Vite](https://img.shields.io/badge/Vite-6-646CFF.svg)](https://vitejs.dev/)
   [![Electron](https://img.shields.io/badge/Electron-Hardened-47848F.svg)](https://www.electronjs.org/)
@@ -11,94 +12,97 @@
 
 ---
 
-## 📖 Overview
+## 📖 What it is
 
-**Images Tag Manager for LORAs** is a fast, offline-first desktop tool for preparing image datasets for LoRA / Kohya_SS / Stable Diffusion training. Load folders of images, edit the associated `.txt` tag files, and ship them back to disk. It runs entirely on your machine and sends **no telemetry**. Cloud AI tagging (Google Gemini) is **optional and off by default**: images are sent to Google only if you turn the AI on and provide your own API key.
+**Images Tag Manager for LORAs** is a desktop tool for preparing image datasets for **LoRA / Kohya_SS / Stable Diffusion** training.
 
-## ✨ Key Features
+You point it at a folder, it reads every image together with its `.txt` tag file, and it lets you edit those tags — one photo at a time or hundreds at once — then writes them straight back to disk in the same format.
 
-*   📂 **Folder Loading & Project Management**: Import entire folders containing images and their respective `.txt` files in one click.
-*   🏷️ **Advanced Tag Management**: Add, remove, or edit tags for individual images or apply changes to multiple images at once using **Bulk Tagging**.
-*   🤖 **AI Tagging (Gemini, optional · Beta)**: Optional integration with Google Gemini (**Gemini 3.6 Flash**) for booru-style tags. Off by default; bring your own API key (encrypted via the OS keychain).
-*   🎯 **Curated Tag Suggestions**: A built-in static library of categorized tag suggestions (poses, lighting, anatomy, hair, eyes, styles, etc.) that you can click to add. Resizable panel.
-*   🌍 **Global Tag Manager**: View and manage all unique tags present in the project from a single interface. Easily add global "Trigger Words" to all images with one click.
-*   📊 **Project Statistics**: Visual charts and metrics showing tag distribution, total images, tagged percentages, and most used tags, plus a searchable/sortable list of every tag with usage counts.
-*   ✏️ **Tag File Editor**: Open, create and edit any `.txt` or `.json` tag file (including a single photo's sidecar) in a dedicated window.
-*   🔞 **NSFW Detection**: Automatic highlighting of NSFW tags with dedicated `+18` badges (heuristic, keyword-based).
-*   🗑️ **Windows Recycle Bin**: Deleting a photo moves it (and its `.txt`) to the Recycle Bin, so it stays recoverable — not a permanent delete.
-*   💾 **Flexible Saving**:
-    *   Save changes back to each image's own folder (subfolders supported).
-    *   Export the whole project's tags as a `.zip` archive, or as a JSON / TXT list.
-*   🎨 **Modern UI/UX**: Beautiful, responsive interface with Light and Dark mode support, built with Tailwind CSS and Lucide icons.
-*   🌐 **Multilingual Support**: Available in Italian, English, French, Spanish, German, Chinese, Japanese, Portuguese, and Russian.
-*   🔐 **Encrypted API key storage**: when running inside Electron, your Gemini key is stored in the OS keychain (via `safeStorage`); never in plain `localStorage`, never inside the bundle.
+It runs entirely on your machine and sends **no telemetry**. Cloud AI tagging is **optional and off by default**: images reach Google only if you switch the AI on and supply your own API key.
 
-## 🚀 Getting Started
+---
 
-### Prerequisites
+## ✨ What it does
 
-Ensure you have [Node.js](https://nodejs.org/) (v18 or higher) installed on your system.
+<img src="docs/img/features/01-gallery.jpg" alt="The gallery: your whole dataset on one screen, every image next to its own tags" width="100%" />
 
-### Installation
+<img src="docs/img/features/02-import.jpg" alt="Import: the app counts images and .txt files and shows a summary before importing anything" width="100%" />
 
-1. Clone the repository or download the source code.
-2. Open your terminal in the project directory.
-3. Install the dependencies:
+<img src="docs/img/features/03-bulk-tagging.jpg" alt="Bulk tagging: tag hundreds of images at once, with a legend explaining each tag pill" width="100%" />
 
-```bash
-npm install
-```
+<img src="docs/img/features/04-tag-search.jpg" alt="Tag search: type one or more tags and the gallery keeps only the images that carry them" width="100%" />
 
-### Running in Development Mode
+<img src="docs/img/features/05-suggested-tags.jpg" alt="Suggested tags: twenty-seven categories of ready-made tags, about a thousand of them" width="100%" />
 
-To run the app in your browser for development or testing:
+<img src="docs/img/features/06-trigger-words.jpg" alt="Trigger words: one word typed once lands in front of the tag list of every image" width="100%" />
 
-```bash
-npm run dev
-```
+<img src="docs/img/features/07-project-tags.jpg" alt="Project tags: the whole vocabulary of the project in one list, exportable as JSON or TXT" width="100%" />
 
-## 📦 Building the Portable App (Electron)
+<img src="docs/img/features/08-lightbox.jpg" alt="Full-screen viewer: the photo at full quality with every tag of the project one click away" width="100%" />
 
-You can easily compile this project into a standalone, portable desktop application (.exe for Windows, .app for macOS, etc.) using Electron.
+<img src="docs/img/features/09-tag-editor.jpg" alt="Tag file editor: open, create and rewrite any .txt or .json tag file" width="100%" />
 
-1. First, build the web assets:
-```bash
-npm run build
-```
+<img src="docs/img/features/10-statistics.jpg" alt="Statistics: six metrics, category pie chart, top 10 tags and a searchable list of every tag" width="100%" />
 
-2. Then, package the application using Electron Builder:
-```bash
-npm run electron:build
-```
+<img src="docs/img/features/11-views.jpg" alt="Two views: square crops or the whole frame, with zoom and sorting" width="100%" />
 
-The compiled portable executable will be available in the `release/` folder.
+<img src="docs/img/features/12-ai.jpg" alt="Optional AI: Gemini writes the first draft, off by default, with your own encrypted API key" width="100%" />
 
-## 🤖 AI Tagging (optional, Gemini · Beta)
+<img src="docs/img/features/13-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />
 
-AI is **off by default**. When you enable the AI Tools section in Settings and save a valid Gemini API key, the app can **tag images** in booru style suitable for Kohya / sd-scripts LoRA training (comma-separated lowercase tags), optionally biased by a **custom prompt**. It uses a single model, **Gemini 3.6 Flash** — there is no captioning and no model picker.
+<img src="docs/img/features/14-light-theme.jpg" alt="Light and dark theme, chosen by hand rather than following Windows" width="100%" />
 
-**Get an API key** at [Google AI Studio](https://aistudio.google.com/app/apikey) → "Create API key".
-The app verifies the key with a tiny test call before saving, then encrypts it in the OS keychain (via Electron `safeStorage`).
+<img src="docs/img/features/15-languages.jpg" alt="Nine languages, installer included" width="100%" />
 
-The "Auto-tag all" button in the toolbar paces requests to stay under Google's free-tier rate limit, can skip already-tagged photos, and can be cancelled mid-batch.
+Plus: NSFW `+18` badges, ZIP / JSON / TXT export, copy & paste tags between photos, undo & redo, tag names translated on hover, and a crash-recovery backup that survives a power cut.
 
-## 🔒 Hardening Highlights
+---
 
-*   Electron renderer runs with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, and a minimal IPC bridge defined in `electron/preload.cjs`.
-*   A strict Content-Security-Policy is applied both via `index.html` meta tag and via the production session headers in `electron/main.cjs`. The CSP `connect-src` allows only `generativelanguage.googleapis.com` (Google Gemini endpoint). Everything else is locked.
-*   The Gemini API key is stored encrypted via Electron `safeStorage` (OS keychain) — never in plain `localStorage`, never inside the bundle.
-*   Filenames written to disk or to ZIP archives are sanitized to prevent path traversal and reserved-name issues on Windows.
-*   A React `ErrorBoundary` shows a recovery screen instead of a blank window on unexpected UI errors.
+## 📥 Download
 
-## 🛠️ Tech Stack
+Grab the latest **portable** or **installer** build from the [Releases](../../releases) page. No Node.js, no setup — the portable one just runs.
+
+> The build is **not code-signed** (a certificate costs hundreds of euros a year), so Windows SmartScreen may say *"unknown publisher"*. That is expected: click **More info → Run anyway**. The installer explains this on its welcome page.
+
+### Where your data lives
+
+Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to the executable, in both the portable and the installed version. **Your images and `.txt` files are never copied there**: they stay where they are, and are only rewritten when you press Save.
+
+---
+
+## 🤖 AI tagging (optional · Beta)
+
+AI is **off by default**. Enable the AI Tools section in Settings, save a valid Gemini API key, and the app can tag images in booru style suitable for Kohya / sd-scripts (comma-separated lowercase tags), optionally steered by a custom prompt. One model only — **Gemini 3.6 Flash** — no captioning, no model picker.
+
+Get a key at [Google AI Studio](https://aistudio.google.com/app/apikey) → *Create API key*. The app verifies it with a tiny test call before saving, then encrypts it in the OS keychain via Electron `safeStorage`.
+
+"Auto-tag all" paces its requests to stay under Google's free-tier rate limit, can skip already-tagged photos, and can be cancelled mid-batch.
+
+---
+
+## 🔒 Security
+
+*   The Electron renderer runs with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, and a minimal IPC bridge (`electron/preload.cjs`).
+*   A strict Content-Security-Policy is applied both by the `index.html` meta tag and by the production session headers in `electron/main.cjs`. `connect-src` allows **only** `generativelanguage.googleapis.com`; everything else is blocked.
+*   The Gemini API key is stored encrypted through Electron `safeStorage` (OS keychain) — never in plain `localStorage`, never inside the bundle.
+*   File paths reaching the disk IPC are validated (no UNC, no `..`, no relative paths), and names written to disk or into ZIP archives are sanitized against path traversal and Windows reserved names.
+*   A React `ErrorBoundary` shows a recovery screen instead of a blank window.
+
+---
+
+## 🧰 Tech stack
 
 *   **Frontend**: React 19, TypeScript, Vite 6
 *   **Styling**: Tailwind CSS 4
 *   **Icons**: Lucide React
-*   **Desktop Framework**: Electron (hardened), Electron Builder
+*   **Desktop**: Electron (hardened) + Electron Builder, NSIS installer in 9 languages
 *   **AI**: `@google/genai` (Gemini API)
 *   **Utilities**: JSZip (archives), Recharts (statistics charts)
 
-## 📝 License & Credits
+---
+
+## 📝 License & credits
 
 Developed and designed by **xXIlRizzoXx**.
+
+The screenshots on this page show a sample dataset used only to illustrate the interface; the characters depicted belong to their respective rights holders.

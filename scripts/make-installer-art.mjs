@@ -342,6 +342,79 @@ function paintPill(cv, x, y, w, h, color, alpha) {
     }
 }
 
+/**
+ * ITALIANO: Distanza con segno da un rettangolo con angoli arrotondati (negativa dentro).
+ *           Serve a disegnare cornici morbide senza scalettature.
+ * ENGLISH: Signed distance to a rounded rectangle (negative inside). Used to draw soft frames
+ *          without jaggies.
+ */
+function sdRoundRect(px, py, x, y, w, h, r) {
+    const qx = Math.abs(px - (x + w / 2)) - (w / 2 - r);
+    const qy = Math.abs(py - (y + h / 2)) - (h / 2 - r);
+    const ax = Math.max(qx, 0), ay = Math.max(qy, 0);
+    return Math.sqrt(ax * ax + ay * ay) + Math.min(Math.max(qx, qy), 0) - r;
+}
+
+/**
+ * ITALIANO: Piccola "fotografia": cornice arrotondata con dentro un sole e un profilo di
+ *           montagna, cioe' il simbolo universale dell'immagine. Riempie la parte bassa della
+ *           fascia dicendo che questo programma lavora su FOTO, mentre le pillole sopra dicono
+ *           che ci mette i TAG. Resta molto tenue: e' sfondo, non deve rubare la scena al logo.
+ * ENGLISH: A small "photo": rounded frame holding a sun and a mountain outline, the universal
+ *          picture symbol. It fills the lower part of the sidebar saying this program works on
+ *          PHOTOS, while the pills above say it puts TAGS on them. Kept very faint: it is
+ *          background, it must not steal the scene from the logo.
+ */
+function paintPhoto(cv, cx, cy, w, h, angle, color, alpha, fillColor, fillAlpha) {
+    const r = Math.min(w, h) * 0.16;
+    const stroke = Math.max(1, SS * 1.0);
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    // ITALIANO: ruotando, il riquadro da scandire e' piu' grande del rettangolo: uso la mezza
+    //           diagonale, cosi' nessun angolo resta fuori.
+    // ENGLISH: once rotated the box to scan is larger than the rectangle: I use the half diagonal,
+    //          so no corner is left out.
+    const rad = Math.ceil(Math.sqrt(w * w + h * h) / 2) + 2;
+
+    // posizioni di sole e montagna nel sistema di riferimento della foto (origine al centro)
+    const sunX = -w * 0.20, sunY = -h * 0.18, sunR = Math.min(w, h) * 0.13;
+    const mBaseY = h * 0.30, mHalf = w * 0.36, mPeakY = -h * 0.10, mPeakX = w * 0.02;
+
+    for (let py = Math.floor(cy) - rad; py <= Math.ceil(cy) + rad; py++) {
+        for (let px = Math.floor(cx) - rad; px <= Math.ceil(cx) + rad; px++) {
+            // ITALIANO: porto il punto nel sistema della foto ruotando all'indietro: cosi' posso
+            //           continuare a ragionare su un rettangolo dritto.
+            // ENGLISH: bring the point into the photo's frame by rotating backwards: that way I can
+            //          keep reasoning about an upright rectangle.
+            const ox = px - cx, oy = py - cy;
+            const lx = ox * cos + oy * sin;
+            const ly = -ox * sin + oy * cos;
+
+            const d = sdRoundRect(lx, ly, -w / 2, -h / 2, w, h, r);
+            const dentro = clamp01(0.5 - d);
+            if (dentro <= 0 && Math.abs(d) > stroke) continue;
+
+            // ITALIANO: il ripieno serve al VENTAGLIO: senza, le cornici sovrapposte si
+            //           incrociavano e non si capiva quale foto stesse sopra.
+            // ENGLISH: the fill is what makes the FAN readable: without it the overlapping frames
+            //          crossed each other and you could not tell which photo was on top.
+            if (dentro > 0 && fillAlpha > 0) {
+                cv.blend(px, py, fillColor[0], fillColor[1], fillColor[2], fillAlpha * dentro);
+            }
+
+            let a = clamp01(stroke / 2 - Math.abs(d) + 0.5);   // cornice
+            if (d < 0) {
+                const ds = Math.sqrt((lx - sunX) ** 2 + (ly - sunY) ** 2);
+                a = Math.max(a, clamp01(sunR - ds + 0.5) * 0.95);
+                if (ly <= mBaseY && ly >= mPeakY) {
+                    const t = (mBaseY - ly) / (mBaseY - mPeakY);
+                    if (Math.abs(lx - mPeakX) <= mHalf * (1 - t)) a = Math.max(a, 0.8);
+                }
+            }
+            if (a > 0) cv.blend(px, py, color[0], color[1], color[2], alpha * a);
+        }
+    }
+}
+
 /** Vignettatura: scurisce i bordi, stacca l'immagine dalla finestra bianca. */
 function paintVignette(cv, strength) {
     for (let y = 0; y < cv.h; y++) {
@@ -393,22 +466,85 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     // ENGLISH: A denser, more visible "tag" cloud under the logo — what the user asked to enrich.
     //          Rows: x, y, width (canvas fractions) + tint (1 = bright violet pill, 0 = light pill).
     //          More rows, more contrast.
+    // ITALIANO: PARTE BASSA — tre fotografie, e basta. Prima c'era anche una nuvola di pillole
+    //           (i "tag"), ma facevano confusione: sembravano righe di caricamento. Ora restano
+    //           solo le foto, TUTTE UGUALI e in proporzione corretta 4:3 — la forma di una
+    //           fotografia vera — allineate sulla stessa base e distanziate in modo regolare.
+    //           L'altezza si ricava dalla larghezza in PIXEL, non in frazioni di tela: la tela e'
+    //           piu' alta che larga, quindi usare frazioni per entrambi i lati le avrebbe
+    //           schiacciate. La fila e' centrata nello spazio sotto il filo luminoso.
+    // ENGLISH: LOWER PART — three photos, nothing else. There used to be a cloud of pills (the
+    //          "tags") as well, but they were confusing: they read as loading bars. Only the
+    //          photos remain, ALL EQUAL and in a correct 4:3 ratio — the shape of a real
+    //          photograph — sharing one baseline and evenly spaced. The height is derived from
+    //          the width in PIXELS, not in canvas fractions: the canvas is taller than it is
+    //          wide, so using fractions for both sides would have squashed them. The row is
+    //          centred in the space below the glowing line.
+    // ITALIANO: righe di "tag" fra il logo e le foto: sono le etichette che il programma mette
+    //           sulle immagini, quindi stanno bene proprio li' in mezzo.
+    // ENGLISH: rows of "tags" between the logo and the photos: they are the labels the program puts
+    //          on images, so the middle is exactly where they belong.
+    // ITALIANO: ogni riga e' una COPPIA di pillole CENTRATA: calcolo la larghezza totale della
+    //           coppia (le due pillole piu' lo spazio in mezzo) e la faccio partire da meta' del
+    //           margine che avanza. Prima partivano tutte dal bordo sinistro e finivano dove
+    //           capitava, quindi il blocco risultava sbilanciato a sinistra.
+    // ENGLISH: each row is a CENTRED PAIR of pills: I work out the pair's total width (the two
+    //          pills plus the gap) and start it at half of the leftover margin. They used to all
+    //          start at the left edge and end wherever, so the block looked skewed to the left.
+    const GAP = 0.05;
     const rows = [
-        [0.09, 0.545, 0.30, 1], [0.44, 0.545, 0.27, 0],
-        [0.09, 0.610, 0.22, 0], [0.35, 0.610, 0.36, 1],
-        [0.09, 0.675, 0.33, 1], [0.47, 0.675, 0.20, 0],
-        [0.13, 0.740, 0.26, 0], [0.44, 0.740, 0.28, 1],
-        [0.09, 0.805, 0.24, 1], [0.38, 0.805, 0.21, 0], [0.63, 0.805, 0.14, 0],
-        [0.14, 0.870, 0.30, 0], [0.49, 0.870, 0.23, 1],
-        [0.11, 0.930, 0.20, 0], [0.36, 0.930, 0.27, 0],
+        [0.560, 0.30, 0.27, 1],
+        [0.625, 0.22, 0.36, 0],
+        [0.690, 0.33, 0.20, 1],
+        [0.755, 0.26, 0.28, 0],
     ];
-    rows.forEach(([fx, fy, fw, tint]) => {
-        // ITALIANO: sbiadiscono scendendo, ma meno di prima, cosi' la nuvola "riempie" davvero.
-        // ENGLISH: they fade going down, but less than before, so the cloud actually fills the space.
-        const fade = 1 - smooth(clamp01((fy - 0.545) / 0.42)) * 0.5;
-        const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
-        paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
-            tint ? C.violet500 : [235, 230, 255], base);
+    rows.forEach(([fy, w1, w2, primaAccesa]) => {
+        const start = (1 - (w1 + GAP + w2)) / 2;
+        const fade = 1 - smooth(clamp01((fy - 0.560) / 0.30)) * 0.30;
+        [[start, w1, primaAccesa], [start + w1 + GAP, w2, primaAccesa ? 0 : 1]]
+            .forEach(([fx, fw, tint]) => {
+                const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
+                paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
+                    tint ? C.violet500 : [235, 230, 255], base);
+            });
+    });
+
+    // ITALIANO: VENTAGLIO di fotografie in fondo. Ognuna e' 4:3 (proporzione vera) e sono tutte
+    //           della stessa misura; cambiano solo inclinazione e posizione. Le due esterne sono
+    //           ruotate in direzioni opposte e stanno un filo piu' in basso, come quando si apre
+    //           un mazzo di foto in mano. Si disegnano dalle esterne verso il centro, cosi' quella
+    //           centrale finisce SOPRA: e' il ripieno di ciascuna a rendere leggibile quale sta
+    //           davanti, altrimenti le cornici si incrocerebbero e basta.
+    // ENGLISH: FAN of photos at the bottom. Each is 4:3 (a true photo ratio) and they are all the
+    //          same size; only tilt and position change. The outer two are rotated in opposite
+    //          directions and sit slightly lower, like a hand of photos being spread. They are
+    //          drawn outer-to-centre so the middle one ends up ON TOP: it is each one's fill that
+    //          makes the stacking readable, otherwise the frames would merely cross each other.
+    const pw = cv.w * 0.285;
+    const ph = pw * 0.75;                   // 4:3
+    const fanCx = cv.w / 2, fanCy = cv.h * 0.868;
+    const GRADI = Math.PI / 180;
+    const ventaglio = [
+        { dx: -cv.w * 0.20, dy: cv.h * 0.010, ang: -15 * GRADI, acceso: false },
+        { dx: cv.w * 0.20, dy: cv.h * 0.010, ang: 15 * GRADI, acceso: false },
+        { dx: 0, dy: 0, ang: 0, acceso: true },
+    ];
+    ventaglio.forEach(({ dx, dy, ang, acceso }) => {
+        const alpha = (uninstall ? 0.16 : 0.26) * (acceso ? 1 : 0.82);
+        // ITALIANO: la foto CENTRALE ha il ripieno OPACO: cosi' copre davvero le due dietro,
+        //           invece di lasciarle trasparire. La tinta e' quella dello sfondo in quel punto
+        //           (mescolanza dei due viola del gradiente), quindi copre senza diventare un
+        //           rettangolo che salta all'occhio. Le due esterne restano semitrasparenti: sono
+        //           dietro, devono fondersi.
+        // ENGLISH: the MIDDLE photo has an OPAQUE fill: that way it really covers the two behind
+        //          instead of letting them show through. Its tint is the background colour at that
+        //          spot (a blend of the gradient's two violets), so it covers without turning into
+        //          a rectangle that jumps out. The outer two stay semi-transparent: they are
+        //          behind, they must blend in.
+        const ripieno = acceso ? mix(C.violet950, C.purple950, 0.5) : C.violet950;
+        const opacita = acceso ? 1 : (uninstall ? 0.30 : 0.42);
+        paintPhoto(cv, fanCx + dx, fanCy + dy, pw, ph, ang,
+            acceso ? C.violet400 : [235, 230, 255], alpha, ripieno, opacita);
     });
 
     const logoW = Math.round(cv.w * 0.52);

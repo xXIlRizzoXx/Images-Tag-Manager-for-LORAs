@@ -1,7 +1,34 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.12
+**Versione attuale:** 1.1.0
+Novità (traguardo 86): **pagina di presentazione del progetto rifatta**. In cima c'è ora una
+**copertina** (logo, nome del programma e la finestra vera inclinata in prospettiva) e sotto
+**dieci schede**, una per ogni funzione: a sinistra il titolo con tre righe che spiegano, a destra
+la schermata del programma intera e dritta — e ad ogni scheda testo e immagine si scambiano di
+lato. Le schermate sono state prese con una **cartella vera già taggata** (Sisu), con il programma
+in **inglese**. Non sono immagini fatte a mano: tre programmini le **rigenerano da sole**, quindi
+se domani cambia un pulsante basta rilanciarli invece di rifare gli screenshot a mano. Copertina e
+schede sono salvate in JPEG, così la pagina pesa 1,4 MB invece di 6.
+Novità 1.1.0 (traguardo 85): **prima versione "tonda"**. Non è un cambiamento singolo: è il numero
+che raccoglie tutto il lavoro fatto dalla 1.0.6 in poi (tre giri di controllo automatico con le
+riparazioni, l'intelligenza artificiale portata a Gemini 3.6 Flash, il tasto "Elimina selezionate",
+l'estetica uniforme dei pulsanti, la fascia laterale dell'installer con le foto a ventaglio) e che
+segna il punto in cui il programma è considerato completo e stabile. Prima di chiudere la versione
+è stato fatto un **controllo completo delle traduzioni**: tutte e 9 le lingue hanno le stesse
+identiche voci, nessuna casella vuota, nessuna scritta rimasta in inglese per sbaglio (le poche
+uguali all'inglese sono parole che in quelle lingue si scrivono davvero così, tipo "Zoom" e
+"Original"); tolte due voci ormai inutilizzate.
+Novità 1.0.15 (traguardo 84): nella **fascia laterale dell’installer** le tre fotografie sono ora
+disposte a **ventaglio**, sovrapposte e inclinate come un mazzo di foto aperto in mano, con sopra
+le righe dei tag fra il logo e le foto, centrate a coppie; la foto centrale copre le altre due. Tolto l’**avviso antivirus dalla schermata di avvio** del
+programma: quella schermata dura pochi secondi e il testo la appesantiva. L’avviso resta dove c’è
+il tempo di leggerlo, cioè nella prima pagina dell’installer.
+Novità 1.0.13 (traguardo 83): estetica **uniforme dei pulsanti**. I tasti del pannello dei tag e
+di quello di selezione avevano due aspetti diversi (alcuni pieni con ombra, altri piatti col
+bordo): ora hanno tutti la stessa forma e cambia solo il colore. Nella **fascia laterale
+dell’installer** la parte bassa non è più quasi vuota: sotto la nuvola di tag c’è una fila di
+tre fotografie uguali in proporzione corretta 4:3, allineate e distanziate in modo regolare.
 Novità 1.0.12 (traguardo 82): l'intelligenza artificiale passa a **Gemini 3.6 Flash** (la sigla è
 stata verificata sulla documentazione ufficiale di Google: versione stabile, accetta le immagini).
 Chi aveva già salvato il modello vecchio viene riportato in automatico su quello nuovo. Nel
@@ -33,9 +60,10 @@ l'editor coi tag del file precedente, e Salva resta disabilitato finché la rile
 Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
 schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
 vengono più saltate.
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.12** in `Release\` (solo questa
-coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.12 comprende tutto il lavoro dalla 1.0.6 in poi.
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.1.0** in `Release\` (solo questa
+coppia, le 1.0.12 sono state tolte). Verificata guardando dentro al pacchetto: contiene i file
+appena compilati, non una versione riciclata. La 1.1.0 comprende tutto il lavoro dalla 1.0.6 in
+poi (le versioni da 1.0.13 a 1.0.17 erano rifiniture mai consegnate).
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di
