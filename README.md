@@ -70,39 +70,33 @@ Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to 
 
 ---
 
-## 🤖 AI tagging (optional · Beta)
+## 🤖 About the AI
 
-AI is **off by default**. Enable the AI Tools section in Settings, save a valid Gemini API key, and the app can tag images in booru style suitable for Kohya / sd-scripts (comma-separated lowercase tags), optionally steered by a custom prompt. One model only — **Gemini 3.6 Flash** — no captioning, no model picker.
+The AI is **optional and off by default** — with it off, nothing ever leaves your computer.
 
-Get a key at [Google AI Studio](https://aistudio.google.com/app/apikey) → *Create API key*. The app verifies it with a tiny test call before saving, then encrypts it in the OS keychain via Electron `safeStorage`.
-
-"Auto-tag all" paces its requests to stay under Google's free-tier rate limit, can skip already-tagged photos, and can be cancelled mid-batch.
+If you want it, get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into Settings. The app checks the key works before saving it, then keeps it **encrypted in the Windows keychain**. Only the images you actually ask it to tag are sent, one model is used (**Gemini 3.6 Flash**), the pace stays inside Google's free tier, and you can stop a batch halfway.
 
 ---
 
-## 🔒 Security
+## 🔒 Privacy
 
-*   The Electron renderer runs with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, and a minimal IPC bridge (`electron/preload.cjs`).
-*   A strict Content-Security-Policy is applied both by the `index.html` meta tag and by the production session headers in `electron/main.cjs`. `connect-src` allows **only** `generativelanguage.googleapis.com`; everything else is blocked.
-*   The Gemini API key is stored encrypted through Electron `safeStorage` (OS keychain) — never in plain `localStorage`, never inside the bundle.
-*   File paths reaching the disk IPC are validated (no UNC, no `..`, no relative paths), and names written to disk or into ZIP archives are sanitized against path traversal and Windows reserved names.
-*   A React `ErrorBoundary` shows a recovery screen instead of a blank window.
-
----
-
-## 🧰 Tech stack
-
-*   **Frontend**: React 19, TypeScript, Vite 6
-*   **Styling**: Tailwind CSS 4
-*   **Icons**: Lucide React
-*   **Desktop**: Electron (hardened) + Electron Builder, NSIS installer in 9 languages
-*   **AI**: `@google/genai` (Gemini API)
-*   **Utilities**: JSZip (archives), Recharts (statistics charts)
+*   **No telemetry, no accounts, no auto-update.** The app never phones home.
+*   **Google is the only address it can reach**, and only with the AI switched on. Every other connection is blocked at the source.
+*   **Your API key is never stored in clear text** and is not inside the download.
+*   **Your files stay yours**: images and `.txt` are read where they are and rewritten only when you save. Deleting sends them to the Windows Recycle Bin, never straight to nothing.
 
 ---
 
-## 📝 License & credits
+## 📝 Credits
 
 Developed and designed by **xXIlRizzoXx**.
+
+<div align="center">
+  <br />
+  <img src="docs/img/flag-it.svg" alt="Italy" width="40" />
+  <br />
+  <sub><b>Made in Italy</b> &nbsp;·&nbsp; built with the help of <a href="https://claude.com/claude-code">Claude Code</a></sub>
+  <br /><br />
+</div>
 
 The screenshots on this page show a sample dataset used only to illustrate the interface; the characters depicted belong to their respective rights holders.
