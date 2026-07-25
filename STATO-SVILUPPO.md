@@ -2,11 +2,15 @@
 
 **Ultimo aggiornamento:** 25 luglio 2026
 **Versione attuale:** 1.1.0
+Novità (traguardo 88): il progetto è ora **pubblico** su GitHub. Prima di aprirlo ho controllato
+tutta la storia dei salvataggi: nessuna chiave, nessuna password, nessun percorso del tuo computer
+è mai finito dentro. La cartella `Release` e le note di lavoro restano fuori. Chiunque ora può
+vedere il programma, scaricare i due file e leggere anche questo registro.
 Novità (traguardo 87): **pubblicata la 1.1.0 su GitHub**. Nella pagina delle release adesso c'è
 **solo la 1.1.0**, con i due file pronti da scaricare (installer e portable) e una spiegazione di
 quale scegliere; la vecchia release 3.7.0 di aprile e i suoi contrassegni sono stati tolti, come
 richiesto. Dal testo della pagina sono sparite le istruzioni per compilare il programma da soli:
-chi arriva lì scarica e basta. Il repository resta **privato**.
+chi arriva lì scarica e basta. Il repository è poi stato reso **pubblico** (vedi sopra).
 Novità (traguardo 86): **pagina di presentazione del progetto rifatta**. In cima c'è ora una
 **copertina** (logo, nome del programma e la finestra vera inclinata in prospettiva) e sotto
 **quindici schede**, una per ogni funzione: a sinistra il titolo con tre righe che spiegano, a destra
