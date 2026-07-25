@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Replace } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
@@ -3433,7 +3433,7 @@ export default function App() {
                                             {allSelected ? (t.deselectAll || 'Deseleziona tutte') : (t.selectAll || 'Seleziona tutte')}
                                         </button>
                                         <button onClick={invertSelection} title={t.invertSelection} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                                            <Replace size={13} />
+                                            <Ungroup size={13} />
                                             <span className="hidden lg:inline">{t.invertSelection}</span>
                                         </button>
                                     </div>
@@ -3529,19 +3529,7 @@ export default function App() {
                     {selectedForBulk.length > 0 && (
                         <div className={`absolute bottom-6 left-0 right-0 mx-auto w-[95%] max-w-6xl backdrop-blur-xl border p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[46vh] rounded-2xl ring-1 ring-black/5 ${isDarkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
                             <div className="w-full flex flex-col gap-3 h-full min-h-0">
-                                <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}><Grid3X3 size={18} /></div><div><h3 className={`text-sm font-bold leading-tight ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className={`text-[10px] uppercase tracking-wide ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.dashedPillsDesc}</p></div></div><div className="flex items-center gap-2 shrink-0">
-                                        {/* ITALIANO: sposta nel cestino TUTTE le foto selezionate. Stessa azione del cestino
-                                                      sulla singola miniatura, quindi reversibile: le foto si possono ripristinare
-                                                      e nessun file viene toccato su disco finche' non si svuota il cestino. */}
-                                        {/* ENGLISH: move ALL selected photos to the trash. Same action as the per-thumbnail
-                                                     trash, so reversible: photos can be restored and no file on disk is touched
-                                                     until the trash is emptied. */}
-                                        <button onClick={handleMoveSelectedToTrash} title={t.moveToTrash} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 ${isDarkMode ? 'border-red-800/60 bg-red-900/30 text-red-300 hover:bg-red-500 hover:border-red-500 hover:text-white' : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-500 hover:border-red-500 hover:text-white'}`}>
-                                            <Trash2 size={13} />
-                                            <span className="hidden sm:inline">{t.moveToTrash}</span>
-                                        </button>
-                                        <button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className={`p-1.5 rounded-full border hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm ${isDarkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'}`}><X size={14} /></button>
-                                    </div></div>
+                                <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}><Grid3X3 size={18} /></div><div><h3 className={`text-sm font-bold leading-tight ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className={`p-1.5 rounded-full border hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm shrink-0 ${isDarkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'}`}><X size={14} /></button></div>
                                 {hiddenSelectedCount > 0 && (
                                     <div className={`shrink-0 flex items-start gap-2 px-3 py-2 rounded-lg border text-xs leading-snug ${isDarkMode ? 'bg-amber-900/30 border-amber-700/60 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
                                         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
@@ -3636,7 +3624,7 @@ export default function App() {
                                 </div>
                                 {/* ITALIANO: LEGENDA degli stati delle pillole (non solo il tratteggiato). */}
                                 {/* ENGLISH: LEGEND of the pill states (not just the dashed one). */}
-                                <div className={`shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <div className={`shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                     <span className="font-bold uppercase tracking-wide">{t.legendTitle}</span>
                                     <span className="flex items-center gap-1.5">
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white ring-2 ring-offset-1 ${isDarkMode ? 'ring-white/50 ring-offset-gray-900' : 'ring-black/20 ring-offset-white'}`}><Check size={10} strokeWidth={3} />tag</span>
@@ -3651,8 +3639,21 @@ export default function App() {
                                         {t.legendAvailable}
                                     </span>
                                 </div>
-                                <div className="flex justify-end gap-2 shrink-0 h-9 transition-all">
-                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className={`px-4 py-1.5 rounded-lg font-semibold transition-colors text-xs ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}
+                                <div className="flex justify-between items-center gap-2 shrink-0 h-9 transition-all">
+                                    {/* ITALIANO: "Elimina selezionate" sposta nel CESTINO dell'app tutte le foto
+                                                  selezionate: e' reversibile, si possono ripristinare, e nessun file
+                                                  viene toccato su disco finche' non si svuota il cestino. Sta qui a
+                                                  sinistra, staccato da Conferma/Annulla che riguardano i tag, per non
+                                                  farlo premere per sbaglio al posto di Conferma. */}
+                                    {/* ENGLISH: "Delete selected" moves every selected photo to the app's TRASH: it is
+                                                 reversible, they can be restored, and no file on disk is touched until
+                                                 the trash is emptied. It sits here on the left, away from
+                                                 Confirm/Cancel which are about tags, so it is not hit by mistake. */}
+                                    <button onClick={handleMoveSelectedToTrash} title={t.moveToTrash} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95 ${isDarkMode ? 'border-red-800/60 bg-red-900/25 text-red-300 hover:bg-red-500 hover:border-red-500 hover:text-white' : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-500 hover:border-red-500 hover:text-white'}`}>
+                                        <Trash2 size={14} />
+                                        {t.deleteSelected}
+                                    </button>
+                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className={`px-4 py-1.5 rounded-lg font-semibold transition-colors text-xs ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <span />}
                                 </div>
                             </div>
                         </div>
