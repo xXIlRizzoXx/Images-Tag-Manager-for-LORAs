@@ -373,7 +373,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.8');
+    const [appVersion, setAppVersion] = useState<string>('1.0.9');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -2499,6 +2499,23 @@ export default function App() {
                                 style={{ width: `${splashProgress}%` }}
                             />
                         </div>
+                        {/* ITALIANO: Nota sull'ANTIVIRUS. Il programma non ha una firma digitale (il
+                                      certificato e' a pagamento), quindi Windows SmartScreen puo' dire
+                                      "editore sconosciuto" e qualche antivirus puo' insospettirsi. La
+                                      nota sta QUI, nella schermata di avvio, perche' e' l'unico punto
+                                      che vedono SIA la versione portable SIA quella installata (la
+                                      pagina di benvenuto dell'installer non esiste nel portable).
+                                      Deve restare BREVE: la schermata dura pochi secondi. */}
+                        {/* ENGLISH: ANTIVIRUS note. The program is not code-signed (the certificate
+                                     costs money), so Windows SmartScreen may say "unknown publisher"
+                                     and some antivirus may get suspicious. The note lives HERE, on the
+                                     startup screen, because it is the only place seen by BOTH the
+                                     portable and the installed version (the installer's welcome page
+                                     does not exist in the portable). Keep it SHORT: the screen only
+                                     stays up for a few seconds. */}
+                        <p className={`max-w-md text-center text-[11px] leading-relaxed ${isDarkMode ? 'text-violet-300/70' : 'text-violet-500/80'}`}>
+                            {t.splashAvNotice}
+                        </p>
                         {/* ITALIANO: Il copyright sta in una fascia a se', attaccata al fondo della finestra:
                                       i margini negativi la fanno arrivare fino ai bordi e gli angoli bassi
                                       seguono quelli della finestra. Viola PIU' SCURO del riquadro, cosi' si

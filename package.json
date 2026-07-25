@@ -1,7 +1,7 @@
 {
   "name": "images-tag-manager",
   "private": true,
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Privacy-focused desktop tool to manage, edit and auto-generate tags for image datasets used in LoRA / Stable Diffusion training.",
   "author": {
     "name": "xXIlRizzoXx",
@@ -55,7 +55,7 @@
       "shortcutName": "Images Tag Manager for LORAs",
       "runAfterFinish": true,
       "include": "build/installer.nsh",
-      "warningsAsErrors": false,
+      "warningsAsErrors": true,
       "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "mac": {

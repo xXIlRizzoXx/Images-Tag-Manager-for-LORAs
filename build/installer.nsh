@@ -106,9 +106,36 @@
 
   ; ITALIANO: Pagina di benvenuto. Titolo e testo li mette MUI nella lingua
   ;           scelta all'avvio: tradotti in tutte e 9 le lingue, gratis.
+  ;
+  ;           In cima al testo aggiungo l'AVVISO ANTIVIRUS. Il programma non e'
+  ;           firmato digitalmente (il certificato e' a pagamento), quindi Windows
+  ;           SmartScreen puo' dire "editore sconosciuto" e qualche antivirus puo'
+  ;           insospettirsi: l'avviso spiega perche' succede e come proseguire.
+  ;           Va PRIMA del testo standard cosi' si legge subito, e la pagina si
+  ;           chiude comunque con l'invito standard a premere Avanti.
+  ;
+  ;           $(MUI_TEXT_WELCOME_INFO_TEXT) e' il testo standard di MUI, gia'
+  ;           tradotto: riusandolo non perdo le traduzioni native. Le stringhe
+  ;           $(...) NSIS le risolve a fine compilazione, quindi si possono usare
+  ;           qui anche se AV_NOTICE_TEXT viene definita piu' avanti, dentro
+  ;           customHeader (stesso schema di DESKTOP_SHORTCUT_TEXT).
   ; ENGLISH: Welcome page. MUI supplies the localized title/body for the
   ;          language picked at startup - free translation in all 9 languages.
+  ;
+  ;          The ANTIVIRUS NOTICE is prepended to that text. The program is not
+  ;          code-signed (the certificate costs money), so Windows SmartScreen may
+  ;          say "unknown publisher" and some antivirus may get suspicious: the
+  ;          notice explains why it happens and how to proceed. It goes BEFORE the
+  ;          standard text so it is read first, while the page still ends with the
+  ;          standard "click Next" prompt.
+  ;
+  ;          $(MUI_TEXT_WELCOME_INFO_TEXT) is MUI's own already-translated body:
+  ;          reusing it keeps the native translations. NSIS resolves $(...) strings
+  ;          at the end of compilation, so they can be used here even though
+  ;          AV_NOTICE_TEXT is defined later, inside customHeader (same pattern as
+  ;          DESKTOP_SHORTCUT_TEXT).
   !macro customWelcomePage
+    !define MUI_WELCOMEPAGE_TEXT "$(AV_NOTICE_TEXT)$\r$\n$\r$\n$(MUI_TEXT_WELCOME_INFO_TEXT)"
     !insertmacro MUI_PAGE_WELCOME
   !macroend
 
