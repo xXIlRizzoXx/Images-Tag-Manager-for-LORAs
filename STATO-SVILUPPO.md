@@ -1,10 +1,10 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.15
+**Versione attuale:** 1.0.16
 Novità 1.0.15 (traguardo 84): nella **fascia laterale dell’installer** le tre fotografie sono ora
 disposte a **ventaglio**, sovrapposte e inclinate come un mazzo di foto aperto in mano, con sopra
-le righe dei tag fra il logo e le foto. Tolto l’**avviso antivirus dalla schermata di avvio** del
+le righe dei tag fra il logo e le foto, centrate a coppie; la foto centrale copre le altre due. Tolto l’**avviso antivirus dalla schermata di avvio** del
 programma: quella schermata dura pochi secondi e il testo la appesantiva. L’avviso resta dove c’è
 il tempo di leggerlo, cioè nella prima pagina dell’installer.
 Novità 1.0.13 (traguardo 83): estetica **uniforme dei pulsanti**. I tasti del pannello dei tag e
@@ -43,9 +43,9 @@ l'editor coi tag del file precedente, e Salva resta disabilitato finché la rile
 Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
 schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
 vengono più saltate.
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.15** in `Release\` (solo questa
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.16** in `Release\` (solo questa
 coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.15 comprende tutto il lavoro dalla 1.0.6 in poi.
+versione riciclata. La 1.0.16 comprende tutto il lavoro dalla 1.0.6 in poi.
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di

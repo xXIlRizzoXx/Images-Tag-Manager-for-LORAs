@@ -484,17 +484,29 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     //           sulle immagini, quindi stanno bene proprio li' in mezzo.
     // ENGLISH: rows of "tags" between the logo and the photos: they are the labels the program puts
     //          on images, so the middle is exactly where they belong.
+    // ITALIANO: ogni riga e' una COPPIA di pillole CENTRATA: calcolo la larghezza totale della
+    //           coppia (le due pillole piu' lo spazio in mezzo) e la faccio partire da meta' del
+    //           margine che avanza. Prima partivano tutte dal bordo sinistro e finivano dove
+    //           capitava, quindi il blocco risultava sbilanciato a sinistra.
+    // ENGLISH: each row is a CENTRED PAIR of pills: I work out the pair's total width (the two
+    //          pills plus the gap) and start it at half of the leftover margin. They used to all
+    //          start at the left edge and end wherever, so the block looked skewed to the left.
+    const GAP = 0.05;
     const rows = [
-        [0.09, 0.560, 0.30, 1], [0.44, 0.560, 0.27, 0],
-        [0.09, 0.625, 0.22, 0], [0.35, 0.625, 0.36, 1],
-        [0.09, 0.690, 0.33, 1], [0.47, 0.690, 0.20, 0],
-        [0.13, 0.755, 0.26, 0], [0.44, 0.755, 0.28, 1],
+        [0.560, 0.30, 0.27, 1],
+        [0.625, 0.22, 0.36, 0],
+        [0.690, 0.33, 0.20, 1],
+        [0.755, 0.26, 0.28, 0],
     ];
-    rows.forEach(([fx, fy, fw, tint]) => {
+    rows.forEach(([fy, w1, w2, primaAccesa]) => {
+        const start = (1 - (w1 + GAP + w2)) / 2;
         const fade = 1 - smooth(clamp01((fy - 0.560) / 0.30)) * 0.30;
-        const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
-        paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
-            tint ? C.violet500 : [235, 230, 255], base);
+        [[start, w1, primaAccesa], [start + w1 + GAP, w2, primaAccesa ? 0 : 1]]
+            .forEach(([fx, fw, tint]) => {
+                const base = (uninstall ? 0.09 : 0.15) * (tint ? 1.4 : 1) * fade;
+                paintPill(cv, fx * cv.w, fy * cv.h, fw * cv.w, 0.021 * cv.h,
+                    tint ? C.violet500 : [235, 230, 255], base);
+            });
     });
 
     // ITALIANO: VENTAGLIO di fotografie in fondo. Ognuna e' 4:3 (proporzione vera) e sono tutte
@@ -519,9 +531,20 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     ];
     ventaglio.forEach(({ dx, dy, ang, acceso }) => {
         const alpha = (uninstall ? 0.16 : 0.26) * (acceso ? 1 : 0.82);
+        // ITALIANO: la foto CENTRALE ha il ripieno OPACO: cosi' copre davvero le due dietro,
+        //           invece di lasciarle trasparire. La tinta e' quella dello sfondo in quel punto
+        //           (mescolanza dei due viola del gradiente), quindi copre senza diventare un
+        //           rettangolo che salta all'occhio. Le due esterne restano semitrasparenti: sono
+        //           dietro, devono fondersi.
+        // ENGLISH: the MIDDLE photo has an OPAQUE fill: that way it really covers the two behind
+        //          instead of letting them show through. Its tint is the background colour at that
+        //          spot (a blend of the gradient's two violets), so it covers without turning into
+        //          a rectangle that jumps out. The outer two stay semi-transparent: they are
+        //          behind, they must blend in.
+        const ripieno = acceso ? mix(C.violet950, C.purple950, 0.5) : C.violet950;
+        const opacita = acceso ? 1 : (uninstall ? 0.30 : 0.42);
         paintPhoto(cv, fanCx + dx, fanCy + dy, pw, ph, ang,
-            acceso ? C.violet400 : [235, 230, 255], alpha,
-            C.violet950, uninstall ? 0.30 : 0.42);
+            acceso ? C.violet400 : [235, 230, 255], alpha, ripieno, opacita);
     });
 
     const logoW = Math.round(cv.w * 0.52);
