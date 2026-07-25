@@ -2,7 +2,9 @@
 
 **Ultimo aggiornamento:** 25 luglio 2026
 **Versione attuale:** 1.0.8
-**Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.7 in `Release\` (solo le 1.0.7).
+**Ultima consegna:** 24 luglio 2026 — portable + installer **1.0.5** in `Release\`. Le versioni
+1.0.6, 1.0.7 e 1.0.8 sono pronte e verificate ma **non ancora consegnate** (build da rifare sulla
+1.0.8, che le comprende tutte).
 Novità 1.0.8 (traguardo 78): riparati i **7 problemi** trovati dal controllo agenti sulla 1.0.7 —
 il più importante evitava che, dopo un blocco improvviso dell'app, i tag di una foto finissero su
 un'altra foto con lo **stesso nome** in un'altra sottocartella (la struttura tipica dei dataset
