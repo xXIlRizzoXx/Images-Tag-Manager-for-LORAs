@@ -2,12 +2,15 @@
 
 **Ultimo aggiornamento:** 25 luglio 2026
 **Versione attuale:** 1.0.12
-Novità 1.0.12 (traguardo 82): l'intelligenza artificiale passa a **Gemini 3.6 Flash**, che sostituisce
-il 3.5 Flash. Resta un solo modello, come prima. Chi aveva già salvato il modello vecchio viene
-riportato in automatico su quello nuovo, quindi l'AI continua a funzionare senza dover toccare
-nulla nelle impostazioni. La sigla è stata verificata sulla documentazione ufficiale di Google:
-è la versione stabile (non un'anteprima) e accetta le immagini, che è ciò che serve per generare
-i tag.
+Novità 1.0.12 (traguardo 82): l'intelligenza artificiale passa a **Gemini 3.6 Flash** (la sigla è
+stata verificata sulla documentazione ufficiale di Google: versione stabile, accetta le immagini).
+Chi aveva già salvato il modello vecchio viene riportato in automatico su quello nuovo. Nel
+pannello di selezione arriva il tasto **"Elimina selezionate"**, che sposta nel cestino tutte le
+foto scelte: è reversibile, si ripristinano, e nessun file viene toccato su disco finché non si
+svuota il cestino. La **legenda** dei tag è stata riscritta perché non diceva rispetto a cosa:
+ora nomina le foto selezionate ("Sarà aggiunto a tutte le selezionate", "Già presente su alcune
+selezionate", "Nel progetto, non su queste") ed è centrata. Tolte due scritte ridondanti e
+l'icona di "Inverti selezione" non ha più la freccia che confondeva.
 Novità 1.0.11 (traguardo 81): riparati i **5 difetti** che un secondo controllo agentico (14 agenti)
 ha trovato **dentro le riparazioni della 1.0.10**. Il più serio: salvando un file nell'editor
 veniva congelata la lista dei tag ma non il file di destinazione, così aprendo un altro file
