@@ -131,10 +131,26 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
 //          crash one photo's tags were restored onto the OTHER and the first save wrote them into
 //          the wrong .txt.
 const BACKUP_KEY_SEP = '\x1f';
-const makeBackupKeyer = (folderOf: Map<any, any> | null | undefined) => {
+// ITALIANO: `relPathOf` (quando c'e') porta il percorso RELATIVO completo della sottocartella,
+//           es. "anna_bea/char_anna/10_face". Serve perche' l'handle di una cartella espone solo
+//           il nome FOGLIA: con quello, char_anna\10_face e char_bea\10_face davano la stessa
+//           etichetta e due foto omonime tornavano a condividere la chiave di backup, cioe' il
+//           difetto che si voleva chiudere, spostato di un livello di annidamento.
+// ENGLISH: `relPathOf` (when present) carries the full RELATIVE subfolder path, e.g.
+//          "anna_bea/char_anna/10_face". Needed because a directory handle only exposes its LEAF
+//          name: with that, char_anna\10_face and char_bea\10_face produced the same label and two
+//          same-named photos shared a backup key again — the very defect this was meant to close,
+//          just moved one nesting level deeper.
+const makeBackupKeyer = (folderOf: Map<any, any> | null | undefined, relPathOf?: Map<any, string> | null) => {
     return (file: any): string => {
+        const rel = relPathOf ? relPathOf.get(file) : undefined;
+        if (typeof rel === 'string' && rel !== '') return rel + BACKUP_KEY_SEP + file.name;
         const dir = folderOf ? folderOf.get(file) : null;
         let label = '';
+        // ITALIANO: le altre strade (Electron e webkitdirectory) mettono in folderOf un PERCORSO
+        //           gia' completo, quindi li' non c'e' ambiguita' e il ripiego va benissimo.
+        // ENGLISH: the other paths (Electron and webkitdirectory) store an already COMPLETE path in
+        //          folderOf, so there is no ambiguity there and this fallback is fine.
         if (typeof dir === 'string') label = dir;
         else if (dir && typeof dir.name === 'string') label = dir.name;
         return label + BACKUP_KEY_SEP + file.name;
@@ -964,7 +980,7 @@ export default function App() {
     const TXT_MAX_TAGS_PER_FILE = 200;
     const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -1021,7 +1037,7 @@ export default function App() {
             //          the names appearing exactly ONCE in this import: only for those can an OLD
             //          backup (keyed by file name alone) still be read with no risk of a mix-up, so
             //          an already-stored recovery is not lost on upgrade.
-            const backupKeyOf = makeBackupKeyer(folderOf);
+            const backupKeyOf = makeBackupKeyer(folderOf, relPathOf);
             const conteggioNomi = new Map<string, number>();
             for (const f of imgFiles) conteggioNomi.set(f.name, (conteggioNomi.get(f.name) || 0) + 1);
             const nomiUnici = new Set([...conteggioNomi.entries()].filter(([, n]) => n === 1).map(([nome]) => nome));
@@ -1157,7 +1173,7 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
         // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
         //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
         // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
@@ -1183,7 +1199,7 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle, folderOf }
+            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf }
         });
     };
 
@@ -1205,15 +1221,25 @@ export default function App() {
                 //          back there and not into the top folder. LoRA datasets are often split
                 //          into subfolders (e.g. "10_subject").
                 const folderOf = new Map<any, any>();
+                // ITALIANO: percorso RELATIVO completo di ogni file (es. "anna_bea/char_anna/10_face").
+                //           L'handle di una cartella conosce solo il proprio nome, non da dove viene:
+                //           il percorso lo devo costruire io mentre scendo, ed e' cio' che rende
+                //           univoca la chiave del backup anti-crash fra sottocartelle omonime.
+                // ENGLISH: each file's full RELATIVE path (e.g. "anna_bea/char_anna/10_face"). A
+                //          directory handle only knows its own name, not where it came from: the path
+                //          must be built while descending, and it is what makes the crash-backup key
+                //          unique across same-named subfolders.
+                const relPathOf = new Map<any, string>();
 
                 const MAX_DEPTH = 8;
-                const scan = async (dir: any, depth: number) => {
+                const scan = async (dir: any, depth: number, prefix: string) => {
                     for await (const entry of dir.values()) {
                         if (entry.kind === 'file') {
                             const file = await entry.getFile();
                             if (file.type.startsWith('image/')) {
                                 imgFiles.push(file);
                                 folderOf.set(file, dir);
+                                relPathOf.set(file, prefix);
                             } else if (file.name.toLowerCase().endsWith('.txt')) {
                                 txtFiles.push(file);
                                 // ITALIANO: registro la cartella anche per il .txt, cosi' viene
@@ -1221,19 +1247,20 @@ export default function App() {
                                 // ENGLISH: record the folder for the .txt too, so it pairs ONLY with
                                 //          the image in the same subfolder.
                                 folderOf.set(file, dir);
+                                relPathOf.set(file, prefix);
                             }
                         } else if (entry.kind === 'directory' && depth < MAX_DEPTH) {
-                            await scan(entry, depth + 1);
+                            await scan(entry, depth + 1, prefix ? prefix + '/' + entry.name : entry.name);
                         }
                     }
                 };
-                await scan(handle, 0);
+                await scan(handle, 0, String(handle.name || ''));
 
                 if (imgFiles.length === 0) {
                     return showNotification(t.noImagesTitle, "info");
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf);
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf);
 
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
@@ -2586,7 +2613,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
