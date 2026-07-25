@@ -1,0 +1,36 @@
+name: "💡 Idea"
+description: "Something you wish the app could do"
+title: "Idea: "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome, even half-formed ones. This app grew out of one person's own dataset
+        work, so it is shaped by one workflow — yours is probably different, and that is exactly
+        what is useful to hear.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: "Describe the situation, not the solution. What slows you down today?"
+      placeholder: "I prepare datasets of 2000 images and I need to…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      placeholder: "A button that…, or being able to…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How do you cope now? (optional)
+      description: "Another tool, a script, doing it by hand…"
+    validations:
+      required: false

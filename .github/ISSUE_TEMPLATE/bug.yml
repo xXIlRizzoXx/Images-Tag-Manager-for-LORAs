@@ -1,0 +1,71 @@
+name: "🐞 Something is broken"
+description: "The app crashed, lost something, or behaves in a way it clearly should not"
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If tag files were **changed or lost** in a way you did not ask for, please say so at the
+        top: that is the most serious kind of bug this project can have and it goes first.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did, step by step
+      placeholder: |
+        1. Loaded a folder with…
+        2. Selected…
+        3. Clicked…
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Shown on the loading screen and in Settings"
+      placeholder: "1.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build?
+      options:
+        - Installer
+        - Portable
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: false
+
+  - type: textarea
+    id: dataset
+    attributes:
+      label: Anything special about the folder? (optional)
+      description: "Network drive, OneDrive, subfolders, thousands of images, unusual characters in file names…"
+    validations:
+      required: false
