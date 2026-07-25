@@ -1,0 +1,61 @@
+﻿CONDITIONS D'UTILISATION
+Images Tag Manager for LORAs - par xXIlRizzoXx
+
+En installant et en utilisant ce programme, vous acceptez les conditions
+ci-dessous.
+
+
+1. UTILISATION DU PROGRAMME
+
+Le programme est gratuit et vous pouvez l'utiliser librement, y compris à
+des fins professionnelles.
+Vous ne pouvez ni le revendre ni le distribuer comme s'il était le vôtre.
+
+
+2. AUCUNE GARANTIE
+
+Le programme est fourni « tel quel », sans aucune garantie.
+L'auteur n'est pas responsable des pertes de données ni des dommages
+directs ou indirects résultant de l'utilisation du programme.
+
+Conseil pratique : avant de travailler sur un dossier, faites une copie de
+sauvegarde des images et des fichiers .txt contenant les tags.
+
+
+3. VOS DONNÉES RESTENT SUR VOTRE ORDINATEUR
+
+Le programme ne collecte pas de statistiques, ne suit pas votre utilisation
+et n'envoie rien sur le réseau de sa propre initiative.
+
+Les réglages, l'archive et les copies de secours se trouvent dans le
+dossier %APPDATA%\images-tag-manager de votre PC.
+
+
+4. FONCTIONS D'INTELLIGENCE ARTIFICIELLE (facultatives)
+
+Les fonctions d'IA sont désactivées au moment de l'installation et sont
+signalées comme expérimentales (Beta). Si vous décidez de les activer :
+
+ - vous devez saisir votre propre clé personnelle Google Gemini ;
+ - les images que vous choisissez d'analyser sont envoyées aux serveurs de
+   Google pour y être traitées ;
+ - les conditions d'utilisation de Google pour ce service s'appliquent, et
+   tous les frais sont à votre charge.
+
+La clé est enregistrée chiffrée par le système d'exploitation et n'est
+jamais incluse dans le programme.
+
+
+5. RESPONSABILITÉ SUR LES CONTENUS
+
+Vous êtes responsable des images que vous ouvrez, traitez et exportez, ainsi
+que du respect des droits des tiers et des lois applicables.
+
+
+6. MARQUES
+
+Ce programme n'est ni affilié ni approuvé par Google, Stability AI ou les
+autres titulaires des marques citées.
+
+
+Si vous n'acceptez pas ces conditions, fermez le programme d'installation.

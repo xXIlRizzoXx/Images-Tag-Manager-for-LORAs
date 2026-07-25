@@ -14,15 +14,16 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Tag, Trash2, Tags, AlertTriangle, Wand2, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Save, LayoutDashboard, Tag, Trash2, Tags, AlertTriangle, Wand2, Loader2, Copy, ClipboardPaste } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 import { AppleToggle } from './ui';
 
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
+import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName } from '../utils/pathUtils';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -77,8 +78,18 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     //          images not yet here on the BOTTOM. The bottom derives from allTags
     //          (union of every image's tags) minus current tags: a tag unique to this
     //          image, once removed, leaves the vocabulary and disappears (choice B).
-    const appliedTags = currentTags.filter((tag: string) => tag.toLowerCase().includes(filterLc));
-    const availableTags = allTags.filter((tag: string) => !currentTags.includes(tag) && tag.toLowerCase().includes(filterLc));
+    // ITALIANO: Ordine dei tag scelti: prima le trigger word, poi il resto in ORDINE
+    //           ALFABETICO. Vale anche per i tag appena caricati da un .txt (che nel file
+    //           potrebbero essere in disordine): a schermo si vedono sempre ordinati.
+    // ENGLISH: Chosen-tags order: trigger words first, then the rest ALPHABETICALLY. Applies
+    //          even to tags just loaded from a .txt (which may be unordered in the file): on
+    //          screen they always appear sorted.
+    const orderTags = (tags: string[]): string[] => [
+        ...globalTriggers.filter((tag: string) => tags.includes(tag)),
+        ...tags.filter((tag: string) => !globalTriggers.includes(tag)).sort((a: string, b: string) => a.localeCompare(b))
+    ];
+    const appliedTags = orderTags(currentTags).filter((tag: string) => tag.toLowerCase().includes(filterLc));
+    const availableTags = allTags.filter((tag: string) => !currentTags.includes(tag) && tag.toLowerCase().includes(filterLc)).sort((a: string, b: string) => a.localeCompare(b));
 
     const toggleTag = (tag: string) => {
         if (currentTags.includes(tag)) {
@@ -98,11 +109,28 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         const colorClass = selected
             ? `${getActiveCategoryColor(category)} scale-105 font-bold`
             : `${getCategoryColor(category, isDarkMode)} border border-transparent hover:brightness-110 shadow-sm`;
+        // ITALIANO: traduzione mostrata al passaggio del mouse (solo se disponibile
+        //           nella lingua impostata; per i tag scritti a mano non c'e').
+        // ENGLISH: translation shown on hover (only if available in the set language;
+        //          hand-typed tags have none).
+        const translation = translateTag(tag, lang);
         return (
-            <button key={key} onClick={() => toggleTag(tag)} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
-                {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${selected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
-                {tag}
-            </button>
+            <div key={key} className="relative group/tag">
+                {/* ITALIANO: title nativo come rete di sicurezza — il tooltip grafico qui sotto puo'
+                              essere tagliato dal riquadro scorrevole dei tag; il title no. */}
+                {/* ENGLISH: native title as a safety net — the graphical tooltip below can be clipped
+                             by the scrollable tag box; the native title is not. */}
+                <button onClick={() => toggleTag(tag)} title={translation ? `${tag} — ${translation}` : tag} className={`px-2 py-1 rounded-full text-[11px] leading-tight transition-all flex items-center gap-1 ${colorClass}`}>
+                    {isNsfw && <span className={`font-bold text-[9px] px-1 rounded-sm mr-0.5 ${selected ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                    {tag}
+                </button>
+                {translation && (
+                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap opacity-0 invisible group-hover/tag:opacity-100 group-hover/tag:visible transition-all z-50 shadow-lg pointer-events-none ${isDarkMode ? 'bg-gray-700 text-white border border-gray-600' : 'bg-gray-800 text-white'}`}>
+                        {translation}
+                        <div className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${isDarkMode ? 'border-t-gray-700' : 'border-t-gray-800'}`}></div>
+                    </div>
+                )}
+            </div>
         );
     };
 
@@ -121,11 +149,24 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const handleAddAll = () => { updateTags(image.id, [...allTags]); soundManager.chime(); };
     const handleRemoveAll = () => { updateTags(image.id, []); soundManager.pop(); };
 
+    // ITALIANO: Copia i tag di QUESTA foto (li conserva App), poi li puoi incollare
+    //           su un'altra foto. L'incolla li AGGIUNGE senza creare doppioni.
+    // ENGLISH: Copy THIS photo's tags (App keeps them), then paste onto another photo.
+    //          Paste ADDS them without creating duplicates.
+    const handleCopyTags = () => {
+        if (!currentTags.length) { if (showNotification) showNotification(t.noTagsToCopy, 'info'); return; }
+        if (onCopyTags) onCopyTags(currentTags);
+        soundManager.click();
+    };
+    const handlePasteTags = () => {
+        if (!copiedTags || !copiedTags.length) return;
+        updateTags(image.id, [...new Set([...currentTags, ...copiedTags])]);
+        if (showNotification) showNotification(t.tagsPastedNotif, 'success');
+        soundManager.pop();
+    };
+
     const handleSaveSingleTxt = async () => {
-        const orderedTags = [
-            ...globalTriggers.filter((t: string) => currentTags.includes(t)),
-            ...currentTags.filter((t: string) => !globalTriggers.includes(t))
-        ];
+        const orderedTags = orderTags(currentTags);
         const tagString = orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
         const fileName = buildTagFileName(image.file.name);
 
@@ -141,6 +182,35 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 if (showNotification) showNotification(t.successSaveSingle, "success");
                 return;
             }
+            // ITALIANO: foto senza cartella (caricata con "Carica immagini"): in Electron scrivo il
+            //           .txt SUL POSTO accanto all'immagine vera, con esito REALE. Prima anche qui si
+            //           passava dal download del browser e si diceva "salvato" senza sapere se il file
+            //           fosse stato scritto: stesso rischio del salvataggio in blocco (gia' corretto in
+            //           App.performSave), che qui era rimasto.
+            // ENGLISH: folder-less photo (loaded via "Load images"): in Electron write the .txt IN
+            //          PLACE next to the real image, with a REAL outcome. This path also used to go
+            //          through a browser download and claim "saved" without knowing whether the file
+            //          was written: same risk as the bulk save (already fixed in App.performSave) that
+            //          was still present here.
+            const api = (window as any).electronAPI;
+            if (api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
+                const imagePath = api.getPathForFile(image.file) || '';
+                const res = await api.writeSidecarTags([{ imagePath, content: tagString }]);
+                if (res && Array.isArray(res.results) && res.results[0]) {
+                    updateOriginalTags(image.id, currentTags);
+                    soundManager.chime();
+                    if (showNotification) showNotification(t.successSaveSingle, "success");
+                } else if (showNotification) {
+                    showNotification(t.errorSaveGen || t.dirError, 'error');
+                }
+                return;
+            }
+            // ITALIANO: vero ripiego BROWSER: il download e' un'ESPORTAZIONE, non un salvataggio
+            //           verificato. NON segno la foto come salvata (resta "modificata"): cosi' non si
+            //           perde la modifica se il download viene annullato.
+            // ENGLISH: true BROWSER fallback: the download is an EXPORT, not a verified save. I do NOT
+            //          mark the photo as saved (it stays "modified"), so the edit is not lost if the
+            //          download is cancelled.
             const blob = new Blob([tagString], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             try {
@@ -148,11 +218,19 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 a.href = url; a.download = fileName;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
             } finally { URL.revokeObjectURL(url); }
-            updateOriginalTags(image.id, currentTags);
             soundManager.chime();
-            if (showNotification) showNotification(t.successSaveSingle, "success");
+            if (showNotification) showNotification(t.infoSaveFallback, "info");
         } catch (err) {
-            console.error("Errore salvataggio singolo");
+            // ITALIANO: prima qui non veniva mostrato NULLA: se la cartella era stata spostata,
+            //           il disco era pieno o il file era bloccato, il salvataggio falliva in
+            //           silenzio ed era indistinguibile da uno riuscito. Con decine di foto si
+            //           andava avanti convinti di aver salvato. Ora l'errore si vede.
+            // ENGLISH: nothing at all used to be shown here: if the folder had moved, the disk was
+            //          full or the file was locked, the save failed silently and looked exactly
+            //          like a successful one. With dozens of photos you would move on believing it
+            //          had been saved. The error is now visible.
+            console.error('Errore salvataggio singolo', err);
+            if (showNotification) showNotification(t.errorSaveGen || t.dirError, 'error');
         }
     };
 
@@ -165,12 +243,23 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
 
     return (
         <div className={`fixed inset-0 z-[100] flex ${isDarkMode ? 'bg-black/95' : 'bg-gray-50/98'} backdrop-blur-sm p-4 md:p-6 animate-in fade-in`} onClick={onClose}>
-            <div className="w-full h-full max-w-[1920px] mx-auto flex gap-6" onClick={e => e.stopPropagation()}>
+            {/* ITALIANO: Nessun tetto di larghezza: la finestra riempie tutto lo schermo anche
+                          su monitor larghi (prima si fermava a 1920px lasciando fasce vuote).
+                ENGLISH: No width cap: the window fills the whole screen even on wide monitors
+                         (it used to stop at 1920px, leaving empty bands). */}
+            <div className="w-full h-full mx-auto flex gap-6" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 flex flex-col items-center gap-6 h-full min-w-0 relative">
                     <div className="absolute top-0 left-0 flex gap-2 z-[110]">
                         <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>
                         {onMoveToTrash && (
-                            <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={(e) => { e.stopPropagation(); onMoveToTrash(image.id); onClose(); }} title={t.moveToTrash}><Trash2 size={24} /></button>
+                            <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={(e) => { e.stopPropagation(); onMoveToTrash(image.id); }} title={t.moveToTrash}><Trash2 size={24} /></button>
+                        )}
+                        {/* ITALIANO: Contatore posizione foto (es. "3 / 120") */}
+                        {/* ENGLISH: Photo position counter (e.g. "3 / 120") */}
+                        {imageCount > 0 && imageIndex >= 0 && (
+                            <div className={`px-3 h-[42px] flex items-center rounded-full border shadow-md text-sm font-bold tabular-nums ${isDarkMode ? 'bg-gray-800/60 text-gray-200 border-gray-700/50' : 'bg-white text-gray-700 border-gray-200'}`}>
+                                {imageIndex + 1} / {imageCount}
+                            </div>
                         )}
                     </div>
                     <div className="absolute top-0 right-0 flex gap-2 z-[110]">
@@ -236,6 +325,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                     </button>
                                     <button onClick={handleRemoveAll} className={`flex-1 py-1.5 ${isDarkMode ? 'bg-red-900/30 border-red-800/50 text-red-400 hover:bg-red-900/50' : 'bg-red-50 border-red-100 text-red-600 hover:bg-red-100'} rounded-lg text-xs font-bold transition-colors border`}>
                                         {t.removeAllTags}
+                                    </button>
+                                </div>
+                                {/* ITALIANO: Copia i tag di questa foto / Incolla quelli copiati (li aggiunge) */}
+                                {/* ENGLISH: Copy this photo's tags / Paste copied ones (adds them) */}
+                                <div className="flex gap-2">
+                                    <button onClick={handleCopyTags} title={t.copyTags} className={`flex-1 py-1.5 flex items-center justify-center gap-1.5 ${isDarkMode ? 'bg-gray-700/60 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'} rounded-lg text-xs font-bold transition-colors border`}>
+                                        <Copy size={13} /> {t.copyTags}
+                                    </button>
+                                    <button onClick={handlePasteTags} disabled={!copiedTags || copiedTags.length === 0} title={t.pasteTags} className={`flex-1 py-1.5 flex items-center justify-center gap-1.5 rounded-lg text-xs font-bold transition-colors border ${(!copiedTags || copiedTags.length === 0) ? (isDarkMode ? 'bg-gray-800/40 border-gray-700/50 text-gray-600 cursor-not-allowed' : 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed') : (isDarkMode ? 'bg-emerald-900/30 border-emerald-800/50 text-emerald-400 hover:bg-emerald-900/50' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100')}`}>
+                                        <ClipboardPaste size={13} /> {t.pasteTags}{copiedTags && copiedTags.length > 0 ? ` (${copiedTags.length})` : ''}
                                     </button>
                                 </div>
                                 <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} onKeyDown={handleSidebarKeyDown} placeholder={t.searchOrAdd} className={`w-full mt-1 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'} border rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500`} />

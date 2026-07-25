@@ -1,0 +1,465 @@
+/******************************************************************************
+**  ITALIANO: EDITOR DI TAG                                                   **
+**  Apre, modifica e salva file di tag, sia .txt sia .json. Si puo' partire   **
+**  da un file esistente (compreso il .txt di una singola foto) oppure da     **
+**  zero. I tag si vedono tutti insieme come pillole: si aggiungono           **
+**  scrivendoli e si tolgono con la X.                                        **
+**                                                                            **
+**  ENGLISH: TAG EDITOR                                                       **
+**  Opens, edits and saves tag files, both .txt and .json. You can start from **
+**  an existing file (including a single photo's .txt) or from scratch. Every **
+**  tag is shown as a pill: type to add one, click the X to remove it.        **
+******************************************************************************/
+import { useState, useRef, useEffect } from 'react';
+import { X, FilePlus2, FolderOpen, Save, Tag as TagIcon, ListPlus } from 'lucide-react';
+import { getTagCategory, getActiveCategoryColor } from '../utils/tagCategorization';
+import { translateTag } from '../utils/tagTranslation';
+import { soundManager } from '../utils/soundManager';
+
+// ITALIANO: Legge i tag da un testo. Il .json accetta sia il formato esportato
+//           dall'app ({tags: [...]}) sia un semplice elenco ["a","b"]. Il .txt usa
+//           virgole o a capo come separatori, come i sidecar delle foto.
+// ENGLISH: Reads tags out of a text. JSON accepts both the app's exported shape
+//          ({tags: [...]}) and a plain list ["a","b"]. TXT uses commas or newlines,
+//          like the photo sidecars.
+// ITALIANO: tetto di dimensione per i file aperti nell'editor (come i sidecar delle foto).
+// ENGLISH: size cap for files opened in the editor (same as the photo sidecars).
+const EDITOR_MAX_BYTES = 1024 * 1024;
+
+export const parseTagFile = (text: string, fileName: string): string[] => {
+    const isJson = fileName.toLowerCase().endsWith('.json') || /^\s*[[{]/.test(text);
+    let raw: unknown[] = [];
+    if (isJson) {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) raw = parsed;
+        else if (parsed && Array.isArray(parsed.tags)) raw = [...(parsed.globalTriggers || []), ...parsed.tags];
+        else throw new Error('JSON senza elenco di tag');
+        // ITALIANO: i tag devono essere testo (o numeri), non oggetti/array. Senza questo controllo
+        //           un elenco di oggetti diventava un unico tag "[object Object]" e, salvando, il
+        //           file originale veniva distrutto senza alcun avviso.
+        // ENGLISH: tags must be text (or numbers), not objects/arrays. Without this check a list of
+        //          objects became a single "[object Object]" tag and, on save, the original file was
+        //          destroyed with no warning.
+        if (raw.some(x => x !== null && typeof x === 'object')) {
+            throw new Error('JSON senza elenco di tag');
+        }
+    } else {
+        raw = text.split(/[,\n\r]+/);
+    }
+    return [...new Set(
+        raw.map(x => String(x).replace(/[\x00-\x1F\x7F]/g, ' ').trim()).filter(Boolean)
+    )];
+};
+
+// ITALIANO: le trigger word eventualmente presenti nel formato progetto ({globalTriggers, tags}).
+//           Servono a RISCRIVERLE tali e quali al salvataggio, invece di appiattirle tra i tag.
+// ENGLISH: the trigger words possibly present in the project shape ({globalTriggers, tags}). Used to
+//          WRITE THEM BACK unchanged on save, instead of flattening them into the plain tag list.
+export const parseTagTriggers = (text: string, fileName: string): string[] => {
+    const isJson = fileName.toLowerCase().endsWith('.json') || /^\s*[[{]/.test(text);
+    if (!isJson) return [];
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && Array.isArray(parsed.globalTriggers)) {
+            const puliti = (parsed.globalTriggers as unknown[]).map(x => String(x).trim()).filter(Boolean);
+            return [...new Set(puliti)];
+        }
+    } catch (_) { /* ITALIANO: gestito da parseTagFile — ENGLISH: handled by parseTagFile */ }
+    return [];
+};
+
+export const serializeTagFile = (tags: string[], fileName: string, triggers: string[] = []): string => {
+    if (fileName.toLowerCase().endsWith('.json')) {
+        // ITALIANO: conservo la distinzione trigger/tag: le trigger ancora presenti nell'elenco
+        //           restano in globalTriggers, il resto va in tags. Prima globalTriggers era sempre
+        //           vuoto, quindi ri-salvare un file di progetto ne cancellava le trigger word.
+        // ENGLISH: keep the trigger/tag split: triggers still present in the list stay in
+        //          globalTriggers, the rest go to tags. globalTriggers used to be always empty, so
+        //          re-saving a project file wiped its trigger words.
+        const trig = triggers.filter(x => tags.includes(x));
+        const rest = tags.filter(x => !trig.includes(x));
+        return JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: trig, tags: rest }, null, 2);
+    }
+    return tags.length > 0 ? tags.join(', ') + ',' : '';
+};
+
+export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject }: any) => {
+    const [tags, setTags] = useState<string[]>([]);
+    const [fileName, setFileName] = useState<string>('');
+    const [inputValue, setInputValue] = useState('');
+    const [dirty, setDirty] = useState(false);
+    // ITALIANO: azione in sospeso quando ci sono modifiche non salvate: se != null mostro la finestra
+    //           di conferma A TEMA (non piu' il window.confirm di sistema, che stonava con l'app).
+    // ENGLISH: pending action when there are unsaved edits: if != null I show the THEMED confirm
+    //          dialog (no longer the system window.confirm, which clashed with the app).
+    const [discardAction, setDiscardAction] = useState<null | (() => void)>(null);
+    const handleRef = useRef<any>(null);
+    // ITALIANO: i tag COME STANNO NEL FILE (ultima apertura o ultimo salvataggio riuscito). Servono
+    //           a "Scarta modifiche": si torna a questi, senza chiudere il file.
+    // ENGLISH: the tags AS THEY ARE IN THE FILE (last open or last successful save). Used by
+    //          "Discard changes": we go back to these, without closing the file.
+    const savedTagsRef = useRef<string[]>([]);
+    const triggersRef = useRef<string[]>([]);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const fallbackInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
+
+    // ITALIANO: RIAPERTURA — il file aperto resta aperto anche dopo aver chiuso la finestra, ma nel
+    //           frattempo quel .txt puo' essere cambiato sul disco (per esempio l'hai modificato dai
+    //           tag della foto nel progetto, o con un altro programma). Allora, riaprendo l'editor,
+    //           lo RILEGGO dal disco: cosi' vedi la versione vera e un "Salva" non riscrive sopra
+    //           alle modifiche piu' recenti con quelle vecchie rimaste in memoria. Se il file non e'
+    //           piu' leggibile (spostato, permessi persi) tengo quello che c'e' senza disturbare.
+    // ENGLISH: REOPEN — the open file stays open after the window is closed, but meanwhile that .txt
+    //          may have changed on disk (e.g. edited from the photo's tags in the project, or by
+    //          another program). So, on reopening the editor, I RE-READ it from disk: you see the
+    //          real version and a "Save" does not overwrite newer changes with stale in-memory ones.
+    //          If the file is no longer readable (moved, permission lost) I keep what is there.
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        const handle = handleRef.current;
+        if (!handle || typeof handle.getFile !== 'function') return undefined;
+        let annullato = false;
+        (async () => {
+            try {
+                const file = await handle.getFile();
+                if (annullato || file.size > EDITOR_MAX_BYTES) return;
+                const testo = await file.text();
+                if (annullato) return;
+                const nuoviTag = parseTagFile(testo, file.name);
+                triggersRef.current = parseTagTriggers(testo, file.name);
+                savedTagsRef.current = [...nuoviTag];
+                setTags(nuoviTag);
+                setFileName(file.name);
+                setDirty(false);
+            } catch (_) { /* file non piu' leggibile: tengo il contenuto in memoria */ }
+        })();
+        return () => { annullato = true; };
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    // ITALIANO: esegue l'azione subito se non ci sono modifiche non salvate; altrimenti chiede prima
+    //           conferma con la finestra a tema. Sostituisce il vecchio window.confirm sincrono.
+    // ENGLISH: runs the action immediately when there are no unsaved edits; otherwise asks for
+    //          confirmation first with the themed dialog. Replaces the old synchronous window.confirm.
+    const guardDiscard = (action: () => void) => {
+        if (!dirty) { action(); return; }
+        setDiscardAction(() => action);
+    };
+
+    // ITALIANO: riporta l'editor a foglio bianco: tag, nome file, casella di scrittura, stato
+    //           "modificato" e soprattutto l'handle del file di destinazione.
+    // ENGLISH: brings the editor back to a blank sheet: tags, file name, input box, "modified"
+    //          flag and above all the target file handle.
+    const azzera = () => {
+        setTags([]); setFileName(''); setInputValue(''); setDirty(false);
+        handleRef.current = null; triggersRef.current = []; savedTagsRef.current = [];
+    };
+
+    const nuovo = () => guardDiscard(() => {
+        azzera();
+        soundManager.pop();
+    });
+
+    // ITALIANO: fa il parsing PRIMA di toccare qualsiasi stato: se il file e' illeggibile lancia,
+    //           e chi chiama NON aggiorna l'handle di scrittura. Cosi' contenuto mostrato e file di
+    //           destinazione restano sempre lo stesso file (prima potevano divergere: un file
+    //           illeggibile lasciava l'handle sul nuovo file e i tag sul vecchio, e "Salva"
+    //           sovrascriveva il file nuovo coi tag vecchi).
+    // ENGLISH: parse BEFORE touching any state: an unreadable file throws, and the caller does NOT
+    //          update the write handle. Shown content and save target thus always stay the same file
+    //          (they could diverge before: an unreadable file left the handle on the new file and the
+    //          tags on the old one, and "Save" overwrote the new file with the old tags).
+    const caricaTesto = (testo: string, nome: string) => {
+        const nuoviTag = parseTagFile(testo, nome);       // ITALIANO: puo' lanciare — ENGLISH: may throw
+        triggersRef.current = parseTagTriggers(testo, nome);
+        savedTagsRef.current = [...nuoviTag];
+        setTags(nuoviTag);
+        setFileName(nome);
+        setDirty(false);
+        // ITALIANO: rendo questi tag disponibili anche nel pannello di selezione in blocco del progetto.
+        // ENGLISH: also make these tags available in the project's bulk-selection panel.
+        if (onImportTagsToProject) onImportTagsToProject(nuoviTag);
+        soundManager.chime();
+    };
+
+    const apri = () => guardDiscard(async () => {
+        // ITALIANO: selettore moderno se disponibile: cosi' possiamo anche RISALVARE
+        //           sullo stesso file senza richiedere di nuovo dove metterlo.
+        // ENGLISH: modern picker when available: it also lets us SAVE BACK into the same
+        //          file without asking again where to put it.
+        if ('showOpenFilePicker' in window) {
+            try {
+                const [handle] = await (window as any).showOpenFilePicker({
+                    id: 'itm-tag-editor',
+                    types: [{ description: `${t.tagEditor} (.txt, .json)`, accept: { 'text/plain': ['.txt'], 'application/json': ['.json'] } }],
+                });
+                const file = await handle.getFile();
+                // ITALIANO: un file di tag legittimo pesa pochi KB. Oltre 1 MB e' sospetto (file
+                //           enorme/sbagliato) e leggerlo tutto potrebbe bloccare l'app: lo rifiuto.
+                // ENGLISH: a legit tag file weighs a few KB. Over 1 MB is suspicious (huge/wrong
+                //          file) and reading it all could freeze the app: reject it.
+                if (file.size > EDITOR_MAX_BYTES) { showNotification(t.tagEditorOpenError, 'error'); return; }
+                // ITALIANO: prima il parse (puo' lanciare), poi affido l'handle: se il file non e'
+                //           leggibile l'handle di scrittura NON cambia.
+                // ENGLISH: parse first (may throw), then adopt the handle: if the file is unreadable
+                //          the write handle does NOT change.
+                caricaTesto(await file.text(), file.name);
+                handleRef.current = handle;
+            } catch (err: any) {
+                if (err && err.name !== 'AbortError') {
+                    console.error('[Editor tag] file illeggibile', err);
+                    showNotification(t.tagEditorOpenError, 'error');
+                }
+            }
+            return;
+        }
+        fallbackInputRef.current?.click();
+    });
+
+    const apriDaInput = async (e: any) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            // ITALIANO: stesso limite dell'altra via: niente file oltre 1 MB.
+            // ENGLISH: same cap as the other path: no files over 1 MB.
+            if (file.size > EDITOR_MAX_BYTES) { showNotification(t.tagEditorOpenError, 'error'); return; }
+            const testo = await file.text();
+            caricaTesto(testo, file.name);
+            handleRef.current = null; // ITALIANO: senza handle si salva con "Salva come" — ENGLISH: no handle: saving goes through "Save as"
+        } catch (err) {
+            console.error('[Editor tag] file illeggibile', err);
+            showNotification(t.tagEditorOpenError, 'error');
+        }
+    };
+
+    const salva = async (forzaNuovoFile = false) => {
+        const nome = fileName || 'tags.txt';
+        const contenuto = serializeTagFile(tags, nome, triggersRef.current);
+
+        if (!forzaNuovoFile && handleRef.current) {
+            try {
+                const writable = await handleRef.current.createWritable();
+                await writable.write(contenuto);
+                await writable.close();
+                savedTagsRef.current = [...tags];
+                setDirty(false);
+                soundManager.chime();
+                showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
+                // ITALIANO: se il file appena scritto e' il .txt di una foto aperta nel progetto,
+                //           allineo i suoi tag in memoria: altrimenti un successivo salvataggio del
+                //           progetto lo riscriverebbe coi tag vecchi, annullando questa modifica.
+                //           Passo l'handle del file: cosi' App verifica l'IDENTITA' vera (stessa
+                //           cartella), non solo il nome, e un file omonimo non dirotta la foto.
+                // ENGLISH: if the file just written is a photo's .txt open in the project, sync its
+                //          in-memory tags: otherwise a later project save would rewrite it with the
+                //          old tags, undoing this edit. I pass the file handle so App can verify the
+                //          real IDENTITY (same folder), not just the name, so a same-named file
+                //          can't hijack the photo.
+                if (onFileSaved) onFileSaved(nome, tags, handleRef.current);
+                return;
+            } catch (err) {
+                console.error('[Editor tag] salvataggio fallito', err);
+                showNotification(t.tagEditorSaveError, 'error');
+                return;
+            }
+        }
+
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await (window as any).showSaveFilePicker({
+                    id: 'itm-tag-editor',
+                    suggestedName: nome,
+                    types: [
+                        { description: 'TXT', accept: { 'text/plain': ['.txt'] } },
+                        { description: 'JSON', accept: { 'application/json': ['.json'] } },
+                    ],
+                });
+                // ITALIANO: il formato lo decide l'estensione scelta nella finestra di salvataggio
+                // ENGLISH: the format follows the extension chosen in the save dialog
+                const writable = await handle.createWritable();
+                await writable.write(serializeTagFile(tags, handle.name, triggersRef.current));
+                await writable.close();
+                handleRef.current = handle;
+                savedTagsRef.current = [...tags];
+                setFileName(handle.name);
+                setDirty(false);
+                soundManager.chime();
+                showNotification(`${t.tagEditorSaved}: ${handle.name}`, 'success');
+                if (onFileSaved) onFileSaved(handle.name, tags, handle);
+            } catch (err: any) {
+                if (err && err.name !== 'AbortError') {
+                    console.error(err);
+                    showNotification(t.tagEditorSaveError, 'error');
+                }
+            }
+            return;
+        }
+
+        // ITALIANO: riserva per browser senza selettore di salvataggio
+        // ENGLISH: fallback for browsers without a save picker
+        const blob = new Blob([contenuto], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        try {
+            const a = document.createElement('a');
+            a.href = url; a.download = nome;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            savedTagsRef.current = [...tags];
+            setDirty(false);
+            showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
+        } finally { URL.revokeObjectURL(url); }
+    };
+
+    // ITALIANO: chiusura con avviso a tema se ci sono modifiche non salvate (tasto X e sfondo).
+    //           Il FILE RESTA APERTO: chiudendo la finestra lo si mette solo via, e riaprendola si
+    //           ritrova. A chiudere il file davvero e' il tasto "Nuovo". Quello che invece NON
+    //           sopravvive sono le modifiche che si e' scelto di SCARTARE: prima restavano in
+    //           memoria, ricomparivano alla riapertura e un "Salva" le rimetteva nel file — cioe'
+    //           lo scarto era una bugia. Ora si torna al contenuto vero del file.
+    // ENGLISH: close with a themed warning when there are unsaved edits (X button and backdrop).
+    //          The FILE STAYS OPEN: closing the window merely puts it away, reopening brings it
+    //          back. The "New" button is what actually closes the file. What does NOT survive are
+    //          the edits the user chose to DISCARD: they used to stay in memory, reappear on reopen
+    //          and a "Save" put them into the file — the discard was a lie. Now the editor goes
+    //          back to the file's real content.
+    const chiudi = () => guardDiscard(() => {
+        setTags([...savedTagsRef.current]);
+        setInputValue('');
+        setDirty(false);
+        onClose();
+    });
+
+    const aggiungiTag = () => {
+        const nuovi = inputValue.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+        if (!nuovi.length) return;
+        setTags(prev => [...new Set([...prev, ...nuovi])]);
+        setInputValue('');
+        setDirty(true);
+        soundManager.pop();
+    };
+
+    // ITALIANO: inserisce nell'editor TUTTI i tag conosciuti del progetto attuale (senza doppioni).
+    // ENGLISH: inserts ALL the current project's known tags into the editor (without duplicates).
+    const aggiungiTagProgetto = () => {
+        const nuovi = [...new Set((projectTags as any[]).map(s => String(s).trim()).filter(Boolean))];
+        if (!nuovi.length) { showNotification(t.noTagsInProject, 'info'); return; }
+        setTags(prev => [...new Set([...prev, ...nuovi])]);
+        setDirty(true);
+        soundManager.pop();
+    };
+
+    const togliTag = (tag: string) => {
+        setTags(prev => prev.filter(x => x !== tag));
+        setDirty(true);
+        soundManager.click();
+    };
+
+    const bordo = isDarkMode ? 'border-gray-700' : 'border-gray-200';
+    const testo = isDarkMode ? 'text-gray-200' : 'text-gray-800';
+
+    const tastoBase = `flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed`;
+
+    return (
+        // ITALIANO: La finestra riempie lo schermo lasciando su OGNI lato il DOPPIO del rientro
+        //           dell'app (l'app usa p-4 md:p-6 = 16/24 px, qui 32/48 px): serve spazio per
+        //           vedere molti tag insieme, e resta comunque incorniciata come una finestra.
+        // ENGLISH: The window fills the screen leaving on EVERY side DOUBLE the app's own inset
+        //          (the app uses p-4 md:p-6 = 16/24 px, here 32/48 px): room is needed to see many
+        //          tags at once, while still reading as a framed window.
+        <div className="fixed inset-0 z-[320] bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <div className={`absolute inset-8 md:inset-12 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col`}>
+
+                <div className={`p-5 border-b ${bordo} flex items-center justify-between shrink-0`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                        <TagIcon size={22} className="text-indigo-500 shrink-0" />
+                        <div className="min-w-0">
+                            <h3 className={`text-lg font-bold ${testo} leading-tight`}>{t.tagEditor}</h3>
+                            <p className={`text-xs truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {fileName || t.tagEditorNoFile}{dirty ? ' •' : ''}
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={chiudi} className={`p-1.5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className={`px-5 py-3 border-b ${bordo} flex flex-wrap gap-2 shrink-0`}>
+                    <button onClick={nuovo} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                        <FilePlus2 size={14} /> {t.tagEditorNew}
+                    </button>
+                    <button onClick={apri} className={`${tastoBase} bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white shadow-md`}>
+                        <FolderOpen size={14} /> {t.tagEditorOpen}
+                    </button>
+                    {/* ITALIANO: inserisce tutti i tag conosciuti del progetto attuale */}
+                    {/* ENGLISH: inserts all known tags of the current project */}
+                    <button onClick={aggiungiTagProgetto} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                        <ListPlus size={14} /> {t.tagEditorAddProjectTags}
+                    </button>
+                    <div className="flex-1" />
+                    <button onClick={() => salva(false)} disabled={tags.length === 0} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
+                        <Save size={14} /> {t.tagEditorSave}
+                    </button>
+                    <button onClick={() => salva(true)} disabled={tags.length === 0} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                        {t.tagEditorSaveAs}
+                    </button>
+                </div>
+
+                <div className="p-5 flex-1 overflow-y-auto lightbox-scroll min-h-0">
+                    {tags.length === 0 ? (
+                        <p className={`text-sm italic text-center py-10 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.tagEditorEmpty}</p>
+                    ) : (
+                        <div className="flex flex-wrap gap-2">
+                            {tags.map(tag => {
+                                const traduzione = translateTag(tag, lang);
+                                return (
+                                    <span key={tag} title={traduzione ? `${tag} — ${traduzione}` : tag}
+                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium ${getActiveCategoryColor(getTagCategory(tag))}`}>
+                                        {tag}
+                                        <button onClick={() => togliTag(tag)} className="hover:bg-black/20 rounded-full p-0.5 transition-colors">
+                                            <X size={10} />
+                                        </button>
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                <div className={`p-4 border-t ${bordo} shrink-0 flex items-center gap-2`}>
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={inputValue}
+                        onChange={e => setInputValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); aggiungiTag(); } }}
+                        placeholder={t.tagEditorPlaceholder}
+                        className={`flex-1 px-3 py-2 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/50 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'}`}
+                    />
+                    <span className={`text-xs font-bold tabular-nums shrink-0 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {tags.length}
+                    </span>
+                </div>
+
+                <input ref={fallbackInputRef} type="file" accept=".txt,.json,text/plain,application/json" className="hidden" onChange={apriDaInput} />
+            </div>
+
+            {/* ITALIANO: conferma "scarta modifiche" A TEMA (prima era il window.confirm di sistema). */}
+            {/* ENGLISH: THEMED "discard changes" confirm (used to be the system window.confirm). */}
+            {discardAction && (
+                <div className="fixed inset-0 z-[340] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setDiscardAction(null)}>
+                    <div className={`w-[90%] max-w-sm rounded-2xl shadow-2xl border p-5 flex flex-col gap-4 animate-in zoom-in-95 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
+                        <p className={`text-sm ${testo}`}>{t.tagEditorDiscardConfirm}</p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setDiscardAction(null)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
+                            <button onClick={() => { const a = discardAction; setDiscardAction(null); if (a) a(); }} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.closeWithoutSaving}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

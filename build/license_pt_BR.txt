@@ -1,0 +1,59 @@
+﻿CONDIÇÕES DE USO
+Images Tag Manager for LORAs - de xXIlRizzoXx
+
+Ao instalar e usar este programa, você aceita as condições abaixo.
+
+
+1. USO DO PROGRAMA
+
+O programa é gratuito e você pode usá-lo livremente, inclusive no trabalho.
+Você não pode revendê-lo nem distribuí-lo como se fosse seu.
+
+
+2. SEM GARANTIA
+
+O programa é fornecido "como está", sem nenhuma garantia.
+O autor não responde por perda de dados nem por danos diretos ou indiretos
+decorrentes do uso do programa.
+
+Dica prática: antes de trabalhar em uma pasta, faça uma cópia de
+segurança das imagens e dos arquivos .txt das tags.
+
+
+3. SEUS DADOS FICAM NO SEU COMPUTADOR
+
+O programa não coleta estatísticas, não rastreia o seu uso e não envia
+nada pela rede por conta própria.
+
+Configurações, acervo e cópias de emergência ficam na pasta
+%APPDATA%\images-tag-manager do seu PC.
+
+
+4. FUNÇÕES DE INTELIGÊNCIA ARTIFICIAL (opcionais)
+
+As funções de IA vêm desligadas na instalação e são sinalizadas como
+experimentais (Beta). Se você decidir ativá-las:
+
+ - é preciso informar uma chave pessoal sua do Google Gemini;
+ - as imagens que você escolher analisar são enviadas aos servidores do
+   Google para serem processadas;
+ - valem as condições de uso do Google para esse serviço, e todo custo
+   fica por sua conta.
+
+A chave é salva criptografada pelo sistema operacional e nunca é incluída
+no programa.
+
+
+5. RESPONSABILIDADE PELO CONTEÚDO
+
+Você é o responsável pelas imagens que abre, processa e exporta, e pelo
+respeito aos direitos de terceiros e às leis aplicáveis.
+
+
+6. MARCAS
+
+Este programa não é afiliado nem aprovado pelo Google, pela Stability AI
+ou por outros titulares das marcas citadas.
+
+
+Se você não aceita estas condições, feche o programa de instalação.

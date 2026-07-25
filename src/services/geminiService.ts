@@ -135,17 +135,25 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
     }
 };
 
-// ITALIANO: Modelli vision di Gemini disponibili (default 2.5 Flash)
-// ENGLISH: Available Gemini vision models (default 2.5 Flash)
+// ITALIANO: Modello vision di Gemini usato dall'app. Ne teniamo UNO SOLO (Gemini 3.5
+//           Flash): meno scelte da spiegare e un solo comportamento da collaudare.
+// ENGLISH: Gemini vision model used by the app. We keep exactly ONE (Gemini 3.5 Flash):
+//          fewer choices to explain and a single behaviour to test.
 export type GeminiTier = 'free' | 'limited' | 'paid';
 export const GEMINI_MODELS: ReadonlyArray<{ id: string; label: string; tier: GeminiTier; recommended: boolean }> = [
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'free', recommended: true },
-    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', tier: 'free', recommended: false },
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', tier: 'limited', recommended: false },
-    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)', tier: 'paid', recommended: false },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', tier: 'limited', recommended: true },
 ];
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+
+// ITALIANO: Chi aveva gia' scelto un modello ora rimosso (es. gemini-2.5-flash salvato
+//           nelle impostazioni) verrebbe lasciato con un id inesistente, e ogni chiamata
+//           all'AI fallirebbe. Qui riportiamo sempre a un modello valido.
+// ENGLISH: Anyone who had picked a model we just removed (e.g. a saved gemini-2.5-flash)
+//          would be left with an id that no longer exists and every AI call would fail.
+//          This always brings them back to a valid model.
+export const normalizeModelId = (modelId: string | null | undefined): string =>
+    GEMINI_MODELS.some(m => m.id === modelId) ? (modelId as string) : DEFAULT_GEMINI_MODEL;
 
 export const isFreeTierModel = (modelId: string): boolean => {
     const m = GEMINI_MODELS.find(x => x.id === modelId);

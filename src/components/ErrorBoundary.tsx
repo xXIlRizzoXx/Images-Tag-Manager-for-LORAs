@@ -12,6 +12,25 @@
 *******************************************************************************
 *******************************************************************************/
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { translations } from '../constants';
+
+// ITALIANO: Questa schermata e' un componente di classe e non riceve le traduzioni
+//           dall'app (che a quel punto e' andata in errore). Leggo quindi la lingua
+//           salvata direttamente, ripiegando sull'inglese se manca o e' illeggibile.
+//           Prima i testi erano scritti a mano in italiano: comparivano in italiano
+//           anche con l'app in giapponese o russo.
+// ENGLISH: This screen is a class component and does not receive the translations from
+//          the app (which has just crashed). So it reads the saved language directly,
+//          falling back to English if missing or unreadable. The texts used to be
+//          hardcoded in Italian, showing up in Italian even in a Japanese or Russian UI.
+const getStrings = () => {
+    try {
+        const lang = localStorage.getItem('lang') || 'en';
+        return (translations as any)[lang] || translations.en;
+    } catch (_) {
+        return translations.en;
+    }
+};
 
 interface ErrorBoundaryProps {
     children: ReactNode;
@@ -45,6 +64,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         if (!this.state.hasError) return this.props.children;
 
         const message = this.state.error?.message || 'Unknown error';
+        const s = getStrings();
         return (
             <div
                 style={{
@@ -69,13 +89,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                     }}
                 >
                     <h1 style={{ margin: '0 0 0.5rem 0', fontSize: 22, fontWeight: 800, color: '#fff' }}>
-                        Qualcosa è andato storto
+                        {s.errorBoundaryTitle}
                     </h1>
                     <p style={{ margin: '0 0 1rem 0', fontSize: 14, color: '#cbd5e1' }}>
-                        Si è verificato un errore imprevisto nell'interfaccia. I tag e le didascalie
-                        vengono salvati automaticamente in una copia di sicurezza locale: dopo
-                        "Riprova" o "Ricarica", reimporta la cartella per ripristinare le modifiche
-                        non ancora salvate su disco.
+                        {s.errorBoundaryBody}
                     </p>
                     <pre
                         style={{
@@ -108,7 +125,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                                 cursor: 'pointer',
                             }}
                         >
-                            Riprova
+                            {s.errorBoundaryRetry}
                         </button>
                         <button
                             onClick={this.handleReload}
@@ -123,7 +140,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                                 cursor: 'pointer',
                             }}
                         >
-                            Ricarica
+                            {s.errorBoundaryReload}
                         </button>
                     </div>
                 </div>

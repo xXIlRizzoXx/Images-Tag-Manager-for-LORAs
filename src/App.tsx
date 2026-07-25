@@ -11,11 +11,11 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Replace } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -32,24 +32,241 @@ import {
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
-import { AppleToggle, TagInput, Toast, CustomConfirmDialog, ImportSummaryDialog } from './components/ui';
+import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
+import { flagUri, flagUriForLang } from './utils/flags';
+import { translateTag, translateCategory } from './utils/tagTranslation';
+import { TagFileEditor } from './components/TagFileEditor';
+
+// ITALIANO: Profilo GitHub dell'autore, aperto dal copyright della schermata di avvio.
+// ENGLISH: The author's GitHub profile, opened from the splash screen's copyright line.
+const GITHUB_PROFILE = 'https://github.com/xXIlRizzoXx';
+
+// ITALIANO: Lingue dell'interfaccia — usate sia dal selettore nelle impostazioni
+//           sia dalla schermata di scelta lingua al primo avvio.
+// ENGLISH: UI languages — used by both the settings selector and the first-run picker.
+const APP_LANGUAGES = [
+    { code: 'it', label: 'Italiano', flag: 'it' },
+    { code: 'en', label: 'English', flag: 'gb' },
+    { code: 'fr', label: 'Français', flag: 'fr' },
+    { code: 'es', label: 'Español', flag: 'es' },
+    { code: 'de', label: 'Deutsch', flag: 'de' },
+    { code: 'zh', label: '中文 (简体)', flag: 'cn' },
+    { code: 'ja', label: '日本語', flag: 'jp' },
+    { code: 'pt', label: 'Português', flag: 'br' },
+    { code: 'ru', label: 'Русский', flag: 'ru' },
+];
+const LANG_CODES = APP_LANGUAGES.map(l => l.code);
+
+// ITALIANO: Lingua iniziale: quella già scelta, altrimenti quella del sistema operativo,
+//           altrimenti inglese (così un PC tedesco parte in tedesco).
+// ENGLISH: Initial language: the saved choice, else the OS language, else English.
+const detectInitialLang = (): string => {
+    try {
+        const saved = localStorage.getItem('lang');
+        if (saved && LANG_CODES.includes(saved)) return saved;
+    } catch (_) { /* ignore */ }
+    try {
+        const sys = (navigator.language || '').slice(0, 2).toLowerCase();
+        if (LANG_CODES.includes(sys)) return sys;
+    } catch (_) { /* ignore */ }
+    return 'en';
+};
+
+// ITALIANO: Nome-base di un file, senza estensione (foto.jpg -> foto). Stessa regola usata
+//           storicamente dall'import, estratta qui per usarla in un solo posto.
+// ENGLISH: A file's base name, without extension (photo.jpg -> photo). Same rule the import
+//          has always used, pulled out here so it lives in one place.
+const fileBaseName = (name: string): string => name.split('.').slice(0, -1).join('.');
+
+// ITALIANO: CHIAVE "CARTELLA + NOME" per abbinare ogni immagine al SUO .txt.
+//   Due foto con lo STESSO nome in sottocartelle diverse (es. 10_viso\img_001.png e
+//   20_corpo\img_001.png, la disposizione tipica dei dataset LoRA) NON devono scambiarsi
+//   i tag. Prima l'abbinamento usava solo il nome-base: la seconda cartella sovrascriveva
+//   la prima e ogni foto con quel nome riceveva i tag della cartella letta per ultima —
+//   poi, al salvataggio, quei tag stranieri finivano scritti sul .txt vero dell'altra foto.
+//   La chiave unisce l'IDENTITA' DELLA CARTELLA al nome-base. La cartella puo' essere:
+//     - un handle (oggetto) dalla scelta cartella  -> gli si assegna un id stabile
+//     - un percorso (stringa) dal caricamento di singole immagini / dal fallback
+//     - assente (nessuna info cartella)            -> un unico spazio, come prima
+// ENGLISH: "FOLDER + NAME" KEY to pair each image with ITS OWN .txt.
+//   Two photos with the SAME name in different subfolders (e.g. 10_face\img_001.png and
+//   20_body\img_001.png, the typical LoRA dataset layout) must NOT swap tags. Matching used
+//   to key on the base name alone: the second folder overwrote the first and every photo
+//   with that name got the last-scanned folder's tags — which the save then wrote onto the
+//   OTHER photo's real .txt. The key joins the FOLDER IDENTITY to the base name. The folder
+//   may be: a handle (object) from the folder picker -> given a stable id; a path (string)
+//   from the individual-image / fallback load; or absent (no folder info) -> one namespace,
+//   exactly as before.
+const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
+    const dirIds = new Map<any, number>();
+    let next = 0;
+    return (file: any): string => {
+        const dir = folderOf ? folderOf.get(file) : null;
+        let ns = '';
+        if (typeof dir === 'string') {
+            ns = dir ? 'p:' + dir : '';
+        } else if (dir) {
+            if (!dirIds.has(dir)) dirIds.set(dir, next++);
+            ns = 'h:' + dirIds.get(dir);
+        }
+        return ns + '' + fileBaseName(file.name);
+    };
+};
+
+// ITALIANO: Chiave del BACKUP anti-crash: cartella + nome del file. Deve restare identica fra
+//           una sessione e l'altra (il backup si rilegge dopo un riavvio), quindi NON puo' usare
+//           i numeri progressivi di makeFolderKeyer, che dipendono dall'ordine di scansione.
+//           Uso il NOME della cartella (o il percorso, quando c'e'). Col solo nome del file, due
+//           foto omonime in sottocartelle diverse (10_viso\img.png e 20_corpo\img.png, la tipica
+//           struttura LoRA) si sovrascrivevano a vicenda nel backup: dopo un crash i tag di una
+//           venivano ripristinati sull'ALTRA e al primo salvataggio finivano nel .txt sbagliato.
+// ENGLISH: Crash-backup key: folder + file name. It must stay identical across sessions (the
+//          backup is re-read after a restart), so it canNOT use makeFolderKeyer's running numbers,
+//          which depend on scan order. I use the folder NAME (or the path, when available). With
+//          the file name alone, two same-named photos in different subfolders (10_face\img.png and
+//          20_body\img.png, the typical LoRA layout) overwrote each other in the backup: after a
+//          crash one photo's tags were restored onto the OTHER and the first save wrote them into
+//          the wrong .txt.
+const BACKUP_KEY_SEP = '\x1f';
+const makeBackupKeyer = (folderOf: Map<any, any> | null | undefined) => {
+    return (file: any): string => {
+        const dir = folderOf ? folderOf.get(file) : null;
+        let label = '';
+        if (typeof dir === 'string') label = dir;
+        else if (dir && typeof dir.name === 'string') label = dir.name;
+        return label + BACKUP_KEY_SEP + file.name;
+    };
+};
+
+// ITALIANO: La cartella di un'immagine va usata come destinazione di salvataggio SOLO se e'
+//           un vero handle scrivibile (ha getFileHandle). Le stringhe-percorso servono solo
+//           per la chiave qui sopra: non devono mai finire in dirHandle, o il salvataggio
+//           su file si romperebbe (una stringa non ha getFileHandle).
+// ENGLISH: An image's folder may be used as a save target ONLY if it is a real writable
+//          handle (has getFileHandle). Path strings are only for the key above: they must
+//          never end up in dirHandle, or saving to file would break (a string has no
+//          getFileHandle).
+const asDirHandle = (dir: any): any =>
+    (dir && typeof dir.getFileHandle === 'function') ? dir : null;
+
+// ITALIANO: ordinamento condiviso da galleria, cestino e visualizzatore (ordina la lista ricevuta
+//           e la restituisce). Tenerlo in un posto solo evita che le liste finiscano in ordini
+//           diversi fra loro.
+// ENGLISH: sorting shared by gallery, trash and viewer (sorts the given list and returns it).
+//          Keeping it in one place stops the lists from drifting into different orders.
+const applySort = (list: any[], order: string): any[] => {
+    if (order === 'name-asc') list.sort((a, b) => a.file.name.localeCompare(b.file.name));
+    else if (order === 'name-desc') list.sort((a, b) => b.file.name.localeCompare(a.file.name));
+    else if (order === 'date-asc') list.sort((a, b) => a.file.lastModified - b.file.lastModified);
+    else if (order === 'date-desc') list.sort((a, b) => b.file.lastModified - a.file.lastModified);
+    return list;
+};
+
+// ITALIANO: PRESTAZIONI — una singola card della galleria, MEMORIZZATA con React.memo. Prima le
+//           miniature erano tutte inline nel corpo di App: ogni piccola modifica (es. un tag su UNA
+//           foto) ridisegnava TUTTE le card, e con migliaia di foto la galleria scattava. Ora ogni
+//           card si ridisegna SOLO se cambiano le sue proprieta' (il suo oggetto `img`, la sua
+//           selezione, ecc.): modificando i tag di una foto si ridisegna solo la sua card. Le
+//           funzioni passate come prop sono "stabili" (useCallback in App), condizione necessaria
+//           perche' il memo funzioni. content-visibility:auto evita anche di DISEGNARE le card fuori
+//           schermo. Nessuna funzione cambia: e' identica alla versione inline di prima.
+// ENGLISH: PERF — a single gallery card, MEMOIZED with React.memo. The thumbnails used to be all
+//          inline in App's body: any small change (e.g. a tag on ONE photo) re-rendered EVERY card,
+//          and with thousands of photos the gallery stuttered. Now each card re-renders ONLY when
+//          its own props change (its `img` object, its selection, etc.): editing one photo's tags
+//          re-renders only that card. The functions passed as props are "stable" (useCallback in
+//          App), which the memo needs. content-visibility:auto also skips PAINTING off-screen cards.
+//          No behavior changes: it is identical to the previous inline version.
+const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
+    const lowQuality = img.width * img.height < 1048576;
+    return (
+        <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 320px' }}>
+            <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
+                <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${isSelected ? 'opacity-80' : ''}`} />
+
+                {lowQuality && (
+                    <div className="absolute top-2 right-2 z-30 group/alert">
+                        <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
+                            <AlertTriangle size={16} strokeWidth={2.5} />
+                        </div>
+                        <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
+                            {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                        </div>
+                    </div>
+                )}
+
+                <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); onSelectToggle(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{isSelected && <Check size={14} className="text-white" />}</div></div>
+                <button onClick={(e) => { e.stopPropagation(); onTrash(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
+                {/* ITALIANO: chiude la foto (la toglie dalla vista) senza cestinarla ne' toccarla su disco */}
+                {/* ENGLISH: closes the photo (removes it from view) without trashing it or touching the disk */}
+                <button onClick={(e) => { e.stopPropagation(); onClose(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
+                {/* ITALIANO: Contatore tag della singola foto */}
+                {/* ENGLISH: Per-photo tag count */}
+                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
+                    <Tag size={11} />{img.tags?.length || 0}
+                </div>
+                {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
+                {/* ENGLISH: Copy/paste ALL this photo's tags, from the gallery (on hover) */}
+                <div className="absolute bottom-2 right-2 z-20 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={(e) => { e.stopPropagation(); onCopy(img); }} title={t.copyTags} className="p-1.5 bg-black/50 hover:bg-indigo-500 text-white rounded-full shadow-md transition-colors"><Copy size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onPaste(img); }} disabled={copiedCount === 0} title={copiedCount > 0 ? `${t.pasteTags} (${copiedCount})` : t.pasteTags} className="p-1.5 bg-black/50 hover:bg-emerald-500 text-white rounded-full shadow-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black/50"><ClipboardPaste size={13} /></button>
+                </div>
+            </div>
+            <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
+                {/* ENGLISH: Tag area under the preview, aesthetically organized */}
+                <div className={`flex-1 rounded-xl border p-1 min-h-0 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
+                    {/* ITALIANO: in "Intere" l'area tag RIEMPIE lo spazio libero della card (prima restava
+                                  un grosso vuoto sotto); in "Quadrate" resta limitata a 180px. In entrambi
+                                  i casi scorre se i tag sono tanti. */}
+                    {/* ENGLISH: in "original/Intere" mode the tag area FILLS the card's free space (there
+                                 used to be a big empty gap below); in "square" it stays capped at 180px.
+                                 Both scroll when there are many tags. */}
+                    <TagInput lang={lang} tags={img.tags} setTags={(newTags: string[]) => onUpdateTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
+                </div>
+            </div>
+        </div>
+    );
+});
 
 export default function App() {
-    const [lang, setLang] = useState('it');
+    const [lang, setLang] = useState<string>(detectInitialLang);
     const t = translations[lang as keyof typeof translations];
+    // ITALIANO: Al primissimo avvio (nessuna scelta salvata) mostra la schermata di scelta lingua.
+    // ENGLISH: On the very first launch (no saved choice) show the language picker screen.
+    const [showLangPicker, setShowLangPicker] = useState<boolean>(() => {
+        try { return !localStorage.getItem('langChosen'); } catch (_) { return false; }
+    });
+    // ITALIANO: Lingua solo EVIDENZIATA nella schermata iniziale: non si applica da sola,
+    //           serve premere il tasto di conferma.
+    // ENGLISH: Language only HIGHLIGHTED in the first-run screen: it is not applied on click,
+    //          the user must press the confirm button.
+    const [pendingLang, setPendingLang] = useState<string>(lang);
+    // ITALIANO: Testi della schermata di scelta lingua: seguono la lingua EVIDENZIATA, non
+    //           quella attiva, cosi' tutta la finestra cambia lingua a ogni clic (anteprima).
+    // ENGLISH: First-run screen texts: they follow the HIGHLIGHTED language, not the active
+    //          one, so the whole window switches language on every click (live preview).
+    const tPending = translations[pendingLang as keyof typeof translations] ?? translations.en;
+    // ITALIANO: La lingua scelta viene ricordata tra un avvio e l'altro (prima si perdeva).
+    // ENGLISH: The chosen language is remembered across launches (it used to be lost).
+    useEffect(() => {
+        try { localStorage.setItem('lang', lang); } catch (_) { /* ignore */ }
+        // ITALIANO: comunico la lingua al processo principale, che la usa per la schermata di avvio
+        // ENGLISH: tell the main process the language, which it uses for the splash screen
+        try { (window as any).electronAPI?.persistLang?.(lang); } catch (_) { /* ignore */ }
+    }, [lang]);
     const [images, setImages] = useState<any[]>([]);
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
     
-    const [saveAsZip, setSaveAsZip] = useState(false); 
     const [dirHandle, setDirHandle] = useState<any>(null);
     
-    const [imageWidth, setImageWidth] = useState(250); 
+    const [imageWidth, setImageWidth] = useState(300);
     const [trashImageWidth, setTrashImageWidth] = useState(250);
     const [trashSortOrder, setTrashSortOrder] = useState('date-desc'); 
     
@@ -58,6 +275,12 @@ export default function App() {
     const [slideDirection, setSlideDirection] = useState('right');
     const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+    // ITALIANO: Finestra a tre scelte mostrata chiudendo il progetto con modifiche non salvate
+    // ENGLISH: Three-choice dialog shown when closing the project with unsaved changes
+    const [saveCloseDialog, setSaveCloseDialog] = useState({ isOpen: false, isSaving: false });
+    // ITALIANO: Editor di tag: apre/crea file .txt e .json di tag, indipendente dal progetto
+    // ENGLISH: Tag editor: opens/creates .txt and .json tag files, independent of the project
+    const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
     const [importSummary, setImportSummary] = useState<{ isOpen: boolean, summary: any, pendingData: any }>({ isOpen: false, summary: null, pendingData: null });
     const [selectedForBulk, setSelectedForBulk] = useState<string[]>([]);
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
@@ -65,8 +288,39 @@ export default function App() {
     const [isTrashOpen, setIsTrashOpen] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
+    // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
+    //           per la percentuale; isSaving decide se mostrarla e con quale etichetta.
+    // ENGLISH: Same progress bar, but during SAVING. Reuses importProgress for the percentage;
+    //          isSaving controls whether it shows and with which label.
+    const [isSaving, setIsSaving] = useState(false);
 
     const [isStatsOpen, setIsStatsOpen] = useState(false);
+    // ITALIANO: ricerca e ordinamento della lista completa dei tag nelle statistiche
+    // ENGLISH: search and sort for the full tag list in the statistics
+    const [statsSearch, setStatsSearch] = useState('');
+    // ITALIANO: ricerca dentro il pannello di selezione in blocco (filtra le pillole dei tag).
+    // ENGLISH: search inside the bulk-selection panel (filters the tag pills).
+    const [bulkSearch, setBulkSearch] = useState('');
+    // ITALIANO: ricerca per tag nella PAGINA PRINCIPALE (filtra le immagini). Uno o piu' tag separati
+    //           da virgola/spazio; un'immagine passa se contiene TUTTI i termini indicati.
+    // ENGLISH: tag search on the MAIN PAGE (filters images). One or more tags separated by comma/space;
+    //          an image passes if it contains ALL the given terms.
+    const [tagSearch, setTagSearch] = useState('');
+    // ITALIANO: true mentre si trascinano file sopra la finestra (per mostrare l'area di rilascio).
+    // ENGLISH: true while files are dragged over the window (to show the drop overlay).
+    const [isDragging, setIsDragging] = useState(false);
+    // ITALIANO: PRESTAZIONI — la ricerca nella lista tag delle statistiche usa un valore "differito":
+    //           mentre scrivi, la casella resta immediata ma il filtro/ordinamento e il ridisegno
+    //           della lista (potenzialmente decine di migliaia di righe) vengono aggiornati con calma,
+    //           senza far scattare la digitazione. Il comportamento e' identico, solo piu' fluido.
+    // ENGLISH: PERF — the stats tag-list search uses a DEFERRED value: while you type the input stays
+    //          immediate, but the filter/sort and the (potentially tens-of-thousands-of-rows) list
+    //          re-render are updated lazily, so typing does not stutter. Same behavior, just smoother.
+    const deferredStatsSearch = useDeferredValue(statsSearch);
+    const [statsSort, setStatsSort] = useState<'count' | 'name'>('count');
+    // ITALIANO: "Appunti" dei tag: copiati da una foto, incollabili su un'altra.
+    // ENGLISH: Tag "clipboard": copied from one photo, pasteable onto another.
+    const [copiedTags, setCopiedTags] = useState<string[] | null>(null);
 
     // ITALIANO: Pulizia della sola chiave legacy 'customPrompt' (vecchia AI locale).
     //           NON rimuovere 'geminiApiKey' (getSecret la migra in safeStorage) né 'aiModel' (chiave viva).
@@ -81,7 +335,11 @@ export default function App() {
     // ITALIANO: Configurazione AI cloud (Gemini), persistente
     // ENGLISH: Cloud AI config (Gemini), persistent
     const [aiEnabled, setAiEnabled] = useState<boolean>(() => localStorage.getItem('aiEnabled') === 'true');
-    const [aiModel, setAiModel] = useState<string>(() => localStorage.getItem('aiModel') || DEFAULT_GEMINI_MODEL);
+    // ITALIANO: normalizeModelId riporta a un modello valido chi aveva salvato uno dei
+    //           modelli poi rimossi (altrimenti l'AI fallirebbe a ogni chiamata).
+    // ENGLISH: normalizeModelId brings anyone who saved a since-removed model back to a
+    //          valid one (otherwise every AI call would fail).
+    const [aiModel, setAiModel] = useState<string>(() => normalizeModelId(localStorage.getItem('aiModel')));
     const [aiMaxTags, setAiMaxTags] = useState<number>(() => {
         const v = parseInt(localStorage.getItem('aiMaxTags') || '30', 10);
         return Number.isFinite(v) ? Math.max(1, Math.min(80, v)) : 30;
@@ -115,7 +373,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('3.8.0');
+    const [appVersion, setAppVersion] = useState<string>('1.0.8');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -138,8 +396,22 @@ export default function App() {
             if (cancelled) return;
             if (value) setGeminiApiKey(value);
             apiKeyLoadedRef.current = true;
-        }).catch(() => { apiKeyLoadedRef.current = true; });
+            setChiaveApiCaricata(true);
+        }).catch(() => { apiKeyLoadedRef.current = true; setChiaveApiCaricata(true); });
         return () => { cancelled = true; };
+    }, []);
+
+    // ITALIANO: Segnale di "APP PRONTA": la pagina ha finito di caricare tutto (immagini, font
+    //           compresi) E la chiave cifrata e' stata letta. Serve alla schermata di
+    //           caricamento, che deve restare finche' l'app non e' davvero pronta.
+    // ENGLISH: "APP READY" signal: the page finished loading everything (images and fonts
+    //          included) AND the encrypted key has been read. The loading screen uses it to stay
+    //          up until the app is genuinely ready.
+    useEffect(() => {
+        if (document.readyState === 'complete') { setPaginaCaricata(true); return undefined; }
+        const onLoad = () => setPaginaCaricata(true);
+        window.addEventListener('load', onLoad, { once: true });
+        return () => window.removeEventListener('load', onLoad);
     }, []);
 
     // ITALIANO: Persisti la API key in safeStorage (cifrata) appena cambia
@@ -152,7 +424,7 @@ export default function App() {
             // ENGLISH: Fail-closed: if encrypted storage is unavailable the key is NOT saved in
             //          cleartext — warn the user it will only last for this session
             if (!ok && geminiApiKey) {
-                showNotification(`${t.aiError || 'AI Error'}: secure storage unavailable — API key NOT saved (session only)`, 'error');
+                showNotification(t.apiKeyNotSaved, 'error');
             }
         }).catch(err => console.error('Failed to persist API key', err));
     }, [geminiApiKey]);
@@ -193,6 +465,10 @@ export default function App() {
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
     const [showSplash, setShowSplash] = useState(true);
     const [splashProgress, setSplashProgress] = useState(0);
+    // ITALIANO: i due pezzi del segnale "app pronta" usato dalla schermata di caricamento
+    // ENGLISH: the two halves of the "app ready" signal used by the loading screen
+    const [paginaCaricata, setPaginaCaricata] = useState(false);
+    const [chiaveApiCaricata, setChiaveApiCaricata] = useState(false);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
@@ -239,6 +515,27 @@ export default function App() {
 
     useEffect(() => { imagesRef.current = images; }, [images]);
 
+    // ITALIANO: PRESTAZIONI — copia "sempre aggiornata" della selezione, per far leggere lo stato ai
+    //           gestori della galleria SENZA doverli ricreare ad ogni cambio di selezione (cosi' le
+    //           card memorizzate non si ridisegnano tutte). Vedi GalleryCard piu' in basso.
+    // ENGLISH: PERF — an always-current copy of the selection, so the gallery handlers can read the
+    //          state WITHOUT being recreated on every selection change (keeping the memoized cards
+    //          from all re-rendering). See GalleryCard below.
+    const selectedForBulkRef = useRef<string[]>([]);
+    useEffect(() => { selectedForBulkRef.current = selectedForBulk; }, [selectedForBulk]);
+
+    // ITALIANO: quando la selezione in blocco si svuota (deseleziona tutto, si toglie l'ultima foto,
+    //           si cestina/chiude/elimina l'ultima selezionata) azzero anche i tag "in preparazione".
+    //           Prima restavano armati: riaprendo il pannello per un ALTRO gruppo di foto comparivano
+    //           gia' pronti col tasto Conferma attivo, e un clic li applicava a foto sbagliate.
+    // ENGLISH: when the bulk selection becomes empty (deselect-all, unticking the last photo,
+    //          trashing/closing/deleting the last selected one) also clear the STAGED tags. They
+    //          used to survive: reopening the panel for a DIFFERENT set of photos showed them already
+    //          armed with Confirm live, and one click applied them to the wrong photos.
+    useEffect(() => {
+        if (selectedForBulk.length === 0 && stagedBulkTags.length > 0) setStagedBulkTags([]);
+    }, [selectedForBulk.length, stagedBulkTags.length]);
+
     // ITALIANO: Backup automatico (debounce 1s) di tag e didascalie in localStorage —
     //           rete anti-crash: al re-import della cartella le modifiche non salvate vengono ripristinate.
     //           Non si svuota mai da solo: viene cancellato solo dal Reset progetto.
@@ -252,16 +549,37 @@ export default function App() {
                 const data: Record<string, { tags: string[] }> = {};
                 for (const img of images) {
                     if (img.isTrashed) continue;
-                    data[img.file.name] = { tags: img.tags };
+                    // ITALIANO: chiave cartella+nome assegnata all'import (vedi makeBackupKeyer):
+                    //           due foto omonime in sottocartelle diverse restano separate.
+                    // ENGLISH: folder+name key assigned at import (see makeBackupKeyer): two
+                    //          same-named photos in different subfolders stay separate.
+                    data[img.backupKey || (BACKUP_KEY_SEP + img.file.name)] = { tags: img.tags };
                 }
-                // ITALIANO: Salviamo anche il nome cartella: il ripristino avviene SOLO se si reimporta
-                //           la stessa cartella, così i tag non finiscono su immagini omonime di un'altra
-                //           cartella (nei dataset LoRA nomi come '01.png' sono comunissimi).
-                // ENGLISH: Store the folder name too: restore happens ONLY when re-importing the same
-                //          folder, so tags never land on same-named images from a different folder
-                //          (in LoRA datasets names like '01.png' are very common).
+                // ITALIANO: Oltre al nome cartella salviamo una "impronta" del contenuto. Il solo nome
+                //           non basta: i dataset LoRA si chiamano quasi sempre allo stesso modo
+                //           (dataset, img, 10_soggetto), quindi chiudendo l'app su char1\dataset e
+                //           riaprendo char2\dataset i tag del primo venivano ripristinati sul secondo
+                //           e al primo salvataggio finivano su disco, cancellando quelli veri.
+                // ENGLISH: Besides the folder name we store a content "fingerprint". The name alone is
+                //          not enough: LoRA datasets are almost always named the same (dataset, img,
+                //          10_subject), so quitting on char1\dataset and reopening char2\dataset
+                //          restored the first one's tags onto the second, and the first save wrote them
+                //          to disk over the real ones.
                 const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, data }));
+                // ITALIANO: l'impronta va calcolata sulla STESSA popolazione dell'import (TUTTE le
+                //           immagini, comprese quelle nel cestino — che sono ancora su disco finche'
+                //           non si svuota il cestino — e coi nomi ripetuti). Prima si usavano le sole
+                //           chiavi di `data` (senza cestinate, senza doppioni): bastava cestinare una
+                //           foto e al riavvio il conteggio non combaciava piu', cosi' il recupero
+                //           anti-crash veniva scartato in silenzio e i tag non salvati andavano persi.
+                // ENGLISH: the fingerprint must be computed from the SAME population as the import
+                //          (ALL images, including trashed ones — still on disk until the trash is
+                //          emptied — and with repeated names kept). It used to use only `data`'s keys
+                //          (trash-filtered, de-duplicated): trashing a single photo made the count
+                //          diverge on restart, so the crash recovery was silently discarded and any
+                //          unsaved tags were lost.
+                const signature = folderSignature(folder, images.map(img => img.file.name));
+                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, signature, data }));
             } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
         }, 1000);
         return () => clearTimeout(handle);
@@ -309,35 +627,83 @@ export default function App() {
 
     const displayedImages = useMemo(() => {
         let sorted = [...images].filter(img => !img.isTrashed);
-        if (sortOrder === 'name-asc') {
-            sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
-        } else if (sortOrder === 'name-desc') {
-            sorted.sort((a, b) => b.file.name.localeCompare(a.file.name));
-        } else if (sortOrder === 'date-asc') {
-            sorted.sort((a, b) => a.file.lastModified - b.file.lastModified);
-        } else if (sortOrder === 'date-desc') {
-            sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
+        // ITALIANO: RICERCA PER TAG (pagina principale). Uno o piu' termini separati da VIRGOLA (i tag
+        //           possono contenere spazi, es. "open eyes", quindi NON divido sugli spazi). Un'immagine
+        //           passa se contiene TUTTI i termini (confronto per sottostringa, non distingue maiuscole).
+        //           Cosi' "Seleziona tutte" (che opera su displayedImages) seleziona SOLO le filtrate.
+        // ENGLISH: TAG SEARCH (main page). One or more terms separated by COMMA (tags may contain spaces,
+        //          e.g. "open eyes", so I do NOT split on spaces). An image passes if it contains ALL the
+        //          terms (case-insensitive substring). This way "Select all" (which works on
+        //          displayedImages) selects ONLY the filtered ones.
+        const terms = tagSearch.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if (terms.length > 0) {
+            sorted = sorted.filter(img => {
+                const lower = (img.tags || []).map((tg: string) => tg.toLowerCase());
+                return terms.every(term => lower.some((tg: string) => tg.includes(term)));
+            });
         }
-        return sorted;
-    }, [images, sortOrder]);
+        return applySort(sorted, sortOrder);
+    }, [images, sortOrder, tagSearch]);
+
+    // ITALIANO: lista usata dal VISUALIZZATORE. E' quella filtrata, ma se la foto aperta e' appena
+    //           uscita dal filtro (tipico: cerchi "smile", apri una foto e le TOGLI il tag "smile")
+    //           la tengo dentro finche' resta aperta. Prima spariva di colpo: la finestra grande si
+    //           chiudeva da sola a meta' lavoro e si tornava alla griglia senza piu' frecce avanti
+    //           e indietro. Cosi' invece si continua a sfogliare e si chiude quando si vuole.
+    // ENGLISH: list used by the VIEWER. It is the filtered one, but if the open photo has just left
+    //          the filter (typical: search "smile", open a photo and REMOVE its "smile" tag) I keep
+    //          it in while it stays open. It used to vanish at once: the big window closed by itself
+    //          mid-task and dropped the user back on the grid with no next/prev arrows. Now browsing
+    //          continues and the window closes when the user decides.
+    const lightboxImages = useMemo(() => {
+        if (!selectedImageId) return displayedImages;
+        if (displayedImages.some(img => img.id === selectedImageId)) return displayedImages;
+        const aperta = images.find(img => img.id === selectedImageId && !img.isTrashed);
+        if (!aperta) return displayedImages;
+        return applySort([...displayedImages, aperta], sortOrder);
+    }, [displayedImages, images, selectedImageId, sortOrder]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
+    // ITALIANO: PRESTAZIONI — selezione come Set per un test O(1) "questa foto e' selezionata?".
+    //           Serve alle card memorizzate della galleria (prop booleana isSelected).
+    // ENGLISH: PERF — selection as a Set for an O(1) "is this photo selected?" test. Used by the
+    //          memoized gallery cards (isSelected boolean prop).
+    const selectedForBulkSet = useMemo(() => new Set(selectedForBulk), [selectedForBulk]);
+
+    // ITALIANO: quante foto SELEZIONATE non sono piu' visibili per via della ricerca per tag. La
+    //           selezione sopravvive di proposito al cambio di filtro (come in qualsiasi programma),
+    //           ma i tag in blocco finiscono anche su quelle nascoste: senza avviso si rischiava di
+    //           credere di taggare le 30 foto a schermo mentre se ne stavano taggando 150 invisibili.
+    //           Il pannello lo dice chiaramente prima della conferma.
+    // ENGLISH: how many SELECTED photos are no longer visible because of the tag search. The
+    //          selection deliberately survives a filter change (as in any program), but bulk tags
+    //          also land on the hidden ones: with no warning one could believe they were tagging the
+    //          30 photos on screen while actually tagging 150 invisible ones. The panel now says so
+    //          plainly before the confirmation.
+    const hiddenSelectedCount = useMemo(() => {
+        if (selectedForBulk.length === 0) return 0;
+        const visibili = new Set(displayedImages.map(img => img.id));
+        return selectedForBulk.filter(id => !visibili.has(id)).length;
+    }, [selectedForBulk, displayedImages]);
+
     const sortedTrashedImages = useMemo(() => {
-        let sorted = [...trashedImages];
-        if (trashSortOrder === 'name-asc') {
-            sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
-        } else if (trashSortOrder === 'name-desc') {
-            sorted.sort((a, b) => b.file.name.localeCompare(a.file.name));
-        } else if (trashSortOrder === 'date-asc') {
-            sorted.sort((a, b) => a.file.lastModified - b.file.lastModified);
-        } else if (trashSortOrder === 'date-desc') {
-            sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
-        }
-        return sorted;
+        return applySort([...trashedImages], trashSortOrder);
     }, [trashedImages, trashSortOrder]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
+
+    // ITALIANO: "Impronta" di una cartella: nome + quante immagini + la prima e l'ultima in ordine
+    //           alfabetico. Serve a riconoscere che il backup anti-crash appartiene DAVVERO alla
+    //           cartella che si sta aprendo. Col solo nome, due dataset chiamati entrambi "dataset"
+    //           risultavano lo stesso progetto.
+    // ENGLISH: A folder "fingerprint": name + how many images + the alphabetically first and last
+    //          one. It tells whether the crash backup REALLY belongs to the folder being opened.
+    //          With the name alone, two datasets both called "dataset" looked like the same project.
+    const folderSignature = (folderName: string, fileNames: string[]): string => {
+        const sorted = [...fileNames].sort();
+        return `${folderName}|${sorted.length}|${sorted[0] || ''}|${sorted[sorted.length - 1] || ''}`;
+    };
 
     const handleDeleteAllTags = () => {
         setConfirmDialog({
@@ -371,9 +737,119 @@ export default function App() {
         soundManager.click();
     };
 
-    const handleMoveToTrash = (id: string) => {
+    // ITALIANO: CHIUDE una singola immagine: la toglie dalla vista senza cestinarla e senza
+    //           toccare nulla su disco — l'equivalente di "Chiudi progetto" per una sola foto.
+    //           Se ha modifiche non salvate lo dice prima, cosi' non si perdono per distrazione.
+    // ENGLISH: CLOSES a single image: removes it from view without trashing it and without
+    //          touching anything on disk — the single-photo equivalent of "Close project".
+    //          If it has unsaved changes it says so first, so they are not lost by accident.
+    const handleCloseImage = useCallback((id: string) => {
+        const img = imagesRef.current.find(i => i.id === id);
+        if (!img) return;
+        const chiudi = () => {
+            // ITALIANO: NON libero qui la miniatura. Chiudere una foto e' un'azione ANNULLABILE
+            //           (Ctrl+Z la riporta): se ne revocassi subito l'anteprima, all'annulla la foto
+            //           tornerebbe con l'immagine ROTTA. Come per il cestino, l'anteprima resta valida
+            //           e viene liberata in blocco alla chiusura/reset del progetto.
+            // ENGLISH: do NOT free the thumbnail here. Closing a photo is an UNDOABLE action (Ctrl+Z
+            //          brings it back): revoking its preview now would make the photo come back with a
+            //          BROKEN image on undo. Like the trash, the preview stays valid and is freed in
+            //          bulk on project close/reset.
+            setImages(prev => prev.filter(i => i.id !== id));
+            setSelectedForBulk(prev => prev.filter(x => x !== id));
+            setSelectedImageId(prev => prev === id ? null : prev);
+            soundManager.pop();
+        };
+        const nonSalvata = JSON.stringify(img.tags) !== JSON.stringify(img.originalTags);
+        if (!nonSalvata) return chiudi();
+        setConfirmDialog({
+            isOpen: true,
+            title: t.closeImageTitle,
+            message: t.closeImageUnsavedMsg,
+            onConfirm: () => { chiudi(); setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }); },
+            onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
+        });
+    }, [t]);
+
+    // ITALIANO: Quando l'editor di tag salva un file, se quel file e' DAVVERO il .txt di una foto
+    //           del progetto ne allineo i tag in memoria (sia tags sia originalTags). Senza questo,
+    //           un successivo salvataggio del progetto riscriverebbe quel .txt con i tag vecchi,
+    //           annullando in silenzio la modifica fatta nell'editor.
+    //           SICUREZZA: l'editor apre QUALSIASI file, quindi NON basta il nome. Due foto (o due
+    //           .txt) chiamate uguale in cartelle diverse sono comunissime nei dataset LoRA: abbinare
+    //           per solo nome farebbe dirottare i tag della foto sbagliata e, al salvataggio, ne
+    //           distruggerebbe il .txt vero. Percio' confronto l'IDENTITA' reale del file salvato con
+    //           il sidecar della foto (stessa cartella) tramite isSameEntry sugli handle: allineo solo
+    //           la foto il cui sidecar E' ESATTAMENTE quel file. Se l'identita' non e' verificabile
+    //           (niente handle dall'editor, foto senza cartella, sidecar non ancora su disco) NON
+    //           tocco nulla: meglio non sincronizzare che corrompere.
+    // ENGLISH: When the tag editor saves a file, if that file is TRULY a project photo's .txt I sync
+    //          its in-memory tags (both tags and originalTags). Without this, a later project save
+    //          would rewrite that .txt with the old tags, silently undoing the editor's change.
+    //          SAFETY: the editor opens ANY file, so the name alone is NOT enough. Two photos (or two
+    //          .txt) with the same name in different folders are extremely common in LoRA datasets:
+    //          matching by name alone would hijack the wrong photo's tags and, on save, destroy its
+    //          real .txt. So I compare the saved file's REAL IDENTITY with the photo's sidecar (same
+    //          folder) via isSameEntry on the handles: I sync only the photo whose sidecar IS EXACTLY
+    //          that file. If identity can't be verified (no handle from the editor, folder-less photo,
+    //          sidecar not yet on disk) I touch NOTHING: better not to sync than to corrupt.
+    const handleTagEditorSaved = async (savedName: string, savedTags: string[], savedHandle?: any) => {
+        if (!savedHandle || typeof savedHandle.isSameEntry !== 'function') return;
+        const base = savedName.split('.').slice(0, -1).join('.');
+        // ITALIANO: cerco la foto la cui cartella contiene ESATTAMENTE questo file salvato.
+        // ENGLISH: find the photo whose folder contains EXACTLY this saved file.
+        let matchId: string | null = null;
+        for (const img of images) {
+            if (img.file.name.split('.').slice(0, -1).join('.') !== base) continue;
+            const dir = img.dirHandle;
+            if (!dir || typeof dir.getFileHandle !== 'function') continue;
+            try {
+                const sidecar = await dir.getFileHandle(savedName);
+                if (await savedHandle.isSameEntry(sidecar)) { matchId = img.id; break; }
+            } catch { /* ITALIANO: sidecar assente o non confrontabile: salto, per prudenza */ }
+        }
+        if (!matchId) return;
+        setImages(prev => {
+            const ordered = [
+                ...globalTriggers.filter(tag => savedTags.includes(tag)),
+                ...savedTags.filter(tag => !globalTriggers.includes(tag)),
+            ];
+            return prev.map(i =>
+                i.id === matchId ? { ...i, tags: ordered, originalTags: [...ordered] } : i
+            );
+        });
+    };
+
+    // ITALIANO: useCallback con identita' STABILE (nessuna dipendenza): cosi' passandolo a tutte le
+    //           card memorizzate della galleria non le fa ridisegnare. Uso la forma "funzionale" di
+    //           setSelectedImageId per non dover leggere selectedImageId (che lo renderebbe instabile).
+    // ENGLISH: useCallback with a STABLE identity (no deps): so passing it to every memoized gallery
+    //          card does not force them to re-render. I use the functional form of setSelectedImageId
+    //          to avoid reading selectedImageId (which would make it unstable).
+    const handleMoveToTrash = useCallback((id: string) => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
-        if (selectedImageId === id) setSelectedImageId(null);
+        // ITALIANO: tolgo la foto anche dalla selezione in blocco (o resterebbe taggabile/riscrivibile).
+        // ENGLISH: also drop the photo from the bulk selection (else it stays taggable/writable).
+        setSelectedForBulk(prev => prev.filter(x => x !== id));
+        setSelectedImageId(prev => prev === id ? null : prev);
+        soundManager.pop();
+    }, []);
+
+    // ITALIANO: Cestina la foto APERTA nel visualizzatore e passa direttamente alla
+    //           successiva (o alla precedente se era l'ultima), senza chiudere la finestra.
+    //           Chiude solo se non resta piu' nessuna foto. Il "prossimo" si calcola PRIMA
+    //           di cestinare, sulla lista visibile in quel momento.
+    // ENGLISH: Trash the OPEN photo in the viewer and jump straight to the next one (or the
+    //          previous if it was the last), without closing the window. Closes only if no
+    //          photo is left. "Next" is computed BEFORE trashing, on the currently shown list.
+    const handleTrashFromLightbox = (id: string) => {
+        const idx = lightboxImages.findIndex(img => img.id === id);
+        const nextImg = idx === -1 ? null : (lightboxImages[idx + 1] || lightboxImages[idx - 1] || null);
+        setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
+        // ITALIANO: come sopra, tolgo la foto cestinata dalla selezione in blocco.
+        // ENGLISH: as above, drop the trashed photo from the bulk selection.
+        setSelectedForBulk(prev => prev.filter(x => x !== id));
+        setSelectedImageId(nextImg ? nextImg.id : null);
         soundManager.pop();
     };
 
@@ -382,26 +858,72 @@ export default function App() {
         soundManager.pop();
     };
 
+    // ITALIANO: Elimina l'immagine e il suo .txt. Prima si prova il CESTINO DI WINDOWS, cosi' un
+    //           ripensamento e' sempre recuperabile; solo se non e' possibile (fuori da Electron,
+    //           o percorso del file non ricavabile) si ripiega sulla cancellazione diretta.
+    //           Si usa SEMPRE la cartella della singola immagine, non una cartella globale.
+    // ENGLISH: Deletes the image and its .txt. It first tries the WINDOWS RECYCLE BIN, so a change
+    //          of mind is always recoverable; only when that is impossible (outside Electron, or the
+    //          file path cannot be resolved) does it fall back to a direct delete. It always uses
+    //          the individual image's own folder, never a global one.
+    const deleteImageFiles = async (img: any): Promise<boolean> => {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.getPathForFile === 'function' && typeof api.trashFiles === 'function') {
+            try {
+                const imgPath = api.getPathForFile(img.file);
+                if (imgPath) {
+                    const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
+                    const res = await api.trashFiles([imgPath, txtPath]);
+                    if (res && res.ok) return true;
+                }
+            } catch (err) {
+                console.warn('[Cestino] Cestino di sistema non disponibile, uso la cancellazione diretta:', err);
+            }
+        }
+        // ITALIANO: ripiego — cancellazione diretta dalla cartella dell'immagine
+        // ENGLISH: fallback — direct delete from the image's own folder
+        const folder = img.dirHandle;
+        if (!folder) return true; // ITALIANO: nessun file su disco da togliere — ENGLISH: no file on disk to remove
+        const safeName = sanitizeFileName(img.file.name);
+        await folder.removeEntry(safeName);
+        const txtName = buildTagFileName(img.file.name);
+        try { await folder.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
+        return true;
+    };
+
+    // ITALIANO: Le anteprime vivono in memoria finche' non le si libera esplicitamente. Non veniva
+    //           fatto da nessuna parte: chiudendo un progetto da 2000 foto restavano occupati
+    //           ~200 MB per tutta la sessione, e cambiando dataset piu' volte l'app finiva la
+    //           memoria. Va chiamata ogni volta che delle immagini escono dall'elenco.
+    // ENGLISH: Thumbnails stay in memory until explicitly released. Nothing ever did: closing a
+    //          2000-photo project left ~200 MB pinned for the whole session, and switching datasets
+    //          a few times exhausted the renderer. Call this whenever images leave the list.
+    const releaseThumbnails = (imgs: any[]) => {
+        for (const img of imgs || []) {
+            if (img && typeof img.thumb === 'string' && img.thumb.startsWith('blob:')) {
+                try { URL.revokeObjectURL(img.thumb); } catch (_) { /* ignore */ }
+            }
+        }
+    };
+
     const handleDeletePermanently = async (id: string) => {
         const img = images.find(i => i.id === id);
         if (!img) return;
 
-        if (dirHandle) {
-            try {
-                // ITALIANO: removeEntry accetta solo nomi senza separatori di path
-                // ENGLISH: removeEntry only accepts names without path separators
-                const safeName = sanitizeFileName(img.file.name);
-                await dirHandle.removeEntry(safeName);
-                const txtName = buildTagFileName(img.file.name);
-                try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
-            } catch (error) {
-                console.error(error);
-                showNotification(t.deleteError, 'error');
-                return;
-            }
+        try {
+            await deleteImageFiles(img);
+        } catch (error) {
+            console.error(error);
+            showNotification(t.deleteError, 'error');
+            return;
         }
 
         setImages(prev => prev.filter(i => i.id !== id));
+        // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
+        //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
+        // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
+        //          would keep counting it and acting on an id that is gone.
+        setSelectedForBulk(prev => prev.filter(x => x !== id));
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
     };
@@ -410,20 +932,21 @@ export default function App() {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsTrashOpen(false);
 
-        if (dirHandle) {
-            for (const img of trashedImages) {
-                try {
-                    const safeName = sanitizeFileName(img.file.name);
-                    await dirHandle.removeEntry(safeName);
-                    const txtName = buildTagFileName(img.file.name);
-                    try { await dirHandle.removeEntry(txtName); } catch (e) { /* ignore */ }
-                } catch (error) {
-                    console.error("Failed to delete", img.file.name);
-                }
+        const removedIds = new Set(trashedImages.map(img => img.id));
+        for (const img of trashedImages) {
+            try {
+                await deleteImageFiles(img);
+            } catch (error) {
+                console.error("Failed to delete", img.file.name);
             }
         }
 
         setImages(prev => prev.filter(i => !i.isTrashed));
+        // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
+        //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
+        // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
+        //          the panel counter would over-report.
+        setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
     };
@@ -441,9 +964,15 @@ export default function App() {
     const TXT_MAX_TAGS_PER_FILE = 200;
     const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
-        setDirHandle(handle);
+        // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
+        //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
+        //           "Carica immagini" la metteva a null e i salvataggi degradavano a download.
+        // ENGLISH: the global folder is only the "current folder" hint (crash backup, lightbox).
+        //          We do NOT clear it when this import has none — "Load images" used to set it to
+        //          null, silently degrading every later save into browser downloads.
+        if (handle) setDirHandle(handle);
         setIsImporting(true);
         setImportProgress(0);
         let skippedTxtCount = 0;
@@ -452,25 +981,50 @@ export default function App() {
             await new Promise(r => setTimeout(r, 300));
 
             // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'.
-            //           Lo applichiamo SOLO se la cartella reimportata è la stessa del backup (match per nome):
-            //           evita di ripristinare tag su immagini omonime di un'altra cartella.
+            //           Lo applichiamo SOLO se l'IMPRONTA coincide (nome cartella + numero di immagini +
+            //           prima e ultima in ordine alfabetico). Prima bastava il nome della cartella, e
+            //           siccome i dataset LoRA si chiamano quasi tutti uguale ("dataset", "img"), i tag
+            //           di un progetto potevano essere ripristinati su un altro e poi scritti su disco.
+            //           I backup vecchi non hanno l'impronta: non vengono applicati, che e' il lato sicuro.
             // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect.
-            //          Apply it ONLY when the re-imported folder matches the backup's folder (by name):
-            //          prevents restoring tags onto same-named images from a different folder.
+            //          Applied ONLY when the FINGERPRINT matches (folder name + image count + first and
+            //          last name alphabetically). The folder name alone used to be enough, and since LoRA
+            //          datasets are nearly all named the same ("dataset", "img"), one project's tags could
+            //          be restored onto another and then written to disk. Older backups carry no
+            //          fingerprint: they are not applied, which is the safe side.
             let backupMap: Record<string, { tags?: unknown; caption?: unknown }> | null = null;
             const importFolder = (handle && handle.name) ? String(handle.name) : '';
+            const importSignature = folderSignature(importFolder, imgFiles.map(f => f.name));
             try {
                 const raw = localStorage.getItem('tagBackup');
                 if (raw) {
                     const parsed = JSON.parse(raw);
-                    const backupFolder = parsed && typeof parsed.folder === 'string' ? parsed.folder : '';
-                    const sameFolder = importFolder !== '' && backupFolder === importFolder;
+                    const backupSignature = parsed && typeof parsed.signature === 'string' ? parsed.signature : '';
+                    const sameFolder = importFolder !== '' && backupSignature !== '' && backupSignature === importSignature;
                     if (sameFolder && parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
                         backupMap = parsed.data;
                     }
                 }
             } catch (_) { backupMap = null; }
 
+            // ITALIANO: chiave cartella+nome (vedi makeFolderKeyer): stessa immagine e stesso
+            //           .txt SOLO se stanno nella stessa sottocartella.
+            // ENGLISH: folder+name key (see makeFolderKeyer): an image and a .txt pair up ONLY
+            //          when they live in the same subfolder.
+            const folderKeyOf = makeFolderKeyer(folderOf);
+            // ITALIANO: chiave del backup anti-crash (cartella + nome), stabile fra le sessioni.
+            //           `nomiUnici` contiene i nomi che compaiono UNA sola volta in questo import:
+            //           solo per quelli si puo' ancora leggere un backup VECCHIO (salvato col solo
+            //           nome del file) senza rischio di scambio, cosi' un recupero gia' in memoria
+            //           non va perso con l'aggiornamento.
+            // ENGLISH: crash-backup key (folder + name), stable across sessions. `nomiUnici` holds
+            //          the names appearing exactly ONCE in this import: only for those can an OLD
+            //          backup (keyed by file name alone) still be read with no risk of a mix-up, so
+            //          an already-stored recovery is not lost on upgrade.
+            const backupKeyOf = makeBackupKeyer(folderOf);
+            const conteggioNomi = new Map<string, number>();
+            for (const f of imgFiles) conteggioNomi.set(f.name, (conteggioNomi.get(f.name) || 0) + 1);
+            const nomiUnici = new Set([...conteggioNomi.entries()].filter(([, n]) => n === 1).map(([nome]) => nome));
             const textMap = new Map();
             for (let i = 0; i < txtFiles.length; i++) {
                 try {
@@ -485,7 +1039,7 @@ export default function App() {
                             .map((tag: string) => tag.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, TXT_TAG_MAX_CHARS))
                             .filter((tag: string) => tag.length > 0)
                             .slice(0, TXT_MAX_TAGS_PER_FILE);
-                        textMap.set(txtFiles[i].name.split('.').slice(0, -1).join('.'), [...new Set(parsedTags)]);
+                        textMap.set(folderKeyOf(txtFiles[i]), [...new Set(parsedTags)]);
                     }
                 } catch (e) {
                     // ITALIANO: File illeggibile (lockato/spostato): si salta, l'import non deve bloccarsi
@@ -496,16 +1050,36 @@ export default function App() {
                 setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
             }
 
+            // ITALIANO: PRESTAZIONI — le miniature si generano a piccoli GRUPPI in PARALLELO, non
+            //           piu' una alla volta. La decodifica delle immagini e' il collo di bottiglia
+            //           dell'importazione: farla in serie, con tante foto, era lentissima. Il limite
+            //           di concorrenza tiene bassa la memoria (poche immagini decodificate insieme).
+            //           Il risultato e' identico: ogni foto riceve la sua miniatura.
+            // ENGLISH: PERF — thumbnails are generated in small PARALLEL batches, no longer one at a
+            //          time. Image decoding is the import bottleneck: doing it serially with many
+            //          photos was very slow. The concurrency limit keeps memory bounded (few images
+            //          decoded at once). The result is identical: each photo gets its own thumbnail.
+            const THUMB_CONCURRENCY = 6;
+            const thumbs: any[] = new Array(imgFiles.length).fill(null);
+            let thumbsDone = 0;
+            for (let start = 0; start < imgFiles.length; start += THUMB_CONCURRENCY) {
+                const batch = [];
+                for (let i = start; i < Math.min(start + THUMB_CONCURRENCY, imgFiles.length); i++) {
+                    const idx = i;
+                    batch.push(
+                        generateThumbnail(imgFiles[idx])
+                            .then((td: any) => { thumbs[idx] = td; })
+                            .catch((e: any) => { console.warn('[Import] Thumbnail failed for', imgFiles[idx]?.name, e); })
+                            .finally(() => { thumbsDone++; setImportProgress(50 + Math.round((thumbsDone / imgFiles.length) * 50)); })
+                    );
+                }
+                await Promise.all(batch);
+            }
+
             const newImages = [];
             for (let i = 0; i < imgFiles.length; i++) {
-                const base = imgFiles[i].name.split('.').slice(0, -1).join('.');
-                let thumbData: any = null;
-                try {
-                    thumbData = await generateThumbnail(imgFiles[i]);
-                } catch (e) {
-                    console.warn('[Import] Thumbnail failed for', imgFiles[i]?.name, e);
-                }
-                const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(base) || [])])];
+                const thumbData: any = thumbs[i];
+                const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(folderKeyOf(imgFiles[i])) || [])])];
                 const orderedTags = [
                     ...globalTriggers.filter(t => combinedTags.includes(t)),
                     ...combinedTags.filter(t => !globalTriggers.includes(t))
@@ -513,9 +1087,19 @@ export default function App() {
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
-                const entry = backupMap && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)
-                    ? backupMap[imgFiles[i].name]
-                    : undefined;
+                const chiaveBackup = backupKeyOf(imgFiles[i]);
+                let entry: { tags?: unknown; caption?: unknown } | undefined = undefined;
+                if (backupMap) {
+                    if (Object.prototype.hasOwnProperty.call(backupMap, chiaveBackup)) {
+                        entry = backupMap[chiaveBackup];
+                    } else if (nomiUnici.has(imgFiles[i].name) && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)) {
+                        // ITALIANO: backup salvato da una versione precedente (solo nome file): lo accetto
+                        //           SOLO se in questo import quel nome e' unico, quindi non e' ambiguo.
+                        // ENGLISH: backup written by an older version (file name only): accepted ONLY when
+                        //          that name is unique in this import, so it cannot be ambiguous.
+                        entry = backupMap[imgFiles[i].name];
+                    }
+                }
                 if (entry) {
                     if (Array.isArray(entry.tags)) {
                         const backupTags = (entry.tags as unknown[])
@@ -540,9 +1124,19 @@ export default function App() {
                     height: thumbData?.height || 0,
                     tags: finalTags,
                     originalTags: [...orderedTags],
+                    // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash.
+                    // ENGLISH: the key under which this photo is stored in the crash backup.
+                    backupKey: chiaveBackup,
+                    // ITALIANO: OGNI immagine si porta dietro la cartella da cui proviene. Prima
+                    //           esisteva una sola cartella globale: aprendo una seconda cartella
+                    //           senza chiudere la prima, i tag della prima venivano scritti dentro
+                    //           la seconda (e svuotando il cestino si cancellavano i file sbagliati).
+                    // ENGLISH: EVERY image carries the folder it came from. There used to be a single
+                    //          global folder: opening a second folder without closing the first wrote
+                    //          the first folder's tags into the second one (and emptying the trash
+                    //          deleted the wrong files).
+                    dirHandle: asDirHandle(folderOf && folderOf.get(imgFiles[i])) || handle || null,
                 });
-                setImportProgress(50 + Math.round(((i + 1) / imgFiles.length) * 50));
-                if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
             }
 
             setImages(prev => {
@@ -563,14 +1157,18 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null) => {
-        const txtBases = new Set(txtFiles.map(f => f.name.split('.').slice(0, -1).join('.')));
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
+        // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
+        //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
+        // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
+        //          count is accurate even with names repeated across subfolders.
+        const keyOf = makeFolderKeyer(folderOf);
+        const txtKeys = new Set(txtFiles.map(keyOf));
         let withText = 0;
         let withoutText = 0;
-        
+
         imgFiles.forEach(f => {
-            const base = f.name.split('.').slice(0, -1).join('.');
-            if (txtBases.has(base)) {
+            if (txtKeys.has(keyOf(f))) {
                 withText++;
             } else {
                 withoutText++;
@@ -585,35 +1183,58 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle }
+            pendingData: { imgFiles, txtFiles, handle, folderOf }
         });
     };
 
     const handleLoadFolderClick = async () => {
         if ('showDirectoryPicker' in window) {
             try {
-                const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
-                
-                const imgFiles = [];
-                const txtFiles = [];
-                
-                for await (const entry of handle.values()) {
-                    if (entry.kind === 'file') {
-                        const file = await entry.getFile();
-                        if (file.type.startsWith('image/')) {
-                            imgFiles.push(file);
-                        } else if (file.name.toLowerCase().endsWith('.txt')) {
-                            txtFiles.push(file);
+                // ITALIANO: l'id fa ricordare al sistema l'ULTIMA cartella usata: la volta dopo
+                //           il selettore si riapre lì. startIn come riserva al primo utilizzo.
+                // ENGLISH: the id makes the system remember the LAST used folder: next time the
+                //          picker reopens there. startIn as a fallback on first use.
+                const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-project', startIn: 'pictures' });
+
+                const imgFiles: any[] = [];
+                const txtFiles: any[] = [];
+                // ITALIANO: Ogni immagine ricorda la SOTTOCARTELLA in cui si trova, cosi' il suo
+                //           .txt viene riscritto li' dentro e non nella cartella principale.
+                //           I dataset LoRA sono spesso divisi in sottocartelle (es. "10_soggetto").
+                // ENGLISH: Each image remembers the SUBFOLDER it lives in, so its .txt is written
+                //          back there and not into the top folder. LoRA datasets are often split
+                //          into subfolders (e.g. "10_subject").
+                const folderOf = new Map<any, any>();
+
+                const MAX_DEPTH = 8;
+                const scan = async (dir: any, depth: number) => {
+                    for await (const entry of dir.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            if (file.type.startsWith('image/')) {
+                                imgFiles.push(file);
+                                folderOf.set(file, dir);
+                            } else if (file.name.toLowerCase().endsWith('.txt')) {
+                                txtFiles.push(file);
+                                // ITALIANO: registro la cartella anche per il .txt, cosi' viene
+                                //           abbinato SOLO all'immagine della stessa sottocartella.
+                                // ENGLISH: record the folder for the .txt too, so it pairs ONLY with
+                                //          the image in the same subfolder.
+                                folderOf.set(file, dir);
+                            }
+                        } else if (entry.kind === 'directory' && depth < MAX_DEPTH) {
+                            await scan(entry, depth + 1);
                         }
                     }
-                }
-                
+                };
+                await scan(handle, 0);
+
                 if (imgFiles.length === 0) {
                     return showNotification(t.noImagesTitle, "info");
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle);
-                
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf);
+
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
@@ -630,8 +1251,318 @@ export default function App() {
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
         if (imgFiles.length === 0) return;
-        
-        calculateImportSummary(imgFiles, txtFiles, null);
+
+        // ITALIANO: Anche nel fallback (input webkitdirectory) ricostruisco la sottocartella di
+        //           ogni file dal suo percorso relativo, cosi' due foto con lo stesso nome in
+        //           cartelle diverse non si scambiano i tag. Qui la cartella e' una STRINGA:
+        //           serve solo per l'abbinamento, non come destinazione di salvataggio.
+        // ENGLISH: In the fallback (webkitdirectory input) too, I rebuild each file's subfolder
+        //          from its relative path, so two same-named photos in different folders do not
+        //          swap tags. Here the folder is a STRING: used only for pairing, never as a
+        //          save target.
+        const dirOfRelPath = (f: any): string => {
+            const rel: string = f.webkitRelativePath || '';
+            const cut = Math.max(rel.lastIndexOf('/'), rel.lastIndexOf('\\'));
+            return cut > 0 ? rel.slice(0, cut) : '';
+        };
+        const folderOf = new Map<any, any>();
+        [...imgFiles, ...txtFiles].forEach(f => folderOf.set(f, dirOfRelPath(f)));
+
+        calculateImportSummary(imgFiles, txtFiles, null, folderOf);
+    };
+
+    // ITALIANO: Carica SINGOLE immagini (una o piu'), non l'intera cartella. Nel selettore si
+    //           scelgono SOLO immagini: i file di testo non compaiono. Se accanto a una foto
+    //           c'e' un .txt con lo stesso nome, viene importato e abbinato in automatico;
+    //           se non c'e' (es. prima volta) l'immagine si carica senza tag. Senza una
+    //           cartella collegata, il salvataggio avviene come download del .txt.
+    // ENGLISH: Load INDIVIDUAL images (one or more), not the whole folder. The picker shows
+    //          ONLY images: text files do not appear. If a .txt with the same name sits next
+    //          to a photo it is imported and paired automatically; if there is none (e.g.
+    //          first time) the image loads without tags. With no folder attached, saving
+    //          happens as a .txt download.
+    const imagesInputRef = useRef<HTMLInputElement>(null);
+    // ITALIANO: Cerca, per ogni immagine scelta, il file di testo con lo STESSO nome che sta
+    //           accanto ad essa sul disco (foto.jpg -> foto.txt) e lo trasforma in un file
+    //           leggibile dall'import. Se non c'e' (o siamo nel browser, senza Electron)
+    //           torna una lista vuota: le immagini si caricano semplicemente senza tag.
+    // ENGLISH: For each picked image, look for the same-named text file sitting next to it on
+    //          disk (photo.jpg -> photo.txt) and turn it into a file the import can read. If
+    //          missing (or we are in the browser, without Electron) it returns an empty list:
+    //          the images simply load without tags.
+    const loadSidecarTxtFiles = async (imgFiles: any[]): Promise<{ txtFiles: any[]; folderOf: Map<any, any> | null }> => {
+        const vuoto = { txtFiles: [], folderOf: null };
+        const api = (window as any).electronAPI;
+        if (!api || typeof api.getPathForFile !== 'function' || typeof api.readSidecarTags !== 'function') return vuoto;
+        try {
+            // ITALIANO: la cartella di ogni file (immagine o .txt) e' una STRINGA, ricavata dal
+            //           percorso reale. Serve SOLO per abbinare testo e immagine giusti: due foto
+            //           con lo stesso nome in cartelle diverse restano separate. Non e' un handle,
+            //           quindi non diventa mai destinazione di salvataggio (asDirHandle la scarta).
+            // ENGLISH: each file's folder (image or .txt) is a STRING, taken from the real path.
+            //          Used ONLY to pair the right text with the right image: two same-named photos
+            //          in different folders stay separate. It is not a handle, so it never becomes a
+            //          save target (asDirHandle rejects it).
+            const dirOfPath = (p: string): string => {
+                const cut = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+                return cut > 0 ? p.slice(0, cut) : '';
+            };
+            const folderOf = new Map<any, any>();
+            const paths: string[] = [];
+            for (const f of imgFiles) {
+                const p = api.getPathForFile(f);
+                if (p) { paths.push(p); folderOf.set(f, dirOfPath(p)); }
+            }
+            if (paths.length === 0) return vuoto;
+            const sidecars = await api.readSidecarTags(paths);
+            const txtFiles = (sidecars || []).map((s: any) => {
+                const file = new File([s.content], s.name, { type: 'text/plain' });
+                folderOf.set(file, typeof s.dir === 'string' ? s.dir : '');
+                return file;
+            });
+            return { txtFiles, folderOf };
+        } catch (err) {
+            console.warn('[Import] Tag .txt abbinati non leggibili, carico solo le immagini:', err);
+            return vuoto;
+        }
+    };
+
+    const handleImagesUpload = async (e: any) => {
+        const files = Array.from(e.target.files as FileList);
+        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
+        // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
+        // ENGLISH: .txt files are not picked by hand: I find them next to the images
+        const { txtFiles, folderOf } = await loadSidecarTxtFiles(imgFiles);
+        calculateImportSummary(imgFiles, txtFiles, null, folderOf);
+        if (imagesInputRef.current) imagesInputRef.current.value = '';
+    };
+
+    // ITALIANO: TRASCINAMENTO (drag & drop) di immagini nell'app. Il .txt gemello viene riconosciuto
+    //           da solo: sia se trascinato ASSIEME all'immagine, sia se semplicemente PRESENTE nella
+    //           stessa cartella su disco — perche' loadSidecarTxtFiles legge il file con lo stesso
+    //           nome accanto a ciascuna immagine (via percorso Electron). Nel browser (senza Electron,
+    //           niente accesso al disco) uso i .txt effettivamente trascinati, abbinati per nome.
+    // ENGLISH: DRAG & DROP of images into the app. The sidecar .txt is recognized automatically:
+    //          whether dragged TOGETHER with the image or simply PRESENT in the same folder on disk —
+    //          because loadSidecarTxtFiles reads the same-named file next to each image (via the
+    //          Electron path). In the browser (no Electron, no disk access) I use the .txt files
+    //          actually dropped, paired by name.
+    const handleDroppedFiles = useCallback(async (fileList: FileList) => {
+        const files = Array.from(fileList || []);
+        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imgFiles.length === 0) { showNotification(t.dropOnlyImages, 'info'); return; }
+        const droppedTxt = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
+        const { txtFiles: diskTxt, folderOf } = await loadSidecarTxtFiles(imgFiles);
+        if (diskTxt.length > 0) {
+            calculateImportSummary(imgFiles, diskTxt, null, folderOf);
+        } else {
+            // ITALIANO: niente sidecar dal disco (browser o nessun .txt accanto): uso quelli trascinati.
+            // ENGLISH: no disk sidecars (browser or no adjacent .txt): use the dropped ones.
+            calculateImportSummary(imgFiles, droppedTxt, null, null);
+        }
+    }, [t]);
+    // ITALIANO: riferimento SEMPRE aggiornato al gestore, cosi' i listener globali (sotto) restano
+    //           registrati una volta sola ma chiamano sempre la versione corrente.
+    // ENGLISH: an always-current ref to the handler, so the global listeners (below) subscribe once
+    //          but always call the latest version.
+    const dropHandlerRef = useRef(handleDroppedFiles);
+    dropHandlerRef.current = handleDroppedFiles;
+
+    // ITALIANO: gestione GLOBALE del trascinamento file. I due preventDefault sono FONDAMENTALI:
+    //           senza di essi il rilascio di un file farebbe "navigare" la finestra al file (in
+    //           passato questo rompeva l'app). Il contatore dragDepth evita che passare sopra un
+    //           elemento figlio spenga l'area di rilascio. Rilasciando, importo i file trascinati.
+    // ENGLISH: GLOBAL drag & drop handling. The two preventDefault calls are ESSENTIAL: without them
+    //          dropping a file would make the window "navigate" to it (this used to break the app).
+    //          The dragDepth counter prevents moving over a child element from turning the overlay
+    //          off. On drop, I import the dropped files.
+    useEffect(() => {
+        let dragDepth = 0;
+        const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+        const onDragEnter = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; setIsDragging(true); };
+        const onDragOver = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); };
+        const onDragLeave = (e: DragEvent) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (dragDepth === 0) setIsDragging(false); };
+        const onDrop = (e: DragEvent) => {
+            e.preventDefault();
+            dragDepth = 0;
+            setIsDragging(false);
+            const dt = e.dataTransfer;
+            if (dt && dt.files && dt.files.length > 0) dropHandlerRef.current(dt.files);
+        };
+        window.addEventListener('dragenter', onDragEnter);
+        window.addEventListener('dragover', onDragOver);
+        window.addEventListener('dragleave', onDragLeave);
+        window.addEventListener('drop', onDrop);
+        return () => {
+            window.removeEventListener('dragenter', onDragEnter);
+            window.removeEventListener('dragover', onDragOver);
+            window.removeEventListener('dragleave', onDragLeave);
+            window.removeEventListener('drop', onDrop);
+        };
+    }, []);
+
+    // ITALIANO: se l'immagine APERTA nel visualizzatore viene modificata ESTERNAMENTE su disco (es.
+    //           ritoccata in un altro programma), quando si torna sull'app (focus finestra) la
+    //           ri-leggo dal disco e, se e' cambiata (data di modifica piu' recente), aggiorno
+    //           anteprima e immagine piena. Funziona per le foto aperte da CARTELLA (che portano il
+    //           loro handle scrivibile); il Lightbox rigenera l'immagine perche' dipende da file.
+    // ENGLISH: if the image OPEN in the viewer is changed EXTERNALLY on disk (e.g. retouched in
+    //          another app), when the user returns to the app (window focus) I re-read it from disk
+    //          and, if it changed (newer modified time), refresh the thumbnail and the full image.
+    //          Works for photos opened from a FOLDER (which carry their writable handle); the Lightbox
+    //          regenerates the image because it depends on file.
+    // ITALIANO: "sto gia' ricontrollando": tornando sull'app due volte di fila (alt-tab veloce) il
+    //           secondo controllo partiva mentre il primo stava ancora leggendo il file, entrambi
+    //           vedevano la foto vecchia e la ricaricavano — avviso doppio e anteprima generata due
+    //           volte per niente. Con questa guardia il secondo controllo aspetta il suo turno.
+    // ENGLISH: "already re-checking": returning to the app twice in a row (fast alt-tab) started the
+    //          second check while the first was still reading the file, both saw the old photo and
+    //          reloaded it — duplicate notification and a thumbnail generated twice for nothing.
+    //          With this guard the second check simply skips.
+    const reloadingRef = useRef(false);
+
+    useEffect(() => {
+        const ricontrolla = async () => {
+            const id = selectedImageId;
+            if (!id) return;
+            if (reloadingRef.current) return;
+            const img = imagesRef.current.find(i => i.id === id);
+            if (!img || !img.dirHandle || typeof img.dirHandle.getFileHandle !== 'function') return;
+            reloadingRef.current = true;
+            try {
+                const fh = await img.dirHandle.getFileHandle(img.file.name);
+                const fresh = await fh.getFile();
+                if (fresh.lastModified > (img.file.lastModified || 0)) {
+                    let thumbData: any = null;
+                    try { thumbData = await generateThumbnail(fresh); } catch (_) { /* tengo la vecchia anteprima */ }
+                    // ITALIANO: NON revoco la vecchia anteprima (potrebbe essere nella cronologia annulla).
+                    // ENGLISH: do NOT revoke the old thumbnail (it may live in the undo history).
+                    // ITALIANO: questo ricarico NON e' un'azione dell'utente: non deve entrare nella
+                    //           cronologia. Prima ci finiva, e allora "Annulla" riportava la foto al
+                    //           file VECCHIO invece di annullare l'ultima modifica ai tag; peggio, un
+                    //           ricarico avvenuto in sottofondo cancellava i "Ripeti" in sospeso.
+                    // ENGLISH: this reload is NOT a user action: it must not enter the history. It used
+                    //          to, so "Undo" restored the OLD file instead of undoing the last tag edit;
+                    //          worse, a background reload discarded any pending "Redo" steps.
+                    isUndoRedoAction.current = true;
+                    setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
+                    showNotification(t.imageReloaded, 'info');
+                }
+            } catch (_) { /* file spostato/illeggibile: ignoro */ }
+            finally { reloadingRef.current = false; }
+        };
+        window.addEventListener('focus', ricontrolla);
+        return () => window.removeEventListener('focus', ricontrolla);
+    }, [selectedImageId, t]);
+
+    // ITALIANO: ESPORTA / IMPORTA i tag del progetto (punto 16). Il JSON serve a
+    //           reimportare tutto in modo pulito in un nuovo progetto; il TXT e' una
+    //           lista leggibile. L'import accetta entrambi e AGGIUNGE i tag alla palette
+    //           del progetto (senza doppioni).
+    // ENGLISH: EXPORT / IMPORT project tags (item 16). JSON re-imports cleanly into a
+    //          new project; TXT is a readable list. Import accepts both and ADDS the tags
+    //          to the project palette (no duplicates).
+    const projectTagsImportRef = useRef<HTMLInputElement>(null);
+
+    const downloadTextFile = (content: string, mime: string, fileName: string) => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        try {
+            const a = document.createElement('a');
+            a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        } finally { URL.revokeObjectURL(url); }
+    };
+
+    // ITALIANO: UN SOLO tasto Esporta. Il FORMATO (JSON o TXT) si sceglie nel menu a
+    //           tendina "Salva come" della finestra di salvataggio del sistema: scrivo il
+    //           contenuto in base all'estensione scelta. Se il browser non ha il selettore
+    //           di salvataggio, ripiego sul download in JSON.
+    // ENGLISH: A SINGLE Export button. The FORMAT (JSON or TXT) is chosen in the OS save
+    //          dialog's "Save as type" dropdown: I write the content based on the chosen
+    //          extension. If the browser lacks the save picker, fall back to a JSON download.
+    const handleExportProjectTags = async () => {
+        // ITALIANO: trigger prima, poi il resto in ordine alfabetico (coerente col resto dell'app)
+        // ENGLISH: triggers first, then the rest alphabetical (consistent with the rest of the app)
+        const orderedTags = [
+            ...globalTriggers.filter(tag => allUniqueTags.includes(tag)),
+            ...allUniqueTags.filter(tag => !globalTriggers.includes(tag))
+        ];
+        if (orderedTags.length === 0) { showNotification(t.noTagsInProject, 'info'); return; }
+        const jsonContent = () => JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: [...globalTriggers], tags: orderedTags }, null, 2);
+        const txtContent = () => orderedTags.join('\n') + '\n';
+
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await (window as any).showSaveFilePicker({
+                    id: 'itm-tags-export',
+                    suggestedName: 'project-tags.json',
+                    types: [
+                        { description: t.exportFmtJson, accept: { 'application/json': ['.json'] } },
+                        { description: t.exportFmtTxt, accept: { 'text/plain': ['.txt'] } },
+                    ],
+                });
+                const isTxt = String(handle.name || '').toLowerCase().endsWith('.txt');
+                const writable = await handle.createWritable();
+                await writable.write(isTxt ? txtContent() : jsonContent());
+                await writable.close();
+                soundManager.chime();
+                showNotification(t.projectTagsExported, 'success');
+            } catch (err: any) {
+                if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.importTagsError, 'error'); }
+            }
+            return;
+        }
+        // ITALIANO: riserva per browser senza selettore di salvataggio: scarica in JSON.
+        // ENGLISH: fallback for browsers without the save picker: download as JSON.
+        downloadTextFile(jsonContent(), 'application/json', 'project-tags.json');
+        soundManager.chime();
+        showNotification(t.projectTagsExported, 'success');
+    };
+
+    const handleImportProjectTags = async (e: any) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            // ITALIANO: stessi limiti di prudenza dei sidecar: un file legittimo di tag pesa pochi KB.
+            //           Oltre 1 MB e' sospetto (JSON gigante/ostile) e potrebbe bloccare l'app: lo
+            //           rifiuto. Poi limito lunghezza e numero dei tag, come nell'import delle foto.
+            // ENGLISH: same safety caps as the sidecars: a legit tag file weighs a few KB. Over 1 MB is
+            //          suspicious (huge/hostile JSON) and could freeze the app: reject it. Then clamp
+            //          each tag's length and the total count, like the photo import does.
+            if (file.size > 1024 * 1024) { showNotification(t.importTagsError, 'error'); return; }
+            const text = (await file.text()).trim();
+            let tags: string[] = [];
+            let triggers: string[] = [];
+            if (text.startsWith('{')) {
+                const data = JSON.parse(text);
+                if (Array.isArray(data.tags)) tags = data.tags;
+                if (Array.isArray(data.globalTriggers)) triggers = data.globalTriggers;
+            } else {
+                // ITALIANO: TXT: un tag per riga (accetto anche le virgole come separatore).
+                // ENGLISH: TXT: one tag per line (commas are also accepted as separators).
+                tags = text.split(/[\r\n,]+/);
+            }
+            // ITALIANO: i trigger del file entrano comunque nella palette del progetto. Ogni tag e'
+            //           ripulito dai caratteri di controllo, tagliato a 100 caratteri, e in tutto se
+            //           ne tengono al massimo 5000.
+            // ENGLISH: the file's triggers also go into the project palette. Each tag is stripped of
+            //          control chars, clamped to 100 chars, and at most 5000 are kept in total.
+            const clean = [...new Set(
+                [...tags, ...triggers]
+                    .map((s: any) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, 100))
+                    .filter(Boolean)
+            )].slice(0, 5000);
+            if (clean.length === 0) { showNotification(t.importTagsError, 'error'); return; }
+            setCustomProjectTags(prev => [...new Set([...prev, ...clean])]);
+            soundManager.chime();
+            showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
+        } catch (err) {
+            showNotification(t.importTagsError, 'error');
+        } finally {
+            if (projectTagsImportRef.current) projectTagsImportRef.current.value = '';
+        }
     };
 
     const handleResetProject = () => {
@@ -642,187 +1573,470 @@ export default function App() {
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
             try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+            releaseThumbnails(images);
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
+            setHistory([]); setHistoryIndex(-1);
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
     };
 
     // Helper function to order tags with global triggers first
+    // ITALIANO: Ordine con cui i tag finiscono nel file .txt: prima le trigger word (nell'ordine
+    //           scelto dall'utente, convenzione LoRA), poi TUTTI GLI ALTRI IN ORDINE ALFABETICO.
+    //           L'ordinamento alfabetico mancava qui mentre il visualizzatore lo applicava: la
+    //           stessa foto produceva due file diversi a seconda del tasto usato per salvarla.
+    // ENGLISH: The order tags are written into the .txt: trigger words first (in the user's chosen
+    //          order, LoRA convention), then EVERYTHING ELSE ALPHABETICALLY. The alphabetical sort
+    //          was missing here while the lightbox applied it, so the same photo produced two
+    //          different files depending on which save button was used.
     const getOrderedTagString = (tags: string[]) => {
         const orderedTags = [
             ...globalTriggers.filter(t => tags.includes(t)),
-            ...tags.filter(t => !globalTriggers.includes(t))
+            ...tags.filter(t => !globalTriggers.includes(t)).sort((a, b) => a.localeCompare(b))
         ];
         return orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
     };
 
     // ITALIANO: Funzione per salvare i file (sovrascrive o crea ZIP)
     // ENGLISH: Function to save files (overwrite or create ZIP)
-    const performSave = async (imagesToSave: any[], isExportAll = false) => {
-        // ITALIANO: Se abbiamo un riferimento alla cartella e stiamo salvando le modifiche (non esportando tutto), sovrascriviamo i file originali
-        // ENGLISH: If we have a folder handle and we are saving changes (not exporting all), overwrite original files
-        if (dirHandle && !saveAsZip && !isExportAll) {
-            try {
+    // ITALIANO: Torna TRUE se il salvataggio e' andato a buon fine, FALSE se e' fallito o
+    //           e' stato annullato. Serve a "Salva e chiudi": se il salvataggio non riesce
+    //           il progetto NON deve essere chiuso, altrimenti i tag andrebbero persi.
+    // ENGLISH: Returns TRUE when the save succeeded, FALSE when it failed or was aborted.
+    //          Needed by "Save and close": if saving fails the project must NOT be closed,
+    //          otherwise the tags would be lost.
+    const performSave = async (imagesToSave: any[]): Promise<boolean> => {
+        // ITALIANO: Ogni immagine viene riscritta nella SUA cartella (img.dirHandle), non in una
+        //           cartella globale: con due cartelle aperte insieme i tag finivano nel posto
+        //           sbagliato. Le immagini senza cartella (caricate come file singoli) proseguono
+        //           verso il salvataggio di emergenza (download).
+        // ENGLISH: Each image is written back into ITS OWN folder (img.dirHandle), not a single
+        //          global one: with two folders open at once the tags ended up in the wrong place.
+        //          Images with no folder (loaded as individual files) fall through to the download
+        //          fallback below.
+        const withFolder = imagesToSave.filter(img => img.dirHandle);
+        const withoutFolder = imagesToSave.filter(img => !img.dirHandle);
+        const savedIds = new Set<string>();
+        const failedNames: string[] = [];
+        const total = imagesToSave.length;
+        let done = 0;
+        const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, Math.round((done / total) * 100))); };
+
+        if (total > 0) { setIsSaving(true); setImportProgress(0); }
+        try {
+            // ITALIANO: 1) Immagini con una cartella scrivibile: ognuna nel SUO handle di cartella.
+            //           Ogni file ha il PROPRIO try/catch: una foto che fallisce (bloccata, permessi,
+            //           disco pieno) NON ferma le altre. Prima al primo errore si interrompeva tutto,
+            //           le foto gia' scritte non risultavano salvate e le successive non erano tentate.
+            // ENGLISH: 1) Images with a writable folder: each into ITS OWN folder handle. Every file
+            //          has its OWN try/catch: one failing photo (locked, permissions, disk full) does
+            //          NOT stop the others. It used to abort at the first error, leaving already-written
+            //          photos unmarked and the rest never attempted.
+            if (withFolder.length > 0) {
                 showNotification(t.processingFiles, "info");
-                for (const img of imagesToSave) {
-                    const tagString = getOrderedTagString(img.tags);
-                    const fileName = buildTagFileName(img.file.name);
-
-                    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(tagString);
-                    await writable.close();
-                }
-                
-                setImages(prev => prev.map(img => {
-                    if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
-                    return img;
-                }));
-                
-                soundManager.chime();
-                showNotification(t.successSaveChanges, "success");
-            } catch (err) {
-                console.error(err);
-                showNotification(t.dirError, "error");
-            }
-            return; 
-        }
-
-        // ITALIANO: Se l'utente vuole esportare in una cartella specifica (non quella originale)
-        // ENGLISH: If the user wants to export to a specific folder (not the original one)
-        if (!saveAsZip && isExportAll) {
-            if ('showDirectoryPicker' in window) {
-                try {
-                    const exportHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
-                    showNotification(t.processingFiles, "info");
-                    
-                    for (const img of imagesToSave) {
+                for (const img of withFolder) {
+                    try {
                         const tagString = getOrderedTagString(img.tags);
                         const fileName = buildTagFileName(img.file.name);
-
-                        const fileHandle = await exportHandle.getFileHandle(fileName, { create: true });
+                        const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
                         const writable = await fileHandle.createWritable();
                         await writable.write(tagString);
                         await writable.close();
+                        savedIds.add(img.id);
+                    } catch (err) {
+                        console.error('[Salvataggio] impossibile scrivere', img.file.name, err);
+                        failedNames.push(img.file.name);
                     }
-                    
-                    soundManager.chime();
-                    showNotification(t.exportFolderSuccess, "success");
-                    return;
-                } catch (err: any) {
-                    if (err.name !== 'AbortError') {
-                        console.error(err);
-                        showNotification(t.exportFolderError, "error");
-                    }
-                    return;
+                    bump();
                 }
             }
-        }
 
-        // ITALIANO: Se vogliamo salvare come archivio ZIP
-        // ENGLISH: If we want to save as a ZIP archive
-        if (saveAsZip) {
-            try {
-                showNotification(t.zipProcessing, "info");
-                const zip = new JSZip();
-                
-                imagesToSave.forEach((img) => {
-                    const tagString = getOrderedTagString(img.tags);
-                    // ITALIANO: Nome sanitizzato per prevenire zip-slip e caratteri illegali su Windows
-                    // ENGLISH: Sanitized name to prevent zip-slip and illegal Windows characters
-                    zip.file(buildTagFileName(img.file.name), tagString);
-                });
-                
-                const blob = await zip.generateAsync({ type: "blob" });
-                const url = URL.createObjectURL(blob);
+            // ITALIANO: 2) Immagini senza cartella (caricate con "Carica immagini"): in Electron scrivo
+            //           il .txt SUL POSTO accanto all'immagine vera, con esito REALE per ogni file.
+            //           Prima degradavano a un download del browser che in Electron apre una finestra
+            //           "Salva con nome" annullabile, ma la funzione dava per "salvato" senza sapere se
+            //           il file fosse stato scritto: annullare bastava a perdere i tag (e "Salva e
+            //           chiudi" cancellava il backup). Ora l'esito e' vero.
+            // ENGLISH: 2) Images without a folder (loaded via "Load images"): in Electron write the
+            //          .txt IN PLACE next to the real image, with a REAL per-file outcome. They used to
+            //          degrade to a browser download which in Electron pops a cancellable "Save as"
+            //          dialog, yet the function reported "saved" without knowing whether the file was
+            //          written: cancelling was enough to lose the tags (and "Save and close" cleared the
+            //          backup). Now the outcome is real.
+            const api = (window as any).electronAPI;
+            let remaining = withoutFolder;
+            if (remaining.length > 0 && api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
+                showNotification(t.processingFiles, "info");
+                const items = remaining.map(img => ({ imagePath: api.getPathForFile(img.file) || '', content: getOrderedTagString(img.tags) }));
                 try {
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = isExportAll ? "tags_tutti.zip" : "tags_modificati.zip";
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                } finally {
-                    URL.revokeObjectURL(url);
+                    const res = await api.writeSidecarTags(items);
+                    const flags: boolean[] = Array.isArray(res && res.results) ? res.results : [];
+                    remaining.forEach((img, i) => { if (flags[i]) savedIds.add(img.id); else failedNames.push(img.file.name); });
+                } catch (err) {
+                    console.error('[Salvataggio] scrittura sidecar fallita', err);
+                    remaining.forEach(img => failedNames.push(img.file.name));
                 }
-                
-                setImages(prev => prev.map(img => {
-                    if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
-                    return img;
-                }));
-                
-                soundManager.chime();
-                showNotification(t.zipSuccess, "success");
-            } catch (err) {
-                console.error(err);
-                showNotification(t.zipError, "error");
+                bump(remaining.length);
+                remaining = [];
             }
-            return;
+
+            // ITALIANO: 3) Vero ripiego BROWSER (fuori da Electron): un download e' un'ESPORTAZIONE, non
+            //           un salvataggio verificato. NON le segno come salvate (originalTags resta) e le
+            //           conto come NON riuscite, cosi' "Salva e chiudi" non chiude e non cancella il
+            //           backup su file che potrebbero non essere mai stati scritti.
+            // ENGLISH: 3) True BROWSER fallback (outside Electron): a download is an EXPORT, not a
+            //          verified save. I do NOT mark them saved (originalTags stays) and count them as
+            //          NOT succeeded, so "Save and close" won't close nor clear the backup on files that
+            //          may never have been written.
+            if (remaining.length > 0) {
+                showNotification(t.infoSaveFallback, "info");
+                for (const img of remaining) {
+                    const tagString = getOrderedTagString(img.tags);
+                    const blob = new Blob([tagString], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    try {
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = buildTagFileName(img.file.name);
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    } finally {
+                        URL.revokeObjectURL(url);
+                    }
+                    bump();
+                    // ITALIANO: respiro fra un download e l'altro, il browser non li accetta a raffica
+                    // ENGLISH: breathing room between downloads, the browser rejects rapid-fire ones
+                    await new Promise(r => setTimeout(r, 300));
+                }
+                remaining.forEach(img => failedNames.push(img.file.name));
+                remaining = [];
+            }
+        } finally {
+            setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
         }
 
-        // ITALIANO: Metodo di salvataggio di emergenza (download multipli nel browser)
-        // ENGLISH: Fallback save method (multiple downloads in the browser)
-        showNotification(t.infoSaveFallback, "info");
-        imagesToSave.forEach((img, i) => setTimeout(() => {
-            const tagString = getOrderedTagString(img.tags);
-            const blob = new Blob([tagString], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            try {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = buildTagFileName(img.file.name);
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            } finally {
-                URL.revokeObjectURL(url);
-            }
-        }, i * 300));
-        
-        setImages(prev => prev.map(img => {
-            if (imagesToSave.some(savedImg => savedImg.id === img.id)) return { ...img, originalTags: [...img.tags] };
-            return img;
-        }));
-        
-        soundManager.chime();
-        showNotification(isExportAll ? t.successSave : t.successSaveChanges, "success");
+        // ITALIANO: segno come salvati SOLO i file davvero scritti, coi tag dello SNAPSHOT (non quelli
+        //           attuali): un tag aggiunto durante il salvataggio non risulta gia' salvato.
+        // ENGLISH: mark as saved ONLY the files really written, with the SNAPSHOT tags (not the live
+        //          ones): a tag added while saving is not counted as already saved.
+        if (savedIds.size > 0) {
+            setImages(prev => prev.map(img => {
+                if (!savedIds.has(img.id)) return img;
+                const snap = imagesToSave.find(s => s.id === img.id);
+                return snap ? { ...img, originalTags: [...snap.tags] } : img;
+            }));
+        }
+
+        if (failedNames.length === 0) {
+            soundManager.chime();
+            showNotification(t.successSaveChanges, "success");
+            return true;
+        }
+        // ITALIANO: qualcosa non e' stato salvato: dico quante si e quante no (coi primi nomi) e torno
+        //           FALSE, cosi' "Salva e chiudi" NON chiude e NON cancella il backup anti-crash.
+        // ENGLISH: something was not saved: report how many did and did not (with the first names) and
+        //          return FALSE, so "Save and close" does NOT close nor clear the crash backup.
+        const primi = failedNames.slice(0, 3).join(', ') + (failedNames.length > 3 ? '…' : '');
+        showNotification(`${t.savePartial} ${savedIds.size}/${total} — ${t.saveFailedList}: ${primi}`, "error");
+        return false;
     };
 
     // ITALIANO: Salva solo le immagini che hanno subito modifiche
     // ENGLISH: Save only the images that have undergone changes
-    const handleSaveChanges = () => {
-        const modifiedImages = images.filter(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
-        if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return; }
-        performSave(modifiedImages, false);
+    // ITALIANO: Torna TRUE se non c'era nulla da salvare o se il salvataggio e' riuscito.
+    // ENGLISH: Returns TRUE when there was nothing to save or the save succeeded.
+    const handleSaveChanges = async (): Promise<boolean> => {
+        // ITALIANO: NON salvo le foto nel cestino: i loro .txt non vanno scritti su disco (l'utente le
+        //           ha escluse dal dataset). Salvo solo le foto attive con modifiche.
+        // ENGLISH: do NOT save trashed photos: their .txt must not be written to disk (the user
+        //          excluded them from the dataset). Save only active photos with changes.
+        const modifiedImages = images.filter(img => !img.isTrashed && JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
+        return performSave(modifiedImages);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
     // ENGLISH: Export tags for all images in the project
+    // ITALIANO: Crea un unico .zip con un .txt per immagine. La barra di avanzamento segue la
+    //           compressione, cosi' su dataset grandi si vede che il programma sta lavorando.
+    // ENGLISH: Builds a single .zip holding one .txt per image. The progress bar follows the
+    //          compression, so on large datasets it is visible that the app is working.
+    const exportAllAsZip = async (imagesToExport: any[]): Promise<boolean> => {
+        setIsSaving(true); setImportProgress(0);
+        try {
+            showNotification(t.zipProcessing, "info");
+            const zip = new JSZip();
+            // ITALIANO: due foto con lo STESSO nome in sottocartelle diverse (tipico dei dataset LoRA:
+            //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e JSZip
+            //           SOVRASCRIVE l'omonimo: uno dei due .txt spariva in silenzio. Ora, se il nome e'
+            //           gia' occupato, distinguo il file con la sua sottocartella (es. "10_viso/img.txt")
+            //           o, se serve, con un suffisso numerico; nessun .txt viene piu' perso, e avviso.
+            // ENGLISH: two photos with the SAME name in different subfolders (typical LoRA layout:
+            //          10_face\img.png and 20_body\img.png) produced the same archive entry name, and
+            //          JSZip OVERWRITES a same-named entry: one of the two .txt vanished silently. Now,
+            //          if the name is already taken, I disambiguate the file with its subfolder (e.g.
+            //          "10_face/img.txt") or, if needed, a numeric suffix; no .txt is lost, and I warn.
+            const usedNames = new Set<string>();
+            let collisionCount = 0;
+            imagesToExport.forEach((img) => {
+                const baseName = buildTagFileName(img.file.name);
+                let name = baseName;
+                if (usedNames.has(name)) {
+                    collisionCount++;
+                    const dir = (img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
+                    if (dir && !usedNames.has(`${dir}/${baseName}`)) {
+                        name = `${dir}/${baseName}`;
+                    } else {
+                        const dot = baseName.lastIndexOf('.');
+                        const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
+                        const ext = dot > 0 ? baseName.slice(dot) : '';
+                        let n = 2;
+                        while (usedNames.has(`${stem} (${n})${ext}`)) n++;
+                        name = `${stem} (${n})${ext}`;
+                    }
+                }
+                usedNames.add(name);
+                zip.file(name, getOrderedTagString(img.tags));
+            });
+            const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
+                setImportProgress(Math.round(metadata.percent));
+            });
+            const url = URL.createObjectURL(blob);
+            try {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "tags_all.zip";
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+            soundManager.chime();
+            // ITALIANO: se c'erano nomi doppi lo dico: i file sono TUTTI nell'archivio (rinominati),
+            //           cosi' l'utente sa perche' alcuni .txt hanno un nome diverso dalla loro foto.
+            // ENGLISH: if there were duplicate names I say so: all files ARE in the archive (renamed),
+            //          so the user knows why some .txt have a different name than their photo.
+            if (collisionCount > 0) {
+                showNotification(`${t.zipSuccess} — ${collisionCount} ${t.zipNameCollisionWarn}`, "info");
+            } else {
+                showNotification(t.zipSuccess, "success");
+            }
+            return true;
+        } catch (err) {
+            console.error(err);
+            showNotification(t.zipError, "error");
+            return false;
+        } finally {
+            setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
+        }
+    };
+
+    // ITALIANO: "Esporta tutti" crea SEMPRE un unico archivio .zip (niente piu' file singoli).
+    // ENGLISH: "Export all" ALWAYS creates a single .zip archive (no more one-file-per-image).
     const handleExportAll = () => {
         const imagesWithTags = images.filter(img => img.tags && img.tags.length > 0);
-        
+
         if (imagesWithTags.length === 0) {
             return showNotification(t.errorNoTagsToExport, "info");
         }
-        
-        performSave(imagesWithTags, true);
+
+        exportAllAsZip(imagesWithTags);
     };
 
-    const updateImageTags = (id: string, newTags: string[]) => {
+    // ITALIANO: useCallback (dip. solo dalle trigger word): identita' stabile mentre si modificano i
+    //           tag, cosi' passandolo alle card della galleria non le fa ridisegnare tutte.
+    // ENGLISH: useCallback (deps only the trigger words): stable identity while editing tags, so
+    //          passing it to the gallery cards does not force them all to re-render.
+    const updateImageTags = useCallback((id: string, newTags: string[]) => {
         // ITALIANO: Deduplica alla fonte — incollando "sunset, sunset" o simili non si creano tag
         //           doppi (che finirebbero nel .txt esportato e darebbero due pillole con la stessa key React).
         // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
         //          (they would end up in the exported .txt and render two pills with the same React key).
         const uniqueTags = [...new Set(newTags)];
+        // ITALIANO: Ordine dei tag: prima le trigger word (nell'ordine impostato dall'utente,
+        //           convenzione LoRA), poi tutti gli altri in ORDINE ALFABETICO. Vale ovunque,
+        //           perche' questo e' l'unico punto in cui i tag di un'immagine vengono scritti.
+        // ENGLISH: Tag order: trigger words first (in the user's configured order, LoRA
+        //          convention), then everything else ALPHABETICALLY. Applies everywhere, since
+        //          this is the single place an image's tags are written.
         const orderedTags = [
-            ...globalTriggers.filter(t => uniqueTags.includes(t)),
-            ...uniqueTags.filter(t => !globalTriggers.includes(t))
+            ...globalTriggers.filter(tag => uniqueTags.includes(tag)),
+            ...uniqueTags.filter(tag => !globalTriggers.includes(tag)).sort((a, b) => a.localeCompare(b))
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
-    };
+    }, [globalTriggers]);
     const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
-    const toggleImageSelection = (id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
+    const toggleImageSelection = useCallback((id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]), []);
+
+    // ITALIANO: clic su una miniatura: se c'e' gia' una selezione multipla la aggiunge/toglie,
+    //           altrimenti apre la foto. Legge la selezione da un REF, cosi' resta stabile e non fa
+    //           ridisegnare tutte le card memorizzate ad ogni cambio di selezione.
+    // ENGLISH: click on a thumbnail: if a multi-selection is in progress add/remove it, otherwise
+    //          open the photo. Reads the selection from a REF, so it stays stable and does not force
+    //          every memoized card to re-render on each selection change.
+    const handleCardClick = useCallback((id: string) => {
+        if (selectedForBulkRef.current.length > 0) {
+            setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+            soundManager.click();
+        } else {
+            setSelectedImageId(id);
+        }
+    }, []);
+
+    // ITALIANO: Copia/incolla dei tag direttamente dalle MINIATURE (stesso "appunti"
+    //           del visualizzatore). Copia = mette i tag della foto negli appunti;
+    //           Incolla = li AGGIUNGE a un'altra foto senza doppioni.
+    // ENGLISH: Copy/paste tags straight from the THUMBNAILS (same clipboard as the
+    //          viewer). Copy = puts the photo's tags in the clipboard; Paste = ADDS
+    //          them to another photo without duplicates.
+    const handleCopyThumbTags = useCallback((img: any) => {
+        if (!img.tags || img.tags.length === 0) { showNotification(t.noTagsToCopy, 'info'); return; }
+        setCopiedTags([...img.tags]);
+        showNotification(`${t.tagsCopiedNotif} (${img.tags.length})`, 'success');
+        soundManager.click();
+    }, [t]);
+    const handlePasteThumbTags = useCallback((img: any) => {
+        if (!copiedTags || copiedTags.length === 0) return;
+        updateImageTags(img.id, [...new Set([...(img.tags || []), ...copiedTags])]);
+        showNotification(t.tagsPastedNotif, 'success');
+        soundManager.pop();
+    }, [copiedTags, updateImageTags, t]);
+
+    // ITALIANO: Seleziona TUTTE le foto visibili; se sono gia' tutte selezionate, le deseleziona.
+    //           Agisce SOLO sulle visibili: le eventuali selezioni nascoste dalla ricerca restano
+    //           intatte, esattamente come fa "Inverti selezione". Prima il tasto sostituiva l'intera
+    //           selezione (o la svuotava del tutto), quindi con un filtro attivo bastava un clic per
+    //           perdere senza preavviso decine di foto scelte a mano e non piu' visibili.
+    // ENGLISH: Select ALL visible photos; if they are all already selected, deselect them. It acts
+    //          ONLY on the visible ones: any selection hidden by the search stays untouched, exactly
+    //          like "Invert selection". The button used to replace the whole selection (or empty it),
+    //          so with a filter active one click silently dropped dozens of hand-picked photos that
+    //          were no longer visible.
+    const toggleSelectAll = () => {
+        const visibleIds = displayedImages.map(img => img.id);
+        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedForBulk.includes(id));
+        setSelectedForBulk(prev => {
+            const visibleSet = new Set(visibleIds);
+            const hiddenSelected = prev.filter(id => !visibleSet.has(id));
+            return allSelected ? hiddenSelected : [...hiddenSelected, ...visibleIds];
+        });
+        soundManager.pop();
+    };
+
+    // ITALIANO: INVERTE la selezione sulle immagini VISIBILI (quelle mostrate/filtrate): quelle
+    //           selezionate si deselezionano e viceversa. Utile dopo una ricerca per tag.
+    // ENGLISH: INVERTS the selection over the VISIBLE images (those shown/filtered): selected ones
+    //          get deselected and vice versa. Handy after a tag search.
+    const invertSelection = () => {
+        const visibleIds = displayedImages.map(img => img.id);
+        setSelectedForBulk(prev => {
+            const prevSet = new Set(prev);
+            // ITALIANO: tengo eventuali selezioni non visibili (fuori dal filtro) e inverto le visibili.
+            // ENGLISH: keep any non-visible selections (outside the filter) and invert the visible ones.
+            const hiddenSelected = prev.filter(id => !visibleIds.includes(id));
+            const invertedVisible = visibleIds.filter(id => !prevSet.has(id));
+            return [...hiddenSelected, ...invertedVisible];
+        });
+        soundManager.pop();
+    };
+
+    // ITALIANO: Chiude il PROGETTO ATTUALE: toglie tutte le foto E cancella tutti i tag,
+    //           riportando l'app come appena aperta. Se ci sono modifiche non salvate lo
+    //           segnala prima. Non tocca i file su disco (le foto e i .txt restano dove sono).
+    // ENGLISH: Closes the CURRENT PROJECT: removes all photos AND clears all tags, bringing
+    //          the app back to its just-opened state. Warns first if there are unsaved
+    //          changes. Does not touch files on disk (photos and .txt stay where they are).
+    // ITALIANO: Chiusura vera e propria. Separata perche' la usano entrambe le strade:
+    //           la conferma semplice (niente da salvare) e la finestra a tre scelte.
+    // ENGLISH: The actual close. Split out because both paths use it: the simple
+    //          confirmation (nothing to save) and the three-choice dialog.
+    const closeProjectNow = () => {
+        // ITALIANO: ferma un eventuale batch AI in corso, poi azzera TUTTO
+        // ENGLISH: stop any running AI batch, then clear EVERYTHING
+        aiCancelRequestedRef.current = true;
+        setAiCancelRequested(true);
+        aiAbortControllerRef.current?.abort();
+        try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+        // ITALIANO: libera le anteprime, altrimenti restano in memoria per tutta la sessione
+        //           (con 2000 foto sono centinaia di MB che non tornano piu' indietro).
+        // ENGLISH: free the thumbnails, otherwise they stay in memory for the whole session
+        //          (with 2000 photos that is hundreds of MB that never come back).
+        releaseThumbnails(images);
+        setImages([]);
+        setGlobalTriggers([]);
+        setSelectedForBulk([]);
+        setStagedBulkTags([]);
+        setCustomProjectTags([]);
+        setDirHandle(null);
+        setSelectedImageId(null);
+        setCopiedTags(null);
+        // ITALIANO: azzera anche la cronologia: senza questo, dopo aver chiuso il progetto un
+        //           Ctrl+Z riportava indietro tutte le foto ma ormai scollegate dalla cartella,
+        //           e i salvataggi successivi non toccavano piu' i file originali.
+        // ENGLISH: also clear the undo history: without this, after closing the project a Ctrl+Z
+        //          brought every photo back but detached from its folder, so later saves no longer
+        //          touched the original files.
+        setHistory([]);
+        setHistoryIndex(-1);
+        soundManager.chime();
+        showNotification(t.closeAllDone, 'success');
+    };
+
+    const handleCloseProject = () => {
+        if (images.length === 0) return;
+        const hasUnsaved = images.some(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+
+        // ITALIANO: Con modifiche non salvate si sceglie fra TRE strade: salvare e chiudere,
+        //           chiudere buttando via le modifiche, oppure annullare.
+        // ENGLISH: With unsaved changes the user picks between THREE paths: save and close,
+        //          close discarding the changes, or cancel.
+        if (hasUnsaved) {
+            setSaveCloseDialog({ isOpen: true, isSaving: false });
+            return;
+        }
+
+        // ITALIANO: Niente da salvare: basta la conferma semplice di sempre.
+        // ENGLISH: Nothing to save: the usual simple confirmation is enough.
+        setConfirmDialog({
+            isOpen: true,
+            title: t.closeAllTitle,
+            message: t.closeAllMsg,
+            onConfirm: () => {
+                closeProjectNow();
+                setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+            },
+            onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} })
+        });
+    };
+
+    // ITALIANO: Tasto VERDE "Salva e chiudi". Se il salvataggio fallisce (es. cartella non
+    //           piu' accessibile) il progetto NON viene chiuso e la finestra resta aperta,
+    //           cosi' non si perdono i tag: l'errore lo segnala gia' performSave.
+    // ENGLISH: GREEN "Save and close" button. If saving fails (e.g. folder no longer
+    //          reachable) the project is NOT closed and the dialog stays open, so no tags
+    //          are lost: performSave already reports the error.
+    const handleSaveAndCloseProject = async () => {
+        setSaveCloseDialog({ isOpen: true, isSaving: true });
+        let saved = false;
+        try {
+            saved = await handleSaveChanges();
+        } catch (err) {
+            // ITALIANO: senza questo, un errore imprevisto lasciava la finestra con i tre tasti
+            //           disabilitati per sempre, bloccando l'app sopra il progetto.
+            // ENGLISH: without this, an unexpected error left the dialog with all three buttons
+            //          disabled forever, freezing the app on top of the project.
+            console.error('[Chiudi progetto] salvataggio fallito:', err);
+            showNotification(t.errorSaveGen || t.dirError, 'error');
+            saved = false;
+        }
+        if (!saved) {
+            setSaveCloseDialog({ isOpen: true, isSaving: false });
+            return;
+        }
+        setSaveCloseDialog({ isOpen: false, isSaving: false });
+        closeProjectNow();
+    };
 
     // ITALIANO: Tagga la singola immagine via Gemini API
     // ENGLISH: Tag a single image via Gemini API
@@ -1072,26 +2286,42 @@ export default function App() {
     }, [tempApiKey, t]);
     
     const applyBulkTags = () => {
+        // ITALIANO: applico i tag SOLO alle foto selezionate e NON cestinate. La guardia !isTrashed
+        //           e' una seconda rete: anche se un id cestinato restasse per errore nella
+        //           selezione, non gli si scrivono tag (e quindi non finiscono nel suo .txt).
+        // ENGLISH: apply tags ONLY to selected and NON-trashed photos. The !isTrashed guard is a
+        //          safety net: even if a trashed id lingered in the selection, no tags are written
+        //          to it (so none reach its .txt).
+        const quante = images.filter(img => selectedForBulk.includes(img.id) && !img.isTrashed).length;
         setImages(prev => prev.map(img => {
-            if (selectedForBulk.includes(img.id)) {
+            if (selectedForBulk.includes(img.id) && !img.isTrashed) {
                 const combinedTags = [...new Set([...img.tags, ...stagedBulkTags])];
+                // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
+                // ENGLISH: same order as everywhere else: triggers first, then alphabetical
                 const orderedTags = [
                     ...globalTriggers.filter(t => combinedTags.includes(t)),
-                    ...combinedTags.filter(t => !globalTriggers.includes(t))
+                    ...combinedTags.filter(t => !globalTriggers.includes(t)).sort((a, b) => a.localeCompare(b))
                 ];
                 return { ...img, tags: orderedTags };
             }
             return img;
         }));
         soundManager.chime();
-        showNotification(`${t.added} ${stagedBulkTags.length} ${t.tagsTo} ${selectedForBulk.length} ${t.imagesLabel}!`, "success");
+        showNotification(`${t.added} ${stagedBulkTags.length} ${t.tagsTo} ${quante} ${t.imagesLabel}!`, "success");
         setStagedBulkTags([]);
-        setSelectedForBulk([]); 
+        // ITALIANO: finito il lavoro si deselezionano le immagini, e cosi' il pannello si chiude
+        //           da solo (compare solo quando c'e' almeno un'immagine selezionata). Prima
+        //           restava aperto con le foto ancora selezionate, e al clic successivo i tag
+        //           venivano riapplicati alle stesse immagini senza accorgersene.
+        // ENGLISH: once done the images are deselected, which closes the panel by itself (it only
+        //          shows while at least one image is selected). It used to stay open with the
+        //          photos still selected, so the next click silently re-applied tags to them.
+        setSelectedForBulk([]);
     };
 
-    const currentIndex = displayedImages.findIndex(img => img.id === selectedImageId);
-    const handleNext = () => { if (currentIndex < displayedImages.length - 1) { setSlideDirection('left'); setSelectedImageId(displayedImages[currentIndex + 1].id); } };
-    const handlePrev = () => { if (currentIndex > 0) { setSlideDirection('right'); setSelectedImageId(displayedImages[currentIndex - 1].id); } };
+    const currentIndex = lightboxImages.findIndex(img => img.id === selectedImageId);
+    const handleNext = () => { if (currentIndex < lightboxImages.length - 1) { setSlideDirection('left'); setSelectedImageId(lightboxImages[currentIndex + 1].id); } };
+    const handlePrev = () => { if (currentIndex > 0) { setSlideDirection('right'); setSelectedImageId(lightboxImages[currentIndex - 1].id); } };
 
     const handleGlobalTagsChange = (newGlobalTags: string[]) => {
         const added = newGlobalTags.filter(t => !globalTriggers.includes(t));
@@ -1127,46 +2357,169 @@ export default function App() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // ITALIANO: Quanto resta su la schermata di caricamento = il MAGGIORE fra due tempi:
+    //             - un minimo di 3 secondi, cosi' non lampeggia via quando l'app e' gia' pronta;
+    //             - il tempo che serve davvero a caricare, se e' piu' lungo.
+    //           Finche' l'app non e' pronta la barra si ferma al 95%: arriva al 100% solo quando
+    //           c'e' davvero tutto, cosi' non dice il falso.
+    //           Prima la barra avanzava a scatti casuali e spariva in poco piu' di un secondo,
+    //           senza alcun legame con il caricamento reale.
+    // ENGLISH: How long the loading screen stays = the LONGER of two times:
+    //            - a 3 second minimum, so it does not flash past when the app is already ready;
+    //            - the time loading actually takes, when that is longer.
+    //          Until the app is ready the bar stops at 95%: it only reaches 100% once everything
+    //          really is there, so it never tells a lie.
+    //          It used to advance in random jumps and vanish in barely over a second, with no
+    //          connection to the real loading at all.
+    const SPLASH_MIN_MS = 3000;
+    const appPronta = paginaCaricata && chiaveApiCaricata;
+    // ITALIANO: il momento di inizio sta in un ref, NON in una variabile dentro l'effetto. L'effetto
+    //           dipende da appPronta e quindi si ri-crea quando l'app diventa pronta: se il tempo di
+    //           inizio ripartiva da li', la barra tornava visibilmente a 0% e lo splash restava altri
+    //           3 secondi interi. Col ref l'inizio e' fissato una volta sola, al lancio.
+    // ENGLISH: the start time lives in a ref, NOT in a variable inside the effect. The effect depends
+    //          on appPronta and so re-creates when the app turns ready: if the start time restarted
+    //          there, the bar visibly fell back to 0% and the splash stayed a further full 3 seconds.
+    //          With the ref the start is fixed once, at launch.
+    const splashInizioRef = useRef<number | null>(null);
     useEffect(() => {
         if (!showSplash) return undefined;
-        let progress = 0;
+        // ITALIANO: al PRIMO avvio la scelta lingua (z sopra) copre il caricamento. Se il conto dei
+        //           3s partisse dal lancio, aspettando sul picker il caricamento finirebbe dietro e
+        //           non si vedrebbe piu'. Quindi finche' il picker e' aperto il caricamento resta in
+        //           attesa: il conto parte solo alla sua chiusura.
+        // ENGLISH: on FIRST launch the language picker (higher z) covers the splash. If the 3s count
+        //          started at launch, lingering on the picker would spend the splash behind it and it
+        //          would never show. So while the picker is open the splash waits: the count starts
+        //          only when the picker closes.
+        if (showLangPicker) return undefined;
+        if (splashInizioRef.current === null) splashInizioRef.current = Date.now();
         const interval = setInterval(() => {
-            progress += Math.random() * 15;
-            if (progress >= 100) {
-                progress = 100;
+            const trascorso = Date.now() - (splashInizioRef.current || Date.now());
+            const perTempo = Math.min(100, (trascorso / SPLASH_MIN_MS) * 100);
+            setSplashProgress(appPronta ? perTempo : Math.min(95, perTempo));
+            if (trascorso >= SPLASH_MIN_MS && appPronta) {
+                setSplashProgress(100);
                 clearInterval(interval);
-                setTimeout(() => setShowSplash(false), 500);
+                setShowSplash(false);
             }
-            setSplashProgress(progress);
-        }, 100);
+        }, 50);
         return () => clearInterval(interval);
-    }, [showSplash]);
+    }, [showSplash, appPronta, showLangPicker]);
 
     return (
         <div className={`h-screen transition-colors duration-500 overflow-hidden w-full ${isDarkMode ? 'dark' : ''}`}>
+            {/* ITALIANO: Scelta lingua al PRIMO avvio — sta sopra a tutto (anche allo splash).
+                          Usa i nomi nelle lingue native: niente immagini remote, funziona offline. */}
+            {/* ENGLISH: FIRST-run language picker — sits above everything (splash included).
+                         Uses native language names: no remote images, works offline. */}
+            {showLangPicker && (
+                <div className={`fixed inset-0 z-[10000] flex items-center justify-center p-6 transition-colors duration-500 ${isDarkMode ? 'bg-violet-950' : 'bg-violet-50'}`}>
+                    <div className={`relative w-full max-w-xl p-8 ${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl flex flex-col gap-7 animate-in fade-in zoom-in duration-500`}>
+                        <div className="flex flex-col items-center gap-3 text-center">
+                            <img src="./logo.png" alt="" className="w-16 h-16 object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                            <h1 className={`text-2xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'}`}>Images Tag Manager for LORAs</h1>
+                            <p className={`text-[10px] uppercase tracking-widest font-semibold ${isDarkMode ? 'text-violet-400' : 'text-violet-600'}`}>{tPending.langPickerTitle}</p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {APP_LANGUAGES.map((l) => (
+                                <button
+                                    key={l.code}
+                                    onClick={() => { setPendingLang(l.code); soundManager.pop(); }}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all active:scale-95 [will-change:transform] [backface-visibility:hidden] [transform:translateZ(0)] ${pendingLang === l.code
+                                        ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white border-transparent shadow-[0_0_16px_2px_rgba(139,92,246,0.45)] [mask-image:linear-gradient(to_right,transparent,black_1.5px,black_calc(100%-1.5px),transparent)]'
+                                        : (isDarkMode ? 'bg-violet-900/40 border-violet-800/50 text-gray-300 hover:bg-violet-800/50 hover:border-violet-500/50' : 'bg-white/70 border-gray-200 text-gray-700 hover:bg-violet-50 hover:border-violet-300')}`}
+                                >
+                                    <img src={flagUri(l.flag)} alt="" className="w-5 h-5 rounded-full object-cover shadow-sm shrink-0" />
+                                    <span className="truncate">{l.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                        {/* ITALIANO: Conferma esplicita — l'etichetta è già nella lingua selezionata.
+                            ENGLISH: Explicit confirmation — the label is already in the selected language. */}
+                        <button
+                            onClick={() => {
+                                setLang(pendingLang);
+                                try { localStorage.setItem('langChosen', '1'); } catch (_) { /* ignore */ }
+                                setShowLangPicker(false);
+                                soundManager.chime();
+                            }}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white font-bold shadow-lg transition-all active:scale-95"
+                        >
+                            <Check size={18} />
+                            {tPending.confirm}
+                        </button>
+                        <p className={`text-[11px] text-center ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {tPending.langPickerHint}
+                        </p>
+                    </div>
+                </div>
+            )}
+            {/* ITALIANO: Schermata di caricamento con la STESSA veste della scelta lingua: sfondo
+                          viola sfumato e finestra centrale sfocata con bordo e angoli tondi.
+                          Prima era una pagina piatta senza finestra. */}
+            {/* ENGLISH: Loading screen wearing the SAME look as the language picker: purple gradient
+                         background and a centred blurred card with border and rounded corners.
+                         It used to be a flat page with no card. */}
             {showSplash && (
-                <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-                    <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-700">
+                <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-6 transition-colors duration-500 ${isDarkMode ? 'bg-violet-950' : 'bg-violet-50'}`}>
+                    {/* ITALIANO: Riquadro sullo stile della schermata di avvio di Windows: tinta piena
+                                  in sfumatura, angoli da 16px e nessun bordo (il bordo si vedeva come
+                                  un filo chiaro). Tutta la tavolozza e' sul VIOLA: niente toni che
+                                  tirano all'azzurro. */}
+                    {/* ENGLISH: Card in the style of the Windows startup screen: a solid gradient, 16px
+                                 corners and no border (a border showed as a light hairline). The whole
+                                 palette stays VIOLET: no tones drifting towards light blue. */}
+                    <div className={`relative w-full max-w-xl p-10 overflow-hidden shadow-2xl rounded-2xl flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500 ${isDarkMode
+                        ? 'bg-gradient-to-br from-violet-950 to-violet-900'
+                        : 'bg-gradient-to-br from-white to-violet-50'}`}>
+                        {/* ITALIANO: il logo "respira" come nella schermata di Windows (vedi .logo-pulse) */}
+                        {/* ENGLISH: the logo "breathes" like on the Windows screen (see .logo-pulse) */}
                         <div className="relative flex items-center justify-center">
-                            <img src="./logo.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
-                            <div id="fallback-splash-logo" className={`p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-indigo-500/10 shadow-[0_0_40px_rgba(99,102,241,0.2)]' : 'bg-indigo-50 shadow-xl'}`}>
-                                <Tag size={80} className="text-indigo-500" strokeWidth={1.5} />
+                            <img src="./logo.png" alt="Logo" className="logo-pulse w-28 h-28 object-contain relative z-10" onError={(e) => { e.currentTarget.src = './icon.png'; e.currentTarget.onerror = (e2) => { const target = (e2 as Event).currentTarget as HTMLImageElement | null; if (target) target.style.display = 'none'; const fallback = document.getElementById('fallback-splash-logo'); if (fallback) fallback.classList.remove('hidden'); } }} />
+                            <div id="fallback-splash-logo" className={`logo-pulse p-6 rounded-3xl hidden relative z-10 ${isDarkMode ? 'bg-violet-500/10 shadow-[0_0_40px_rgba(139,92,246,0.25)]' : 'bg-violet-50 shadow-xl'}`}>
+                                <Tag size={72} className="text-violet-400" strokeWidth={1.5} />
                             </div>
                         </div>
                         <div className="text-center">
-                            <h1 className={`text-4xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            <h1 className={`text-3xl font-black tracking-tight bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-violet-300' : 'bg-gradient-to-r from-gray-900 to-violet-600'}`}>
                                 {t.appTitle}
                             </h1>
-                            <p className={`mt-2 text-sm font-medium tracking-widest uppercase ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                                AI Image Tagging
+                            {/* ITALIANO: niente sottotitolo "For LORAs": il titolo lo contiene gia'
+                                          ("Images Tag Manager for LORAs"), era scritto due volte. */}
+                            {/* ENGLISH: no "For LORAs" subtitle: the title already contains it
+                                         ("Images Tag Manager for LORAs"), it was written twice. */}
+                            <p className={`mt-3 text-xs font-semibold tracking-wide ${isDarkMode ? 'text-violet-300' : 'text-violet-500'}`}>
+                                v{appVersion}
                             </p>
                         </div>
-                        <div className="w-64 h-1.5 mt-8 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                            <div 
-                                className="h-full bg-indigo-500 transition-all duration-100 ease-out"
+                        <div className={`w-64 h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-violet-950' : 'bg-violet-100'}`}>
+                            <div
+                                className="h-full bg-violet-500 transition-all duration-100 ease-out"
                                 style={{ width: `${splashProgress}%` }}
                             />
                         </div>
+                        {/* ITALIANO: Il copyright sta in una fascia a se', attaccata al fondo della finestra:
+                                      i margini negativi la fanno arrivare fino ai bordi e gli angoli bassi
+                                      seguono quelli della finestra. Viola PIU' SCURO del riquadro, cosi' si
+                                      stacca senza introdurre azzurro. Apre il profilo GitHub. */}
+                        {/* ENGLISH: The copyright sits in its own strip welded to the bottom of the card:
+                                     negative margins carry it to the edges and its bottom corners follow the
+                                     card's. A DARKER violet than the card, so it separates without bringing
+                                     any light blue in. It opens the GitHub profile. */}
+                        <button
+                            onClick={() => {
+                                const api = (window as any).electronAPI;
+                                if (api && typeof api.openExternal === 'function') api.openExternal(GITHUB_PROFILE);
+                                else window.open(GITHUB_PROFILE, '_blank', 'noopener');
+                            }}
+                            title="github.com/xXIlRizzoXx"
+                            className={`self-stretch -mx-10 -mb-10 mt-2 px-10 py-3 rounded-b-2xl text-xs font-semibold tracking-wide transition-colors ${isDarkMode
+                                ? 'bg-violet-950 text-violet-200 hover:bg-violet-900 hover:text-white'
+                                : 'bg-violet-200 text-violet-900 hover:bg-violet-300'}`}
+                        >
+                            © xXIlRizzoXx
+                        </button>
                     </div>
                 </div>
             )}
@@ -1175,7 +2528,48 @@ export default function App() {
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            {/* ITALIANO: area di RILASCIO che appare mentre si trascinano file sopra la finestra. */}
+            {/* ENGLISH: DROP overlay shown while files are dragged over the window. */}
+            {isDragging && (
+                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-indigo-950/70 backdrop-blur-sm pointer-events-none animate-in fade-in">
+                    <div className="flex flex-col items-center gap-4 px-12 py-10 rounded-3xl border-4 border-dashed border-indigo-400 bg-indigo-900/40 shadow-2xl">
+                        <ImageIcon size={56} className="text-indigo-300" />
+                        <p className="text-xl font-bold text-white">{t.dropImagesHere}</p>
+                        <p className="text-sm text-indigo-200">{t.dropReleaseHint}</p>
+                    </div>
+                </div>
+            )}
+
+            <TagFileEditor
+                isOpen={isTagEditorOpen}
+                onClose={() => setIsTagEditorOpen(false)}
+                t={t}
+                isDarkMode={isDarkMode}
+                lang={lang}
+                showNotification={showNotification}
+                onFileSaved={handleTagEditorSaved}
+                projectTags={allUniqueTags}
+                onImportTagsToProject={(tagsFromEditor: string[]) => {
+                    // ITALIANO: i tag aperti/importati nell'editor entrano anche nella palette del
+                    //           progetto (riquadro di selezione in blocco), senza doppioni.
+                    // ENGLISH: tags opened/imported in the editor also enter the project palette
+                    //          (bulk-selection panel), without duplicates.
+                    const puliti = [...new Set(tagsFromEditor.map(s => String(s).trim()).filter(Boolean))];
+                    if (puliti.length > 0) setCustomProjectTags(prev => [...new Set([...prev, ...puliti])]);
+                }}
+            />
+            <SaveBeforeCloseDialog
+                isOpen={saveCloseDialog.isOpen}
+                isSaving={saveCloseDialog.isSaving}
+                title={t.closeAllTitle}
+                message={t.closeAllUnsavedMsg}
+                onSave={handleSaveAndCloseProject}
+                onDiscard={() => { setSaveCloseDialog({ isOpen: false, isSaving: false }); closeProjectNow(); }}
+                onCancel={() => setSaveCloseDialog({ isOpen: false, isSaving: false })}
+                t={t}
+                isDarkMode={isDarkMode}
+            />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -1235,6 +2629,11 @@ export default function App() {
             )}
 
             <input type="file" {...{webkitdirectory: "true", directory: "true"} as any} multiple ref={folderInputRef} className="hidden" onChange={handleFolderUploadFallback} />
+            {/* ITALIANO: Selettore per singole immagini + relativi .txt (punto 12) */}
+            {/* ENGLISH: Picker for individual images + their .txt files (item 12) */}
+            {/* ITALIANO: accept solo immagini = nel selettore i file di testo NON si vedono */}
+            {/* ENGLISH: images-only accept = text files are NOT shown in the picker */}
+            <input type="file" accept="image/*" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
             
             {isTrashOpen && (
                 <div className={`fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
@@ -1343,7 +2742,7 @@ export default function App() {
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                                        <TagInput tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} isDarkMode={isDarkMode} />
+                                                        <TagInput lang={lang} tags={img.tags} setTags={() => {}} placeholder="" maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} readOnly={true} isDarkMode={isDarkMode} />
                                                     </div>
                                                 </div>
                                             </div>
@@ -1359,7 +2758,7 @@ export default function App() {
             {selectedImageId && (
                 <Lightbox
                     globalTriggers={globalTriggers}
-                    image={displayedImages.find(img => img.id === selectedImageId)}
+                    image={lightboxImages.find(img => img.id === selectedImageId)}
                     onClose={() => setSelectedImageId(null)}
                     updateTags={updateImageTags}
                     allTags={allUniqueTags}
@@ -1367,14 +2766,18 @@ export default function App() {
                     t={t}
                     onNext={handleNext}
                     onPrev={handlePrev}
-                    hasNext={(displayedImages.length - 1) > currentIndex}
+                    hasNext={(lightboxImages.length - 1) > currentIndex}
                     hasPrev={currentIndex > 0}
                     slideDirection={slideDirection}
                     showNotification={showNotification}
                     updateOriginalTags={updateOriginalTags}
-                    dirHandle={dirHandle}
+                    dirHandle={lightboxImages.find(img => img.id === selectedImageId)?.dirHandle || null}
                     isDarkMode={isDarkMode}
-                    onMoveToTrash={handleMoveToTrash}
+                    onMoveToTrash={handleTrashFromLightbox}
+                    imageIndex={currentIndex}
+                    imageCount={lightboxImages.length}
+                    copiedTags={copiedTags}
+                    onCopyTags={(tags: string[]) => { setCopiedTags([...tags]); showNotification(t.tagsCopiedNotif, 'success'); }}
                     lang={lang}
                     aiEnabled={aiEnabled}
                     aiBusy={isAIBusy}
@@ -1382,11 +2785,19 @@ export default function App() {
                 />
             )}
 
-            <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-gradient-to-br from-gray-900 via-purple-950 to-slate-900' : 'bg-gradient-to-br from-gray-100 via-indigo-50 to-white'}`}>
-                <div className={`absolute inset-0 opacity-20 ${isDarkMode ? 'bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.2)_0%,_transparent_100%)]' : 'bg-[radial-gradient(circle_at_50%_50%,_rgba(0,0,0,0.05)_0%,_transparent_100%)]'}`}></div>
-            </div>
+            {/* ITALIANO: sfondo generale dell'app: un unico viola pieno, uguale su tutti i lati.
+                          Prima era una sfumatura diagonale (grigio-osso a sinistra, slate-azzurro a
+                          destra) e ai margini dell'app si vedevano due lineette di colore diverso. */}
+            {/* ENGLISH: overall app background: a single solid violet, identical on every side. It
+                         used to be a diagonal gradient (bone-gray on the left, slate-blue on the
+                         right) and two differently-coloured lines showed in the app's margins. */}
+            <div className={`fixed inset-0 z-0 transition-colors duration-500 ${isDarkMode ? 'bg-violet-950' : 'bg-violet-50'}`}></div>
 
-            <div className="relative z-10 w-full px-4 py-4 md:py-6 mx-auto h-full max-w-[1920px]">
+            {/* ITALIANO: Rientro UGUALE su tutti i lati (p-4/p-6) e nessun tetto di larghezza,
+                          così su schermi larghi la finestra interna non lascia grandi fasce ai lati.
+                ENGLISH: EQUAL inset on every side (p-4/p-6) and no width cap, so on wide screens
+                         the inner window doesn't leave big empty bands left and right. */}
+            <div className="relative z-10 w-full p-4 md:p-6 mx-auto h-full">
                 <div className={`${isDarkMode ? 'bg-gray-900/70 border-gray-700/50' : 'bg-white/80 border-gray-200'} backdrop-blur-xl border shadow-2xl rounded-3xl overflow-hidden transition-all duration-500 flex flex-col relative h-full max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-3rem)]`}>
                     
                     <div className={`border-b ${isDarkMode ? 'border-gray-800/50 bg-black/20' : 'border-gray-200 bg-gray-50/50'} p-4 md:p-5 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20`}>
@@ -1427,14 +2838,8 @@ export default function App() {
                                             <AppleToggle checked={isDarkMode} onChange={setIsDarkMode} colorClass="bg-indigo-500" iconOn={<Moon size={10}/>} iconOff={<Sun size={10}/>} />
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
-                                        <button
-                                            onClick={() => { setIsSettingsOpen(false); setIsStatsOpen(true); }}
-                                            className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                                        >
-                                            <LayoutGrid size={16} />
-                                            {t.projectStats}
-                                        </button>
-                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        {/* ITALIANO: Il tasto "Statistiche progetto" e' stato tolto da qui: ora sta sulla pagina principale (riquadro destro). */}
+                                        {/* ENGLISH: The "Project statistics" button was removed from here: it now lives on the main page (right panel). */}
                                         {/* ITALIANO: Sezione strumenti AI cloud (Gemini) */}
                                         {/* ENGLISH: Cloud AI tools section (Gemini) */}
                                         <div className="flex flex-col gap-2">
@@ -1611,7 +3016,7 @@ export default function App() {
                                                         />
                                                     </div>
                                                     <p className={`text-[9px] italic mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                                                        ✓ free · ◐ limitato · $ pagamento · ★ consigliato
+                                                        {t.aiModelLegend}
                                                     </p>
                                                 </div>
                                             )}
@@ -1624,27 +3029,17 @@ export default function App() {
                                             </div>
                                             <div className="relative group">
                                                 <div className={`flex items-center gap-2 px-2 py-1 rounded-lg border cursor-pointer ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>
-                                                    <img src={`https://flagcdn.com/w40/${lang === 'en' ? 'gb' : lang === 'zh' ? 'cn' : lang === 'ja' ? 'jp' : lang === 'pt' ? 'br' : lang}.png`} alt={lang} className="w-5 h-5 rounded-full object-cover" />
+                                                    <img src={flagUriForLang(lang)} alt={lang} className="w-5 h-5 rounded-full object-cover" />
                                                     <span className="text-xs font-medium uppercase">{lang}</span>
                                                 </div>
                                                 <div className={`absolute right-0 top-full mt-1 w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                                                    {[
-                                                        { code: 'it', label: 'Italiano', flag: 'it' },
-                                                        { code: 'en', label: 'English', flag: 'gb' },
-                                                        { code: 'fr', label: 'Français', flag: 'fr' },
-                                                        { code: 'es', label: 'Español', flag: 'es' },
-                                                        { code: 'de', label: 'Deutsch', flag: 'de' },
-                                                        { code: 'zh', label: '中文 (简体)', flag: 'cn' },
-                                                        { code: 'ja', label: '日本語', flag: 'jp' },
-                                                        { code: 'pt', label: 'Português', flag: 'br' },
-                                                        { code: 'ru', label: 'Русский', flag: 'ru' }
-                                                    ].map((l) => (
+                                                    {APP_LANGUAGES.map((l) => (
                                                         <div 
                                                             key={l.code} 
                                                             onClick={() => setLang(l.code)}
                                                             className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${lang === l.code ? (isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600') : (isDarkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-50 text-gray-700')}`}
                                                         >
-                                                            <img src={`https://flagcdn.com/w40/${l.flag}.png`} alt={l.label} className="w-5 h-5 rounded-full object-cover shadow-sm" />
+                                                            <img src={flagUri(l.flag)} alt={l.label} className="w-5 h-5 rounded-full object-cover shadow-sm" />
                                                             <span className="text-xs font-medium">{l.label}</span>
                                                         </div>
                                                     ))}
@@ -1662,13 +3057,17 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center shrink-0 ${isDarkMode ? 'bg-gray-800/20 border-gray-800/50' : 'bg-gray-100/50 border-gray-200'} ${isImporting ? 'max-h-32 opacity-100 border-b' : 'max-h-0 opacity-0'}`}>
-                        <div className="w-full max-w-4xl p-4">
+                    <div className={`transition-all duration-500 ease-in-out overflow-hidden flex justify-center shrink-0 ${isDarkMode ? 'bg-gray-800/20 border-gray-800/50' : 'bg-gray-100/50 border-gray-200'} ${(isImporting || isSaving) ? 'max-h-32 opacity-100 border-b' : 'max-h-0 opacity-0'}`}>
+                        {/* ITALIANO: piena larghezza con lo stesso rientro (p-4 md:p-5) della riga comandi,
+                                      cosi' la barra di avanzamento arriva agli stessi bordi dei due riquadri. */}
+                        {/* ENGLISH: full width with the command row's inset (p-4 md:p-5), so the progress bar
+                                     reaches the same edges as the two side boxes. */}
+                        <div className="w-full p-4 md:p-5">
                             <div className={`p-4 rounded-2xl flex items-center gap-4 shadow-inner border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700/50' : 'bg-white border-indigo-200'}`}>
                                 <div className="w-6 h-6 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
                                 <div className="flex-1">
                                     <div className="flex justify-between items-center mb-1.5">
-                                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{importProgress === 100 ? t.completed : t.processingFiles}</span>
+                                        <span className={`text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{importProgress === 100 ? t.completed : (isSaving ? t.savingInProgress : t.processingFiles)}</span>
                                         <span className="text-sm font-bold text-indigo-500">{importProgress}%</span>
                                     </div>
                                     <div className={`w-full rounded-full h-2 overflow-hidden shadow-sm ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
@@ -1679,12 +3078,30 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-center gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
+                    {/* ITALIANO: lg:items-stretch = i tre riquadri si allungano tutti alla STESSA altezza (quella
+                                  del piu' alto), cosi' il riquadro di sinistra arriva in basso come quello di destra. */}
+                    {/* ENGLISH: lg:items-stretch = the three panels all stretch to the SAME height (the tallest),
+                                 so the left panel reaches the bottom like the right one. */}
+                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-stretch gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
-                        <div className={`w-full lg:w-[260px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
-                            <button onClick={handleLoadFolderClick} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
-                                <Folder size={16} />
-                                <span>{t.loadFolder}</span>
+                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                            {/* ITALIANO: "Carica Cartella" e "Carica immagini" affiancati, stesso colore (blu). */}
+                            {/* ENGLISH: "Load Folder" and "Load images" side by side, same colour (blue). */}
+                            <div className="flex gap-2">
+                                <button onClick={handleLoadFolderClick} className={`flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
+                                    <Folder size={16} />
+                                    <span>{t.loadFolder}</span>
+                                </button>
+                                <button onClick={() => imagesInputRef.current?.click()} className={`flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
+                                    <ImageIcon size={16} />
+                                    <span>{t.loadImages}</span>
+                                </button>
+                            </div>
+                            {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta — arancione */}
+                            {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app — orange */}
+                            <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
+                                <X size={16} />
+                                <span>{t.closeAllImages}</span>
                             </button>
                             <button onClick={handleResetProject} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm`}>
                                 <Trash size={16} />
@@ -1692,14 +3109,24 @@ export default function App() {
                             </button>
                         </div>
                         
-                        <div className="flex-1 w-full flex flex-col justify-center relative min-w-0 pt-1">
+                        {/* ITALIANO: Sezione centrale racchiusa in un riquadro con lo STESSO stile dei due
+                                      pannelli laterali (bg, bordo, angoli, ombra interna). */}
+                        {/* ENGLISH: Centre section wrapped in a panel with the SAME style as the two side
+                                     panels (bg, border, rounding, inner shadow). */}
+                        <div className={`flex-1 w-full flex flex-col gap-3 min-w-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
-                            <TagInput tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[140px]" isDarkMode={isDarkMode} />
-                            
+                            <div className="w-full">
+                                {/* ITALIANO: cap a 120px (con scorrimento interno) cosi' la sezione centrale non
+                                              diventa mai piu' alta dei due riquadri laterali: la barra comandi resta bilanciata. */}
+                                {/* ENGLISH: capped at 120px (scrolls inside) so the centre section never grows taller
+                                             than the two side panels: the command bar stays balanced. */}
+                                <TagInput lang={lang} tags={globalTriggers} setTags={handleGlobalTagsChange} placeholder={t.globalTriggersPlaceholder} isGlobal={true} maxHeight="max-h-[120px]" isDarkMode={isDarkMode} />
+                            </div>
+
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
                             {/* ENGLISH: Toolbar with Suggested Tags + AI Auto-Tag (if enabled) */}
-                            <div className={`mt-3 p-2 rounded-xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} flex flex-col gap-2 w-[600px] max-w-full mx-auto`}>
+                            <div className={`p-2 rounded-xl border ${isDarkMode ? 'bg-gray-950/40 border-gray-700/40' : 'bg-gray-50 border-gray-100'} flex flex-col gap-2 w-full`}>
                                 <div className="flex items-center justify-center gap-3 flex-wrap">
                                     {aiEnabled && (
                                         <button
@@ -1753,11 +3180,11 @@ export default function App() {
                             </div>
                         </div>
                         
-                        <div className={`w-full lg:w-[380px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             <div className="flex gap-2">
                                 {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
                                 {/* ENGLISH: Button to view all project tags */}
-                                <button 
+                                <button
                                     onClick={() => setIsGlobalTagManagerOpen(true)}
                                     className="w-full h-[42px] flex justify-center items-center gap-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm"
                                 >
@@ -1765,44 +3192,100 @@ export default function App() {
                                     <span>{t.allTagsButton}</span>
                                 </button>
                             </div>
-                            <div className="w-full flex flex-col gap-1.5">
-                                <div className="w-full flex gap-3 items-start">
-                                    {/* ITALIANO: Pulsante Salva Modifiche */}
-                                    {/* ENGLISH: Save Changes button */}
-                                    <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
-                                        <Save size={16} />
-                                        <span className="hidden sm:inline">{t.saveChanges}</span>
-                                        <span className="sm:hidden">{t.saveShort}</span>
-                                    </button>
-                                    
-                                    {/* ITALIANO: Sezione Esporta con opzione ZIP sotto */}
-                                    {/* ENGLISH: Export section with ZIP option below */}
-                                    <div className="flex-1 flex flex-col gap-2">
-                                        <button onClick={handleExportAll} disabled={images.length === 0} className="w-full h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
-                                            <SaveAll size={16} />
-                                            <span className="hidden sm:inline">{t.exportAllTxt}</span>
-                                            <span className="sm:hidden">{t.exportShort}</span>
-                                        </button>
-                                        <div className="flex items-center justify-end gap-2 px-1">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.exportAsZip}</span>
-                                            <AppleToggle checked={saveAsZip} onChange={setSaveAsZip} colorClass="bg-indigo-500" />
-                                        </div>
-                                    </div>
-                                </div>
+                            {/* ITALIANO: Statistiche del progetto — sulla pagina principale, sotto "Visualizza tutti i tag" */}
+                            {/* ENGLISH: Project statistics — on the main page, below "View all project tags" */}
+                            {/* ITALIANO: Editor di tag — sempre disponibile, anche senza foto aperte:
+                                          serve proprio a lavorare sui file di tag da soli. */}
+                            {/* ENGLISH: Tag editor — always available, even with no photos open: its whole
+                                         point is working on tag files on their own. */}
+                            <div className="flex gap-2">
+                                <button onClick={() => { setIsStatsOpen(true); soundManager.pop(); }} disabled={images.length === 0} className={`flex-1 h-[42px] flex justify-center items-center gap-2 px-3 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white'}`} title={t.projectStats}>
+                                    <BarChart3 size={16} />
+                                    <span>{t.projectStats}</span>
+                                </button>
+                                <button onClick={() => { setIsTagEditorOpen(true); soundManager.pop(); }} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white" title={t.tagEditor}>
+                                    <Tags size={16} />
+                                    <span>{t.tagEditor}</span>
+                                </button>
+                            </div>
+                            {/* ITALIANO: Stessa struttura della riga sopra (due tasti flex-1 con gap-2), cosi'
+                                          i quattro tasti piccoli hanno tutti la STESSA larghezza. L'etichetta
+                                          "ZIP" sotto e' stata tolta: ora il formato e' scritto nel tasto stesso. */}
+                            {/* ENGLISH: Same structure as the row above (two flex-1 buttons with gap-2), so the
+                                         four small buttons all share the SAME width. The "ZIP" caption below is
+                                         gone: the format is now written on the button itself. */}
+                            <div className="flex gap-2">
+                                <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                    <Save size={16} />
+                                    <span className="hidden sm:inline">{t.saveChanges}</span>
+                                    <span className="sm:hidden">{t.saveShort}</span>
+                                </button>
+                                <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                    <SaveAll size={16} />
+                                    <span className="hidden sm:inline">{t.exportAllTxt}</span>
+                                    <span className="sm:hidden">{t.exportShort}</span>
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex justify-between items-center shrink-0`}>
-                        <div className={`flex-1 flex items-center gap-2 text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><ImageIcon size={16} /><span>{images.length} {images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}</span></div>
-                        <div className="flex-1 flex justify-center">
+                    {/* ITALIANO: barra degli strumenti RESPONSIVE. Su schermo largo (xl) resta divisa in
+                                  tre colonne uguali come sempre: conteggio+ricerca a sinistra, tipo di
+                                  vista al centro, ordinamento+zoom a destra. Sotto quella larghezza le
+                                  tre colonne NON si schiacciano piu' una sull'altra: la prima prende
+                                  una riga tutta sua e le altre due si dividono la riga sotto. Prima la
+                                  riga era rigida (niente "a capo") e restringendo la finestra gli
+                                  elementi finivano uno sopra l'altro. */}
+                    {/* ENGLISH: RESPONSIVE toolbar. On wide screens (xl) it keeps the usual three equal
+                                 columns: count+search left, view mode centre, sort+zoom right. Below
+                                 that width the three columns no longer crush into each other: the first
+                                 takes a full row of its own and the other two share the row below. The
+                                 row used to be rigid (no wrapping) and narrowing the window made the
+                                 elements overlap. */}
+                    <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex flex-wrap justify-between items-center gap-x-4 gap-y-2 shrink-0`}>
+                        <div className={`basis-full xl:basis-auto flex flex-wrap items-center gap-2 text-sm font-medium min-w-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {/* ITALIANO: conteggio — se c'e' una ricerca per tag mostro "filtrate / totali" */}
+                            {/* ENGLISH: count — if a tag search is active I show "filtered / total" */}
+                            <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${images.filter(i => !i.isTrashed).length}` : `${images.length} ${images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
+                            {/* ITALIANO: ricerca per TAG — filtra le immagini mostrate (uno o piu' tag separati da virgola) */}
+                            {/* ENGLISH: TAG search — filters the shown images (one or more comma-separated tags) */}
+                            <div className="relative flex-1 min-w-[150px] max-w-xs">
+                                <Search size={14} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                                <input
+                                    type="text"
+                                    value={tagSearch}
+                                    onChange={e => setTagSearch(e.target.value)}
+                                    placeholder={t.tagSearchPlaceholder}
+                                    className={`w-full border rounded-lg pl-8 pr-7 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-200 text-gray-700 placeholder-gray-400'}`}
+                                />
+                                {tagSearch && <button onClick={() => setTagSearch('')} title={t.cancel} className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}><X size={12} /></button>}
+                            </div>
+                            {/* ITALIANO: Seleziona / deseleziona + INVERTI le foto visibili (filtrate) */}
+                            {/* ENGLISH: Select / deselect + INVERT the visible (filtered) photos */}
+                            {displayedImages.length > 0 && (() => {
+                                const allSelected = displayedImages.every(img => selectedForBulk.includes(img.id));
+                                return (
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button onClick={toggleSelectAll} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${allSelected ? 'bg-indigo-500 border-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}`}>
+                                            <Check size={13} />
+                                            {allSelected ? (t.deselectAll || 'Deseleziona tutte') : (t.selectAll || 'Seleziona tutte')}
+                                        </button>
+                                        <button onClick={invertSelection} title={t.invertSelection} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                            <Replace size={13} />
+                                            <span className="hidden lg:inline">{t.invertSelection}</span>
+                                        </button>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                        <div className="flex-1 flex justify-center min-w-0">
                             <div className={`flex items-center ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-1 rounded-lg shadow-inner`}>
                                 <button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><LayoutGrid size={14} /> {t.square}</button>
                                 <button onClick={() => setViewMode('original')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'original' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><Grid3X3 size={14} /> {t.original}</button>
                             </div>
                         </div>
-                        <div className="flex-1 flex items-center justify-end gap-3">
-                            <div className="flex items-center gap-2">
+                        <div className="shrink-0 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
                                 <span className={`text-[10px] uppercase font-bold tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.sortBy}:</span>
                                 <select 
                                     value={sortOrder} 
@@ -1826,35 +3309,31 @@ export default function App() {
 
                     <div className="flex-1 flex flex-row overflow-hidden relative">
                         <div className={`p-4 md:p-6 ${isDarkMode ? 'bg-black/20' : 'bg-gray-200/40'} flex-1 overflow-y-auto min-h-0 relative`}>
-                            {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> : 
-                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[35vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
+                            {images.length === 0 ? <div className={`flex flex-col items-center justify-center h-full ${isDarkMode ? 'opacity-60' : 'opacity-100'}`}><ImageIcon size={64} className={`${isDarkMode ? 'text-gray-600' : 'text-gray-400'} mb-4`} /><p className={`text-lg font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-700'}`}>{t.noImagesTitle}</p><p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} mt-2 font-bold`}>{t.noImagesDesc}</p></div> :
+                            // ITALIANO: col pannello di selezione aperto lascio SOTTO (pb-[52vh]) spazio per scorrere
+                            //           TUTTE le card sopra il pannello: prima le ultime restavano coperte e non si
+                            //           riusciva a scrivere/toccare i loro tag.
+                            // ENGLISH: with the selection panel open I leave space BELOW (pb-[52vh]) to scroll ALL
+                            //          cards above the panel: the last ones used to stay covered and unusable.
+                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[52vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
                                 {displayedImages.map((img) => (
-                                <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${selectedForBulk.includes(img.id) ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`}>
-                                    <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => setSelectedImageId(img.id)}>
-                                        <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${selectedForBulk.includes(img.id) ? 'opacity-80' : ''}`} />
-                                        
-                                        {img.width * img.height < 1048576 && (
-                                            <div className="absolute top-2 right-2 z-30 group/alert">
-                                                <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
-                                                    <AlertTriangle size={16} strokeWidth={2.5} />
-                                                </div>
-                                                <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                                    {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); toggleImageSelection(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${selectedForBulk.includes(img.id) ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{selectedForBulk.includes(img.id) && <Check size={14} className="text-white" />}</div></div>
-                                        <button onClick={(e) => { e.stopPropagation(); handleMoveToTrash(img.id); }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
-                                    </div>
-                                    <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                                        {/* ITALIANO: Area tag sotto l'anteprima, organizzata esteticamente */}
-                                        {/* ENGLISH: Tag area under the preview, aesthetically organized */}
-                                        <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
-                                            <TagInput tags={img.tags} setTags={(newTags: string[]) => updateImageTags(img.id, newTags)} placeholder={t.addTag} maxHeight={viewMode === 'original' ? 'flex-1 h-full max-h-none' : 'max-h-[180px]'} isDarkMode={isDarkMode} />
-                                        </div>
-                                    </div>
-                                </div>
+                                    <GalleryCard
+                                        key={img.id}
+                                        img={img}
+                                        isDarkMode={isDarkMode}
+                                        viewMode={viewMode}
+                                        lang={lang}
+                                        t={t}
+                                        isSelected={selectedForBulkSet.has(img.id)}
+                                        copiedCount={copiedTags?.length || 0}
+                                        onCardClick={handleCardClick}
+                                        onSelectToggle={toggleImageSelection}
+                                        onTrash={handleMoveToTrash}
+                                        onClose={handleCloseImage}
+                                        onCopy={handleCopyThumbTags}
+                                        onPaste={handlePasteThumbTags}
+                                        onUpdateTags={updateImageTags}
+                                    />
                                 ))}
                             </div>}
                         </div>
@@ -1870,42 +3349,120 @@ export default function App() {
                     </div>
 
                     {selectedForBulk.length > 0 && (
-                        <div className="absolute bottom-6 left-0 right-0 mx-auto w-[90%] max-w-5xl bg-gray-900/95 backdrop-blur-xl border border-gray-700 p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[35vh] rounded-2xl ring-1 ring-black/5">
-                            <div className="w-full flex flex-col gap-3 h-full">
-                                <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className="p-1.5 bg-indigo-900/50 rounded-lg text-indigo-400"><Grid3X3 size={18} /></div><div><h3 className="text-sm font-bold text-gray-200 leading-tight">{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className="text-[10px] text-gray-500 uppercase tracking-wide">{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className="p-1.5 rounded-full border border-gray-600 text-gray-400 hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm"><X size={14} /></button></div>
-                                <div className="flex-1 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y border-gray-800" style={{ scrollbarGutter: 'stable' }}>
+                        <div className={`absolute bottom-6 left-0 right-0 mx-auto w-[95%] max-w-6xl backdrop-blur-xl border p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[46vh] rounded-2xl ring-1 ring-black/5 ${isDarkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
+                            <div className="w-full flex flex-col gap-3 h-full min-h-0">
+                                <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}><Grid3X3 size={18} /></div><div><h3 className={`text-sm font-bold leading-tight ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className={`text-[10px] uppercase tracking-wide ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className={`p-1.5 rounded-full border hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm ${isDarkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'}`}><X size={14} /></button></div>
+                                {hiddenSelectedCount > 0 && (
+                                    <div className={`shrink-0 flex items-start gap-2 px-3 py-2 rounded-lg border text-xs leading-snug ${isDarkMode ? 'bg-amber-900/30 border-amber-700/60 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                        <span>{hiddenSelectedCount} {t.bulkHiddenWarn}</span>
+                                    </div>
+                                )}
+                                {/* ITALIANO: riga responsive — a sinistra scrivi un tag NUOVO (Invio) da applicare alle
+                                              foto selezionate; a destra un motore di RICERCA che filtra le pillole sotto. */}
+                                {/* ENGLISH: responsive row — left: type a NEW tag (Enter) to apply to the selected
+                                             photos; right: a SEARCH box that filters the pills below. */}
+                                <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                                    <input
+                                        type="text"
+                                        placeholder={t.bulkAddPlaceholder}
+                                        className={`flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                                        onKeyDown={(e: any) => {
+                                            if (e.key === 'Enter' || e.key === ',') {
+                                                e.preventDefault();
+                                                const newTag = e.target.value.trim().replace(/,$/, '');
+                                                if (newTag) {
+                                                    setStagedBulkTags(prev => prev.includes(newTag) ? prev : [...prev, newTag]);
+                                                    e.target.value = '';
+                                                    soundManager.pop();
+                                                }
+                                            }
+                                        }}
+                                    />
+                                    <div className="relative sm:w-72 shrink-0">
+                                        <Search size={15} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                                        <input
+                                            type="text"
+                                            value={bulkSearch}
+                                            onChange={e => setBulkSearch(e.target.value)}
+                                            placeholder={t.bulkSearchPlaceholder}
+                                            className={`w-full border rounded-lg pl-8 pr-7 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
+                                        />
+                                        {bulkSearch && <button onClick={() => setBulkSearch('')} className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}><X size={13} /></button>}
+                                    </div>
+                                </div>
+                                <div className={`flex-1 min-h-0 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll p-[10px] border-y ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`} style={{ scrollbarGutter: 'stable' }}>
                                     {(() => {
-                                        const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])].sort((a, b) => a.localeCompare(b));
-                                        return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{t.noTagsInProject}</p> : displayTags.map(tag => {
+                                        const q = bulkSearch.trim().toLowerCase();
+                                        const displayTags = [...new Set([...allUniqueTags, ...stagedBulkTags])]
+                                            .filter(tag => !q || tag.toLowerCase().includes(q))
+                                            .sort((a, b) => a.localeCompare(b));
+                                        // ITALIANO: PRESTAZIONI — l'insieme dei tag presenti su almeno una foto selezionata si
+                                        //           calcola UNA volta sola (ricerca istantanea in un Set), non per ogni pillola.
+                                        // ENGLISH: PERF — the set of tags present on at least one selected photo is computed
+                                        //           ONCE (instant Set lookup), not per pill.
+                                        const selectedIdSet = new Set(selectedForBulk);
+                                        const tagsOnSelected = new Set<string>();
+                                        for (const im of images) {
+                                            if (!selectedIdSet.has(im.id)) continue;
+                                            for (const tg of im.tags) tagsOnSelected.add(tg);
+                                        }
+                                        return displayTags.length === 0 ? <p className="text-xs text-gray-500 italic py-2 w-full text-center">{q ? t.statsNoTagsMatch : t.noTagsInProject}</p> : displayTags.map(tag => {
                                             const category = getTagCategory(tag);
                                             const colorClass = getCategoryColor(category, isDarkMode);
                                             const activeColorClass = getActiveCategoryColor(category);
                                             const isStaged = stagedBulkTags.includes(tag);
-                                            const isPartiallySelected = selectedForBulk.some(id => images.find(i => i.id === id)?.tags.includes(tag));
-                                            
+                                            const isPartiallySelected = tagsOnSelected.has(tag);
+
+                                            // ITALIANO: TRE stati ben distinti (vedi legenda sotto):
+                                            //   1) DA AGGIUNGERE (staged): pieno acceso + anello + spunta.
+                                            //   2) GIA' SU ALCUNE: contorno tratteggiato, sfondo trasparente.
+                                            //   3) DISPONIBILE: pieno tenue.
+                                            // ENGLISH: THREE clearly distinct states (see legend below):
+                                            //   1) TO ADD (staged): vivid fill + ring + check.
+                                            //   2) ON SOME: dashed outline, transparent bg.
+                                            //   3) AVAILABLE: soft fill.
                                             let buttonClass = '';
                                             if (isStaged) {
-                                                buttonClass = `${activeColorClass} scale-105 font-bold`;
+                                                buttonClass = `${activeColorClass} scale-105 font-bold ring-2 ring-offset-1 ${isDarkMode ? 'ring-white/50 ring-offset-gray-900' : 'ring-black/20 ring-offset-white'}`;
                                             } else if (isPartiallySelected) {
                                                 const textColorMatch = colorClass.match(/text-[a-z]+-\d+/);
                                                 const textColor = textColorMatch ? textColorMatch[0] : (isDarkMode ? 'text-gray-300' : 'text-gray-600');
                                                 const borderColor = textColor.replace('text-', 'border-');
-                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} hover:bg-gray-800/50 opacity-80`;
+                                                buttonClass = `bg-transparent border-2 border-dashed ${textColor} ${borderColor} ${isDarkMode ? 'hover:bg-gray-800/50' : 'hover:bg-gray-100'} opacity-90`;
                                             } else {
                                                 buttonClass = `${colorClass} border border-transparent hover:brightness-110 shadow-sm`;
                                             }
-                                            
+
                                             return (
                                                 <button key={tag} onClick={() => setStagedBulkTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])} className={`px-2.5 py-1 rounded-full text-xs transition-all flex items-center gap-1 ${buttonClass}`}>
                                                     {category === 'nsfw' && <span className={`font-bold text-[9px] px-1 rounded-sm ${isStaged ? 'bg-white text-red-500' : 'bg-red-500 text-white'}`}>+18</span>}
+                                                    {isStaged && <Check size={12} strokeWidth={3} />}
                                                     {tag}
                                                 </button>
                                             );
                                         });
                                     })()}
                                 </div>
+                                {/* ITALIANO: LEGENDA degli stati delle pillole (non solo il tratteggiato). */}
+                                {/* ENGLISH: LEGEND of the pill states (not just the dashed one). */}
+                                <div className={`shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    <span className="font-bold uppercase tracking-wide">{t.legendTitle}</span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white ring-2 ring-offset-1 ${isDarkMode ? 'ring-white/50 ring-offset-gray-900' : 'ring-black/20 ring-offset-white'}`}><Check size={10} strokeWidth={3} />tag</span>
+                                        {t.legendStaged}
+                                    </span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] bg-transparent border-2 border-dashed ${isDarkMode ? 'text-gray-300 border-gray-500' : 'text-gray-600 border-gray-400'}`}>tag</span>
+                                        {t.legendOnSome}
+                                    </span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] shadow-sm ${isDarkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-100 text-blue-700'}`}>tag</span>
+                                        {t.legendAvailable}
+                                    </span>
+                                </div>
                                 <div className="flex justify-end gap-2 shrink-0 h-9 transition-all">
-                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className="px-4 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold transition-colors text-xs">{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}
+                                    {stagedBulkTags.length > 0 ? <div className="flex gap-2 animate-in slide-in-from-right-4"><button onClick={() => setStagedBulkTags([])} className={`px-4 py-1.5 rounded-lg font-semibold transition-colors text-xs ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>{t.cancel}</button><button onClick={applyBulkTags} className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 text-xs"><Check size={14} /> {t.confirm}</button></div> : <div className="text-xs text-gray-500 flex items-center italic pr-2">{t.selectTagToAdd}</div>}
                                 </div>
                             </div>
                         </div>
@@ -1947,7 +3504,7 @@ export default function App() {
                                     <Trash size={14} />
                                     {t.deleteAllTags}
                                 </button>
-                                <button 
+                                <button
                                     onClick={handleCleanUnusedTags}
                                     disabled={allUniqueTags.length === 0}
                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md border-0"
@@ -1955,6 +3512,21 @@ export default function App() {
                                     <RefreshCw size={14} />
                                     {t.cleanUnusedTags}
                                 </button>
+                            </div>
+                            {/* ITALIANO: UN tasto Esporta (formato scelto nella finestra di salvataggio) + UN tasto Importa.
+                                          Etichette su due righe per spiegare meglio cosa fanno. */}
+                            {/* ENGLISH: ONE Export button (format chosen in the save dialog) + ONE Import button.
+                                         Two-line labels to explain them better. */}
+                            <div className="flex gap-2">
+                                <button onClick={handleExportProjectTags} disabled={allUniqueTags.length === 0} title={t.exportProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border ${isDarkMode ? 'bg-gray-900 border-gray-600 text-gray-200 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'}`}>
+                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Upload size={14} /> {t.exportProjectTags}</span>
+                                    <span className="text-[9px] font-medium opacity-70 leading-none">{t.exportProjectTagsHint}</span>
+                                </button>
+                                <button onClick={() => projectTagsImportRef.current?.click()} title={t.importProjectTags} className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}>
+                                    <span className="flex items-center gap-1.5 text-xs font-bold"><Download size={14} /> {t.importProjectTags}</span>
+                                    <span className="text-[9px] font-medium opacity-70 leading-none">{t.importProjectTagsHint}</span>
+                                </button>
+                                <input type="file" accept=".json,.txt,application/json,text/plain" ref={projectTagsImportRef} className="hidden" onChange={handleImportProjectTags} />
                             </div>
                         </div>
                         <div className={`flex-1 p-4 overflow-y-auto flex flex-wrap content-start gap-3.5 lightbox-scroll ${isDarkMode ? 'bg-gray-900/50' : 'bg-gray-50'}`} style={{ scrollbarGutter: 'stable' }}>
@@ -1979,7 +3551,7 @@ export default function App() {
 
             {isStatsOpen && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsStatsOpen(false)}>
-                    <div className={`w-[90vw] max-w-4xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
+                    <div className={`w-[90vw] max-w-5xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
                         <div className={`p-6 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} flex justify-between items-center shrink-0`}>
                             <h2 className={`text-xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={24} className="text-indigo-500"/> {t.projectStats}</h2>
                             <button onClick={() => setIsStatsOpen(false)} className={`hover:bg-red-500 hover:text-white rounded-full p-2 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}><X size={20} /></button>
@@ -1987,21 +3559,36 @@ export default function App() {
                         
                         <div className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                             {(() => {
-                                const totalImages = images.length;
-                                const totalTags = allUniqueTags.length;
-                                const taggedImages = images.filter(img => img.tags && img.tags.length > 0).length;
+                                // ITALIANO: le statistiche contano SOLO le foto attive, non quelle nel
+                                //           cestino. Prima leggevano l'elenco grezzo `images` (che tiene
+                                //           anche le cestinate): "Totale immagini", "Senza tag", media e
+                                //           conteggi includevano foto gia' buttate, e l'utente cercava
+                                //           foto senza tag che nella galleria non esistevano piu'.
+                                // ENGLISH: statistics count ONLY active photos, not trashed ones. They
+                                //          used to read the raw `images` list (which keeps trashed
+                                //          entries): "Total images", "Untagged", the average and the
+                                //          counts all included already-discarded photos.
+                                const statsImages = images.filter(img => !img.isTrashed);
+                                const statsUniqueTags = [...new Set([...statsImages.flatMap(img => img.tags), ...customProjectTags])].sort((a, b) => a.localeCompare(b));
+                                const totalImages = statsImages.length;
+                                const totalTags = statsUniqueTags.length;
+                                const taggedImages = statsImages.filter(img => img.tags && img.tags.length > 0).length;
                                 const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};
-                                allUniqueTags.forEach(tag => {
+                                statsUniqueTags.forEach(tag => {
                                     const cat = getTagCategory(tag);
                                     categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
                                 });
-                                const pieData = Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
+                                // ITALIANO: nelle fette si mostra il NOME della categoria nella lingua scelta
+                                //           (prima compariva l'identificativo grezzo, es. "face_details").
+                                // ENGLISH: slices show the category NAME in the chosen language (the raw id,
+                                //          e.g. "face_details", used to be displayed instead).
+                                const pieData = Object.entries(categoryCounts).map(([name, value]) => ({ name: translateCategory(name, lang, t), value }));
                                 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28'];
 
                                 const tagUsage: Record<string, number> = {};
-                                images.forEach(img => {
+                                statsImages.forEach(img => {
                                     img.tags.forEach((tag: string) => {
                                         tagUsage[tag] = (tagUsage[tag] || 0) + 1;
                                     });
@@ -2011,29 +3598,56 @@ export default function App() {
                                     .slice(0, 10)
                                     .map(([name, value]) => ({ name, value }));
 
+                                // ITALIANO: metriche extra per le statistiche avanzate
+                                // ENGLISH: extra metrics for the advanced statistics
+                                const untaggedImages = totalImages - taggedImages;
+                                const usageValues = Object.values(tagUsage);
+                                const totalTagInstances = usageValues.reduce((a, b) => a + b, 0);
+                                const avgTagsPerImage = totalImages > 0 ? (totalTagInstances / totalImages).toFixed(1) : '0';
+                                const singletonCount = usageValues.filter(c => c === 1).length;
+                                const maxUsage = usageValues.length > 0 ? Math.max(...usageValues) : 0;
+
+                                // ITALIANO: lista COMPLETA dei tag (anche quelli mai usati = 0), filtrata e ordinata
+                                // ENGLISH: FULL tag list (including never-used ones = 0), filtered and sorted
+                                const fullTagList = statsUniqueTags
+                                    .map(tag => ({ tag, count: tagUsage[tag] || 0 }))
+                                    .filter(x => x.tag.toLowerCase().includes(deferredStatsSearch.toLowerCase()))
+                                    .sort((a, b) => statsSort === 'name'
+                                        ? a.tag.localeCompare(b.tag)
+                                        : (b.count - a.count) || a.tag.localeCompare(b.tag));
+
                                 return (
                                     <div className="flex flex-col gap-8">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-indigo-50 border-indigo-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-indigo-500 rounded-lg text-white"><ImageIcon size={24} /></div>
-                                                <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalImages}</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalImages}</p>
-                                                </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-indigo-50 border-indigo-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-indigo-500 rounded-lg text-white"><ImageIcon size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalImages}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalImages}</p>
                                             </div>
-                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-purple-500 rounded-lg text-white"><Tag size={24} /></div>
-                                                <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalTags}</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalTags}</p>
-                                                </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50 border-purple-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-purple-500 rounded-lg text-white"><Tag size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{totalTags}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTotalTags}</p>
                                             </div>
-                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-emerald-50 border-emerald-100'} flex items-center gap-4`}>
-                                                <div className="p-3 bg-emerald-500 rounded-lg text-white"><Check size={24} /></div>
-                                                <div>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTaggedImages}</p>
-                                                    <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-sm font-normal opacity-70">({taggedPercentage}%)</span></p>
-                                                </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-emerald-50 border-emerald-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-emerald-500 rounded-lg text-white"><Check size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{taggedImages} <span className="text-xs font-normal opacity-70">({taggedPercentage}%)</span></p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsTaggedImages}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-amber-50 border-amber-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-amber-500 rounded-lg text-white"><AlertTriangle size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{untaggedImages}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsUntaggedImages}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-cyan-50 border-cyan-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-cyan-500 rounded-lg text-white"><BarChart3 size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{avgTagsPerImage}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsAvgTagsPerImage}</p>
+                                            </div>
+                                            <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-rose-50 border-rose-100'} flex flex-col gap-1`}>
+                                                <div className="flex items-center gap-2"><div className="p-1.5 bg-rose-500 rounded-lg text-white"><Sparkles size={16} /></div></div>
+                                                <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{singletonCount}</p>
+                                                <p className={`text-[11px] font-medium leading-tight ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.statsSingletonTags}</p>
                                             </div>
                                         </div>
 
@@ -2051,13 +3665,44 @@ export default function App() {
                                                                 outerRadius={80}
                                                                 fill="#8884d8"
                                                                 dataKey="value"
-                                                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                                /* ITALIANO: etichette disegnate a mano per poterne scegliere il COLORE:
+                                                                   di serie Recharts le scrive scure, illeggibili sul tema scuro. */
+                                                                /* ENGLISH: hand-drawn labels so their COLOUR can be set: by default
+                                                                   Recharts writes them dark, unreadable on the dark theme. */
+                                                                label={(props: any) => {
+                                                                    const { cx, cy, midAngle, outerRadius, name, percent } = props;
+                                                                    const RAD = Math.PI / 180;
+                                                                    const r = outerRadius + 18;
+                                                                    const x = cx + r * Math.cos(-midAngle * RAD);
+                                                                    const y = cy + r * Math.sin(-midAngle * RAD);
+                                                                    return (
+                                                                        <text
+                                                                            x={x} y={y}
+                                                                            fill={isDarkMode ? '#e5e7eb' : '#374151'}
+                                                                            fontSize={11}
+                                                                            textAnchor={x > cx ? 'start' : 'end'}
+                                                                            dominantBaseline="central"
+                                                                        >
+                                                                            {`${name} ${(percent * 100).toFixed(0)}%`}
+                                                                        </text>
+                                                                    );
+                                                                }}
                                                             >
                                                                 {pieData.map((_, index) => (
                                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                                 ))}
                                                             </Pie>
-                                                            <Tooltip contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000' }} />
+                                                            {/* ITALIANO: contentStyle colora solo il riquadro. Il titolo e i valori dentro
+                                                                la nuvoletta hanno un colore PROPRIO, che Recharts lascia scuro: sul tema
+                                                                scuro restavano illeggibili. Servono anche labelStyle e itemStyle. */}
+                                                            {/* ENGLISH: contentStyle only colours the box. The label and the values inside
+                                                                the tooltip carry their OWN colour, which Recharts leaves dark, so they were
+                                                                unreadable on the dark theme. labelStyle and itemStyle are needed too. */}
+                                                            <Tooltip
+                                                                contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', borderRadius: 10 }}
+                                                                labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#111827', fontWeight: 600 }}
+                                                                itemStyle={{ color: isDarkMode ? '#e5e7eb' : '#374151' }}
+                                                            />
                                                         </RechartsPieChart>
                                                     </ResponsiveContainer>
                                                 </div>
@@ -2071,11 +3716,82 @@ export default function App() {
                                                             <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} horizontal={false} />
                                                             <XAxis type="number" stroke={isDarkMode ? '#9ca3af' : '#4b5563'} />
                                                             <YAxis dataKey="name" type="category" width={100} stroke={isDarkMode ? '#9ca3af' : '#4b5563'} tick={{ fontSize: 11 }} />
-                                                            <Tooltip cursor={{ fill: isDarkMode ? '#374151' : '#f3f4f6' }} contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000' }} />
+                                                            <Tooltip
+                                                                cursor={{ fill: isDarkMode ? '#374151' : '#f3f4f6' }}
+                                                                contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', borderRadius: 10 }}
+                                                                labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#111827', fontWeight: 600 }}
+                                                                itemStyle={{ color: isDarkMode ? '#e5e7eb' : '#374151' }}
+                                                            />
                                                             <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
                                                         </RechartsBarChart>
                                                     </ResponsiveContainer>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ITALIANO: Lista COMPLETA e scorrevole di TUTTI i tag del progetto, con ricerca,
+                                                      ordinamento (per frequenza o A-Z), conteggio d'uso e barra di frequenza. */}
+                                        {/* ENGLISH: FULL scrollable list of ALL project tags, with search, sorting
+                                                     (by frequency or A-Z), usage count and a frequency bar. */}
+                                        <div className={`p-6 rounded-2xl border ${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                                                <h3 className={`text-lg font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}>
+                                                    <Tags size={20} className="text-indigo-500" /> {t.statsAllTags} <span className="text-sm font-normal opacity-60">({fullTagList.length})</span>
+                                                </h3>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="text" value={statsSearch} onChange={e => setStatsSearch(e.target.value)} placeholder={t.statsSearchTag}
+                                                        className={`w-40 px-3 py-1.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-300 text-gray-800'}`} />
+                                                    <div className={`flex rounded-lg overflow-hidden border shrink-0 ${isDarkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                                                        <button onClick={() => setStatsSort('count')} className={`px-2.5 py-1.5 text-xs font-bold transition-colors ${statsSort === 'count' ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100')}`}>{t.statsSortCount}</button>
+                                                        <button onClick={() => setStatsSort('name')} className={`px-2.5 py-1.5 text-xs font-bold transition-colors ${statsSort === 'name' ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100')}`}>{t.statsSortName}</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="max-h-80 overflow-y-auto lightbox-scroll pr-1 flex flex-col gap-1.5" style={{ scrollbarGutter: 'stable' }}>
+                                                {fullTagList.length === 0 ? (
+                                                    <p className="text-sm text-gray-500 italic text-center py-6">{t.statsNoTagsMatch}</p>
+                                                ) : fullTagList.map(({ tag, count }) => {
+                                                    const category = getTagCategory(tag);
+                                                    const pct = maxUsage > 0 ? (count / maxUsage) * 100 : 0;
+                                                    const imgPct = totalImages > 0 ? Math.round((count / totalImages) * 100) : 0;
+                                                    const traduzione = translateTag(tag, lang);
+                                                    return (
+                                                        // ITALIANO: content-visibility:auto — il browser NON disegna le righe fuori
+                                                        //           dallo schermo finche' non le scorri. Con decine di migliaia di tag
+                                                        //           la lista resta scorrevole tutta (nessuna funzione tolta), ma pesa
+                                                        //           come poche righe. contain-intrinsic-size tiene giusta la barra di
+                                                        //           scorrimento riservando l'altezza stimata di ogni riga.
+                                                        // ENGLISH: content-visibility:auto — the browser does NOT paint off-screen rows
+                                                        //          until you scroll to them. With tens of thousands of tags the whole
+                                                        //          list is still scrollable (no feature removed) but costs like a few
+                                                        //          rows. contain-intrinsic-size keeps the scrollbar correct by reserving
+                                                        //          each row's estimated height.
+                                                        <div key={tag} className="flex items-center gap-3 group/riga" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 28px' }}>
+                                                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold max-w-[42%] truncate flex items-center ${getCategoryColor(category, isDarkMode)}`} title={traduzione ? `${tag} — ${traduzione}` : tag}>
+                                                                {category === 'nsfw' && <span className="font-bold text-[8px] px-1 rounded-sm mr-0.5 bg-red-500 text-white shrink-0">+18</span>}
+                                                                <span className="truncate">{tag}</span>
+                                                            </span>
+                                                            {/* ITALIANO: copia il singolo tag negli appunti (compare passandoci sopra) */}
+                                                            {/* ENGLISH: copies the single tag to the clipboard (appears on hover) */}
+                                                            <button
+                                                                onClick={() => {
+                                                                    navigator.clipboard?.writeText(tag)
+                                                                        .then(() => { soundManager.pop(); showNotification(`${t.statsTagCopied}: ${tag}`, 'success'); })
+                                                                        .catch(() => showNotification(t.importTagsError, 'error'));
+                                                                }}
+                                                                title={t.statsCopyTag}
+                                                                className={`shrink-0 p-1 rounded-md opacity-0 group-hover/riga:opacity-100 transition-all ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-200'}`}
+                                                            >
+                                                                <Copy size={12} />
+                                                            </button>
+                                                            <div className={`flex-1 h-2.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                                                                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                                            </div>
+                                                            <span className={`shrink-0 text-xs font-bold tabular-nums w-10 text-right ${count === 0 ? 'opacity-40' : ''} ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{count}</span>
+                                                            <span className={`shrink-0 text-[10px] tabular-nums w-9 text-right ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{imgPct}%</span>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     </div>

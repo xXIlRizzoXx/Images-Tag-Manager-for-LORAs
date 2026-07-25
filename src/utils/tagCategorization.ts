@@ -1,4 +1,26 @@
+import { suggestedTagsData } from '../constants/tagSuggestions';
+
 export type TagCategory = 'characters' | 'places' | 'styles' | 'colors' | 'framing' | 'nsfw' | 'general' | 'feral_poses' | 'moods' | 'face_details' | 'bird_features' | 'seasons' | 'time_of_day' | 'weather' | 'lighting' | 'anthro_traits' | 'body_types' | 'clothing' | 'intimate' | 'accessories' | 'hair' | 'eyes' | 'human_poses' | 'hand_gestures' | 'footwear' | 'headwear' | 'patterns_fabrics' | 'art_mediums' | 'camera_effects' | 'vfx_particles' | 'render_styles';
+
+// ITALIANO: Mappa "tag -> categoria" costruita UNA sola volta dal dizionario dei Tag Suggeriti.
+//           E' la fonte AUTOREVOLE per la categoria di un tag noto: l'euristica a parole chiave
+//           qui sotto sa produrre solo 17 categorie su 31, quindi 13 categorie del dizionario
+//           (vestiti, capelli, occhi, pose umane, calzature, ecc.) non venivano MAI assegnate e
+//           quei tag finivano tutti in "general" o nella categoria sbagliata (es. "standing" tra
+//           le pose animali). Ora un tag preso dal dizionario riceve la SUA categoria.
+// ENGLISH: A "tag -> category" map built ONCE from the Suggested Tags dictionary. It is the
+//          AUTHORITATIVE source for a known tag's category: the keyword heuristic below can only
+//          ever produce 17 of the 31 categories, so 13 dictionary categories (clothing, hair,
+//          eyes, human poses, footwear, ...) were NEVER assigned and those tags all fell into
+//          "general" or the wrong bucket (e.g. "standing" among animal poses). Now a tag taken
+//          from the dictionary gets ITS own category.
+const dictCategory = new Map<string, TagCategory>();
+for (const category of suggestedTagsData) {
+    for (const tagObj of category.tags) {
+        const key = tagObj.tag.toLowerCase();
+        if (!dictCategory.has(key)) dictCategory.set(key, category.id as TagCategory);
+    }
+}
 
 // ITALIANO: Lista di parole intere (non substring) — evita falsi positivi tipo "grass" → "ass"
 // ENGLISH: Whole-word list (not substring) — avoids false positives like "grass" → "ass"
@@ -42,7 +64,16 @@ export const getTagCategory = (tag: string): TagCategory => {
     if (tokens.some(tok => nsfwWords.has(tok))) return 'nsfw';
     // Anche match esatto sull'intera stringa (per tag composti come "fully nude")
     if (nsfwWords.has(lowerTag)) return 'nsfw';
-    
+
+    // ITALIANO: Se il tag e' nel dizionario dei Tag Suggeriti uso la SUA categoria: e' esatta e
+    //           copre anche le 13 categorie che l'euristica non sapeva produrre. La sicurezza +18
+    //           resta prima (sopra), cosi' un tag ambiguo come "breast" viene comunque segnalato.
+    // ENGLISH: If the tag is in the Suggested Tags dictionary use ITS category: it is exact and
+    //          covers the 13 categories the heuristic could not produce. The +18 safety check stays
+    //          first (above), so an ambiguous tag like "breast" is still flagged.
+    const fromDict = dictCategory.get(lowerTag);
+    if (fromDict) return fromDict;
+
     // Check others
     if (charactersKeywords.some(kw => lowerTag.includes(kw))) return 'characters';
     if (placesKeywords.some(kw => lowerTag.includes(kw))) return 'places';
