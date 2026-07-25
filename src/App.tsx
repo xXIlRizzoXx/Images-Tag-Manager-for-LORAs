@@ -671,13 +671,37 @@ export default function App() {
     //          it in while it stays open. It used to vanish at once: the big window closed by itself
     //          mid-task and dropped the user back on the grid with no next/prev arrows. Now browsing
     //          continues and the window closes when the user decides.
+    //           Le foto uscite dal filtro vengono TRATTENUTE per tutta la sessione del
+    //           visualizzatore, non solo finche' sono quella aperta. Trattenendo la sola aperta,
+    //           premendo Avanti la foto spariva dall'elenco e Indietro non ci tornava piu' sopra:
+    //           saltava a un'altra e il contatore calava da solo, come se fosse stata cancellata.
+    //           L'elenco torna quello normale quando si chiude il visualizzatore.
+    // ENGLISH: photos that left the filter are HELD for the whole viewer session, not only while
+    //          they are the open one. Holding just the open photo meant that pressing Next made it
+    //          drop out of the list, so Back no longer returned to it: it skipped to another one and
+    //          the counter went down by itself, as if the photo had been deleted. The list goes back
+    //          to normal when the viewer is closed.
+    const [trattenuteNelVisualizzatore, setTrattenuteNelVisualizzatore] = useState<string[]>([]);
+    useEffect(() => {
+        if (!selectedImageId) {
+            setTrattenuteNelVisualizzatore(prev => (prev.length > 0 ? [] : prev));
+            return;
+        }
+        if (displayedImages.some(img => img.id === selectedImageId)) return;
+        setTrattenuteNelVisualizzatore(prev => (prev.includes(selectedImageId) ? prev : [...prev, selectedImageId]));
+    }, [selectedImageId, displayedImages]);
+
     const lightboxImages = useMemo(() => {
         if (!selectedImageId) return displayedImages;
-        if (displayedImages.some(img => img.id === selectedImageId)) return displayedImages;
-        const aperta = images.find(img => img.id === selectedImageId && !img.isTrashed);
-        if (!aperta) return displayedImages;
-        return applySort([...displayedImages, aperta], sortOrder);
-    }, [displayedImages, images, selectedImageId, sortOrder]);
+        const visibili = new Set(displayedImages.map(img => img.id));
+        const idsFuori = [...new Set([...trattenuteNelVisualizzatore, selectedImageId])].filter(id => !visibili.has(id));
+        if (idsFuori.length === 0) return displayedImages;
+        const fuori = idsFuori
+            .map(id => images.find(img => img.id === id && !img.isTrashed))
+            .filter(Boolean);
+        if (fuori.length === 0) return displayedImages;
+        return applySort([...displayedImages, ...fuori], sortOrder);
+    }, [displayedImages, images, selectedImageId, sortOrder, trattenuteNelVisualizzatore]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
@@ -697,11 +721,20 @@ export default function App() {
     //          also land on the hidden ones: with no warning one could believe they were tagging the
     //          30 photos on screen while actually tagging 150 invisible ones. The panel now says so
     //          plainly before the confirmation.
+    //           Conto SOLO le foto che riceveranno davvero i tag: presenti e non cestinate. Prima
+    //           bastava "non visibile", ma displayedImages esclude gia' le cestinate, quindi una
+    //           foto tornata nel cestino (per esempio con Annulla) veniva contata come "nascosta
+    //           dalla ricerca" e l'avviso prometteva tag che applyBulkTags non avrebbe mai scritto.
+    // ENGLISH: I count ONLY the photos that will really receive the tags: present and not trashed.
+    //          It used to be enough to be "not visible", but displayedImages already excludes
+    //          trashed ones, so a photo sent back to the trash (e.g. by Undo) was counted as
+    //          "hidden by the search" and the warning promised tags applyBulkTags would never write.
     const hiddenSelectedCount = useMemo(() => {
         if (selectedForBulk.length === 0) return 0;
+        const attive = new Set(images.filter(img => !img.isTrashed).map(img => img.id));
         const visibili = new Set(displayedImages.map(img => img.id));
-        return selectedForBulk.filter(id => !visibili.has(id)).length;
-    }, [selectedForBulk, displayedImages]);
+        return selectedForBulk.filter(id => attive.has(id) && !visibili.has(id)).length;
+    }, [selectedForBulk, displayedImages, images]);
 
     const sortedTrashedImages = useMemo(() => {
         return applySort([...trashedImages], trashSortOrder);
@@ -1474,6 +1507,21 @@ export default function App() {
                     //          worse, a background reload discarded any pending "Redo" steps.
                     isUndoRedoAction.current = true;
                     setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
+                    // ITALIANO: il ricarico non e' un'azione annullabile, ma cambia comunque il file
+                    //           sottostante. Non bastava saltarne la registrazione: le istantanee gia'
+                    //           in cronologia continuavano a contenere il file e l'anteprima VECCHI,
+                    //           quindi il primo Annulla dopo un ritocco esterno rimetteva a schermo la
+                    //           foto pre-ritocco. Aggiorno l'immagine anche li' dentro, lasciando
+                    //           intatti i tag di ogni passo (quelli si' devono restare annullabili).
+                    // ENGLISH: the reload is not an undoable action, yet it does change the underlying
+                    //          file. Skipping its recording was not enough: the snapshots already in
+                    //          history still held the OLD file and thumbnail, so the first Undo after
+                    //          an external retouch brought the pre-retouch photo back on screen. I
+                    //          refresh the image inside those snapshots too, leaving each step's tags
+                    //          untouched (those must stay undoable).
+                    setHistory(prev => prev.map(snap => snap.map((i: any) => i.id === id
+                        ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height }
+                        : i)));
                     showNotification(t.imageReloaded, 'info');
                 }
             } catch (_) { /* file spostato/illeggibile: ignoro */ }
