@@ -687,8 +687,17 @@ export default function App() {
             setTrattenuteNelVisualizzatore(prev => (prev.length > 0 ? [] : prev));
             return;
         }
-        if (displayedImages.some(img => img.id === selectedImageId)) return;
-        setTrattenuteNelVisualizzatore(prev => (prev.includes(selectedImageId) ? prev : [...prev, selectedImageId]));
+        const visibili = new Set(displayedImages.map(img => img.id));
+        setTrattenuteNelVisualizzatore(prev => {
+            // ITALIANO: una foto che RIENTRA nel filtro (le si rimette il tag cercato) non ha piu'
+            //           bisogno di essere trattenuta: la tolgo, cosi' l'elenco resta corto.
+            // ENGLISH: a photo that comes BACK into the filter (the searched tag is put back) no
+            //          longer needs holding: I drop it, keeping the list short.
+            const ripulito = prev.filter(id => !visibili.has(id));
+            const serve = !visibili.has(selectedImageId);
+            const finale = serve && !ripulito.includes(selectedImageId) ? [...ripulito, selectedImageId] : ripulito;
+            return finale.length === prev.length && finale.every((id, i) => id === prev[i]) ? prev : finale;
+        });
     }, [selectedImageId, displayedImages]);
 
     const lightboxImages = useMemo(() => {
@@ -696,9 +705,17 @@ export default function App() {
         const visibili = new Set(displayedImages.map(img => img.id));
         const idsFuori = [...new Set([...trattenuteNelVisualizzatore, selectedImageId])].filter(id => !visibili.has(id));
         if (idsFuori.length === 0) return displayedImages;
+        // ITALIANO: PRESTAZIONI — indice per id costruito UNA volta. Prima ogni foto trattenuta
+        //           veniva cercata scorrendo tutto l'elenco: sfogliando a lungo una ricerca su
+        //           migliaia di foto il costo cresceva a ogni modifica dei tag, e il visualizzatore
+        //           rallentava man mano che si lavorava.
+        // ENGLISH: PERF — an id index built ONCE. Every held photo used to be located by scanning
+        //          the whole list: browsing a long search over thousands of photos made the cost grow
+        //          with every tag edit, and the viewer got slower the more the user worked.
+        const perId = new Map(images.map(img => [img.id, img]));
         const fuori = idsFuori
-            .map(id => images.find(img => img.id === id && !img.isTrashed))
-            .filter(Boolean);
+            .map(id => perId.get(id))
+            .filter(img => img && !img.isTrashed);
         if (fuori.length === 0) return displayedImages;
         return applySort([...displayedImages, ...fuori], sortOrder);
     }, [displayedImages, images, selectedImageId, sortOrder, trattenuteNelVisualizzatore]);
@@ -1074,6 +1091,23 @@ export default function App() {
             const conteggioNomi = new Map<string, number>();
             for (const f of imgFiles) conteggioNomi.set(f.name, (conteggioNomi.get(f.name) || 0) + 1);
             const nomiUnici = new Set([...conteggioNomi.entries()].filter(([, n]) => n === 1).map(([nome]) => nome));
+            // ITALIANO: secondo ripiego, per i backup scritti dalla versione PRECEDENTE, che usava il
+            //           solo nome della sottocartella invece del percorso completo. Senza di esso, chi
+            //           aggiorna avendo modifiche non salvate su foto in sottocartella se le vedrebbe
+            //           sparire in silenzio. Lo accetto SOLO dove quella chiave vecchia e' univoca in
+            //           questo import: se due sottocartelle hanno lo stesso nome, la voce vecchia era
+            //           gia' ambigua all'origine e va scartata.
+            // ENGLISH: a second fallback for backups written by the PREVIOUS version, which used the
+            //          subfolder's leaf name instead of the full path. Without it, anyone upgrading
+            //          with unsaved edits on photos in subfolders would see them vanish silently. It
+            //          is accepted ONLY where that old key is unique in this import: if two subfolders
+            //          share a name, the old entry was already ambiguous at the source and is dropped.
+            const chiaveFogliaOf = makeBackupKeyer(folderOf, null);
+            const conteggioFoglia = new Map<string, number>();
+            for (const f of imgFiles) {
+                const k = chiaveFogliaOf(f);
+                conteggioFoglia.set(k, (conteggioFoglia.get(k) || 0) + 1);
+            }
             const textMap = new Map();
             for (let i = 0; i < txtFiles.length; i++) {
                 try {
@@ -1139,8 +1173,15 @@ export default function App() {
                 const chiaveBackup = backupKeyOf(imgFiles[i]);
                 let entry: { tags?: unknown; caption?: unknown } | undefined = undefined;
                 if (backupMap) {
+                    const chiaveFoglia = chiaveFogliaOf(imgFiles[i]);
                     if (Object.prototype.hasOwnProperty.call(backupMap, chiaveBackup)) {
                         entry = backupMap[chiaveBackup];
+                    } else if (chiaveFoglia !== chiaveBackup && conteggioFoglia.get(chiaveFoglia) === 1 && Object.prototype.hasOwnProperty.call(backupMap, chiaveFoglia)) {
+                        // ITALIANO: backup della versione precedente (chiave col solo nome della
+                        //           sottocartella): accettato perche' qui e' univoco.
+                        // ENGLISH: backup from the previous version (key with the subfolder's leaf
+                        //          name only): accepted because it is unique here.
+                        entry = backupMap[chiaveFoglia];
                     } else if (nomiUnici.has(imgFiles[i].name) && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)) {
                         // ITALIANO: backup salvato da una versione precedente (solo nome file): lo accetto
                         //           SOLO se in questo import quel nome e' unico, quindi non e' ambiguo.
