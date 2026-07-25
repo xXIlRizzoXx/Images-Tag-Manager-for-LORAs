@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 60" width="90" height="60" role="img" aria-label="Bandiera italiana / Italian flag">
+  <rect width="90" height="60" rx="5" fill="#fff"/>
+  <path d="M5 0h25v60H5a5 5 0 0 1-5-5V5a5 5 0 0 1 5-5z" fill="#009246"/>
+  <path d="M60 0h25a5 5 0 0 1 5 5v50a5 5 0 0 1-5 5H60z" fill="#ce2b37"/>
+  <rect x=".5" y=".5" width="89" height="59" rx="4.5" fill="none" stroke="rgba(0,0,0,.18)"/>
+</svg>
