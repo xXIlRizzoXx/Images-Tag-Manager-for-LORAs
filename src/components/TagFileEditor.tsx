@@ -107,6 +107,12 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     //          `tags` stays frozen at the render it started from.
     const tagsRef = useRef<string[]>(tags);
     tagsRef.current = tags;
+    // ITALIANO: stesso specchio per "modificato": serve alla rilettura asincrona per sapere se
+    //           l'utente ha gia' toccato qualcosa mentre leggeva.
+    // ENGLISH: the same mirror for "modified": the async re-read needs it to know whether the user
+    //          has already touched something while it was reading.
+    const dirtyRef = useRef<boolean>(false);
+    dirtyRef.current = dirty;
     const triggersRef = useRef<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
     const fallbackInputRef = useRef<HTMLInputElement>(null);
@@ -159,8 +165,18 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 const nuoviTag = parseTagFile(testo, file.name);
                 triggersRef.current = parseTagTriggers(testo, file.name);
                 savedTagsRef.current = [...nuoviTag];
-                setTags(nuoviTag);
                 setFileName(file.name);
+                // ITALIANO: se nel frattempo l'utente ha gia' aggiunto qualcosa (tipicamente col tasto
+                //           "Aggiungi tag del progetto", che non e' disabilitato durante la lettura),
+                //           il suo lavoro NON si butta: tengo i suoi tag e lascio acceso "modificato".
+                //           Il contenuto del disco diventa comunque il punto di ritorno per lo scarto,
+                //           perche' savedTagsRef qui sopra e' gia' stato aggiornato.
+                // ENGLISH: if the user has already added something meanwhile (typically via the "Add
+                //          project tags" button, which is not disabled during the read), their work is
+                //          NOT thrown away: I keep their tags and leave "modified" on. The disk content
+                //          still becomes the discard baseline, since savedTagsRef above is updated.
+                if (dirtyRef.current) return;
+                setTags(nuoviTag);
                 setDirty(false);
             } catch (_) { /* file non piu' leggibile: tengo il contenuto in memoria */ }
             finally { if (!annullato) setRileggendo(false); }
@@ -293,8 +309,21 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         };
 
         if (!forzaNuovoFile && handleRef.current) {
+            // ITALIANO: congelo anche il BERSAGLIO, non solo i tag. Prima l'avviso al progetto
+            //           (onFileSaved) rileggeva handleRef.current DOPO la scrittura: se nel frattempo
+            //           l'utente apriva un altro file, il progetto riceveva i tag del PRIMO file
+            //           abbinati al SECONDO. Con un .txt omonimo di un'altra sottocartella — normale
+            //           nei dataset LoRA — la foto sbagliata prendeva in memoria quei tag e al primo
+            //           salvataggio del progetto il suo .txt vero veniva sovrascritto.
+            // ENGLISH: freeze the TARGET too, not just the tags. The project notification
+            //          (onFileSaved) used to re-read handleRef.current AFTER the write: if the user
+            //          opened another file meanwhile, the project got the FIRST file's tags paired
+            //          with the SECOND one. With a .txt of the same name from another subfolder —
+            //          routine in LoRA datasets — the wrong photo took those tags in memory and the
+            //          next project save overwrote its real .txt.
+            const bersaglio = handleRef.current;
             try {
-                const writable = await handleRef.current.createWritable();
+                const writable = await bersaglio.createWritable();
                 await writable.write(contenuto);
                 await writable.close();
                 concludiSalvataggio();
@@ -310,7 +339,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 //          old tags, undoing this edit. I pass the file handle so App can verify the
                 //          real IDENTITY (same folder), not just the name, so a same-named file
                 //          can't hijack the photo.
-                if (onFileSaved) onFileSaved(nome, istantanea, handleRef.current);
+                if (onFileSaved) onFileSaved(nome, istantanea, bersaglio);
                 return;
             } catch (err) {
                 console.error('[Editor tag] salvataggio fallito', err);
