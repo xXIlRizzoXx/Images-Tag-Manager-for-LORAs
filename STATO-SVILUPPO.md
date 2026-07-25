@@ -1,7 +1,13 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.11
+**Versione attuale:** 1.0.12
+Novità 1.0.12 (traguardo 82): l'intelligenza artificiale passa a **Gemini 3.6 Flash**, che sostituisce
+il 3.5 Flash. Resta un solo modello, come prima. Chi aveva già salvato il modello vecchio viene
+riportato in automatico su quello nuovo, quindi l'AI continua a funzionare senza dover toccare
+nulla nelle impostazioni. La sigla è stata verificata sulla documentazione ufficiale di Google:
+è la versione stabile (non un'anteprima) e accetta le immagini, che è ciò che serve per generare
+i tag.
 Novità 1.0.11 (traguardo 81): riparati i **5 difetti** che un secondo controllo agentico (14 agenti)
 ha trovato **dentro le riparazioni della 1.0.10**. Il più serio: salvando un file nell'editor
 veniva congelata la lista dei tag ma non il file di destinazione, così aprendo un altro file
@@ -24,9 +30,9 @@ l'editor coi tag del file precedente, e Salva resta disabilitato finché la rile
 Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
 schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
 vengono più saltate.
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.11** in `Release\` (solo questa
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.12** in `Release\` (solo questa
 coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.11 comprende tutto il lavoro dalla 1.0.6 in poi.
+versione riciclata. La 1.0.12 comprende tutto il lavoro dalla 1.0.6 in poi.
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di
