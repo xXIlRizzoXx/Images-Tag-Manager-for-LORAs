@@ -99,6 +99,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     // ENGLISH: the tags AS THEY ARE IN THE FILE (last open or last successful save). Used by
     //          "Discard changes": we go back to these, without closing the file.
     const savedTagsRef = useRef<string[]>([]);
+    // ITALIANO: specchio SEMPRE aggiornato di `tags`, assegnato durante il render. Serve al
+    //           salvataggio per sapere, a scrittura finita, se nel frattempo la lista e' cambiata:
+    //           dentro una funzione asincrona `tags` resta congelato al render in cui e' partita.
+    // ENGLISH: an ALWAYS-current mirror of `tags`, assigned during render. Saving needs it to tell,
+    //          once the write is done, whether the list changed meanwhile: inside an async function
+    //          `tags` stays frozen at the render it started from.
+    const tagsRef = useRef<string[]>(tags);
+    tagsRef.current = tags;
     const triggersRef = useRef<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
     const fallbackInputRef = useRef<HTMLInputElement>(null);
@@ -116,17 +124,38 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     //          another program). So, on reopening the editor, I RE-READ it from disk: you see the
     //          real version and a "Save" does not overwrite newer changes with stale in-memory ones.
     //          If the file is no longer readable (moved, permission lost) I keep what is there.
+    // ITALIANO: true mentre la rilettura dal disco e' in corso. Serve a due cose: disabilitare Salva
+    //           (altrimenti si potrebbe scrivere la versione vecchia in memoria SOPRA quella piu'
+    //           recente sul disco, cioe' esattamente cio' che la rilettura deve impedire) e far
+    //           uscire subito salva() se viene invocata lo stesso.
+    // ENGLISH: true while the re-read from disk is running. It serves two purposes: disabling Save
+    //          (otherwise the stale in-memory version could be written OVER the newer one on disk —
+    //          exactly what the re-read is meant to prevent) and making salva() bail out at once if
+    //          it gets invoked anyway.
+    const [rileggendo, setRileggendo] = useState(false);
+
     useEffect(() => {
         if (!isOpen) return undefined;
         const handle = handleRef.current;
         if (!handle || typeof handle.getFile !== 'function') return undefined;
         let annullato = false;
+        setRileggendo(true);
         (async () => {
             try {
                 const file = await handle.getFile();
-                if (annullato || file.size > EDITOR_MAX_BYTES) return;
+                // ITALIANO: dopo OGNI attesa controllo anche che il bersaglio non sia cambiato. Il
+                //           solo flag `annullato` scatta quando la finestra si chiude, ma NON quando
+                //           l'utente preme Nuovo o apre un altro file mentre la lettura e' in corso:
+                //           una lettura lenta (cartella di rete, OneDrive, antivirus che scansiona)
+                //           avrebbe sovrascritto il file appena aperto coi tag di quello vecchio.
+                // ENGLISH: after EVERY await I also check that the target has not changed. The
+                //          `annullato` flag alone fires when the window closes, but NOT when the user
+                //          hits New or opens another file mid-read: a slow read (network folder,
+                //          OneDrive, antivirus scanning) would have overwritten the just-opened file
+                //          with the old one's tags.
+                if (annullato || handleRef.current !== handle || file.size > EDITOR_MAX_BYTES) return;
                 const testo = await file.text();
-                if (annullato) return;
+                if (annullato || handleRef.current !== handle) return;
                 const nuoviTag = parseTagFile(testo, file.name);
                 triggersRef.current = parseTagTriggers(testo, file.name);
                 savedTagsRef.current = [...nuoviTag];
@@ -134,8 +163,9 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 setFileName(file.name);
                 setDirty(false);
             } catch (_) { /* file non piu' leggibile: tengo il contenuto in memoria */ }
+            finally { if (!annullato) setRileggendo(false); }
         })();
-        return () => { annullato = true; };
+        return () => { annullato = true; setRileggendo(false); };
     }, [isOpen]);
 
     if (!isOpen) return null;
@@ -237,16 +267,37 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     };
 
     const salva = async (forzaNuovoFile = false) => {
+        // ITALIANO: se una rilettura dal disco e' ancora in corso NON si salva: si scriverebbe la
+        //           versione vecchia in memoria sopra quella piu' recente.
+        // ENGLISH: if a re-read from disk is still running do NOT save: it would write the stale
+        //          in-memory version over the newer one.
+        if (rileggendo) return;
         const nome = fileName || 'tags.txt';
-        const contenuto = serializeTagFile(tags, nome, triggersRef.current);
+        // ITALIANO: FOTOGRAFIA dei tag al momento del salvataggio. La scrittura e' asincrona e puo'
+        //           durare (OneDrive, cartella di rete, antivirus che scansiona): se nel frattempo
+        //           l'utente aggiunge un tag, a fine scrittura NON devo dichiarare "tutto salvato"
+        //           sulla base della lista vecchia. Prima lo facevo, e siccome adesso la chiusura
+        //           riporta i tag a savedTagsRef, quella modifica spariva in silenzio.
+        // ENGLISH: SNAPSHOT of the tags at save time. Writing is asynchronous and can take a while
+        //          (OneDrive, network folder, antivirus scanning): if the user adds a tag meanwhile,
+        //          I must NOT declare "all saved" based on the old list once the write ends. It used
+        //          to, and since closing now restores tags from savedTagsRef, that edit vanished
+        //          silently.
+        const istantanea = tags;
+        const contenuto = serializeTagFile(istantanea, nome, triggersRef.current);
+        // ITALIANO: "modificato" si spegne solo se nel frattempo nulla e' cambiato.
+        // ENGLISH: the "modified" flag clears only if nothing changed meanwhile.
+        const concludiSalvataggio = () => {
+            savedTagsRef.current = [...istantanea];
+            setDirty(tagsRef.current !== istantanea);
+        };
 
         if (!forzaNuovoFile && handleRef.current) {
             try {
                 const writable = await handleRef.current.createWritable();
                 await writable.write(contenuto);
                 await writable.close();
-                savedTagsRef.current = [...tags];
-                setDirty(false);
+                concludiSalvataggio();
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
                 // ITALIANO: se il file appena scritto e' il .txt di una foto aperta nel progetto,
@@ -259,7 +310,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 //          old tags, undoing this edit. I pass the file handle so App can verify the
                 //          real IDENTITY (same folder), not just the name, so a same-named file
                 //          can't hijack the photo.
-                if (onFileSaved) onFileSaved(nome, tags, handleRef.current);
+                if (onFileSaved) onFileSaved(nome, istantanea, handleRef.current);
                 return;
             } catch (err) {
                 console.error('[Editor tag] salvataggio fallito', err);
@@ -281,15 +332,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 // ITALIANO: il formato lo decide l'estensione scelta nella finestra di salvataggio
                 // ENGLISH: the format follows the extension chosen in the save dialog
                 const writable = await handle.createWritable();
-                await writable.write(serializeTagFile(tags, handle.name, triggersRef.current));
+                await writable.write(serializeTagFile(istantanea, handle.name, triggersRef.current));
                 await writable.close();
                 handleRef.current = handle;
-                savedTagsRef.current = [...tags];
                 setFileName(handle.name);
-                setDirty(false);
+                concludiSalvataggio();
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${handle.name}`, 'success');
-                if (onFileSaved) onFileSaved(handle.name, tags, handle);
+                if (onFileSaved) onFileSaved(handle.name, istantanea, handle);
             } catch (err: any) {
                 if (err && err.name !== 'AbortError') {
                     console.error(err);
@@ -307,8 +357,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             const a = document.createElement('a');
             a.href = url; a.download = nome;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            savedTagsRef.current = [...tags];
-            setDirty(false);
+            concludiSalvataggio();
             showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
         } finally { URL.revokeObjectURL(url); }
     };
@@ -400,10 +449,10 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                         <ListPlus size={14} /> {t.tagEditorAddProjectTags}
                     </button>
                     <div className="flex-1" />
-                    <button onClick={() => salva(false)} disabled={tags.length === 0} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
+                    <button onClick={() => salva(false)} disabled={tags.length === 0 || rileggendo} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
                         <Save size={14} /> {t.tagEditorSave}
                     </button>
-                    <button onClick={() => salva(true)} disabled={tags.length === 0} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                    <button onClick={() => salva(true)} disabled={tags.length === 0 || rileggendo} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
                         {t.tagEditorSaveAs}
                     </button>
                 </div>
