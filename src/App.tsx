@@ -131,10 +131,26 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
 //          crash one photo's tags were restored onto the OTHER and the first save wrote them into
 //          the wrong .txt.
 const BACKUP_KEY_SEP = '\x1f';
-const makeBackupKeyer = (folderOf: Map<any, any> | null | undefined) => {
+// ITALIANO: `relPathOf` (quando c'e') porta il percorso RELATIVO completo della sottocartella,
+//           es. "anna_bea/char_anna/10_face". Serve perche' l'handle di una cartella espone solo
+//           il nome FOGLIA: con quello, char_anna\10_face e char_bea\10_face davano la stessa
+//           etichetta e due foto omonime tornavano a condividere la chiave di backup, cioe' il
+//           difetto che si voleva chiudere, spostato di un livello di annidamento.
+// ENGLISH: `relPathOf` (when present) carries the full RELATIVE subfolder path, e.g.
+//          "anna_bea/char_anna/10_face". Needed because a directory handle only exposes its LEAF
+//          name: with that, char_anna\10_face and char_bea\10_face produced the same label and two
+//          same-named photos shared a backup key again — the very defect this was meant to close,
+//          just moved one nesting level deeper.
+const makeBackupKeyer = (folderOf: Map<any, any> | null | undefined, relPathOf?: Map<any, string> | null) => {
     return (file: any): string => {
+        const rel = relPathOf ? relPathOf.get(file) : undefined;
+        if (typeof rel === 'string' && rel !== '') return rel + BACKUP_KEY_SEP + file.name;
         const dir = folderOf ? folderOf.get(file) : null;
         let label = '';
+        // ITALIANO: le altre strade (Electron e webkitdirectory) mettono in folderOf un PERCORSO
+        //           gia' completo, quindi li' non c'e' ambiguita' e il ripiego va benissimo.
+        // ENGLISH: the other paths (Electron and webkitdirectory) store an already COMPLETE path in
+        //          folderOf, so there is no ambiguity there and this fallback is fine.
         if (typeof dir === 'string') label = dir;
         else if (dir && typeof dir.name === 'string') label = dir.name;
         return label + BACKUP_KEY_SEP + file.name;
@@ -373,7 +389,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.9');
+    const [appVersion, setAppVersion] = useState<string>('1.0.10');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -655,13 +671,37 @@ export default function App() {
     //          it in while it stays open. It used to vanish at once: the big window closed by itself
     //          mid-task and dropped the user back on the grid with no next/prev arrows. Now browsing
     //          continues and the window closes when the user decides.
+    //           Le foto uscite dal filtro vengono TRATTENUTE per tutta la sessione del
+    //           visualizzatore, non solo finche' sono quella aperta. Trattenendo la sola aperta,
+    //           premendo Avanti la foto spariva dall'elenco e Indietro non ci tornava piu' sopra:
+    //           saltava a un'altra e il contatore calava da solo, come se fosse stata cancellata.
+    //           L'elenco torna quello normale quando si chiude il visualizzatore.
+    // ENGLISH: photos that left the filter are HELD for the whole viewer session, not only while
+    //          they are the open one. Holding just the open photo meant that pressing Next made it
+    //          drop out of the list, so Back no longer returned to it: it skipped to another one and
+    //          the counter went down by itself, as if the photo had been deleted. The list goes back
+    //          to normal when the viewer is closed.
+    const [trattenuteNelVisualizzatore, setTrattenuteNelVisualizzatore] = useState<string[]>([]);
+    useEffect(() => {
+        if (!selectedImageId) {
+            setTrattenuteNelVisualizzatore(prev => (prev.length > 0 ? [] : prev));
+            return;
+        }
+        if (displayedImages.some(img => img.id === selectedImageId)) return;
+        setTrattenuteNelVisualizzatore(prev => (prev.includes(selectedImageId) ? prev : [...prev, selectedImageId]));
+    }, [selectedImageId, displayedImages]);
+
     const lightboxImages = useMemo(() => {
         if (!selectedImageId) return displayedImages;
-        if (displayedImages.some(img => img.id === selectedImageId)) return displayedImages;
-        const aperta = images.find(img => img.id === selectedImageId && !img.isTrashed);
-        if (!aperta) return displayedImages;
-        return applySort([...displayedImages, aperta], sortOrder);
-    }, [displayedImages, images, selectedImageId, sortOrder]);
+        const visibili = new Set(displayedImages.map(img => img.id));
+        const idsFuori = [...new Set([...trattenuteNelVisualizzatore, selectedImageId])].filter(id => !visibili.has(id));
+        if (idsFuori.length === 0) return displayedImages;
+        const fuori = idsFuori
+            .map(id => images.find(img => img.id === id && !img.isTrashed))
+            .filter(Boolean);
+        if (fuori.length === 0) return displayedImages;
+        return applySort([...displayedImages, ...fuori], sortOrder);
+    }, [displayedImages, images, selectedImageId, sortOrder, trattenuteNelVisualizzatore]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
@@ -681,11 +721,20 @@ export default function App() {
     //          also land on the hidden ones: with no warning one could believe they were tagging the
     //          30 photos on screen while actually tagging 150 invisible ones. The panel now says so
     //          plainly before the confirmation.
+    //           Conto SOLO le foto che riceveranno davvero i tag: presenti e non cestinate. Prima
+    //           bastava "non visibile", ma displayedImages esclude gia' le cestinate, quindi una
+    //           foto tornata nel cestino (per esempio con Annulla) veniva contata come "nascosta
+    //           dalla ricerca" e l'avviso prometteva tag che applyBulkTags non avrebbe mai scritto.
+    // ENGLISH: I count ONLY the photos that will really receive the tags: present and not trashed.
+    //          It used to be enough to be "not visible", but displayedImages already excludes
+    //          trashed ones, so a photo sent back to the trash (e.g. by Undo) was counted as
+    //          "hidden by the search" and the warning promised tags applyBulkTags would never write.
     const hiddenSelectedCount = useMemo(() => {
         if (selectedForBulk.length === 0) return 0;
+        const attive = new Set(images.filter(img => !img.isTrashed).map(img => img.id));
         const visibili = new Set(displayedImages.map(img => img.id));
-        return selectedForBulk.filter(id => !visibili.has(id)).length;
-    }, [selectedForBulk, displayedImages]);
+        return selectedForBulk.filter(id => attive.has(id) && !visibili.has(id)).length;
+    }, [selectedForBulk, displayedImages, images]);
 
     const sortedTrashedImages = useMemo(() => {
         return applySort([...trashedImages], trashSortOrder);
@@ -964,7 +1013,7 @@ export default function App() {
     const TXT_MAX_TAGS_PER_FILE = 200;
     const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -1021,7 +1070,7 @@ export default function App() {
             //          the names appearing exactly ONCE in this import: only for those can an OLD
             //          backup (keyed by file name alone) still be read with no risk of a mix-up, so
             //          an already-stored recovery is not lost on upgrade.
-            const backupKeyOf = makeBackupKeyer(folderOf);
+            const backupKeyOf = makeBackupKeyer(folderOf, relPathOf);
             const conteggioNomi = new Map<string, number>();
             for (const f of imgFiles) conteggioNomi.set(f.name, (conteggioNomi.get(f.name) || 0) + 1);
             const nomiUnici = new Set([...conteggioNomi.entries()].filter(([, n]) => n === 1).map(([nome]) => nome));
@@ -1157,7 +1206,7 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
         // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
         //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
         // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
@@ -1183,7 +1232,7 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle, folderOf }
+            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf }
         });
     };
 
@@ -1205,15 +1254,25 @@ export default function App() {
                 //          back there and not into the top folder. LoRA datasets are often split
                 //          into subfolders (e.g. "10_subject").
                 const folderOf = new Map<any, any>();
+                // ITALIANO: percorso RELATIVO completo di ogni file (es. "anna_bea/char_anna/10_face").
+                //           L'handle di una cartella conosce solo il proprio nome, non da dove viene:
+                //           il percorso lo devo costruire io mentre scendo, ed e' cio' che rende
+                //           univoca la chiave del backup anti-crash fra sottocartelle omonime.
+                // ENGLISH: each file's full RELATIVE path (e.g. "anna_bea/char_anna/10_face"). A
+                //          directory handle only knows its own name, not where it came from: the path
+                //          must be built while descending, and it is what makes the crash-backup key
+                //          unique across same-named subfolders.
+                const relPathOf = new Map<any, string>();
 
                 const MAX_DEPTH = 8;
-                const scan = async (dir: any, depth: number) => {
+                const scan = async (dir: any, depth: number, prefix: string) => {
                     for await (const entry of dir.values()) {
                         if (entry.kind === 'file') {
                             const file = await entry.getFile();
                             if (file.type.startsWith('image/')) {
                                 imgFiles.push(file);
                                 folderOf.set(file, dir);
+                                relPathOf.set(file, prefix);
                             } else if (file.name.toLowerCase().endsWith('.txt')) {
                                 txtFiles.push(file);
                                 // ITALIANO: registro la cartella anche per il .txt, cosi' viene
@@ -1221,19 +1280,20 @@ export default function App() {
                                 // ENGLISH: record the folder for the .txt too, so it pairs ONLY with
                                 //          the image in the same subfolder.
                                 folderOf.set(file, dir);
+                                relPathOf.set(file, prefix);
                             }
                         } else if (entry.kind === 'directory' && depth < MAX_DEPTH) {
-                            await scan(entry, depth + 1);
+                            await scan(entry, depth + 1, prefix ? prefix + '/' + entry.name : entry.name);
                         }
                     }
                 };
-                await scan(handle, 0);
+                await scan(handle, 0, String(handle.name || ''));
 
                 if (imgFiles.length === 0) {
                     return showNotification(t.noImagesTitle, "info");
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf);
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf);
 
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
@@ -1447,6 +1507,21 @@ export default function App() {
                     //          worse, a background reload discarded any pending "Redo" steps.
                     isUndoRedoAction.current = true;
                     setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
+                    // ITALIANO: il ricarico non e' un'azione annullabile, ma cambia comunque il file
+                    //           sottostante. Non bastava saltarne la registrazione: le istantanee gia'
+                    //           in cronologia continuavano a contenere il file e l'anteprima VECCHI,
+                    //           quindi il primo Annulla dopo un ritocco esterno rimetteva a schermo la
+                    //           foto pre-ritocco. Aggiorno l'immagine anche li' dentro, lasciando
+                    //           intatti i tag di ogni passo (quelli si' devono restare annullabili).
+                    // ENGLISH: the reload is not an undoable action, yet it does change the underlying
+                    //          file. Skipping its recording was not enough: the snapshots already in
+                    //          history still held the OLD file and thumbnail, so the first Undo after
+                    //          an external retouch brought the pre-retouch photo back on screen. I
+                    //          refresh the image inside those snapshots too, leaving each step's tags
+                    //          untouched (those must stay undoable).
+                    setHistory(prev => prev.map(snap => snap.map((i: any) => i.id === id
+                        ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height }
+                        : i)));
                     showNotification(t.imageReloaded, 'info');
                 }
             } catch (_) { /* file spostato/illeggibile: ignoro */ }
@@ -2586,7 +2661,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -3295,13 +3370,29 @@ export default function App() {
                                 );
                             })()}
                         </div>
-                        <div className="flex-1 flex justify-center min-w-0">
+                        {/* ITALIANO: shrink-0: questo gruppo NON deve poter essere schiacciato. Prima era
+                                      flex-1 e con justify-center, quando lo spazio non bastava (parole lunghe:
+                                      russo, tedesco) il contenuto sbordava SIMMETRICAMENTE dai due lati, finendo
+                                      sotto "Ordina per" e persino fuori dal bordo sinistro della finestra.
+                                      Non potendosi stringere, e' il flex-wrap della riga a mandarlo a capo. */}
+                        {/* ENGLISH: shrink-0: this group must NOT be squeezable. It used to be flex-1 and, with
+                                     justify-center, whenever space ran short (long words: Russian, German) the
+                                     content overflowed SYMMETRICALLY on both sides, landing under "Sort by" and
+                                     even past the window's left edge. Since it cannot shrink, the row's
+                                     flex-wrap moves it to its own line instead. */}
+                        <div className="shrink-0 flex justify-center">
                             <div className={`flex items-center ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-1 rounded-lg shadow-inner`}>
                                 <button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><LayoutGrid size={14} /> {t.square}</button>
                                 <button onClick={() => setViewMode('original')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'original' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><Grid3X3 size={14} /> {t.original}</button>
                             </div>
                         </div>
-                        <div className="shrink-0 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 min-w-0">
+                        {/* ITALIANO: questa colonna invece DEVE potersi stringere: cosi' il suo flex-wrap
+                                      interno manda lo zoom sotto l'ordinamento prima che la riga trabocchi.
+                                      Con shrink-0 restava larga quanto il suo contenuto e rubava lo spazio. */}
+                        {/* ENGLISH: this column MUST be able to shrink: that way its inner flex-wrap moves
+                                     the zoom below the sort control before the row overflows. With shrink-0
+                                     it stayed at its content width and hogged the space. */}
+                        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
                                 <span className={`text-[10px] uppercase font-bold tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.sortBy}:</span>
                                 <select 

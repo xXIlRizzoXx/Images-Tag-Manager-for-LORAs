@@ -1,10 +1,23 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.9
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.9** in `Release\` (solo questa
+**Versione attuale:** 1.0.10
+Novità 1.0.10 (traguardo 80): riparati i **9 difetti** trovati dal controllo agenti mirato sul
+cambiamento 1.0.7 → 1.0.9 (18 agenti, arrivato in fondo). I tre importanti: **l'installer non
+taglia più il testo** (l'avviso antivirus della 1.0.9 faceva sparire le ultime righe in russo,
+tedesco e portoghese, invito a premere Avanti compreso); il **backup anti-crash** ora usa il
+percorso completo, perché la riparazione precedente non bastava con sottocartelle omonime annidate
+(`char_anna\10_face` e `char_bea\10_face` si scambiavano ancora i tag); la **barra degli strumenti**
+non si sovrappone più nemmeno in russo, dove le parole sono più lunghe. Poi tre gare di tempistica
+nell'**editor dei tag**, che scattavano su cartelle lente (OneDrive, dischi di rete, antivirus): una
+modifica fatta durante il salvataggio non sparisce più, una rilettura lenta non riempie più
+l'editor coi tag del file precedente, e Salva resta disabilitato finché la rilettura non finisce.
+Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
+schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
+vengono più saltate.
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.10** in `Release\` (solo questa
 coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.9 comprende anche tutto il lavoro di 1.0.6, 1.0.7 e 1.0.8.
+versione riciclata. La 1.0.10 comprende tutto il lavoro dalla 1.0.6 in poi.
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di
