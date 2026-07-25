@@ -11,7 +11,7 @@
 **  tag is shown as a pill: type to add one, click the X to remove it.        **
 ******************************************************************************/
 import { useState, useRef, useEffect } from 'react';
-import { X, FilePlus2, FolderOpen, Save, Tag as TagIcon, ListPlus } from 'lucide-react';
+import { X, FilePlus2, FolderOpen, Save, Tag as TagIcon, ListPlus, FileX2 } from 'lucide-react';
 import { getTagCategory, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { soundManager } from '../utils/soundManager';
@@ -93,6 +93,8 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     // ENGLISH: pending action when there are unsaved edits: if != null I show the THEMED confirm
     //          dialog (no longer the system window.confirm, which clashed with the app).
     const [discardAction, setDiscardAction] = useState<null | (() => void)>(null);
+    // ITALIANO: e' aperta la domanda "chiudo il file: salvo prima?" — ENGLISH: the "closing the file: save first?" question is open
+    const [chiusuraFile, setChiusuraFile] = useState(false);
     const handleRef = useRef<any>(null);
     // ITALIANO: i tag COME STANNO NEL FILE (ultima apertura o ultimo salvataggio riuscito). Servono
     //           a "Scarta modifiche": si torna a questi, senza chiudere il file.
@@ -209,6 +211,25 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         soundManager.pop();
     });
 
+    // ITALIANO: CHIUDI FILE. Con modifiche non salvate chiede prima cosa farne (salvare, buttare,
+    //           lasciar perdere); senza modifiche chiude subito. Diverso dalla X in alto a destra,
+    //           che mette via la finestra ma tiene il file aperto per quando la si riapre.
+    // ENGLISH: CLOSE FILE. With unsaved edits it asks what to do with them first (save, throw away,
+    //          never mind); with nothing pending it closes straight away. Different from the X in
+    //          the corner, which only puts the window away and keeps the file open for next time.
+    const chiudiFile = () => {
+        if (!dirty) { azzera(); soundManager.pop(); return; }
+        setChiusuraFile(true);
+    };
+
+    const salvaEChiudiFile = async () => {
+        setChiusuraFile(false);
+        // ITALIANO: chiudo SOLO se il salvataggio e' andato a buon fine.
+        // ENGLISH: close ONLY if the save actually succeeded.
+        const scritto = await salva(false);
+        if (scritto) { azzera(); soundManager.pop(); }
+    };
+
     // ITALIANO: fa il parsing PRIMA di toccare qualsiasi stato: se il file e' illeggibile lancia,
     //           e chi chiama NON aggiorna l'handle di scrittura. Cosi' contenuto mostrato e file di
     //           destinazione restano sempre lo stesso file (prima potevano divergere: un file
@@ -282,12 +303,18 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         }
     };
 
-    const salva = async (forzaNuovoFile = false) => {
+    // ITALIANO: restituisce true SOLO se il file e' stato scritto davvero. Serve a "Salva e chiudi":
+    //           se la scrittura fallisce o l'utente annulla la finestra di salvataggio, il file NON
+    //           va chiuso, altrimenti il lavoro sparirebbe in silenzio.
+    // ENGLISH: returns true ONLY if the file was really written. "Save and close" needs it: if the
+    //          write fails or the user cancels the save dialog, the file must NOT be closed,
+    //          otherwise the work would vanish silently.
+    const salva = async (forzaNuovoFile = false): Promise<boolean> => {
         // ITALIANO: se una rilettura dal disco e' ancora in corso NON si salva: si scriverebbe la
         //           versione vecchia in memoria sopra quella piu' recente.
         // ENGLISH: if a re-read from disk is still running do NOT save: it would write the stale
         //          in-memory version over the newer one.
-        if (rileggendo) return;
+        if (rileggendo) return false;
         const nome = fileName || 'tags.txt';
         // ITALIANO: FOTOGRAFIA dei tag al momento del salvataggio. La scrittura e' asincrona e puo'
         //           durare (OneDrive, cartella di rete, antivirus che scansiona): se nel frattempo
@@ -340,11 +367,11 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 //          real IDENTITY (same folder), not just the name, so a same-named file
                 //          can't hijack the photo.
                 if (onFileSaved) onFileSaved(nome, istantanea, bersaglio);
-                return;
+                return true;
             } catch (err) {
                 console.error('[Editor tag] salvataggio fallito', err);
                 showNotification(t.tagEditorSaveError, 'error');
-                return;
+                return false;
             }
         }
 
@@ -369,13 +396,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${handle.name}`, 'success');
                 if (onFileSaved) onFileSaved(handle.name, istantanea, handle);
+                return true;
             } catch (err: any) {
                 if (err && err.name !== 'AbortError') {
                     console.error(err);
                     showNotification(t.tagEditorSaveError, 'error');
                 }
+                return false;
             }
-            return;
         }
 
         // ITALIANO: riserva per browser senza selettore di salvataggio
@@ -388,6 +416,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             concludiSalvataggio();
             showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
+            return true;
         } finally { URL.revokeObjectURL(url); }
     };
 
@@ -478,6 +507,11 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                         <ListPlus size={14} /> {t.tagEditorAddProjectTags}
                     </button>
                     <div className="flex-1" />
+                    {/* ITALIANO: chiude il file aperto. Spento quando l'editor e' gia' un foglio bianco. */}
+                    {/* ENGLISH: closes the open file. Off when the editor is already a blank sheet. */}
+                    <button onClick={chiudiFile} disabled={!fileName && tags.length === 0} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>
+                        <FileX2 size={14} /> {t.tagEditorCloseFile}
+                    </button>
                     <button onClick={() => salva(false)} disabled={tags.length === 0 || rileggendo} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
                         <Save size={14} /> {t.tagEditorSave}
                     </button>
@@ -534,6 +568,23 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setDiscardAction(null)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
                             <button onClick={() => { const a = discardAction; setDiscardAction(null); if (a) a(); }} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.closeWithoutSaving}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ITALIANO: chiusura del FILE con modifiche in sospeso: tre strade, come per il progetto. */}
+            {/* ENGLISH: closing the FILE with pending edits: three ways out, as for the project. */}
+            {chiusuraFile && (
+                <div className="fixed inset-0 z-[340] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setChiusuraFile(false)}>
+                    <div className={`w-[90%] max-w-md rounded-2xl shadow-2xl border p-5 flex flex-col gap-4 animate-in zoom-in-95 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
+                        <p className={`text-sm ${testo}`}>{t.tagEditorCloseConfirm}</p>
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <button onClick={() => setChiusuraFile(false)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
+                            <button onClick={() => { setChiusuraFile(false); azzera(); soundManager.pop(); }} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.closeWithoutSaving}</button>
+                            <button onClick={salvaEChiudiFile} disabled={rileggendo} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
+                                <Save size={14} /> {t.saveAndClose}
+                            </button>
                         </div>
                     </div>
                 </div>

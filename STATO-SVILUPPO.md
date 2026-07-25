@@ -1,7 +1,20 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.1.0
+**Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 89, in lavorazione): nell'editor dei tag arriva il tasto **"Chiudi file"**,
+rosso, a sinistra di Salva. Serviva: fino ad ora l'unico modo di togliere di mezzo un file aperto era
+"Nuovo". Se ci sono modifiche non salvate chiede prima cosa farne, con tre strade (salva e chiudi,
+chiudi senza salvare, annulla); se non c'è niente in sospeso chiude e basta. Importante: se il
+salvataggio non riesce — cartella di rete che sparisce, finestra di salvataggio annullata — il file
+**non** viene chiuso, altrimenti il lavoro sparirebbe in silenzio.
+Preparato anche uno strumento per i **tag che mi manderai**: legge i file dell'editor (.txt o .json),
+dice quali tag sono già nel dizionario e quali no, e inserisce solo quelli nuovi nella loro categoria.
+Due tag scritti in modo diverso (maiuscole, trattini bassi, spazi doppi) vengono riconosciuti come lo
+stesso tag, così non nascono doppioni.
+Fatta la **copertina per Civitai**: là la scheda è verticale e ritaglia il centro dell'immagine, quindi
+logo e nome stanno esattamente al centro. Il programma salva anche l'anteprima già ritagliata, per
+vedere come verrà la scheda prima di caricarla.
 Novità (traguardo 88): il progetto è ora **pubblico** su GitHub. Prima di aprirlo ho controllato
 tutta la storia dei salvataggi: nessuna chiave, nessuna password, nessun percorso del tuo computer
 è mai finito dentro. La cartella `Release` e le note di lavoro restano fuori. Chiunque ora può
