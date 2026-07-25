@@ -1,7 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.10
+**Versione attuale:** 1.0.11
+Novità 1.0.11 (traguardo 81): riparati i **5 difetti** che un secondo controllo agentico (14 agenti)
+ha trovato **dentro le riparazioni della 1.0.10**. Il più serio: salvando un file nell'editor
+veniva congelata la lista dei tag ma non il file di destinazione, così aprendo un altro file
+durante la scrittura il progetto poteva abbinare i tag alla foto sbagliata e sovrascriverne il
+`.txt` al salvataggio successivo. Poi: i tag aggiunti mentre l'editor rilegge dal disco non
+vengono più buttati; il visualizzatore non rallenta più man mano che si sfoglia una ricerca lunga;
+un recupero anti-crash lasciato dalla versione precedente non va più perso nell'aggiornamento. In
+più, per correttezza verso chi legge, l'avviso antivirus ora dice che il programma **di serie** non
+invia nulla su Internet: era vero appena installato ma non con la funzione Gemini attiva.
 Novità 1.0.10 (traguardo 80): riparati i **9 difetti** trovati dal controllo agenti mirato sul
 cambiamento 1.0.7 → 1.0.9 (18 agenti, arrivato in fondo). I tre importanti: **l'installer non
 taglia più il testo** (l'avviso antivirus della 1.0.9 faceva sparire le ultime righe in russo,
