@@ -128,6 +128,8 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 | Priorità | Traguardo | In parole semplici | Versione |
 |----------|-----------|--------------------|----------|
+| Media | Abbellire la pagina di presentazione del progetto | La pagina che si vede aprendo il progetto su GitHub (il file `README.md`) è quella che descrive il programma a chi lo trova. Va resa bella e chiara: titolo con logo, qualche immagine del programma in funzione, elenco leggibile di cosa sa fare, come si installa, e le note importanti (dati in `%APPDATA%`, nessuna raccolta di dati, chiave Gemini cifrata). Richiesta di Matteo del 25 luglio 2026: da fare "prossimamente", non urgente. | 1.0.x |
+| Bassa | Sistemare il velo del trascinamento | Quando si trascinano file sopra la finestra compare la scritta "Rilascia qui le immagini". Se si annulla il trascinamento premendo Esc, quel velo può restare a schermo finché non si trascina di nuovo qualcosa. È **solo estetico** (non blocca i clic, perché è trasparente ai comandi). Per toglierlo serve un controllo a tempo sul trascinamento, che va provato bene per non far sfarfallare il velo mentre si trascina davvero. | 1.0.x |
 | Bassa | Tradurre il dizionario dei tag | I ~1050 tag suggeriti (e i 27 nomi di categoria) hanno la traduzione solo in italiano e inglese: nelle altre 7 lingue restano in inglese. In 1.0.4 la **torta delle statistiche** è stata resa coerente (fuori da it/en è tutta in inglese, non più mezza tradotta e mezza no), ma **tradurre davvero tutti i ~1080 testi nelle 7 lingue** resta un lavoro grosso e delicato (va fatto bene, non a macchina): da decidere se e come affrontarlo (traduzione umana/professionale, oppure accettare l'inglese). | 1.0.x |
 
 ---
