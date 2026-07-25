@@ -522,7 +522,7 @@ function buildSidebar(logo, { uninstall = false } = {}) {
     //          makes the stacking readable, otherwise the frames would merely cross each other.
     const pw = cv.w * 0.285;
     const ph = pw * 0.75;                   // 4:3
-    const fanCx = cv.w / 2, fanCy = cv.h * 0.845;
+    const fanCx = cv.w / 2, fanCy = cv.h * 0.868;
     const GRADI = Math.PI / 180;
     const ventaglio = [
         { dx: -cv.w * 0.20, dy: cv.h * 0.010, ang: -15 * GRADI, acceso: false },
