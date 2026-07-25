@@ -87,6 +87,22 @@ If you want it, get a free key at [Google AI Studio](https://aistudio.google.com
 
 ---
 
+## 🤝 Ideas, and a hand with the languages
+
+This app was built by one person, around one way of working. If yours is different, that is worth hearing — **[tell us what would help](../../issues/new?template=idea.yml)**. Half-formed ideas are fine; describing what slows you down is more useful than describing a solution.
+
+### The translations need native speakers
+
+The interface speaks nine languages, but only **Italian and English were written by someone who actually speaks them**. The other seven are honest attempts, and attempts have accents: a word that is technically right but sounds wrong, a sentence too long for its button, a tone that lands oddly.
+
+If something reads badly in your language, **[say so here](../../issues/new?template=translation.yml)** — what it says now, what it should say. You do not need to know how to program, and a single sentence is a perfectly good contribution.
+
+One part is deliberately still untranslated: the **dictionary of ~1050 suggested tags** and its 27 category names exist only in Italian and English. Machine-translating a thousand tags would produce plausible nonsense, so it has been left alone until real speakers can look at it. If you are willing to take on a slice of it in French, Spanish, German, Chinese, Japanese, Portuguese or Russian, open an issue and say which language — even a hundred tags is progress.
+
+Bugs go **[here](../../issues/new?template=bug.yml)**. If tag files were ever changed or lost without being asked to, that one jumps the queue.
+
+---
+
 ## 📝 Credits
 
 Developed and designed by **xXIlRizzoXx**.

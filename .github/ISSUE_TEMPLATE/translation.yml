@@ -1,0 +1,64 @@
+name: "🌍 Translation fix"
+description: "A sentence in the app reads wrong in your language, or is missing"
+title: "[<language>] "
+labels: ["translation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you — this is the kind of help the project needs most.
+
+        The interface exists in nine languages, but only Italian and English were written by
+        someone who speaks them. If a sentence in your language sounds clumsy, means the wrong
+        thing, or is simply missing, tell us here. **You do not need to know how to program**:
+        write what you see and what it should say, that is enough.
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - Italiano
+        - English
+        - Français
+        - Español
+        - Deutsch
+        - 中文
+        - 日本語
+        - Português
+        - Русский
+    validations:
+      required: true
+
+  - type: textarea
+    id: where
+    attributes:
+      label: Where do you see it?
+      description: "The screen or the button. A screenshot is perfect if you have one."
+      placeholder: "In Settings, the switch under the AI section / on the button that empties the trash…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What it says now
+      placeholder: "Copy the exact wording you see on screen"
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested
+    attributes:
+      label: What it should say
+      placeholder: "Your suggestion"
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why (optional)
+      description: "Wrong word, wrong tone, too long for the button, grammatically broken…"
+    validations:
+      required: false

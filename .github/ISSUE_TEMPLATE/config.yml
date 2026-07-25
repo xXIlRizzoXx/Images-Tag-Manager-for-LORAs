@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "🏷️ Help translate the tag dictionary"
+    url: https://github.com/xXIlRizzoXx/Images-Tag-Manager-for-LORAs/issues/new?title=Tag+dictionary+%E2%80%94+%3Clanguage%3E&labels=translation&body=Language%3A%20%0A%0AI%20can%20help%20with%20the%20tag%20dictionary%20in%20this%20language.%20Roughly%20how%20much%20I%20can%20cover%3A%20%0A
+    about: "The ~1050 suggested tags and their 27 category names exist only in Italian and English. If you are a native speaker of one of the other seven languages, this is where help matters most."
