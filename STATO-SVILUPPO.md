@@ -1,9 +1,18 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 24 luglio 2026
-**Versione attuale:** 1.0.7
+**Ultimo aggiornamento:** 25 luglio 2026
+**Versione attuale:** 1.0.8
 **Ultima consegna:** 24 luglio 2026 — portable + installer 1.0.7 in `Release\` (solo le 1.0.7).
-Novità 1.0.7 (traguardo 77): **12 richieste** di Matteo — trascinamento immagini (con .txt
+Novità 1.0.8 (traguardo 78): riparati i **7 problemi** trovati dal controllo agenti sulla 1.0.7 —
+il più importante evitava che, dopo un blocco improvviso dell'app, i tag di una foto finissero su
+un'altra foto con lo **stesso nome** in un'altra sottocartella (la struttura tipica dei dataset
+LoRA). Sistemati anche: nell'editor dei tag lo "scarta modifiche" ora scarta davvero (il file
+però **resta aperto**, e alla riapertura viene riletto dal disco), l'avviso quando i tag di gruppo
+stanno per finire su foto nascoste dalla ricerca, il ricarico automatico che sporcava
+annulla/ripeti e poteva partire due volte, "Seleziona tutte" che cancellava le selezioni nascoste,
+e la foto aperta che spariva togliendole il tag cercato. In più la **barra degli strumenti** della
+galleria non si accavalla più restringendo la finestra. Novità
+1.0.7 (traguardo 77): **12 richieste** di Matteo — trascinamento immagini (con .txt
 automatico), ricerca per tag nella pagina principale + "inverti selezione", editor tag potenziato
 (tasto "aggiungi tag del progetto", aggiunta multipla con virgole, tag importati che entrano nella
 palette, finestra "scarta" a tema), pannello selezione più largo/responsive con ricerca e legenda

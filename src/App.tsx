@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, FlipHorizontal2 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Replace } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
@@ -116,6 +116,31 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
     };
 };
 
+// ITALIANO: Chiave del BACKUP anti-crash: cartella + nome del file. Deve restare identica fra
+//           una sessione e l'altra (il backup si rilegge dopo un riavvio), quindi NON puo' usare
+//           i numeri progressivi di makeFolderKeyer, che dipendono dall'ordine di scansione.
+//           Uso il NOME della cartella (o il percorso, quando c'e'). Col solo nome del file, due
+//           foto omonime in sottocartelle diverse (10_viso\img.png e 20_corpo\img.png, la tipica
+//           struttura LoRA) si sovrascrivevano a vicenda nel backup: dopo un crash i tag di una
+//           venivano ripristinati sull'ALTRA e al primo salvataggio finivano nel .txt sbagliato.
+// ENGLISH: Crash-backup key: folder + file name. It must stay identical across sessions (the
+//          backup is re-read after a restart), so it canNOT use makeFolderKeyer's running numbers,
+//          which depend on scan order. I use the folder NAME (or the path, when available). With
+//          the file name alone, two same-named photos in different subfolders (10_face\img.png and
+//          20_body\img.png, the typical LoRA layout) overwrote each other in the backup: after a
+//          crash one photo's tags were restored onto the OTHER and the first save wrote them into
+//          the wrong .txt.
+const BACKUP_KEY_SEP = '\x1f';
+const makeBackupKeyer = (folderOf: Map<any, any> | null | undefined) => {
+    return (file: any): string => {
+        const dir = folderOf ? folderOf.get(file) : null;
+        let label = '';
+        if (typeof dir === 'string') label = dir;
+        else if (dir && typeof dir.name === 'string') label = dir.name;
+        return label + BACKUP_KEY_SEP + file.name;
+    };
+};
+
 // ITALIANO: La cartella di un'immagine va usata come destinazione di salvataggio SOLO se e'
 //           un vero handle scrivibile (ha getFileHandle). Le stringhe-percorso servono solo
 //           per la chiave qui sopra: non devono mai finire in dirHandle, o il salvataggio
@@ -126,6 +151,19 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
 //          getFileHandle).
 const asDirHandle = (dir: any): any =>
     (dir && typeof dir.getFileHandle === 'function') ? dir : null;
+
+// ITALIANO: ordinamento condiviso da galleria, cestino e visualizzatore (ordina la lista ricevuta
+//           e la restituisce). Tenerlo in un posto solo evita che le liste finiscano in ordini
+//           diversi fra loro.
+// ENGLISH: sorting shared by gallery, trash and viewer (sorts the given list and returns it).
+//          Keeping it in one place stops the lists from drifting into different orders.
+const applySort = (list: any[], order: string): any[] => {
+    if (order === 'name-asc') list.sort((a, b) => a.file.name.localeCompare(b.file.name));
+    else if (order === 'name-desc') list.sort((a, b) => b.file.name.localeCompare(a.file.name));
+    else if (order === 'date-asc') list.sort((a, b) => a.file.lastModified - b.file.lastModified);
+    else if (order === 'date-desc') list.sort((a, b) => b.file.lastModified - a.file.lastModified);
+    return list;
+};
 
 // ITALIANO: PRESTAZIONI — una singola card della galleria, MEMORIZZATA con React.memo. Prima le
 //           miniature erano tutte inline nel corpo di App: ogni piccola modifica (es. un tag su UNA
@@ -335,7 +373,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.0.7');
+    const [appVersion, setAppVersion] = useState<string>('1.0.8');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -511,7 +549,11 @@ export default function App() {
                 const data: Record<string, { tags: string[] }> = {};
                 for (const img of images) {
                     if (img.isTrashed) continue;
-                    data[img.file.name] = { tags: img.tags };
+                    // ITALIANO: chiave cartella+nome assegnata all'import (vedi makeBackupKeyer):
+                    //           due foto omonime in sottocartelle diverse restano separate.
+                    // ENGLISH: folder+name key assigned at import (see makeBackupKeyer): two
+                    //          same-named photos in different subfolders stay separate.
+                    data[img.backupKey || (BACKUP_KEY_SEP + img.file.name)] = { tags: img.tags };
                 }
                 // ITALIANO: Oltre al nome cartella salviamo una "impronta" del contenuto. Il solo nome
                 //           non basta: i dataset LoRA si chiamano quasi sempre allo stesso modo
@@ -600,17 +642,26 @@ export default function App() {
                 return terms.every(term => lower.some((tg: string) => tg.includes(term)));
             });
         }
-        if (sortOrder === 'name-asc') {
-            sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
-        } else if (sortOrder === 'name-desc') {
-            sorted.sort((a, b) => b.file.name.localeCompare(a.file.name));
-        } else if (sortOrder === 'date-asc') {
-            sorted.sort((a, b) => a.file.lastModified - b.file.lastModified);
-        } else if (sortOrder === 'date-desc') {
-            sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
-        }
-        return sorted;
+        return applySort(sorted, sortOrder);
     }, [images, sortOrder, tagSearch]);
+
+    // ITALIANO: lista usata dal VISUALIZZATORE. E' quella filtrata, ma se la foto aperta e' appena
+    //           uscita dal filtro (tipico: cerchi "smile", apri una foto e le TOGLI il tag "smile")
+    //           la tengo dentro finche' resta aperta. Prima spariva di colpo: la finestra grande si
+    //           chiudeva da sola a meta' lavoro e si tornava alla griglia senza piu' frecce avanti
+    //           e indietro. Cosi' invece si continua a sfogliare e si chiude quando si vuole.
+    // ENGLISH: list used by the VIEWER. It is the filtered one, but if the open photo has just left
+    //          the filter (typical: search "smile", open a photo and REMOVE its "smile" tag) I keep
+    //          it in while it stays open. It used to vanish at once: the big window closed by itself
+    //          mid-task and dropped the user back on the grid with no next/prev arrows. Now browsing
+    //          continues and the window closes when the user decides.
+    const lightboxImages = useMemo(() => {
+        if (!selectedImageId) return displayedImages;
+        if (displayedImages.some(img => img.id === selectedImageId)) return displayedImages;
+        const aperta = images.find(img => img.id === selectedImageId && !img.isTrashed);
+        if (!aperta) return displayedImages;
+        return applySort([...displayedImages, aperta], sortOrder);
+    }, [displayedImages, images, selectedImageId, sortOrder]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
@@ -620,18 +671,24 @@ export default function App() {
     //          memoized gallery cards (isSelected boolean prop).
     const selectedForBulkSet = useMemo(() => new Set(selectedForBulk), [selectedForBulk]);
 
+    // ITALIANO: quante foto SELEZIONATE non sono piu' visibili per via della ricerca per tag. La
+    //           selezione sopravvive di proposito al cambio di filtro (come in qualsiasi programma),
+    //           ma i tag in blocco finiscono anche su quelle nascoste: senza avviso si rischiava di
+    //           credere di taggare le 30 foto a schermo mentre se ne stavano taggando 150 invisibili.
+    //           Il pannello lo dice chiaramente prima della conferma.
+    // ENGLISH: how many SELECTED photos are no longer visible because of the tag search. The
+    //          selection deliberately survives a filter change (as in any program), but bulk tags
+    //          also land on the hidden ones: with no warning one could believe they were tagging the
+    //          30 photos on screen while actually tagging 150 invisible ones. The panel now says so
+    //          plainly before the confirmation.
+    const hiddenSelectedCount = useMemo(() => {
+        if (selectedForBulk.length === 0) return 0;
+        const visibili = new Set(displayedImages.map(img => img.id));
+        return selectedForBulk.filter(id => !visibili.has(id)).length;
+    }, [selectedForBulk, displayedImages]);
+
     const sortedTrashedImages = useMemo(() => {
-        let sorted = [...trashedImages];
-        if (trashSortOrder === 'name-asc') {
-            sorted.sort((a, b) => a.file.name.localeCompare(b.file.name));
-        } else if (trashSortOrder === 'name-desc') {
-            sorted.sort((a, b) => b.file.name.localeCompare(a.file.name));
-        } else if (trashSortOrder === 'date-asc') {
-            sorted.sort((a, b) => a.file.lastModified - b.file.lastModified);
-        } else if (trashSortOrder === 'date-desc') {
-            sorted.sort((a, b) => b.file.lastModified - a.file.lastModified);
-        }
-        return sorted;
+        return applySort([...trashedImages], trashSortOrder);
     }, [trashedImages, trashSortOrder]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
@@ -786,8 +843,8 @@ export default function App() {
     //          previous if it was the last), without closing the window. Closes only if no
     //          photo is left. "Next" is computed BEFORE trashing, on the currently shown list.
     const handleTrashFromLightbox = (id: string) => {
-        const idx = displayedImages.findIndex(img => img.id === id);
-        const nextImg = idx === -1 ? null : (displayedImages[idx + 1] || displayedImages[idx - 1] || null);
+        const idx = lightboxImages.findIndex(img => img.id === id);
+        const nextImg = idx === -1 ? null : (lightboxImages[idx + 1] || lightboxImages[idx - 1] || null);
         setImages(prev => prev.map(img => img.id === id ? { ...img, isTrashed: true } : img));
         // ITALIANO: come sopra, tolgo la foto cestinata dalla selezione in blocco.
         // ENGLISH: as above, drop the trashed photo from the bulk selection.
@@ -955,6 +1012,19 @@ export default function App() {
             // ENGLISH: folder+name key (see makeFolderKeyer): an image and a .txt pair up ONLY
             //          when they live in the same subfolder.
             const folderKeyOf = makeFolderKeyer(folderOf);
+            // ITALIANO: chiave del backup anti-crash (cartella + nome), stabile fra le sessioni.
+            //           `nomiUnici` contiene i nomi che compaiono UNA sola volta in questo import:
+            //           solo per quelli si puo' ancora leggere un backup VECCHIO (salvato col solo
+            //           nome del file) senza rischio di scambio, cosi' un recupero gia' in memoria
+            //           non va perso con l'aggiornamento.
+            // ENGLISH: crash-backup key (folder + name), stable across sessions. `nomiUnici` holds
+            //          the names appearing exactly ONCE in this import: only for those can an OLD
+            //          backup (keyed by file name alone) still be read with no risk of a mix-up, so
+            //          an already-stored recovery is not lost on upgrade.
+            const backupKeyOf = makeBackupKeyer(folderOf);
+            const conteggioNomi = new Map<string, number>();
+            for (const f of imgFiles) conteggioNomi.set(f.name, (conteggioNomi.get(f.name) || 0) + 1);
+            const nomiUnici = new Set([...conteggioNomi.entries()].filter(([, n]) => n === 1).map(([nome]) => nome));
             const textMap = new Map();
             for (let i = 0; i < txtFiles.length; i++) {
                 try {
@@ -1017,9 +1087,19 @@ export default function App() {
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
-                const entry = backupMap && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)
-                    ? backupMap[imgFiles[i].name]
-                    : undefined;
+                const chiaveBackup = backupKeyOf(imgFiles[i]);
+                let entry: { tags?: unknown; caption?: unknown } | undefined = undefined;
+                if (backupMap) {
+                    if (Object.prototype.hasOwnProperty.call(backupMap, chiaveBackup)) {
+                        entry = backupMap[chiaveBackup];
+                    } else if (nomiUnici.has(imgFiles[i].name) && Object.prototype.hasOwnProperty.call(backupMap, imgFiles[i].name)) {
+                        // ITALIANO: backup salvato da una versione precedente (solo nome file): lo accetto
+                        //           SOLO se in questo import quel nome e' unico, quindi non e' ambiguo.
+                        // ENGLISH: backup written by an older version (file name only): accepted ONLY when
+                        //          that name is unique in this import, so it cannot be ambiguous.
+                        entry = backupMap[imgFiles[i].name];
+                    }
+                }
                 if (entry) {
                     if (Array.isArray(entry.tags)) {
                         const backupTags = (entry.tags as unknown[])
@@ -1044,6 +1124,9 @@ export default function App() {
                     height: thumbData?.height || 0,
                     tags: finalTags,
                     originalTags: [...orderedTags],
+                    // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash.
+                    // ENGLISH: the key under which this photo is stored in the crash backup.
+                    backupKey: chiaveBackup,
                     // ITALIANO: OGNI immagine si porta dietro la cartella da cui proviene. Prima
                     //           esisteva una sola cartella globale: aprendo una seconda cartella
                     //           senza chiudere la prima, i tag della prima venivano scritti dentro
@@ -1329,12 +1412,24 @@ export default function App() {
     //          and, if it changed (newer modified time), refresh the thumbnail and the full image.
     //          Works for photos opened from a FOLDER (which carry their writable handle); the Lightbox
     //          regenerates the image because it depends on file.
+    // ITALIANO: "sto gia' ricontrollando": tornando sull'app due volte di fila (alt-tab veloce) il
+    //           secondo controllo partiva mentre il primo stava ancora leggendo il file, entrambi
+    //           vedevano la foto vecchia e la ricaricavano — avviso doppio e anteprima generata due
+    //           volte per niente. Con questa guardia il secondo controllo aspetta il suo turno.
+    // ENGLISH: "already re-checking": returning to the app twice in a row (fast alt-tab) started the
+    //          second check while the first was still reading the file, both saw the old photo and
+    //          reloaded it — duplicate notification and a thumbnail generated twice for nothing.
+    //          With this guard the second check simply skips.
+    const reloadingRef = useRef(false);
+
     useEffect(() => {
         const ricontrolla = async () => {
             const id = selectedImageId;
             if (!id) return;
+            if (reloadingRef.current) return;
             const img = imagesRef.current.find(i => i.id === id);
             if (!img || !img.dirHandle || typeof img.dirHandle.getFileHandle !== 'function') return;
+            reloadingRef.current = true;
             try {
                 const fh = await img.dirHandle.getFileHandle(img.file.name);
                 const fresh = await fh.getFile();
@@ -1343,10 +1438,19 @@ export default function App() {
                     try { thumbData = await generateThumbnail(fresh); } catch (_) { /* tengo la vecchia anteprima */ }
                     // ITALIANO: NON revoco la vecchia anteprima (potrebbe essere nella cronologia annulla).
                     // ENGLISH: do NOT revoke the old thumbnail (it may live in the undo history).
+                    // ITALIANO: questo ricarico NON e' un'azione dell'utente: non deve entrare nella
+                    //           cronologia. Prima ci finiva, e allora "Annulla" riportava la foto al
+                    //           file VECCHIO invece di annullare l'ultima modifica ai tag; peggio, un
+                    //           ricarico avvenuto in sottofondo cancellava i "Ripeti" in sospeso.
+                    // ENGLISH: this reload is NOT a user action: it must not enter the history. It used
+                    //          to, so "Undo" restored the OLD file instead of undoing the last tag edit;
+                    //          worse, a background reload discarded any pending "Redo" steps.
+                    isUndoRedoAction.current = true;
                     setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
                     showNotification(t.imageReloaded, 'info');
                 }
             } catch (_) { /* file spostato/illeggibile: ignoro */ }
+            finally { reloadingRef.current = false; }
         };
         window.addEventListener('focus', ricontrolla);
         return () => window.removeEventListener('focus', ricontrolla);
@@ -1800,11 +1904,23 @@ export default function App() {
     }, [copiedTags, updateImageTags, t]);
 
     // ITALIANO: Seleziona TUTTE le foto visibili; se sono gia' tutte selezionate, le deseleziona.
-    // ENGLISH: Select ALL visible photos; if they are all already selected, deselect them.
+    //           Agisce SOLO sulle visibili: le eventuali selezioni nascoste dalla ricerca restano
+    //           intatte, esattamente come fa "Inverti selezione". Prima il tasto sostituiva l'intera
+    //           selezione (o la svuotava del tutto), quindi con un filtro attivo bastava un clic per
+    //           perdere senza preavviso decine di foto scelte a mano e non piu' visibili.
+    // ENGLISH: Select ALL visible photos; if they are all already selected, deselect them. It acts
+    //          ONLY on the visible ones: any selection hidden by the search stays untouched, exactly
+    //          like "Invert selection". The button used to replace the whole selection (or empty it),
+    //          so with a filter active one click silently dropped dozens of hand-picked photos that
+    //          were no longer visible.
     const toggleSelectAll = () => {
         const visibleIds = displayedImages.map(img => img.id);
         const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedForBulk.includes(id));
-        setSelectedForBulk(allSelected ? [] : visibleIds);
+        setSelectedForBulk(prev => {
+            const visibleSet = new Set(visibleIds);
+            const hiddenSelected = prev.filter(id => !visibleSet.has(id));
+            return allSelected ? hiddenSelected : [...hiddenSelected, ...visibleIds];
+        });
         soundManager.pop();
     };
 
@@ -2201,12 +2317,11 @@ export default function App() {
         //          shows while at least one image is selected). It used to stay open with the
         //          photos still selected, so the next click silently re-applied tags to them.
         setSelectedForBulk([]);
-        setSelectedForBulk([]); 
     };
 
-    const currentIndex = displayedImages.findIndex(img => img.id === selectedImageId);
-    const handleNext = () => { if (currentIndex < displayedImages.length - 1) { setSlideDirection('left'); setSelectedImageId(displayedImages[currentIndex + 1].id); } };
-    const handlePrev = () => { if (currentIndex > 0) { setSlideDirection('right'); setSelectedImageId(displayedImages[currentIndex - 1].id); } };
+    const currentIndex = lightboxImages.findIndex(img => img.id === selectedImageId);
+    const handleNext = () => { if (currentIndex < lightboxImages.length - 1) { setSlideDirection('left'); setSelectedImageId(lightboxImages[currentIndex + 1].id); } };
+    const handlePrev = () => { if (currentIndex > 0) { setSlideDirection('right'); setSelectedImageId(lightboxImages[currentIndex - 1].id); } };
 
     const handleGlobalTagsChange = (newGlobalTags: string[]) => {
         const added = newGlobalTags.filter(t => !globalTriggers.includes(t));
@@ -2643,7 +2758,7 @@ export default function App() {
             {selectedImageId && (
                 <Lightbox
                     globalTriggers={globalTriggers}
-                    image={displayedImages.find(img => img.id === selectedImageId)}
+                    image={lightboxImages.find(img => img.id === selectedImageId)}
                     onClose={() => setSelectedImageId(null)}
                     updateTags={updateImageTags}
                     allTags={allUniqueTags}
@@ -2651,16 +2766,16 @@ export default function App() {
                     t={t}
                     onNext={handleNext}
                     onPrev={handlePrev}
-                    hasNext={(displayedImages.length - 1) > currentIndex}
+                    hasNext={(lightboxImages.length - 1) > currentIndex}
                     hasPrev={currentIndex > 0}
                     slideDirection={slideDirection}
                     showNotification={showNotification}
                     updateOriginalTags={updateOriginalTags}
-                    dirHandle={displayedImages.find(img => img.id === selectedImageId)?.dirHandle || null}
+                    dirHandle={lightboxImages.find(img => img.id === selectedImageId)?.dirHandle || null}
                     isDarkMode={isDarkMode}
                     onMoveToTrash={handleTrashFromLightbox}
                     imageIndex={currentIndex}
-                    imageCount={displayedImages.length}
+                    imageCount={lightboxImages.length}
                     copiedTags={copiedTags}
                     onCopyTags={(tags: string[]) => { setCopiedTags([...tags]); showNotification(t.tagsCopiedNotif, 'success'); }}
                     lang={lang}
@@ -3114,14 +3229,27 @@ export default function App() {
                         </div>
                     </div>
 
-                    <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex justify-between items-center shrink-0`}>
-                        <div className={`flex-1 flex items-center gap-2 text-sm font-medium min-w-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {/* ITALIANO: barra degli strumenti RESPONSIVE. Su schermo largo (xl) resta divisa in
+                                  tre colonne uguali come sempre: conteggio+ricerca a sinistra, tipo di
+                                  vista al centro, ordinamento+zoom a destra. Sotto quella larghezza le
+                                  tre colonne NON si schiacciano piu' una sull'altra: la prima prende
+                                  una riga tutta sua e le altre due si dividono la riga sotto. Prima la
+                                  riga era rigida (niente "a capo") e restringendo la finestra gli
+                                  elementi finivano uno sopra l'altro. */}
+                    {/* ENGLISH: RESPONSIVE toolbar. On wide screens (xl) it keeps the usual three equal
+                                 columns: count+search left, view mode centre, sort+zoom right. Below
+                                 that width the three columns no longer crush into each other: the first
+                                 takes a full row of its own and the other two share the row below. The
+                                 row used to be rigid (no wrapping) and narrowing the window made the
+                                 elements overlap. */}
+                    <div className={`px-6 py-2.5 ${isDarkMode ? 'bg-gray-800/40 border-gray-800/50' : 'bg-gray-50 border-gray-200'} border-b flex flex-wrap justify-between items-center gap-x-4 gap-y-2 shrink-0`}>
+                        <div className={`basis-full xl:basis-auto flex flex-wrap items-center gap-2 text-sm font-medium min-w-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                             {/* ITALIANO: conteggio — se c'e' una ricerca per tag mostro "filtrate / totali" */}
                             {/* ENGLISH: count — if a tag search is active I show "filtered / total" */}
                             <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${images.filter(i => !i.isTrashed).length}` : `${images.length} ${images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
                             {/* ITALIANO: ricerca per TAG — filtra le immagini mostrate (uno o piu' tag separati da virgola) */}
                             {/* ENGLISH: TAG search — filters the shown images (one or more comma-separated tags) */}
-                            <div className="relative flex-1 min-w-0 max-w-xs">
+                            <div className="relative flex-1 min-w-[150px] max-w-xs">
                                 <Search size={14} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                                 <input
                                     type="text"
@@ -3143,21 +3271,21 @@ export default function App() {
                                             {allSelected ? (t.deselectAll || 'Deseleziona tutte') : (t.selectAll || 'Seleziona tutte')}
                                         </button>
                                         <button onClick={invertSelection} title={t.invertSelection} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                                            <FlipHorizontal2 size={13} />
+                                            <Replace size={13} />
                                             <span className="hidden lg:inline">{t.invertSelection}</span>
                                         </button>
                                     </div>
                                 );
                             })()}
                         </div>
-                        <div className="flex-1 flex justify-center">
+                        <div className="flex-1 flex justify-center min-w-0">
                             <div className={`flex items-center ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'} p-1 rounded-lg shadow-inner`}>
                                 <button onClick={() => setViewMode('square')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'square' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><LayoutGrid size={14} /> {t.square}</button>
                                 <button onClick={() => setViewMode('original')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'original' ? (isDarkMode ? 'bg-gray-700 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm') : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}`}><Grid3X3 size={14} /> {t.original}</button>
                             </div>
                         </div>
-                        <div className="flex-1 flex items-center justify-end gap-3">
-                            <div className="flex items-center gap-2">
+                        <div className="shrink-0 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
                                 <span className={`text-[10px] uppercase font-bold tracking-wider ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.sortBy}:</span>
                                 <select 
                                     value={sortOrder} 
@@ -3224,6 +3352,12 @@ export default function App() {
                         <div className={`absolute bottom-6 left-0 right-0 mx-auto w-[95%] max-w-6xl backdrop-blur-xl border p-4 z-[150] shadow-2xl animate-in slide-in-from-bottom-12 flex flex-col gap-3 max-h-[46vh] rounded-2xl ring-1 ring-black/5 ${isDarkMode ? 'bg-gray-900/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
                             <div className="w-full flex flex-col gap-3 h-full min-h-0">
                                 <div className="flex justify-between items-center shrink-0"><div className="flex items-center gap-3"><div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-indigo-900/50 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}><Grid3X3 size={18} /></div><div><h3 className={`text-sm font-bold leading-tight ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{t.addTagsTo} {selectedForBulk.length} {selectedForBulk.length === 1 ? t.selectedImageSingle : t.selectedImagePlural}</h3><p className={`text-[10px] uppercase tracking-wide ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.dashedPillsDesc}</p></div></div><button onClick={() => { setSelectedForBulk([]); setStagedBulkTags([]); }} className={`p-1.5 rounded-full border hover:bg-red-500 hover:border-red-500 hover:text-white transition-all shadow-sm ${isDarkMode ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'}`}><X size={14} /></button></div>
+                                {hiddenSelectedCount > 0 && (
+                                    <div className={`shrink-0 flex items-start gap-2 px-3 py-2 rounded-lg border text-xs leading-snug ${isDarkMode ? 'bg-amber-900/30 border-amber-700/60 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                        <span>{hiddenSelectedCount} {t.bulkHiddenWarn}</span>
+                                    </div>
+                                )}
                                 {/* ITALIANO: riga responsive — a sinistra scrivi un tag NUOVO (Invio) da applicare alle
                                               foto selezionate; a destra un motore di RICERCA che filtra le pillole sotto. */}
                                 {/* ENGLISH: responsive row — left: type a NEW tag (Enter) to apply to the selected

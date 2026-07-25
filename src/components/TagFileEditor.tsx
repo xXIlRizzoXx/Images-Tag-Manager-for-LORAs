@@ -94,11 +94,49 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     //          dialog (no longer the system window.confirm, which clashed with the app).
     const [discardAction, setDiscardAction] = useState<null | (() => void)>(null);
     const handleRef = useRef<any>(null);
+    // ITALIANO: i tag COME STANNO NEL FILE (ultima apertura o ultimo salvataggio riuscito). Servono
+    //           a "Scarta modifiche": si torna a questi, senza chiudere il file.
+    // ENGLISH: the tags AS THEY ARE IN THE FILE (last open or last successful save). Used by
+    //          "Discard changes": we go back to these, without closing the file.
+    const savedTagsRef = useRef<string[]>([]);
     const triggersRef = useRef<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
     const fallbackInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
+
+    // ITALIANO: RIAPERTURA — il file aperto resta aperto anche dopo aver chiuso la finestra, ma nel
+    //           frattempo quel .txt puo' essere cambiato sul disco (per esempio l'hai modificato dai
+    //           tag della foto nel progetto, o con un altro programma). Allora, riaprendo l'editor,
+    //           lo RILEGGO dal disco: cosi' vedi la versione vera e un "Salva" non riscrive sopra
+    //           alle modifiche piu' recenti con quelle vecchie rimaste in memoria. Se il file non e'
+    //           piu' leggibile (spostato, permessi persi) tengo quello che c'e' senza disturbare.
+    // ENGLISH: REOPEN — the open file stays open after the window is closed, but meanwhile that .txt
+    //          may have changed on disk (e.g. edited from the photo's tags in the project, or by
+    //          another program). So, on reopening the editor, I RE-READ it from disk: you see the
+    //          real version and a "Save" does not overwrite newer changes with stale in-memory ones.
+    //          If the file is no longer readable (moved, permission lost) I keep what is there.
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        const handle = handleRef.current;
+        if (!handle || typeof handle.getFile !== 'function') return undefined;
+        let annullato = false;
+        (async () => {
+            try {
+                const file = await handle.getFile();
+                if (annullato || file.size > EDITOR_MAX_BYTES) return;
+                const testo = await file.text();
+                if (annullato) return;
+                const nuoviTag = parseTagFile(testo, file.name);
+                triggersRef.current = parseTagTriggers(testo, file.name);
+                savedTagsRef.current = [...nuoviTag];
+                setTags(nuoviTag);
+                setFileName(file.name);
+                setDirty(false);
+            } catch (_) { /* file non piu' leggibile: tengo il contenuto in memoria */ }
+        })();
+        return () => { annullato = true; };
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -111,8 +149,17 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         setDiscardAction(() => action);
     };
 
+    // ITALIANO: riporta l'editor a foglio bianco: tag, nome file, casella di scrittura, stato
+    //           "modificato" e soprattutto l'handle del file di destinazione.
+    // ENGLISH: brings the editor back to a blank sheet: tags, file name, input box, "modified"
+    //          flag and above all the target file handle.
+    const azzera = () => {
+        setTags([]); setFileName(''); setInputValue(''); setDirty(false);
+        handleRef.current = null; triggersRef.current = []; savedTagsRef.current = [];
+    };
+
     const nuovo = () => guardDiscard(() => {
-        setTags([]); setFileName(''); handleRef.current = null; triggersRef.current = []; setDirty(false);
+        azzera();
         soundManager.pop();
     });
 
@@ -128,6 +175,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const caricaTesto = (testo: string, nome: string) => {
         const nuoviTag = parseTagFile(testo, nome);       // ITALIANO: puo' lanciare — ENGLISH: may throw
         triggersRef.current = parseTagTriggers(testo, nome);
+        savedTagsRef.current = [...nuoviTag];
         setTags(nuoviTag);
         setFileName(nome);
         setDirty(false);
@@ -197,6 +245,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 const writable = await handleRef.current.createWritable();
                 await writable.write(contenuto);
                 await writable.close();
+                savedTagsRef.current = [...tags];
                 setDirty(false);
                 soundManager.chime();
                 showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
@@ -235,6 +284,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 await writable.write(serializeTagFile(tags, handle.name, triggersRef.current));
                 await writable.close();
                 handleRef.current = handle;
+                savedTagsRef.current = [...tags];
                 setFileName(handle.name);
                 setDirty(false);
                 soundManager.chime();
@@ -257,14 +307,30 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             const a = document.createElement('a');
             a.href = url; a.download = nome;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            savedTagsRef.current = [...tags];
             setDirty(false);
             showNotification(`${t.tagEditorSaved}: ${nome}`, 'success');
         } finally { URL.revokeObjectURL(url); }
     };
 
     // ITALIANO: chiusura con avviso a tema se ci sono modifiche non salvate (tasto X e sfondo).
+    //           Il FILE RESTA APERTO: chiudendo la finestra lo si mette solo via, e riaprendola si
+    //           ritrova. A chiudere il file davvero e' il tasto "Nuovo". Quello che invece NON
+    //           sopravvive sono le modifiche che si e' scelto di SCARTARE: prima restavano in
+    //           memoria, ricomparivano alla riapertura e un "Salva" le rimetteva nel file — cioe'
+    //           lo scarto era una bugia. Ora si torna al contenuto vero del file.
     // ENGLISH: close with a themed warning when there are unsaved edits (X button and backdrop).
-    const chiudi = () => guardDiscard(onClose);
+    //          The FILE STAYS OPEN: closing the window merely puts it away, reopening brings it
+    //          back. The "New" button is what actually closes the file. What does NOT survive are
+    //          the edits the user chose to DISCARD: they used to stay in memory, reappear on reopen
+    //          and a "Save" put them into the file — the discard was a lie. Now the editor goes
+    //          back to the file's real content.
+    const chiudi = () => guardDiscard(() => {
+        setTags([...savedTagsRef.current]);
+        setInputValue('');
+        setDirty(false);
+        onClose();
+    });
 
     const aggiungiTag = () => {
         const nuovi = inputValue.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
