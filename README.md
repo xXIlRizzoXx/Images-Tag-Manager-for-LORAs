@@ -19,7 +19,7 @@
 
 *   📂 **Folder Loading & Project Management**: Import entire folders containing images and their respective `.txt` files in one click.
 *   🏷️ **Advanced Tag Management**: Add, remove, or edit tags for individual images or apply changes to multiple images at once using **Bulk Tagging**.
-*   🤖 **AI Tagging (Gemini, optional · Beta)**: Optional integration with Google Gemini (**Gemini 3.5 Flash**) for booru-style tags. Off by default; bring your own API key (encrypted via the OS keychain).
+*   🤖 **AI Tagging (Gemini, optional · Beta)**: Optional integration with Google Gemini (**Gemini 3.6 Flash**) for booru-style tags. Off by default; bring your own API key (encrypted via the OS keychain).
 *   🎯 **Curated Tag Suggestions**: A built-in static library of categorized tag suggestions (poses, lighting, anatomy, hair, eyes, styles, etc.) that you can click to add. Resizable panel.
 *   🌍 **Global Tag Manager**: View and manage all unique tags present in the project from a single interface. Easily add global "Trigger Words" to all images with one click.
 *   📊 **Project Statistics**: Visual charts and metrics showing tag distribution, total images, tagged percentages, and most used tags, plus a searchable/sortable list of every tag with usage counts.
@@ -75,7 +75,7 @@ The compiled portable executable will be available in the `release/` folder.
 
 ## 🤖 AI Tagging (optional, Gemini · Beta)
 
-AI is **off by default**. When you enable the AI Tools section in Settings and save a valid Gemini API key, the app can **tag images** in booru style suitable for Kohya / sd-scripts LoRA training (comma-separated lowercase tags), optionally biased by a **custom prompt**. It uses a single model, **Gemini 3.5 Flash** — there is no captioning and no model picker.
+AI is **off by default**. When you enable the AI Tools section in Settings and save a valid Gemini API key, the app can **tag images** in booru style suitable for Kohya / sd-scripts LoRA training (comma-separated lowercase tags), optionally biased by a **custom prompt**. It uses a single model, **Gemini 3.6 Flash** — there is no captioning and no model picker.
 
 **Get an API key** at [Google AI Studio](https://aistudio.google.com/app/apikey) → "Create API key".
 The app verifies the key with a tiny test call before saving, then encrypts it in the OS keychain (via Electron `safeStorage`).

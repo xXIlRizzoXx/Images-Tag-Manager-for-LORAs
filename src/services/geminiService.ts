@@ -135,16 +135,25 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
     }
 };
 
-// ITALIANO: Modello vision di Gemini usato dall'app. Ne teniamo UNO SOLO (Gemini 3.5
+// ITALIANO: Modello vision di Gemini usato dall'app. Ne teniamo UNO SOLO (Gemini 3.6
 //           Flash): meno scelte da spiegare e un solo comportamento da collaudare.
-// ENGLISH: Gemini vision model used by the app. We keep exactly ONE (Gemini 3.5 Flash):
-//          fewer choices to explain and a single behaviour to test.
+//           Sostituisce Gemini 3.5 Flash. La sigla 'gemini-3.6-flash' e' quella ufficiale
+//           dell'API (versione stabile, non anteprima) e il modello accetta immagini e
+//           risposte strutturate in JSON, che e' esattamente cio' che serve qui.
+//           Il livello resta 'limited': il piano gratuito ha limiti di frequenza bassi e
+//           per un uso intenso serve la fatturazione attiva.
+// ENGLISH: Gemini vision model used by the app. We keep exactly ONE (Gemini 3.6 Flash):
+//          fewer choices to explain and a single behaviour to test. It replaces Gemini 3.5
+//          Flash. The id 'gemini-3.6-flash' is the official API one (stable, not preview)
+//          and the model takes image input and structured JSON output, exactly what is
+//          needed here. Tier stays 'limited': the free tier has low rate limits and heavy
+//          use requires billing to be enabled.
 export type GeminiTier = 'free' | 'limited' | 'paid';
 export const GEMINI_MODELS: ReadonlyArray<{ id: string; label: string; tier: GeminiTier; recommended: boolean }> = [
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', tier: 'limited', recommended: true },
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', tier: 'limited', recommended: true },
 ];
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 
 // ITALIANO: Chi aveva gia' scelto un modello ora rimosso (es. gemini-2.5-flash salvato
 //           nelle impostazioni) verrebbe lasciato con un id inesistente, e ogni chiamata

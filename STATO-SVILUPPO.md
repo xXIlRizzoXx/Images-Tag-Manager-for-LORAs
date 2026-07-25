@@ -1,7 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.11
+**Versione attuale:** 1.0.12
+Novità 1.0.12 (traguardo 82): l'intelligenza artificiale passa a **Gemini 3.6 Flash** (la sigla è
+stata verificata sulla documentazione ufficiale di Google: versione stabile, accetta le immagini).
+Chi aveva già salvato il modello vecchio viene riportato in automatico su quello nuovo. Nel
+pannello di selezione arriva il tasto **"Elimina selezionate"**, che sposta nel cestino tutte le
+foto scelte: è reversibile, si ripristinano, e nessun file viene toccato su disco finché non si
+svuota il cestino. La **legenda** dei tag è stata riscritta perché non diceva rispetto a cosa:
+ora nomina le foto selezionate ("Sarà aggiunto a tutte le selezionate", "Già presente su alcune
+selezionate", "Nel progetto, non su queste") ed è centrata. Tolte due scritte ridondanti e
+l'icona di "Inverti selezione" non ha più la freccia che confondeva.
 Novità 1.0.11 (traguardo 81): riparati i **5 difetti** che un secondo controllo agentico (14 agenti)
 ha trovato **dentro le riparazioni della 1.0.10**. Il più serio: salvando un file nell'editor
 veniva congelata la lista dei tag ma non il file di destinazione, così aprendo un altro file
@@ -24,9 +33,9 @@ l'editor coi tag del file precedente, e Salva resta disabilitato finché la rile
 Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
 schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
 vengono più saltate.
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.11** in `Release\` (solo questa
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.12** in `Release\` (solo questa
 coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.11 comprende tutto il lavoro dalla 1.0.6 in poi.
+versione riciclata. La 1.0.12 comprende tutto il lavoro dalla 1.0.6 in poi.
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di
