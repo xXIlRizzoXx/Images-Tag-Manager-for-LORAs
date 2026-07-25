@@ -1,7 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 25 luglio 2026
-**Versione attuale:** 1.0.17
+**Versione attuale:** 1.1.0
+Novità 1.1.0 (traguardo 85): **prima versione "tonda"**. Non è un cambiamento singolo: è il numero
+che raccoglie tutto il lavoro fatto dalla 1.0.6 in poi (tre giri di controllo automatico con le
+riparazioni, l'intelligenza artificiale portata a Gemini 3.6 Flash, il tasto "Elimina selezionate",
+l'estetica uniforme dei pulsanti, la fascia laterale dell'installer con le foto a ventaglio) e che
+segna il punto in cui il programma è considerato completo e stabile. Prima di chiudere la versione
+è stato fatto un **controllo completo delle traduzioni**: tutte e 9 le lingue hanno le stesse
+identiche voci, nessuna casella vuota, nessuna scritta rimasta in inglese per sbaglio (le poche
+uguali all'inglese sono parole che in quelle lingue si scrivono davvero così, tipo "Zoom" e
+"Original"); tolte due voci ormai inutilizzate.
 Novità 1.0.15 (traguardo 84): nella **fascia laterale dell’installer** le tre fotografie sono ora
 disposte a **ventaglio**, sovrapposte e inclinate come un mazzo di foto aperto in mano, con sopra
 le righe dei tag fra il logo e le foto, centrate a coppie; la foto centrale copre le altre due. Tolto l’**avviso antivirus dalla schermata di avvio** del
@@ -43,9 +52,10 @@ l'editor coi tag del file precedente, e Salva resta disabilitato finché la rile
 Infine tre minori: l'avviso "foto nascoste" non conta più foto cestinate, Annulla non riporta più a
 schermo la foto prima del ritocco esterno, e nel visualizzatore le foto uscite dalla ricerca non
 vengono più saltate.
-**Ultima consegna:** 25 luglio 2026 — portable + installer **1.0.17** in `Release\` (solo questa
-coppia). Verificata guardando dentro al pacchetto: contiene i file appena compilati, non una
-versione riciclata. La 1.0.17 comprende tutto il lavoro dalla 1.0.6 in poi.
+**Ultima consegna:** 25 luglio 2026 — portable + installer **1.1.0** in `Release\` (solo questa
+coppia, le 1.0.12 sono state tolte). Verificata guardando dentro al pacchetto: contiene i file
+appena compilati, non una versione riciclata. La 1.1.0 comprende tutto il lavoro dalla 1.0.6 in
+poi (le versioni da 1.0.13 a 1.0.17 erano rifiniture mai consegnate).
 Novità 1.0.9 (traguardo 79): **avviso antivirus**. Il programma non ha una firma digitale (il
 certificato costa centinaia di euro l'anno), quindi Windows può dire "editore sconosciuto" e
 qualche antivirus può insospettirsi. Ora la cosa è spiegata in due punti: nella **pagina di
