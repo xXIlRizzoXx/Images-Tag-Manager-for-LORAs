@@ -26,3 +26,10 @@ Portable/
 
 # Claude Code workspace state (worktrees, launch config)
 .claude/
+
+# ITALIANO: note di lavoro interne e materiale non destinato al repo pubblico.
+# ENGLISH: internal working notes and material not meant for the public repo.
+NOTES.md
+ANALISI-*.md
+Civitai/
+_to_delete/
