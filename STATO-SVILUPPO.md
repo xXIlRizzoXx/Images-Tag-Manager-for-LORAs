@@ -1,7 +1,12 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 25 luglio 2026
+**Ultimo aggiornamento:** 29 luglio 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 90): **prima di costruire il programma parte il controllo dei tipi**. Fino a
+ieri la costruzione non controllava niente: un errore nel codice o una scritta dimenticata in una
+delle nove lingue sarebbe entrato dritto dentro l'exe e sarebbe saltato fuori addosso a chi lo usa.
+Ora il comando di costruzione fa prima il controllo e, se trova anche un solo errore, si ferma lì:
+niente exe sbagliato da riconsegnare. Costa pochi secondi e oggi passa pulito.
 Novità 1.2.0 (traguardo 89, in lavorazione): nell'editor dei tag arriva il tasto **"Chiudi file"**,
 rosso, a sinistra di Salva. Serviva: fino ad ora l'unico modo di togliere di mezzo un file aperto era
 "Nuovo". Se ci sono modifiche non salvate chiede prima cosa farne, con tre strade (salva e chiudi,
