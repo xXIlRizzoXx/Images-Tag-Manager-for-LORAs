@@ -1,7 +1,26 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 25 luglio 2026
+**Ultimo aggiornamento:** 29 luglio 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 91): **due foto non possono più scambiarsi i tag**. Ogni foto caricata riceve
+un'etichetta interna che serve al programma per distinguerla dalle altre. Era un numero a caso corto:
+su una cartella da 3000 foto, circa una volta su 160, due foto ricevevano la stessa etichetta e
+diventavano gemelle. Scrivendo un tag su una lo si scriveva anche sull'altra e, al salvataggio, il
+file di testo della seconda veniva sovrascritto: in silenzio, senza nessun avviso. Ora l'etichetta la
+genera il sistema ed è lunga 36 caratteri: due uguali non capitano nemmeno lavorando per anni.
+Provato sul programma vero: 500.000 etichette, zero doppioni; con quella vecchia, 2 cartelle su 500
+avevano già la coppia sbagliata.
+Novità 1.2.0 (traguardo 90): **prima di costruire il programma parte il controllo dei tipi**. Fino a
+ieri la costruzione non controllava niente: un errore nel codice sarebbe entrato dritto dentro l'exe
+e sarebbe saltato fuori addosso a chi lo usa. Ora il comando di costruzione fa prima il controllo e,
+se trova anche un solo errore, si ferma lì: niente exe sbagliato da riconsegnare. Costa pochi secondi
+e oggi passa pulito. Vale la pena dire cosa copre e cosa no: guarda il codice della finestra
+principale, non i file del guscio Electron. Sulle traduzioni si accorge delle scritte usate nella
+schermata principale, ma non di quelle lette dentro le finestre separate (editor dei tag,
+visualizzatore, finestrelle di conferma), perché lì le traduzioni arrivano senza etichetta e il
+controllo non riesce a guardarci dentro. Provato: togliendo la voce russa del tasto "Chiudi file" il
+controllo passa lo stesso. Quel pezzo di buco lo chiude il lavoro già in elenco sui cinque componenti
+da sistemare.
 Novità 1.2.0 (traguardo 89, in lavorazione): nell'editor dei tag arriva il tasto **"Chiudi file"**,
 rosso, a sinistra di Salva. Serviva: fino ad ora l'unico modo di togliere di mezzo un file aperto era
 "Nuovo". Se ci sono modifiche non salvate chiede prima cosa farne, con tre strade (salva e chiudi,

@@ -81,6 +81,34 @@ const detectInitialLang = (): string => {
 //          has always used, pulled out here so it lives in one place.
 const fileBaseName = (name: string): string => name.split('.').slice(0, -1).join('.');
 
+// ITALIANO: IDENTIFICATIVO INTERNO di ogni foto importata. Prima era
+//   `Math.random().toString(36).substring(7)`: una stringa di 4-6 caratteri che su un import da
+//   3000 foto dava due id uguali circa una volta su 160. Due foto con lo stesso id diventano
+//   gemelle: `updateImageTags` riscrive TUTTE le foto che portano quell'id, quindi un tag messo
+//   su una finiva anche sull'altra e al salvataggio il .txt della seconda veniva sovrascritto —
+//   in silenzio, senza nessun avviso, in un programma che serve a preparare dataset.
+//   `crypto.randomUUID()` non puo' ripetersi ed e' sempre disponibile: nell'app la pagina sta su
+//   file://, che Chromium considera contesto sicuro, e in sviluppo su http://localhost.
+//   Il ripiego col contatore copre solo il caso limite di un contesto non sicuro, dove
+//   `randomUUID` non esiste: meglio un id buono che un import che si pianta.
+// ENGLISH: INTERNAL ID of every imported photo. It used to be
+//   `Math.random().toString(36).substring(7)`: a 4-6 char string that produced a duplicate roughly
+//   once every 160 imports of 3000 photos. Two photos sharing an id become twins: `updateImageTags`
+//   rewrites EVERY photo carrying that id, so a tag typed on one landed on the other as well and
+//   the save then overwrote the second photo's .txt — silently, with no warning, in a tool whose
+//   whole job is preparing datasets. `crypto.randomUUID()` cannot repeat and is always there: the
+//   app's page is served from file://, which Chromium treats as a secure context, and dev runs on
+//   http://localhost. The counter fallback only covers the edge case of a non-secure context, where
+//   `randomUUID` is missing: a good id beats an import that throws.
+let contatoreIdFoto = 0;
+const nuovoIdFoto = (): string => {
+    try {
+        return crypto.randomUUID();
+    } catch (_) {
+        return `img-${Date.now().toString(36)}-${(++contatoreIdFoto).toString(36)}`;
+    }
+};
+
 // ITALIANO: CHIAVE "CARTELLA + NOME" per abbinare ogni immagine al SUO .txt.
 //   Due foto con lo STESSO nome in sottocartelle diverse (es. 10_viso\img_001.png e
 //   20_corpo\img_001.png, la disposizione tipica dei dataset LoRA) NON devono scambiarsi
@@ -1257,7 +1285,7 @@ export default function App() {
                     }
                 }
                 newImages.push({
-                    id: Math.random().toString(36).substring(7),
+                    id: nuovoIdFoto(),
                     file: imgFiles[i],
                     thumb: thumbData?.url || '',
                     width: thumbData?.width || 0,
