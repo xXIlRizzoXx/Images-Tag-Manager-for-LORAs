@@ -138,7 +138,9 @@ meno)**, e le **2 lentezze** su dataset enormi rese fluide (pannello selezione e
 senza cambiarne le funzioni. Novità 1.0.4: risolti 8 difetti del controllo agenti. Novità 1.0.3:
 editor sincronizza solo il file GIUSTO. Novità 1.0.2: immagine installer arricchita. Restano
 valide le novità 1.0.1: sfondi viola pieni, tasto lingua senza frangia, caricamento dopo la lingua.
-**Regola versione:** da ora ogni modifica alza la versione di 0.0.1.
+**Regola versione:** ogni modifica alza la versione di 0.0.1, ma solo se arriva **dopo una
+consegna**: quelle che rientrano in una versione ancora da costruire ci entrano dentro e il numero
+resta fermo.
 **Nota:** i numeri 3.x usati durante lo sviluppo erano interni (mai distribuiti);
 la prima versione vera e propria è la 1.0.0. Le etichette "(v3.8.0)" / "(v3.9.0)"
 nei traguardi qui sotto indicano solo l'ordine in cui le funzioni sono state fatte.
