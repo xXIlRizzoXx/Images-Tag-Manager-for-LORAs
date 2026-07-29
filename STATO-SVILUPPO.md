@@ -2,6 +2,13 @@
 
 **Ultimo aggiornamento:** 29 luglio 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 91): **due foto non possono più scambiarsi i tag**. Ogni foto caricata riceve
+un'etichetta interna che serve al programma per distinguerla dalle altre. Era un numero a caso corto:
+su una cartella da 3000 foto, circa una volta su 160, due foto ricevevano la stessa etichetta e
+diventavano gemelle. Scrivendo un tag su una lo si scriveva anche sull'altra e, al salvataggio, il
+file di testo della seconda veniva sovrascritto: in silenzio, senza nessun avviso. Ora l'etichetta la
+genera Windows ed è per costruzione irripetibile. Provato sul programma vero: 500.000 etichette, zero
+doppioni; con quella vecchia, 2 cartelle su 500 avevano già la coppia sbagliata.
 Novità 1.2.0 (traguardo 90): **prima di costruire il programma parte il controllo dei tipi**. Fino a
 ieri la costruzione non controllava niente: un errore nel codice o una scritta dimenticata in una
 delle nove lingue sarebbe entrato dritto dentro l'exe e sarebbe saltato fuori addosso a chi lo usa.
