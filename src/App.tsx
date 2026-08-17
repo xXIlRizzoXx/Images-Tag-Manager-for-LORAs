@@ -224,10 +224,23 @@ const applySort = (list: any[], order: string): any[] => {
 //          re-renders only that card. The functions passed as props are "stable" (useCallback in
 //          App), which the memo needs. content-visibility:auto also skips PAINTING off-screen cards.
 //          No behavior changes: it is identical to the previous inline version.
+// ITALIANO: `--card-h` e' l'altezza che il browser RISERVA a una card non ancora disegnata. Era
+//           fissa a 320px per tutti e due i modi, ma in "Quadrate" una card e' alta quanto la
+//           colonna piu' l'area dei tag: con lo zoom in alto il segnaposto era meno della meta'
+//           del vero, quindi alla prima scorsa di una cartella grande la pagina si ricalcolava di
+//           continuo e la barra di scorrimento saltava. Il valore arriva dalla griglia (vedi lo
+//           stile del contenitore), non come prop: passarlo come prop farebbe ridisegnare TUTTE le
+//           card memorizzate mentre si trascina il cursore dello zoom, che oggi e' solo CSS.
+// ENGLISH: `--card-h` is the height the browser RESERVES for a card it has not painted yet. It was
+//          a flat 320px for both modes, but in "Square" a card is as tall as the column plus the
+//          tag area: at high zoom the placeholder was less than half the real thing, so the first
+//          pass through a large folder kept re-laying out and the scrollbar jumped. The value comes
+//          from the grid (see the container's style), not as a prop: passing it as a prop would
+//          re-render EVERY memoised card while dragging the zoom slider, which today is pure CSS.
 const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
     const lowQuality = img.width * img.height < 1048576;
     return (
-        <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 320px' }}>
+        <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto var(--card-h, 320px)' }}>
             <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
                 <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${isSelected ? 'opacity-80' : ''}`} />
 
@@ -3595,7 +3608,7 @@ export default function App() {
                             //           riusciva a scrivere/toccare i loro tag.
                             // ENGLISH: with the selection panel open I leave space BELOW (pb-[52vh]) to scroll ALL
                             //          cards above the panel: the last ones used to stay covered and unusable.
-                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[52vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
+                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[52vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))`, ['--card-h' as any]: viewMode === 'square' ? `${imageWidth + 180}px` : '320px' }}>
                                 {displayedImages.map((img) => (
                                     <GalleryCard
                                         key={img.id}
