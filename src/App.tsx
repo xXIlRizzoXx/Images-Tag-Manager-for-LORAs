@@ -2029,7 +2029,14 @@ export default function App() {
     // ITALIANO: "Esporta tutti" crea SEMPRE un unico archivio .zip (niente piu' file singoli).
     // ENGLISH: "Export all" ALWAYS creates a single .zip archive (no more one-file-per-image).
     const handleExportAll = () => {
-        const imagesWithTags = images.filter(img => img.tags && img.tags.length > 0);
+        // ITALIANO: `!img.isTrashed` — le foto messe nel cestino sono state SCARTATE dal dataset:
+        //           i loro .txt non devono finire nell'archivio esportato. Mancava, ed era l'unico
+        //           punto del codice che non filtrava le cestinate (il salvataggio, la galleria e
+        //           le statistiche lo fanno tutti).
+        // ENGLISH: `!img.isTrashed` — photos in the trash were DISCARDED from the dataset: their
+        //          .txt must not land in the exported archive. This guard was missing here, the one
+        //          spot that did not filter the trash (save, gallery and stats all do).
+        const imagesWithTags = images.filter(img => !img.isTrashed && img.tags && img.tags.length > 0);
 
         if (imagesWithTags.length === 0) {
             return showNotification(t.errorNoTagsToExport, "info");
