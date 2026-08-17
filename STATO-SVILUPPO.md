@@ -13,6 +13,16 @@ tornano recuperabili dal Cestino di Windows** e la seconda finestra non compare 
 Non è stato tolto niente per ottenerlo: l'editor dei tag continua a sincronizzarsi col progetto, il
 backup anti-crash usa le stesse chiavi di prima, il ricarico delle foto ritoccate da fuori e il
 salvataggio sono intatti, e non è stata cambiata **nessuna** delle scritte nelle 9 lingue.
+Il ricontrollo di questa stessa riparazione ha poi trovato il difetto peggiore della giornata, ed è
+stato chiuso subito: il programma teneva **l'ultimo** percorso visto, ma in quel momento ne arrivano
+anche di altre cartelle (basta che rilegga la foto selezionata di una cartella aperta prima), e
+l'unica difesa era il **nome** della cartella — cioè l'assunto che qui è già costato caro due volte,
+visto che i dataset si chiamano quasi tutti "dataset" o "img". Con due cartelle omonime, le foto
+della seconda potevano prendersi il percorso della prima, e svuotando il cestino sarebbero finiti nel
+Cestino di Windows i file **dell'altra cartella**. Ora il programma non chiede più "che percorso hai
+visto": porta le prove di cosa ha appena letto (nome, sottocartella, dimensione e data di qualche
+file) e riceve un percorso solo se una cartella contiene davvero quei file, ed è l'unica a contenerli.
+Se due combaciano non risponde: meglio la seconda conferma che un percorso indovinato.
 Restano fuori le **cartelle di rete** (i dataset sul NAS): lì Windows un Cestino non ce l'ha proprio,
 quindi vale ancora la seconda conferma con la cancellazione definitiva, che è l'unica verità
 possibile. Provato guidando il programma vero: una foto dentro una sottocartella è finita nel Cestino
