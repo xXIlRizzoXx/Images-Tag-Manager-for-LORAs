@@ -32,6 +32,25 @@ const isDev = !app.isPackaged;
 // ENGLISH: The user's chosen language, saved to a userData file by the renderer. The splash screen
 //          (a separate window that cannot see the app's localStorage) uses it to show its own text
 //          in the right language from the very first moment.
+// ITALIANO: le 9 lingue dell'interfaccia. Serve solo a non passare allo splash una lingua che poi
+//           non saprebbe tradurre (in quel caso ripiega sull'inglese da solo).
+// ENGLISH: the 9 UI languages. Only used so we never hand the splash a language it cannot translate
+//          (in which case it falls back to English on its own).
+const SPLASH_LANGS = ['it', 'en', 'fr', 'es', 'de', 'zh', 'ja', 'pt', 'ru'];
+
+// ITALIANO: lingua di Windows ridotta alle due lettere iniziali ("it-IT" -> "it"), usata al primo
+//           avvio quando l'utente non ha ancora scelto. Stessa regola del selettore nell'app.
+// ENGLISH: Windows' language cut to its first two letters ("it-IT" -> "it"), used on first launch
+//          when the user has not chosen yet. Same rule the in-app picker uses.
+const systemUiLang = () => {
+    try {
+        const code = String(app.getLocale() || '').slice(0, 2).toLowerCase();
+        return SPLASH_LANGS.includes(code) ? code : '';
+    } catch (_) {
+        return '';
+    }
+};
+
 const getUiLangPath = () => path.join(app.getPath('userData'), 'ui-lang.json');
 const readUiLang = () => {
     try {
@@ -397,10 +416,16 @@ function createSplashWindow() {
         },
     });
     // ITALIANO: passo allo splash la lingua salvata (se c'e'), cosi' i suoi testi compaiono
-    //           gia' tradotti. Al primissimo avvio non c'e' ancora: lo splash usa l'inglese.
+    //           gia' tradotti. Al primissimo avvio non c'e' ancora: prima si ripiegava sull'inglese
+    //           comunque, quindi su un PC italiano la schermata di avvio parlava inglese e quella
+    //           subito dopo (scelta della lingua) italiano. Ora si guarda la lingua di Windows, che
+    //           e' la stessa che il programma propone gia' nel selettore al primo avvio.
     // ENGLISH: pass the saved language (if any) to the splash so its text shows already translated.
-    //          On the very first launch there is none yet: the splash falls back to English.
-    const uiLang = readUiLang();
+    //          On the very first launch there is none: it used to fall back to English regardless, so
+    //          on an Italian PC the splash spoke English and the very next screen (the language
+    //          picker) spoke Italian. Now we look at Windows' own language, the same one the picker
+    //          already proposes on first run.
+    const uiLang = readUiLang() || systemUiLang();
     splashWindow.loadFile(path.join(__dirname, 'splash.html'), uiLang ? { query: { lang: uiLang } } : undefined);
     splashWindow.on('closed', () => { splashWindow = null; });
 }

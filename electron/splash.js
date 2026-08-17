@@ -10,43 +10,40 @@
    version therefore stayed stuck on the hardcoded text and the messages never rotated.
    It was invisible in development, where the rule is not applied. */
 
-// ITALIANO: Messaggi della schermata di avvio in tutte le 9 lingue dell'app. La lingua arriva
-//           dal processo principale come parametro ?lang=xx (letto dal file salvato dall'app);
-//           al primissimo avvio non c'e' e si usa l'inglese. Prima erano solo in italiano, quindi
-//           8 lingue su 9 vedevano testo straniero a ogni avvio.
-// ENGLISH: Splash messages in all 9 app languages. The language arrives from the main process as a
-//          ?lang=xx parameter (read from the file the app saves); on the very first launch there is
-//          none and English is used. They used to be Italian only, so 8 of 9 languages saw foreign
-//          text at every launch.
+// ITALIANO: Messaggio della schermata di avvio, uno solo, in tutte le 9 lingue dell'app. La lingua
+//           arriva dal processo principale come parametro ?lang=xx: e' quella scelta dall'utente
+//           oppure, al primissimo avvio, quella di Windows.
+//           Prima erano QUATTRO frasi che si davano il cambio ogni 0,8 secondi in un ciclo infinito
+//           ("Inizializzazione ambiente...", "Preparazione interfaccia...", "Quasi pronto...",
+//           "Avvio in corso..."). Sembravano testi a caso, e in un certo senso lo erano: non
+//           seguivano nessun avanzamento vero, giravano solo a tempo, e a 0,8 secondi l'una non si
+//           faceva in tempo a leggerne una che era gia' cambiata. Una riga sola e ferma dice la
+//           stessa cosa senza fingere di informare.
+// ENGLISH: The splash message, a single one, in all 9 app languages. The language arrives from the
+//          main process as a ?lang=xx parameter: the user's choice, or Windows' own language on the
+//          very first launch.
+//          There used to be FOUR sentences taking turns every 0.8 seconds in an endless loop
+//          ("Initializing environment...", "Preparing the interface...", "Almost ready...",
+//          "Starting up..."). They read as random text, and in a way they were: they tracked no real
+//          progress, they just rotated on a timer, and at 0.8s apiece one was gone before it could be
+//          read. A single, still line says the same thing without pretending to inform.
 const MESSAGES = {
-    en: ['Initializing environment...', 'Preparing the interface...', 'Almost ready...', 'Starting up...'],
-    it: ['Inizializzazione ambiente...', 'Preparazione interfaccia...', 'Quasi pronto...', 'Avvio in corso...'],
-    fr: ["Initialisation de l'environnement...", "Préparation de l'interface...", 'Presque prêt...', 'Démarrage en cours...'],
-    es: ['Inicializando el entorno...', 'Preparando la interfaz...', 'Casi listo...', 'Iniciando...'],
-    de: ['Umgebung wird initialisiert...', 'Oberfläche wird vorbereitet...', 'Fast fertig...', 'Wird gestartet...'],
-    zh: ['正在初始化环境…', '正在准备界面…', '即将就绪…', '正在启动…'],
-    ja: ['環境を初期化しています…', 'インターフェースを準備しています…', 'まもなく完了します…', '起動しています…'],
-    pt: ['Inicializando o ambiente...', 'Preparando a interface...', 'Quase pronto...', 'Iniciando...'],
-    ru: ['Инициализация среды...', 'Подготовка интерфейса...', 'Почти готово...', 'Запуск...'],
+    en: 'Starting up...',
+    it: 'Avvio in corso...',
+    fr: 'Démarrage en cours...',
+    es: 'Iniciando...',
+    de: 'Wird gestartet...',
+    zh: '正在启动…',
+    ja: '起動しています…',
+    pt: 'Iniciando...',
+    ru: 'Запуск...',
 };
 
 const paramLang = new URLSearchParams(window.location.search).get('lang');
-const messages = MESSAGES[paramLang] || MESSAGES.en;
+const message = MESSAGES[paramLang] || MESSAGES.en;
 
-let i = 0;
 const msgEl = document.getElementById('loading-msg');
-if (msgEl && messages[0]) msgEl.innerText = messages[0];
-
-if (msgEl) {
-    setInterval(function () {
-        i = (i + 1) % messages.length;
-        msgEl.style.opacity = 0;
-        setTimeout(function () {
-            msgEl.innerText = messages[i];
-            msgEl.style.opacity = 1;
-        }, 200);
-    }, 800);
-}
+if (msgEl) msgEl.innerText = message;
 
 // ITALIANO: Chiede la versione al processo principale tramite il ponte sicuro (preload).
 //           La scrive sotto al sottotitolo (ben visibile) e anche in basso a destra.

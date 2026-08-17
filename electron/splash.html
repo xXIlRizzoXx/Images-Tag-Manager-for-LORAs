@@ -198,7 +198,11 @@
         <div class="footer">
             <div class="loading-text">
                 <div class="spinner"></div>
-                <span id="loading-msg">Inizializzazione ambiente...</span>
+                <!-- ITALIANO: testo di riserva, sovrascritto subito da splash.js con la lingua giusta.
+                     Era in italiano: se lo script non parte, un PC inglese leggeva italiano.
+                     ENGLISH: fallback text, overwritten at once by splash.js in the right language.
+                     It used to be Italian: if the script fails to run, an English PC read Italian. -->
+                <span id="loading-msg">Starting up...</span>
             </div>
             <div class="version-info">
                 <!-- ITALIANO: la versione sta sotto al sottotitolo (piu' visibile); qui resta
