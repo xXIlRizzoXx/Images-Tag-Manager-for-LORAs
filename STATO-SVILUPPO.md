@@ -2,6 +2,21 @@
 
 **Ultimo aggiornamento:** 17 agosto 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 95): **il Cestino di Windows funziona di nuovo per le cartelle aperte con
+"Carica Cartella"**. Era il difetto del traguardo 94, ora chiuso alla radice invece che con la sola
+conferma. Il programma apre la cartella con il selettore del browser, che di proposito non gli dice
+dove quella cartella si trovi sul disco — ed è per questo che non poteva chiedere a Windows di
+cestinare niente. Ma il percorso Windows lo dice a Electron, quando concede il permesso di leggere e
+scrivere quella cartella: ora quel dato viene raccolto e da lì si ricostruisce il percorso di ogni
+foto, sottocartelle comprese. Nessun cambiamento per chi usa il programma, tranne che **le foto
+tornano recuperabili dal Cestino di Windows** e la seconda finestra non compare più.
+Non è stato tolto niente per ottenerlo: l'editor dei tag continua a sincronizzarsi col progetto, il
+backup anti-crash usa le stesse chiavi di prima, il ricarico delle foto ritoccate da fuori e il
+salvataggio sono intatti, e non è stata cambiata **nessuna** delle scritte nelle 9 lingue.
+Restano fuori le **cartelle di rete** (i dataset sul NAS): lì Windows un Cestino non ce l'ha proprio,
+quindi vale ancora la seconda conferma con la cancellazione definitiva, che è l'unica verità
+possibile. Provato guidando il programma vero: una foto dentro una sottocartella è finita nel Cestino
+di Windows col suo percorso completo, senza nessuna finestra in più.
 Novità 1.2.0 (traguardo 94): **scoperto un difetto grave nella 1.1.0 già consegnata: svuotando il
 cestino le foto non finivano nel Cestino di Windows, venivano cancellate per sempre.** Non riguarda
 tutti allo stesso modo: capita alle foto aperte con **Carica Cartella**, che è la strada normale.
