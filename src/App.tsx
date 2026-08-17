@@ -3476,7 +3476,15 @@ export default function App() {
                                     <span className="hidden sm:inline">{t.saveChanges}</span>
                                     <span className="sm:hidden">{t.saveShort}</span>
                                 </button>
-                                <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                {/* ITALIANO: il tasto diceva "Esporta tutti" e l'archivio conteneva solo i .txt:
+                                    chi lo premeva si aspettava il dataset intero, foto comprese, e doveva aprire
+                                    lo zip per scoprire che dentro c'erano le sole didascalie. Ora il nome dice
+                                    cosa esce e il suggerimento dice cosa NON esce.
+                                    ENGLISH: the button said "Export All" while the archive held only the .txt
+                                    files: people expected the whole dataset, images included, and had to open the
+                                    zip to find out it was captions only. The name now says what comes out, and
+                                    the tooltip says what does not. */}
+                                <button onClick={handleExportAll} title={t.exportAllTip} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                     <SaveAll size={16} />
                                     <span className="hidden sm:inline">{t.exportAllTxt}</span>
                                     <span className="sm:hidden">{t.exportShort}</span>
