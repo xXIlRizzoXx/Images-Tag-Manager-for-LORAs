@@ -25,6 +25,13 @@ export interface TrashResult {
     ok: boolean;
     trashed: number;
     failed: number;
+    // ITALIANO: esito FILE PER FILE, nello stesso ordine dei percorsi passati.
+    //   'ok' nel Cestino di Windows (o gia' assente) · 'rifiutato' canale non applicabile
+    //   (cartella di rete o estensione non ammessa) · 'errore' c'e' ma non si e' spostato.
+    // ENGLISH: outcome FILE BY FILE, in the same order as the paths passed in.
+    //   'ok' in the Windows Recycle Bin (or already gone) · 'rifiutato' channel not applicable
+    //   (network folder or extension not allowed) · 'errore' present but could not be moved.
+    results: Array<'ok' | 'rifiutato' | 'errore'>;
 }
 
 export interface WriteSidecarResult {
@@ -45,6 +52,8 @@ export interface ElectronAPI {
     readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content: string; dir?: string }>>;
     writeSidecarTags: (items: Array<{ imagePath: string; content: string }>) => Promise<WriteSidecarResult>;
     trashFiles: (paths: string[]) => Promise<TrashResult>;
+    beginFolderPick: () => Promise<boolean>;
+    takePickedFolderPath: () => Promise<string>;
     openExternal: (url: string) => Promise<boolean>;
 }
 

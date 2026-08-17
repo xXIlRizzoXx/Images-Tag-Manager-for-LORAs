@@ -310,13 +310,34 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
 const TRASH_ALLOWED_EXT = new Set([...SIDECAR_IMAGE_EXT, '.txt']);
 const TRASH_MAX_FILES = 5000;
 
+// ITALIANO: l'esito torna adesso FILE PER FILE, in `results`, con tre valori distinti:
+//   'ok'       il file e' nel Cestino di Windows, oppure non c'era gia' piu' (niente da fare)
+//   'rifiutato' questo canale non puo' toccarlo: percorso di RETE (il Cestino di Windows non
+//              esiste per le condivisioni di rete) oppure estensione fuori dall'elenco ammesso
+//   'errore'   il file c'e' ma non si e' riusciti a spostarlo (bloccato, permessi)
+//   Prima i tre casi erano indistinguibili: i primi due uscivano da un `continue` silenzioso e il
+//   gruppo tornava {ok:true, trashed:0}, cioe' "riuscito" senza aver spostato niente. 'rifiutato'
+//   NON e' un vicolo cieco: chi chiama lo tratta come "Cestino non raggiungibile" e offre la
+//   cancellazione definitiva con la seconda conferma, altrimenti una foto su una cartella di rete
+//   resterebbe per sempre nel cestino dell'app senza modo di toglierla.
+// ENGLISH: the outcome now comes back FILE BY FILE in `results`, with three distinct values:
+//   'ok'        the file reached the Windows Recycle Bin, or was already gone (nothing to do)
+//   'rifiutato' this channel cannot touch it: a NETWORK path (Windows has no Recycle Bin for
+//               network shares) or an extension outside the allowed list
+//   'errore'    the file is there but could not be moved (locked, permissions)
+//   The three used to be indistinguishable: the first two left through a silent `continue` and the
+//   batch returned {ok:true, trashed:0} - "success" having moved nothing. 'rifiutato' is NOT a dead
+//   end: the caller reads it as "Recycle Bin out of reach" and offers the permanent delete behind
+//   the second confirmation, otherwise a photo on a network folder would sit in the app's trash
+//   forever with no way to remove it.
 ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
-    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0 };
+    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0, results: [] };
     let trashed = 0;
     let failed = 0;
+    const results = [];
     for (const raw of filePaths.slice(0, TRASH_MAX_FILES)) {
-        if (!isSafeLocalPath(raw)) continue;
-        if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) continue;
+        if (!isSafeLocalPath(raw)) { results.push('rifiutato'); continue; }
+        if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) { results.push('rifiutato'); continue; }
         // ITALIANO: un file assente (es. il .txt di una foto senza tag) e' NORMALE: si salta e
         //           non conta come errore. Un file che ESISTE ma non si riesce a cestinare
         //           (bloccato, permessi) e' un errore vero.
@@ -325,10 +346,11 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
         //          permissions) is a real error.
         let exists = false;
         try { exists = fs.statSync(raw).isFile(); } catch (_) { exists = false; }
-        if (!exists) continue;
+        if (!exists) { results.push('ok'); continue; }
         try {
             await shell.trashItem(raw);
             trashed++;
+            results.push('ok');
         } catch (e) {
             // ITALIANO: NON annunciamo un successo falso: prima si ritornava sempre ok:true, cosi'
             //           una foto che il cestino NON era riuscito a spostare veniva comunque tolta dal
@@ -338,9 +360,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             //          never ran. Now ok is false if anything failed.
             console.error('trash-files: could not trash', raw, e);
             failed++;
+            results.push('errore');
         }
     }
-    return { ok: failed === 0, trashed, failed };
+    return { ok: failed === 0, trashed, failed, results };
 });
 
 /* ITALIANO: APERTURA DI UN INDIRIZZO WEB NEL BROWSER DI SISTEMA
@@ -361,6 +384,57 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
     } catch (_) {
         return false;
     }
+});
+
+/* ITALIANO: PERCORSO DELLA CARTELLA SCELTA CON "CARICA CARTELLA"
+   La pagina apre la cartella col selettore del browser, che di proposito NON le dice dove
+   quella cartella si trovi sul disco: i file che ne escono non portano il percorso, e senza
+   percorso non si puo' chiedere a Windows di cestinarli. Il percorso pero' Electron lo
+   conosce, e lo passa QUI, al processo principale, quando concede il permesso di leggere e
+   scrivere quella cartella. Lo intercettiamo e lo teniamo da parte per la pagina.
+   Misurato il 17 agosto 2026 sull'app vera: alla PRIMA scelta arriva una "richiesta"; se si
+   riapre la STESSA cartella la richiesta non arriva piu' (il permesso resta in memoria) ma
+   arrivano i "controlli", che portano lo stesso percorso. Per questo si ascoltano entrambi.
+   SICUREZZA: il percorso non arriva mai dalla pagina — e' il processo principale l'unica
+   fonte. La finestra di registrazione resta aperta solo fra `begin-pick` e `take-picked-dir`,
+   e il valore passa comunque per isSafeLocalPath e per un controllo che sia una cartella.
+   ENGLISH: PATH OF THE FOLDER PICKED WITH "LOAD FOLDER"
+   The page opens the folder with the browser's picker, which deliberately does NOT tell it
+   where that folder lives on disk: the files it yields carry no path, and with no path there
+   is no way to ask Windows to bin them. Electron does know the path, and hands it HERE, to the
+   main process, when it grants read/write permission on that folder. We intercept it and keep
+   it for the page.
+   Measured 2026-08-17 on the real app: the FIRST pick raises a "request"; re-picking the SAME
+   folder raises no request (the grant is cached) but does raise "checks", which carry the same
+   path. That is why both are listened to.
+   SECURITY: the path never comes from the page - the main process is the only source. The
+   recording window is open only between `begin-pick` and `take-picked-dir`, and the value still
+   goes through isSafeLocalPath plus a check that it really is a directory. */
+let pickPending = false;
+let pickedDirPath = '';
+
+const rememberPickedDir = (p) => {
+    if (!pickPending) return;
+    if (typeof p !== 'string' || !p) return;
+    // ITALIANO: le cartelle di RETE non passano di qui, ed e' voluto: Windows non ha un Cestino
+    //           per le condivisioni di rete, quindi un percorso del genere non servirebbe a
+    //           niente. Restando vuoto, la pagina ricade sulla strada gia' esistente, cioe' la
+    //           seconda conferma con la cancellazione definitiva, che li' e' l'unica verita'.
+    // ENGLISH: NETWORK folders do not get through here, deliberately: Windows has no Recycle Bin
+    //          for network shares, so such a path would buy nothing. Left empty, the page falls
+    //          back to the road that already exists - the second confirmation with the permanent
+    //          delete - which over there is the only truthful answer.
+    if (!isSafeLocalPath(p)) return;
+    try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
+    pickedDirPath = p;
+};
+
+ipcMain.handle('folder:begin-pick', () => { pickPending = true; pickedDirPath = ''; return true; });
+ipcMain.handle('folder:take-picked-dir', () => {
+    const p = pickedDirPath;
+    pickPending = false;
+    pickedDirPath = '';
+    return p;
 });
 
 // ITALIANO: Header Content-Security-Policy applicato in produzione
@@ -556,6 +630,23 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
     applyContentSecurityPolicy(session.defaultSession);
+
+    // ITALIANO: qui passa il percorso della cartella scelta (vedi rememberPickedDir). Concedere
+    //           sempre il permesso riproduce ESATTAMENTE il comportamento di prima: senza handler
+    //           registrato Electron concede da solo. Questo non e' il posto per stringere i
+    //           permessi — sarebbe un cambiamento a se', da provare a parte.
+    // ENGLISH: this is where the picked folder's path arrives (see rememberPickedDir). Always
+    //          granting reproduces EXACTLY the previous behaviour: with no handler registered
+    //          Electron grants by itself. This is not the place to tighten permissions - that
+    //          would be a separate change, to be tested on its own.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+        if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
+        callback(true);
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+        if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
+        return true;
+    });
     // ITALIANO: Nessuna barra dei menù di default in produzione
     // ENGLISH: No default menu bar in production
     if (!isDev) Menu.setApplicationMenu(null);

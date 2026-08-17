@@ -1046,24 +1046,39 @@ export default function App() {
     //           raggiungibile perche' di questa foto non si conosce il percorso su disco, ma la
     //           cartella e' aperta e la cancellazione diretta sarebbe possibile (DEFINITIVA) ·
     //           'failed' = non si e' potuto fare niente.
-    //           Il caso 'nopath' NON e' raro: e' quello di tutte le foto aperte con "Carica
-    //           Cartella". Quella strada usa il selettore del browser, e i file che ne escono non
-    //           portano con se' il percorso su disco, quindi `getPathForFile` torna vuoto. Provato
-    //           il 17 agosto 2026 sull'app vera: "Foto spostate nel Cestino di Windows: 0".
+    //           STORIA, perche' spiega perche' esiste 'nopath': il selettore di cartelle del browser
+    //           consegna file SENZA percorso su disco, quindi `getPathForFile` torna vuoto e per un
+    //           po' questo ha significato che nessuna foto aperta con "Carica Cartella" poteva
+    //           andare nel Cestino di Windows (provato il 17 agosto 2026 sull'app vera: "Foto
+    //           spostate nel Cestino di Windows: 0"). Ora il percorso lo cattura il processo
+    //           principale al momento della scelta e arriva qui come `img.filePath`, quindi il caso
+    //           normale e' 'trashed'. Restano su 'nopath' due situazioni: le cartelle di RETE (per
+    //           le condivisioni di rete Windows non ha proprio un Cestino) e l'anteprima nel
+    //           browser, dove non c'e' il guscio Electron.
     // ENGLISH: 'trashed' = in the Windows Recycle Bin, recoverable · 'nopath' = the Recycle Bin is
     //          out of reach because this photo's path on disk is unknown, but its folder is open and
     //          a direct delete would work (PERMANENTLY) · 'failed' = nothing could be done.
-    //          'nopath' is NOT an edge case: it is every photo opened with "Load Folder". That route
-    //          uses the browser's picker, and the files it yields do not carry their path on disk, so
-    //          `getPathForFile` comes back empty. Verified 2026-08-17 on the real app: "Photos moved
-    //          to the Windows Recycle Bin: 0".
+    //          HISTORY, because it explains why 'nopath' exists: the browser's folder picker hands
+    //          over files WITHOUT a path on disk, so `getPathForFile` comes back empty, and for a
+    //          while that meant no photo opened with "Load Folder" could reach the Windows Recycle
+    //          Bin (verified 2026-08-17 on the real app: "Photos moved to the Windows Recycle Bin:
+    //          0"). The path is now captured by the main process at pick time and arrives here as
+    //          `img.filePath`, so the normal case is 'trashed'. Two situations stay on 'nopath':
+    //          NETWORK folders (Windows has no Recycle Bin at all for network shares) and the
+    //          browser preview, where there is no Electron shell.
     const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
             return img.dirHandle ? 'nopath' : 'failed';
         }
         try {
-            const imgPath = api.getPathForFile(img.file);
+            // ITALIANO: `getPathForFile` resta PRIMO, cosi' le foto caricate una per una o
+            //           trascinate continuano a comportarsi esattamente come prima. `img.filePath`
+            //           copre solo il buco che lascia il selettore di cartelle del browser.
+            // ENGLISH: `getPathForFile` stays FIRST, so photos loaded individually or dropped in
+            //          keep behaving exactly as before. `img.filePath` only fills the gap left by
+            //          the browser's folder picker.
+            const imgPath = api.getPathForFile(img.file) || img.filePath || '';
             if (!imgPath) return img.dirHandle ? 'nopath' : 'failed';
             const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
             // ITALIANO: due chiamate separate, non una sola con due percorsi: il canale ritorna un
@@ -1080,7 +1095,20 @@ export default function App() {
             const resImg = await api.trashFiles([imgPath]);
             const resTxt = await api.trashFiles([txtPath]);
             if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
-            return resImg && resImg.ok ? 'trashed' : 'failed';
+            // ITALIANO: 'rifiutato' vuol dire che il Cestino di Windows non e' applicabile a questo
+            //           file (cartella di rete, o estensione fuori elenco). Non e' un fallimento
+            //           definitivo: si torna 'nopath', cioe' la strada della seconda conferma, che
+            //           puo' comunque cancellare passando dalla cartella aperta. Senza questo, una
+            //           foto su NAS resterebbe per sempre nel cestino dell'app.
+            // ENGLISH: 'rifiutato' means the Windows Recycle Bin does not apply to this file (network
+            //          folder, or an extension outside the list). That is not a dead end: we return
+            //          'nopath', the second-confirmation road, which can still delete through the
+            //          open folder. Without this, a photo on a NAS would sit in the app's trash
+            //          forever.
+            const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
+            if (esitoImg === 'ok') return 'trashed';
+            if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'failed';
+            return 'failed';
         } catch (err) {
             console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
             return 'failed';
@@ -1284,7 +1312,7 @@ export default function App() {
     const TXT_MAX_TAGS_PER_FILE = 200;
     const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -1471,6 +1499,16 @@ export default function App() {
                     // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash.
                     // ENGLISH: the key under which this photo is stored in the crash backup.
                     backupKey: chiaveBackup,
+                    // ITALIANO: percorso VERO del file sul disco, quello che serve a Windows per
+                    //           mandarlo nel Cestino. Vuoto quando non si conosce: cartella di rete
+                    //           (dove il Cestino di Windows non esiste), oppure fuori da Electron.
+                    //           In quel caso il programma chiede conferma e cancella per sempre,
+                    //           come faceva prima.
+                    // ENGLISH: the file's REAL path on disk, the one Windows needs to move it to the
+                    //          Recycle Bin. Empty when unknown: a network folder (where Windows has
+                    //          no Recycle Bin at all), or outside Electron. In that case the app asks
+                    //          for confirmation and deletes for good, as it did before.
+                    filePath: (pathOf && pathOf.get(imgFiles[i])) || '',
                     // ITALIANO: OGNI immagine si porta dietro la cartella da cui proviene. Prima
                     //           esisteva una sola cartella globale: aprendo una seconda cartella
                     //           senza chiudere la prima, i tag della prima venivano scritti dentro
@@ -1501,7 +1539,7 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
         // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
         //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
         // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
@@ -1527,12 +1565,20 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf }
+            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf }
         });
     };
 
     const handleLoadFolderClick = async () => {
         if ('showDirectoryPicker' in window) {
+            // ITALIANO: avviso il processo principale che sta per essere scelta una cartella: da
+            //           questo momento e' l'unico a poter registrare il percorso che Electron gli
+            //           passa. La pagina non lo conosce e non lo manda mai.
+            // ENGLISH: tell the main process a folder pick is starting: from now on it is the only
+            //          one allowed to record the path Electron hands it. The page never knows the
+            //          path and never sends one.
+            const api = (window as any).electronAPI;
+            try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
             try {
                 // ITALIANO: l'id fa ricordare al sistema l'ULTIMA cartella usata: la volta dopo
                 //           il selettore si riapre lì. startIn come riserva al primo utilizzo.
@@ -1588,7 +1634,39 @@ export default function App() {
                     return showNotification(t.noImagesTitle, "info");
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf);
+                // ITALIANO: il percorso della cartella si ritira DOPO la scansione, non prima:
+                //           riaprendo una cartella gia' usata Electron non chiede piu' il permesso
+                //           (ce l'ha in memoria) e il percorso arriva solo con i "controlli", che
+                //           scattano mentre si leggono i file. Misurato il 17 agosto 2026.
+                //           Da qui compongo il percorso di ogni foto: cartella scelta + la parte di
+                //           sottocartella che ho gia' costruito scendendo (relPathOf), meno il nome
+                //           della radice, che nel percorso c'e' gia'.
+                //           Se resta vuoto (cartella di rete, o fuori da Electron) non cambia niente:
+                //           il programma si comporta esattamente come prima.
+                // ENGLISH: the folder path is collected AFTER the scan, not before: re-opening a
+                //          folder already used raises no permission request (the grant is cached) and
+                //          the path only arrives with the "checks", which fire while the files are
+                //          read. Measured 2026-08-17. From it I compose each photo's path: the picked
+                //          folder plus the subfolder part already built while descending (relPathOf),
+                //          minus the root's own name, which the path already carries.
+                //          If it stays empty (network folder, or outside Electron) nothing changes:
+                //          the app behaves exactly as before.
+                let rootPath = '';
+                try { rootPath = (await api?.takePickedFolderPath?.()) || ''; } catch (_) { rootPath = ''; }
+                const pathOf = new Map<any, string>();
+                if (rootPath) {
+                    const sep = rootPath.includes('\\') ? '\\' : '/';
+                    const rootLeaf = rootPath.split(/[\\/]+/).filter(Boolean).pop() || '';
+                    if (rootLeaf.toLowerCase() === String(handle.name || '').toLowerCase()) {
+                        for (const f of [...imgFiles, ...txtFiles]) {
+                            const rel = relPathOf.get(f) || '';
+                            const sub = rel.split('/').slice(1).join(sep);
+                            pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
+                        }
+                    }
+                }
+
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf);
 
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
@@ -2954,7 +3032,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
