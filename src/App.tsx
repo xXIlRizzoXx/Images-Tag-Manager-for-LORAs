@@ -1651,24 +1651,49 @@ export default function App() {
                 //          minus the root's own name, which the path already carries.
                 //          If it stays empty (network folder, or outside Electron) nothing changes:
                 //          the app behaves exactly as before.
+                //           NON basta chiedere "che percorso hai visto": in quella finestra arrivano
+                //           anche cartelle che non c'entrano — al rientro del fuoco, quando il
+                //           selettore si chiude, la pagina rilegge la foto selezionata di una cartella
+                //           aperta prima, e anche quel percorso viene visto. Quindi mando le PROVE di
+                //           cosa ho appena letto (nome, sottocartella, dimensione, data di modifica di
+                //           qualche file) e il processo principale risponde solo se una cartella
+                //           contiene DAVVERO quei file. Il nome della cartella non decide niente: qui
+                //           si chiamano quasi tutte "dataset" o "img".
+                // ENGLISH: asking "which path did you see" is NOT enough: unrelated folders land in
+                //          that window too - on focus, as the picker closes, the page re-reads the
+                //          selected photo of a previously opened folder, and that path is seen as
+                //          well. So I send PROOF of what I just read (name, subfolder, size and
+                //          modification time of a few files) and the main process answers only if a
+                //          folder really holds those files. The folder's name decides nothing: around
+                //          here they are nearly all called "dataset" or "img".
+                const proveLettura = imgFiles.slice(0, 5).map(f => ({
+                    rel: (relPathOf.get(f) || '').split('/').slice(1).join('/'),
+                    name: f.name,
+                    size: f.size,
+                    mtime: f.lastModified,
+                }));
                 let rootPath = '';
-                try { rootPath = (await api?.takePickedFolderPath?.()) || ''; } catch (_) { rootPath = ''; }
+                try { rootPath = (await api?.takePickedFolderPath?.(proveLettura)) || ''; } catch (_) { rootPath = ''; }
                 const pathOf = new Map<any, string>();
                 if (rootPath) {
                     const sep = rootPath.includes('\\') ? '\\' : '/';
-                    const rootLeaf = rootPath.split(/[\\/]+/).filter(Boolean).pop() || '';
-                    if (rootLeaf.toLowerCase() === String(handle.name || '').toLowerCase()) {
-                        for (const f of [...imgFiles, ...txtFiles]) {
-                            const rel = relPathOf.get(f) || '';
-                            const sub = rel.split('/').slice(1).join(sep);
-                            pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
-                        }
+                    for (const f of [...imgFiles, ...txtFiles]) {
+                        const rel = relPathOf.get(f) || '';
+                        const sub = rel.split('/').slice(1).join(sep);
+                        pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
                     }
                 }
 
                 calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf);
 
             } catch (err: any) {
+                // ITALIANO: scelta annullata o fallita: chiudo comunque la finestra di registrazione
+                //           del processo principale (elenco vuoto = non chiedo niente, azzera e basta),
+                //           altrimenti resterebbe aperta a raccogliere cartelle per tutta la sessione.
+                // ENGLISH: pick aborted or failed: close the main process's recording window anyway
+                //          (empty list = ask for nothing, just reset), otherwise it would stay open
+                //          collecting folders for the rest of the session.
+                try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
                 if (err.name !== 'AbortError') {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
                     if (folderInputRef.current) folderInputRef.current.click();

@@ -53,7 +53,13 @@ export interface ElectronAPI {
     writeSidecarTags: (items: Array<{ imagePath: string; content: string }>) => Promise<WriteSidecarResult>;
     trashFiles: (paths: string[]) => Promise<TrashResult>;
     beginFolderPick: () => Promise<boolean>;
-    takePickedFolderPath: () => Promise<string>;
+    // ITALIANO: le prove di cosa la pagina ha appena letto. Il processo principale risponde con un
+    //           percorso solo se una cartella contiene davvero quei file. Un elenco vuoto chiude la
+    //           finestra di registrazione senza chiedere niente (scelta annullata).
+    // ENGLISH: proof of what the page just read. The main process answers with a path only if a
+    //          folder really holds those files. An empty list closes the recording window without
+    //          asking for anything (pick aborted).
+    takePickedFolderPath: (proofs: Array<{ rel: string; name: string; size: number; mtime: number }>) => Promise<string>;
     openExternal: (url: string) => Promise<boolean>;
 }
 

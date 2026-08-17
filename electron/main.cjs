@@ -411,7 +411,8 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
    recording window is open only between `begin-pick` and `take-picked-dir`, and the value still
    goes through isSafeLocalPath plus a check that it really is a directory. */
 let pickPending = false;
-let pickedDirPath = '';
+let pickedDirCandidates = [];
+const PICK_MAX_CANDIDATES = 32;
 
 const rememberPickedDir = (p) => {
     if (!pickPending) return;
@@ -426,15 +427,69 @@ const rememberPickedDir = (p) => {
     //          delete - which over there is the only truthful answer.
     if (!isSafeLocalPath(p)) return;
     try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
-    pickedDirPath = p;
+    // ITALIANO: si RACCOLGONO tutti i candidati, non si tiene solo l'ultimo. In quella finestra
+    //           arrivano anche cartelle che non c'entrano: basta che la pagina rilegga una foto di
+    //           una cartella aperta prima (succede al rientro del fuoco, quando il selettore si
+    //           chiude) e quel percorso arriva qui. Tenendo l'ultimo, la cartella sbagliata poteva
+    //           vincere. Chi sceglie e' `take-picked-dir`, e sceglie in base ai FILE, non ai nomi.
+    // ENGLISH: we COLLECT every candidate instead of keeping the last one. Folders that have nothing
+    //          to do with the pick also arrive in that window: the page only has to re-read a photo
+    //          from a previously opened folder (which happens on focus, as the picker closes) and
+    //          that path lands here. Keeping the last one let the wrong folder win. The choosing is
+    //          done by `take-picked-dir`, and it chooses on the FILES, not on names.
+    if (!pickedDirCandidates.includes(p)) pickedDirCandidates.push(p);
+    if (pickedDirCandidates.length > PICK_MAX_CANDIDATES) pickedDirCandidates.shift();
 };
 
-ipcMain.handle('folder:begin-pick', () => { pickPending = true; pickedDirPath = ''; return true; });
-ipcMain.handle('folder:take-picked-dir', () => {
-    const p = pickedDirPath;
+ipcMain.handle('folder:begin-pick', () => { pickPending = true; pickedDirCandidates = []; return true; });
+
+/* ITALIANO: la pagina non chiede "dammi il percorso": porta le PROVE di cosa ha appena letto —
+   per qualche file, il suo nome, la sottocartella relativa, la dimensione e la data di modifica —
+   e il processo principale restituisce un percorso SOLO se una cartella candidata contiene davvero
+   quei file, identici. Se nessuna combacia, o se ne combaciano due, non torna niente: meglio la
+   seconda conferma che un percorso indovinato, perche' quel percorso finisce dritto nel cestino di
+   Windows e cancellerebbe i file di un'ALTRA cartella.
+   Il nome della cartella non decide piu' niente: in questi dataset le cartelle si chiamano quasi
+   tutte uguale ("dataset", "img", "10_soggetto"), ed e' un assunto che questo programma ha gia'
+   pagato caro due volte (vedi la firma del backup anti-crash e l'abbinamento dell'editor dei tag).
+   La pagina non manda mai un percorso: manda nomi di file e numeri, e ogni percorso composto qui
+   viene ricontrollato perche' resti dentro la cartella candidata.
+   ENGLISH: the page does not ask "give me the path": it brings PROOF of what it just read - for a
+   few files, the name, the relative subfolder, the size and the modification time - and the main
+   process returns a path ONLY if a candidate folder really holds those files, identical. If none
+   match, or if two do, it returns nothing: the second confirmation beats a guessed path, because
+   that path goes straight to the Windows Recycle Bin and would delete ANOTHER folder's files.
+   The folder's name no longer decides anything: in these datasets folders are nearly always named
+   the same ("dataset", "img", "10_subject"), an assumption this app has already paid for twice (see
+   the crash-backup signature and the tag editor's pairing). The page never sends a path: it sends
+   file names and numbers, and every path composed here is re-checked to stay inside its candidate. */
+ipcMain.handle('folder:take-picked-dir', (_event, proofs) => {
+    const candidates = pickedDirCandidates;
     pickPending = false;
-    pickedDirPath = '';
-    return p;
+    pickedDirCandidates = [];
+    if (!Array.isArray(proofs) || proofs.length === 0) return '';
+
+    const holdsAll = (dir) => proofs.every((pr) => {
+        if (!pr || typeof pr.name !== 'string' || !pr.name) return false;
+        if (typeof pr.size !== 'number' || typeof pr.mtime !== 'number') return false;
+        const rel = typeof pr.rel === 'string' ? pr.rel : '';
+        if (pr.name.includes('/') || pr.name.includes('\\')) return false;
+        if (rel.split(/[\\/]+/).includes('..')) return false;
+        const full = path.join(dir, rel, pr.name);
+        if (!isSafeLocalPath(full)) return false;
+        if (path.relative(dir, full).startsWith('..')) return false;
+        try {
+            const st = fs.statSync(full);
+            // ITALIANO: 2 secondi di tolleranza sulla data: certi file system la arrotondano.
+            // ENGLISH: 2 seconds of slack on the timestamp: some file systems round it.
+            return st.isFile() && st.size === pr.size && Math.abs(st.mtimeMs - pr.mtime) < 2000;
+        } catch (_) {
+            return false;
+        }
+    });
+
+    const winners = candidates.filter(holdsAll);
+    return winners.length === 1 ? winners[0] : '';
 });
 
 // ITALIANO: Header Content-Security-Policy applicato in produzione
