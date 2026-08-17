@@ -1002,37 +1002,41 @@ export default function App() {
         soundManager.pop();
     };
 
-    // ITALIANO: Elimina l'immagine e il suo .txt. Prima si prova il CESTINO DI WINDOWS, cosi' un
-    //           ripensamento e' sempre recuperabile; solo se non e' possibile (fuori da Electron,
-    //           o percorso del file non ricavabile) si ripiega sulla cancellazione diretta.
-    //           Si usa SEMPRE la cartella della singola immagine, non una cartella globale.
-    // ENGLISH: Deletes the image and its .txt. It first tries the WINDOWS RECYCLE BIN, so a change
-    //          of mind is always recoverable; only when that is impossible (outside Electron, or the
-    //          file path cannot be resolved) does it fall back to a direct delete. It always uses
-    //          the individual image's own folder, never a global one.
+    // ITALIANO: Sposta nel CESTINO DI WINDOWS l'immagine e il suo .txt, e ritorna l'ESITO VERO.
+    //           O il file arriva nel Cestino di Windows, da dove si recupera, o non si tocca niente
+    //           e chi chiama lo viene a sapere. Due cose sono state tolte da qui, ed erano tutte e
+    //           due bugie sui file dell'utente:
+    //           1) il ripiego `removeEntry`, che quando il Cestino falliva (file bloccato, permessi)
+    //              cancellava il file DAVVERO, senza cestino e senza possibilita' di recupero — cioe'
+    //              proprio nel caso in cui l'utente aveva piu' bisogno di poter tornare indietro;
+    //           2) il `return true` finale, che dichiarava riuscita anche una cancellazione mai
+    //              avvenuta: l'app diceva "File eliminati con successo" e toglieva la foto dal
+    //              progetto mentre il file era ancora al suo posto.
+    //           Un .txt assente (foto senza tag) NON e' un errore: lo salta gia' il canale di sistema.
+    // ENGLISH: Moves the image and its .txt to the WINDOWS RECYCLE BIN and returns the REAL outcome.
+    //          Either the file reaches the Recycle Bin, where it can be restored, or nothing is
+    //          touched and the caller is told. Two things were removed from here, both of them lies
+    //          about the user's files:
+    //          1) the `removeEntry` fallback, which on a failed trash (locked file, permissions)
+    //             deleted the file FOR GOOD, no bin and no way back — exactly when the user most
+    //             needed to be able to undo;
+    //          2) the trailing `return true`, which declared success for a deletion that never
+    //             happened: the app said "Files deleted successfully" and dropped the photo from the
+    //             project while the file was still sitting on disk.
+    //          A missing .txt (photo with no tags) is NOT an error: the system channel already skips it.
     const deleteImageFiles = async (img: any): Promise<boolean> => {
         const api = (window as any).electronAPI;
-        if (api && typeof api.getPathForFile === 'function' && typeof api.trashFiles === 'function') {
-            try {
-                const imgPath = api.getPathForFile(img.file);
-                if (imgPath) {
-                    const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
-                    const res = await api.trashFiles([imgPath, txtPath]);
-                    if (res && res.ok) return true;
-                }
-            } catch (err) {
-                console.warn('[Cestino] Cestino di sistema non disponibile, uso la cancellazione diretta:', err);
-            }
+        if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') return false;
+        try {
+            const imgPath = api.getPathForFile(img.file);
+            if (!imgPath) return false;
+            const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
+            const res = await api.trashFiles([imgPath, txtPath]);
+            return !!(res && res.ok);
+        } catch (err) {
+            console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
+            return false;
         }
-        // ITALIANO: ripiego — cancellazione diretta dalla cartella dell'immagine
-        // ENGLISH: fallback — direct delete from the image's own folder
-        const folder = img.dirHandle;
-        if (!folder) return true; // ITALIANO: nessun file su disco da togliere — ENGLISH: no file on disk to remove
-        const safeName = sanitizeFileName(img.file.name);
-        await folder.removeEntry(safeName);
-        const txtName = buildTagFileName(img.file.name);
-        try { await folder.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
-        return true;
     };
 
     // ITALIANO: Le anteprime vivono in memoria finche' non le si libera esplicitamente. Non veniva
@@ -1054,10 +1058,19 @@ export default function App() {
         const img = images.find(i => i.id === id);
         if (!img) return;
 
+        let done = false;
         try {
-            await deleteImageFiles(img);
+            done = await deleteImageFiles(img);
         } catch (error) {
             console.error(error);
+        }
+        // ITALIANO: se il file non e' finito nel Cestino di Windows, la foto RESTA nel cestino
+        //           dell'app: cosi' si puo' riprovare. Prima veniva tolta comunque dal progetto e
+        //           spariva dalla vista pur essendo ancora sul disco.
+        // ENGLISH: if the file did not reach the Windows Recycle Bin, the photo STAYS in the app's
+        //          trash so it can be retried. It used to be dropped from the project anyway,
+        //          vanishing from view while still sitting on disk.
+        if (!done) {
             showNotification(t.deleteError, 'error');
             return;
         }
@@ -1074,23 +1087,39 @@ export default function App() {
 
     const handleEmptyTrash = async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-        setIsTrashOpen(false);
 
-        const removedIds = new Set(trashedImages.map(img => img.id));
+        // ITALIANO: si tolgono dal progetto SOLO le foto che sono davvero arrivate nel Cestino di
+        //           Windows. Quelle che non ce l'hanno fatta restano nel cestino dell'app, sotto gli
+        //           occhi, e la finestra non si chiude: prima si svuotava tutto e si annunciava
+        //           "riuscito" comunque, quindi un file bloccato spariva dalla vista e restava su
+        //           disco senza che nessuno lo sapesse.
+        // ENGLISH: only the photos that actually reached the Windows Recycle Bin leave the project.
+        //          The ones that failed stay in the app's trash, in plain sight, and the window does
+        //          not close: it used to empty everything and report success regardless, so a locked
+        //          file vanished from view and stayed on disk with nobody the wiser.
+        const removedIds = new Set<string>();
+        let failed = 0;
         for (const img of trashedImages) {
+            let done = false;
             try {
-                await deleteImageFiles(img);
+                done = await deleteImageFiles(img);
             } catch (error) {
-                console.error("Failed to delete", img.file.name);
+                console.error("Failed to delete", img.file.name, error);
             }
+            if (done) removedIds.add(img.id); else failed++;
         }
 
-        setImages(prev => prev.filter(i => !i.isTrashed));
+        setImages(prev => prev.filter(i => !removedIds.has(i.id)));
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
         // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
         //          the panel counter would over-report.
         setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
+        if (failed > 0) {
+            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            return;
+        }
+        setIsTrashOpen(false);
         showNotification(t.deleteSuccess, 'success');
         soundManager.pop();
     };
@@ -2891,6 +2920,24 @@ export default function App() {
                         </div>
                         
                         <div className={`flex-1 flex flex-col min-h-0 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                            {/* ITALIANO: Dove stanno DAVVERO questi file. Il cestino dell'app e' solo una lista: le
+                                foto restano nella cartella dell'utente finche' non si svuota, e allora escono di li'
+                                e vanno nel Cestino di Windows. L'app non lo diceva da nessuna parte, e in tre altre
+                                finestre rassicura invece che "i file su disco non vengono toccati": chi legge quelle
+                                arriva qui convinto che nemmeno questo tasto tocchi niente. Detto PRIMA di premere,
+                                non dentro la finestra di conferma che si legge di fretta.
+                                ENGLISH: where these files REALLY are. The app's trash is just a list: the photos stay
+                                in the user's folder until it is emptied, and only then do they leave it for the
+                                Windows Recycle Bin. The app said this nowhere, while three other dialogs promise that
+                                "files on disk are not touched" - whoever read those arrives here sure that this
+                                button touches nothing either. Said BEFORE the click, not inside the confirm box
+                                that gets skimmed. */}
+                            {trashedImages.length > 0 && (
+                                <div className={`px-4 py-2.5 border-b flex items-start gap-2 shrink-0 text-xs ${isDarkMode ? 'border-gray-800 bg-amber-500/10 text-amber-300' : 'border-gray-200 bg-amber-50 text-amber-800'}`}>
+                                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                    <span>{t.trashInfo}</span>
+                                </div>
+                            )}
                             {trashedImages.length > 0 && (
                                 <div className={`p-4 border-b flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 ${isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-white/50'}`}>
                                     <div className="flex items-center gap-2">
