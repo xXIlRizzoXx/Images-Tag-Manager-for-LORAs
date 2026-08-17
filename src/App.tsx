@@ -1042,12 +1042,29 @@ export default function App() {
     //             happened: the app said "Files deleted successfully" and dropped the photo from the
     //             project while the file was still sitting on disk.
     //          A missing .txt (photo with no tags) is NOT an error: the system channel already skips it.
-    const deleteImageFiles = async (img: any): Promise<boolean> => {
+    // ITALIANO: 'trashed' = nel Cestino di Windows, recuperabile · 'nopath' = il Cestino non e'
+    //           raggiungibile perche' di questa foto non si conosce il percorso su disco, ma la
+    //           cartella e' aperta e la cancellazione diretta sarebbe possibile (DEFINITIVA) ·
+    //           'failed' = non si e' potuto fare niente.
+    //           Il caso 'nopath' NON e' raro: e' quello di tutte le foto aperte con "Carica
+    //           Cartella". Quella strada usa il selettore del browser, e i file che ne escono non
+    //           portano con se' il percorso su disco, quindi `getPathForFile` torna vuoto. Provato
+    //           il 17 agosto 2026 sull'app vera: "Foto spostate nel Cestino di Windows: 0".
+    // ENGLISH: 'trashed' = in the Windows Recycle Bin, recoverable · 'nopath' = the Recycle Bin is
+    //          out of reach because this photo's path on disk is unknown, but its folder is open and
+    //          a direct delete would work (PERMANENTLY) · 'failed' = nothing could be done.
+    //          'nopath' is NOT an edge case: it is every photo opened with "Load Folder". That route
+    //          uses the browser's picker, and the files it yields do not carry their path on disk, so
+    //          `getPathForFile` comes back empty. Verified 2026-08-17 on the real app: "Photos moved
+    //          to the Windows Recycle Bin: 0".
+    const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed'> => {
         const api = (window as any).electronAPI;
-        if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') return false;
+        if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
+            return img.dirHandle ? 'nopath' : 'failed';
+        }
         try {
             const imgPath = api.getPathForFile(img.file);
-            if (!imgPath) return false;
+            if (!imgPath) return img.dirHandle ? 'nopath' : 'failed';
             const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
             // ITALIANO: due chiamate separate, non una sola con due percorsi: il canale ritorna un
             //           `ok` unico per tutto il gruppo, quindi con un .txt bloccato l'esito diceva
@@ -1063,9 +1080,33 @@ export default function App() {
             const resImg = await api.trashFiles([imgPath]);
             const resTxt = await api.trashFiles([txtPath]);
             if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
-            return !!(resImg && resImg.ok);
+            return resImg && resImg.ok ? 'trashed' : 'failed';
         } catch (err) {
             console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
+            return 'failed';
+        }
+    };
+
+    // ITALIANO: cancellazione DEFINITIVA dalla cartella aperta, senza Cestino di Windows e senza
+    //           possibilita' di recupero. Si usa SOLO dopo che l'utente ha letto e confermato la
+    //           seconda finestra, quella che lo dice a parole. Fino a stamattina questa stessa
+    //           chiamata partiva da sola, in silenzio, ogni volta che il Cestino non era
+    //           raggiungibile — cioe' sempre, per le cartelle aperte con "Carica Cartella" — e
+    //           l'app annunciava comunque "File eliminati con successo".
+    // ENGLISH: PERMANENT delete from the open folder: no Recycle Bin, no way back. Used ONLY after
+    //          the user has read and confirmed the second dialog, the one that says so in words.
+    //          Until this morning this very call ran on its own, silently, whenever the Recycle Bin
+    //          was out of reach - that is, always, for folders opened with "Load Folder" - and the
+    //          app still announced "Files deleted successfully".
+    const deleteImageFilesForGood = async (img: any): Promise<boolean> => {
+        const folder = img.dirHandle;
+        if (!folder || typeof folder.removeEntry !== 'function') return false;
+        try {
+            await folder.removeEntry(sanitizeFileName(img.file.name));
+            try { await folder.removeEntry(buildTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
+            return true;
+        } catch (err) {
+            console.error('[Cestino] Cancellazione definitiva non riuscita:', img.file.name, err);
             return false;
         }
     };
@@ -1089,11 +1130,19 @@ export default function App() {
         const img = images.find(i => i.id === id);
         if (!img) return;
 
-        let done = false;
+        let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
         try {
-            done = await deleteImageFiles(img);
+            esito = await deleteImageFiles(img);
         } catch (error) {
             console.error(error);
+        }
+        // ITALIANO: il Cestino di Windows non e' raggiungibile per questa foto: si puo' solo
+        //           cancellarla per sempre, e non lo si fa senza chiederlo.
+        // ENGLISH: the Windows Recycle Bin is out of reach for this photo: the only option is a
+        //          permanent delete, and that is not done without asking.
+        if (esito === 'nopath') {
+            chiediEliminazioneDefinitiva([img]);
+            return;
         }
         // ITALIANO: se il file non e' finito nel Cestino di Windows, la foto RESTA nel cestino
         //           dell'app: cosi' si puo' riprovare. Prima veniva tolta comunque dal progetto e
@@ -1101,7 +1150,7 @@ export default function App() {
         // ENGLISH: if the file did not reach the Windows Recycle Bin, the photo STAYS in the app's
         //          trash so it can be retried. It used to be dropped from the project anyway,
         //          vanishing from view while still sitting on disk.
-        if (!done) {
+        if (esito !== 'trashed') {
             showNotification(t.deleteError, 'error');
             return;
         }
@@ -1138,15 +1187,18 @@ export default function App() {
         //          With this flag set, both buttons are disabled.
         setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
+        const senzaPercorso: any[] = [];
         let failed = 0;
         for (const img of trashedImages) {
-            let done = false;
+            let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
             try {
-                done = await deleteImageFiles(img);
+                esito = await deleteImageFiles(img);
             } catch (error) {
                 console.error("Failed to delete", img.file.name, error);
             }
-            if (done) removedIds.add(img.id); else failed++;
+            if (esito === 'trashed') removedIds.add(img.id);
+            else if (esito === 'nopath') senzaPercorso.push(img);
+            else failed++;
         }
         setIsEmptyingTrash(false);
 
@@ -1163,12 +1215,59 @@ export default function App() {
         // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
         //          the panel counter would over-report.
         setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
+        // ITALIANO: per queste il Cestino di Windows non c'e'. Non si cancella di nascosto: si apre
+        //           la seconda finestra, che dice quante sono, perche', e che non si torna indietro.
+        // ENGLISH: for these the Windows Recycle Bin is not available. Nothing is deleted behind the
+        //          user's back: the second dialog opens, saying how many, why, and that it is final.
+        if (senzaPercorso.length > 0) {
+            chiediEliminazioneDefinitiva(senzaPercorso);
+            return;
+        }
         if (failed > 0) {
             showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
             return;
         }
         setIsTrashOpen(false);
         showNotification(t.deleteSuccess, 'success');
+        soundManager.pop();
+    };
+
+    // ITALIANO: la seconda finestra. Compare solo quando il Cestino di Windows non e' raggiungibile,
+    //           dice quante foto riguarda e che la cancellazione e' definitiva. Se si annulla, le
+    //           foto restano dove sono: nel cestino dell'app e sul disco.
+    // ENGLISH: the second dialog. It shows only when the Windows Recycle Bin is out of reach, says
+    //          how many photos it covers and that the delete is final. On cancel the photos stay
+    //          where they are: in the app's trash and on disk.
+    const chiediEliminazioneDefinitiva = (imgs: any[]) => {
+        setConfirmDialog({
+            isOpen: true,
+            title: t.deleteForGood,
+            message: t.confirmHardDelete.replace('{n}', String(imgs.length)),
+            onConfirm: () => eliminaPerSempre(imgs),
+            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        });
+    };
+
+    const eliminaPerSempre = async (imgs: any[]) => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        setIsEmptyingTrash(true);
+        const removedIds = new Set<string>();
+        let failed = 0;
+        for (const img of imgs) {
+            if (await deleteImageFilesForGood(img)) removedIds.add(img.id); else failed++;
+        }
+        setIsEmptyingTrash(false);
+
+        if (removedIds.size > 0) {
+            setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+            setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
+        }
+        if (failed > 0) {
+            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            return;
+        }
+        setIsTrashOpen(false);
+        showNotification(t.deleteForGoodDone.replace('{done}', String(removedIds.size)), 'success');
         soundManager.pop();
     };
 
