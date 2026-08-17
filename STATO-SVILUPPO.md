@@ -2,6 +2,30 @@
 
 **Ultimo aggiornamento:** 29 luglio 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 92): **riparazioni nate da una segnalazione di un utente su Civitai**. Uno
+che usa il programma ha scritto tre cose, e tutte e tre erano vere.
+La più seria l'ha fatta scoprire senza saperlo: **il cestino diceva bugie sui tuoi file**. Svuotando
+il cestino, se Windows non riusciva a spostare un file (bloccato, permessi), il programma lo
+cancellava **per davvero**, senza Cestino di Windows e senza possibilità di recupero — proprio nel
+momento in cui serviva poter tornare indietro. E in ogni caso annunciava "File eliminati con
+successo", togliendo la foto dal progetto anche quando il file era rimasto al suo posto. Ora o il
+file arriva nel Cestino di Windows o non si tocca niente e te lo dice: le foto che non ce l'hanno
+fatta **restano nel cestino**, sotto gli occhi, con il conto di quante sono.
+Sistemati anche i **testi del cestino**, che non dicevano mai la cosa più importante: che le foto
+escono dalla tua cartella. La conferma diceva perfino "questa azione non può essere annullata", che
+è falso (i file si recuperano dal Cestino di Windows), mentre altre tre finestre rassicurano che "i
+file su disco non vengono toccati" — chi legge quelle arriva qui convinto che nemmeno questo tasto
+tocchi niente. Ora tutte e 9 le lingue nominano il Cestino di Windows, una riga gialla dentro la
+vista Cestino lo dice **prima** di premere, e "Elimina definitivamente" non si chiama più così.
+Il tasto **"Esporta tutti"** si chiama ora **"Esporta tag"**: l'archivio ha sempre contenuto solo i
+file di testo, mai le foto, ma il nome faceva pensare al dataset intero e l'unico modo di scoprirlo
+era aprire lo zip. Aggiunto un suggerimento che lo dice. E l'export **non porta più via le foto che
+hai messo nel cestino**: era l'unico punto del programma che non le filtrava.
+Infine la **vista Quadrate**: lo spazio che il programma riserva alle anteprime non ancora disegnate
+era lo stesso per le due viste, ma una card quadrata è molto più alta — con lo zoom in alto valeva
+meno della metà del vero, e alla prima scorsa di una cartella grande la pagina si ricalcolava di
+continuo. Ora il valore è giusto per ciascuna vista. Se questo basti a togliere gli scatti che
+l'utente ha visto non è ancora dimostrato: serve una misura su una cartella vera, ed è annotata.
 Novità 1.2.0 (traguardo 91): **due foto non possono più scambiarsi i tag**. Ogni foto caricata riceve
 un'etichetta interna che serve al programma per distinguerla dalle altre. Era un numero a caso corto:
 su una cartella da 3000 foto, circa una volta su 160, due foto ricevevano la stessa etichetta e
