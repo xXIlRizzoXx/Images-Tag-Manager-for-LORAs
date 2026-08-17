@@ -2,6 +2,25 @@
 
 **Ultimo aggiornamento:** 17 agosto 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 94): **scoperto un difetto grave nella 1.1.0 già consegnata: svuotando il
+cestino le foto non finivano nel Cestino di Windows, venivano cancellate per sempre.** Non riguarda
+tutti allo stesso modo: capita alle foto aperte con **Carica Cartella**, che è la strada normale.
+Quella strada usa il selettore di cartelle del browser, e i file che ne escono non si portano dietro
+il percorso su disco: il programma quindi non sapeva quale file dire a Windows di cestinare, e
+ripiegava di nascosto sulla cancellazione diretta, annunciando lo stesso "File eliminati con
+successo". Provato sull'app vera il 17 agosto 2026. Chi ha caricato le foto una per una o
+trascinandole non è mai stato toccato dal difetto.
+Ora il programma prova il Cestino di Windows e, quando non può usarlo, **si ferma e apre una seconda
+finestra**: dice quante foto riguarda, perché non è possibile, e che quei file escono dalla cartella
+per sempre. Solo un sì esplicito cancella; annullando resta tutto dov'è. La riparazione vera —
+aprire la cartella con la finestra di Windows invece che con quella del browser, così ogni foto ha un
+percorso e il Cestino funziona per tutti — è più lunga ed è in elenco.
+Novità 1.2.0 (traguardo 93): **la schermata di avvio non fa più scorrere testi**. Erano quattro frasi
+che si davano il cambio ogni 0,8 secondi in un ciclo senza fine: sembravano scritte a caso, e in un
+certo senso lo erano, perché non seguivano nessun avanzamento vero ma giravano solo a tempo, troppo
+in fretta perché si facesse in tempo a leggerle. Ora c'è una riga sola e ferma. E al primissimo
+avvio la schermata parla la **lingua di Windows** invece che inglese sempre: prima su un PC italiano
+si vedeva una schermata in inglese e subito dopo la scelta della lingua in italiano.
 Novità 1.2.0 (traguardo 92): **riparazioni nate da una segnalazione di un utente su Civitai**. Uno
 che usa il programma ha scritto tre cose, e tutte e tre erano vere.
 La più seria l'ha fatta scoprire senza saperlo: **il cestino diceva bugie sui tuoi file**. Svuotando
@@ -10,7 +29,9 @@ cancellava **per davvero**, senza Cestino di Windows e senza possibilità di rec
 momento in cui serviva poter tornare indietro. E in ogni caso annunciava "File eliminati con
 successo", togliendo la foto dal progetto anche quando il file era rimasto al suo posto. Ora o il
 file arriva nel Cestino di Windows o non si tocca niente e te lo dice: le foto che non ce l'hanno
-fatta **restano nel cestino**, sotto gli occhi, con il conto di quante sono.
+fatta **restano nel cestino**, sotto gli occhi, con il conto di quante sono. (Questo bastava solo a
+metà: vedi il traguardo 94, dove si scopre che nel caso più comune il Cestino di Windows non era
+nemmeno raggiungibile.)
 Sistemati anche i **testi del cestino**, che non dicevano mai la cosa più importante: che le foto
 escono dalla tua cartella. La conferma diceva perfino "questa azione non può essere annullata", che
 è falso (i file si recuperano dal Cestino di Windows), mentre altre tre finestre rassicurano che "i
