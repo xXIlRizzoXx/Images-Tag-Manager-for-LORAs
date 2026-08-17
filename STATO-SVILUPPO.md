@@ -1,6 +1,6 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 29 luglio 2026
+**Ultimo aggiornamento:** 17 agosto 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
 Novità 1.2.0 (traguardo 92): **riparazioni nate da una segnalazione di un utente su Civitai**. Uno
 che usa il programma ha scritto tre cose, e tutte e tre erano vere.
@@ -20,12 +20,16 @@ vista Cestino lo dice **prima** di premere, e "Elimina definitivamente" non si c
 Il tasto **"Esporta tutti"** si chiama ora **"Esporta tag"**: l'archivio ha sempre contenuto solo i
 file di testo, mai le foto, ma il nome faceva pensare al dataset intero e l'unico modo di scoprirlo
 era aprire lo zip. Aggiunto un suggerimento che lo dice. E l'export **non porta più via le foto che
-hai messo nel cestino**: era l'unico punto del programma che non le filtrava.
+hai messo nel cestino**: era l'unico punto dell'esportazione delle didascalie che non le filtrava.
+Attenzione, non è tutto: l'elenco dei tag del progetto (e il suo export in JSON o TXT) conta ancora
+anche i tag delle foto cestinate. È un'altra cosa e non è stata toccata qui.
 Infine la **vista Quadrate**: lo spazio che il programma riserva alle anteprime non ancora disegnate
 era lo stesso per le due viste, ma una card quadrata è molto più alta — con lo zoom in alto valeva
 meno della metà del vero, e alla prima scorsa di una cartella grande la pagina si ricalcolava di
-continuo. Ora il valore è giusto per ciascuna vista. Se questo basti a togliere gli scatti che
-l'utente ha visto non è ancora dimostrato: serve una misura su una cartella vera, ed è annotata.
+continuo. Ora in Quadrate il valore è molto più vicino al vero; in Intere non cambia niente, lì era
+già ragionevole. Resta comunque una stima per difetto, perché le colonne si allargano oltre il minimo
+scelto con lo zoom. E se questo basti a togliere gli scatti che l'utente ha visto non è dimostrato:
+serve una misura su una cartella vera, che non è stata fatta ed è annotata.
 Novità 1.2.0 (traguardo 91): **due foto non possono più scambiarsi i tag**. Ogni foto caricata riceve
 un'etichetta interna che serve al programma per distinguerla dalle altre. Era un numero a caso corto:
 su una cartella da 3000 foto, circa una volta su 160, due foto ricevevano la stessa etichetta e

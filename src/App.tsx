@@ -343,6 +343,11 @@ export default function App() {
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isTrashOpen, setIsTrashOpen] = useState(false);
+    // ITALIANO: acceso mentre lo svuotamento sta spostando i file: spegne "Ripristina tutte" e
+    //           "Svuota cestino", che restano a schermo perche' la finestra ora non si chiude subito.
+    // ENGLISH: on while the empty is moving files: disables "Restore all" and "Empty trash", which
+    //          stay on screen now that the window no longer closes right away.
+    const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
     // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
@@ -1044,8 +1049,21 @@ export default function App() {
             const imgPath = api.getPathForFile(img.file);
             if (!imgPath) return false;
             const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
-            const res = await api.trashFiles([imgPath, txtPath]);
-            return !!(res && res.ok);
+            // ITALIANO: due chiamate separate, non una sola con due percorsi: il canale ritorna un
+            //           `ok` unico per tutto il gruppo, quindi con un .txt bloccato l'esito diceva
+            //           "non riuscito" mentre l'IMMAGINE era gia' nel Cestino di Windows — e la foto
+            //           restava nel cestino dell'app a puntare a un file che non c'e' piu'.
+            //           Quello che conta per togliere la foto dal progetto e' l'immagine; un .txt
+            //           rimasto indietro e' un residuo innocuo, e viene annotato nel registro.
+            // ENGLISH: two separate calls, not one with both paths: the channel returns a single `ok`
+            //          for the whole batch, so a locked .txt reported failure while the IMAGE had
+            //          already reached the Recycle Bin - and the photo stayed in the app's trash
+            //          pointing at a file that was gone. What decides whether the photo leaves the
+            //          project is the image; a .txt left behind is a harmless leftover, logged here.
+            const resImg = await api.trashFiles([imgPath]);
+            const resTxt = await api.trashFiles([txtPath]);
+            if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
+            return !!(resImg && resImg.ok);
         } catch (err) {
             console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
             return false;
@@ -1110,6 +1128,15 @@ export default function App() {
         //          The ones that failed stay in the app's trash, in plain sight, and the window does
         //          not close: it used to empty everything and report success regardless, so a locked
         //          file vanished from view and stayed on disk with nobody the wiser.
+        // ITALIANO: durante il ciclo la finestra resta aperta, quindi "Ripristina tutte" sarebbe
+        //           cliccabile: premuto a meta' svuotamento rimetteva le foto in galleria mentre il
+        //           ciclo continuava a spostarne i file nel Cestino, lasciando in progetto card che
+        //           puntano a file spariti. Con la spia accesa i due tasti sono spenti.
+        // ENGLISH: the window stays open during the loop, so "Restore all" would be clickable:
+        //          pressed halfway it put the photos back in the gallery while the loop kept moving
+        //          their files to the Recycle Bin, leaving cards pointing at files that are gone.
+        //          With this flag set, both buttons are disabled.
+        setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
         let failed = 0;
         for (const img of trashedImages) {
@@ -1121,8 +1148,16 @@ export default function App() {
             }
             if (done) removedIds.add(img.id); else failed++;
         }
+        setIsEmptyingTrash(false);
 
-        setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+        // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe
+        //           comunque un array nuovo, l'effetto che registra la cronologia lo vedrebbe come una
+        //           modifica e il primo Ctrl+Z successivo si consumerebbe su un passo vuoto invece di
+        //           annullare l'ultima modifica vera ai tag.
+        // ENGLISH: if not a single photo was removed, do NOT touch `images`: `filter` would still make
+        //          a new array, the history effect would read it as a change, and the next Ctrl+Z would
+        //          burn itself on an empty step instead of undoing the user's last real tag edit.
+        if (removedIds.size > 0) setImages(prev => prev.filter(i => !removedIds.has(i.id)));
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
         // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
@@ -2902,9 +2937,10 @@ export default function App() {
                             <div className="flex items-center gap-3">
                                 {trashedImages.length > 0 && (
                                     <>
-                                        <button 
+                                        <button
                                             onClick={handleRestoreAll}
-                                            className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm`}
+                                            disabled={isEmptyingTrash}
+                                            className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed`}
                                         >
                                             <RefreshCw size={18} />
                                             <span className="hidden sm:inline">{t.restoreAll}</span>
@@ -2919,7 +2955,8 @@ export default function App() {
                                                     onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                 });
                                             }}
-                                            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm"
+                                            disabled={isEmptyingTrash}
+                                            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <Trash size={18} />
                                             <span className="hidden sm:inline">{t.emptyTrash}</span>
