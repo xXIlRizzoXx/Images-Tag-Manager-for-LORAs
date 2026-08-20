@@ -224,10 +224,23 @@ const applySort = (list: any[], order: string): any[] => {
 //          re-renders only that card. The functions passed as props are "stable" (useCallback in
 //          App), which the memo needs. content-visibility:auto also skips PAINTING off-screen cards.
 //          No behavior changes: it is identical to the previous inline version.
+// ITALIANO: `--card-h` e' l'altezza che il browser RISERVA a una card non ancora disegnata. Era
+//           fissa a 320px per tutti e due i modi, ma in "Quadrate" una card e' alta quanto la
+//           colonna piu' l'area dei tag: con lo zoom in alto il segnaposto era meno della meta'
+//           del vero, quindi alla prima scorsa di una cartella grande la pagina si ricalcolava di
+//           continuo e la barra di scorrimento saltava. Il valore arriva dalla griglia (vedi lo
+//           stile del contenitore), non come prop: passarlo come prop farebbe ridisegnare TUTTE le
+//           card memorizzate mentre si trascina il cursore dello zoom, che oggi e' solo CSS.
+// ENGLISH: `--card-h` is the height the browser RESERVES for a card it has not painted yet. It was
+//          a flat 320px for both modes, but in "Square" a card is as tall as the column plus the
+//          tag area: at high zoom the placeholder was less than half the real thing, so the first
+//          pass through a large folder kept re-laying out and the scrollbar jumped. The value comes
+//          from the grid (see the container's style), not as a prop: passing it as a prop would
+//          re-render EVERY memoised card while dragging the zoom slider, which today is pure CSS.
 const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
     const lowQuality = img.width * img.height < 1048576;
     return (
-        <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 320px' }}>
+        <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto var(--card-h, 320px)' }}>
             <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
                 <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${isSelected ? 'opacity-80' : ''}`} />
 
@@ -330,6 +343,11 @@ export default function App() {
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isTrashOpen, setIsTrashOpen] = useState(false);
+    // ITALIANO: acceso mentre lo svuotamento sta spostando i file: spegne "Ripristina tutte" e
+    //           "Svuota cestino", che restano a schermo perche' la finestra ora non si chiude subito.
+    // ENGLISH: on while the empty is moving files: disables "Restore all" and "Empty trash", which
+    //          stay on screen now that the window no longer closes right away.
+    const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState(0);
     // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
@@ -1002,37 +1020,123 @@ export default function App() {
         soundManager.pop();
     };
 
-    // ITALIANO: Elimina l'immagine e il suo .txt. Prima si prova il CESTINO DI WINDOWS, cosi' un
-    //           ripensamento e' sempre recuperabile; solo se non e' possibile (fuori da Electron,
-    //           o percorso del file non ricavabile) si ripiega sulla cancellazione diretta.
-    //           Si usa SEMPRE la cartella della singola immagine, non una cartella globale.
-    // ENGLISH: Deletes the image and its .txt. It first tries the WINDOWS RECYCLE BIN, so a change
-    //          of mind is always recoverable; only when that is impossible (outside Electron, or the
-    //          file path cannot be resolved) does it fall back to a direct delete. It always uses
-    //          the individual image's own folder, never a global one.
-    const deleteImageFiles = async (img: any): Promise<boolean> => {
+    // ITALIANO: Sposta nel CESTINO DI WINDOWS l'immagine e il suo .txt, e ritorna l'ESITO VERO.
+    //           O il file arriva nel Cestino di Windows, da dove si recupera, o non si tocca niente
+    //           e chi chiama lo viene a sapere. Due cose sono state tolte da qui, ed erano tutte e
+    //           due bugie sui file dell'utente:
+    //           1) il ripiego `removeEntry`, che quando il Cestino falliva (file bloccato, permessi)
+    //              cancellava il file DAVVERO, senza cestino e senza possibilita' di recupero — cioe'
+    //              proprio nel caso in cui l'utente aveva piu' bisogno di poter tornare indietro;
+    //           2) il `return true` finale, che dichiarava riuscita anche una cancellazione mai
+    //              avvenuta: l'app diceva "File eliminati con successo" e toglieva la foto dal
+    //              progetto mentre il file era ancora al suo posto.
+    //           Un .txt assente (foto senza tag) NON e' un errore: lo salta gia' il canale di sistema.
+    // ENGLISH: Moves the image and its .txt to the WINDOWS RECYCLE BIN and returns the REAL outcome.
+    //          Either the file reaches the Recycle Bin, where it can be restored, or nothing is
+    //          touched and the caller is told. Two things were removed from here, both of them lies
+    //          about the user's files:
+    //          1) the `removeEntry` fallback, which on a failed trash (locked file, permissions)
+    //             deleted the file FOR GOOD, no bin and no way back — exactly when the user most
+    //             needed to be able to undo;
+    //          2) the trailing `return true`, which declared success for a deletion that never
+    //             happened: the app said "Files deleted successfully" and dropped the photo from the
+    //             project while the file was still sitting on disk.
+    //          A missing .txt (photo with no tags) is NOT an error: the system channel already skips it.
+    // ITALIANO: 'trashed' = nel Cestino di Windows, recuperabile · 'nopath' = il Cestino non e'
+    //           raggiungibile perche' di questa foto non si conosce il percorso su disco, ma la
+    //           cartella e' aperta e la cancellazione diretta sarebbe possibile (DEFINITIVA) ·
+    //           'failed' = non si e' potuto fare niente.
+    //           STORIA, perche' spiega perche' esiste 'nopath': il selettore di cartelle del browser
+    //           consegna file SENZA percorso su disco, quindi `getPathForFile` torna vuoto e per un
+    //           po' questo ha significato che nessuna foto aperta con "Carica Cartella" poteva
+    //           andare nel Cestino di Windows (provato il 17 agosto 2026 sull'app vera: "Foto
+    //           spostate nel Cestino di Windows: 0"). Ora il percorso lo cattura il processo
+    //           principale al momento della scelta e arriva qui come `img.filePath`, quindi il caso
+    //           normale e' 'trashed'. Restano su 'nopath' due situazioni: le cartelle di RETE (per
+    //           le condivisioni di rete Windows non ha proprio un Cestino) e l'anteprima nel
+    //           browser, dove non c'e' il guscio Electron.
+    // ENGLISH: 'trashed' = in the Windows Recycle Bin, recoverable · 'nopath' = the Recycle Bin is
+    //          out of reach because this photo's path on disk is unknown, but its folder is open and
+    //          a direct delete would work (PERMANENTLY) · 'failed' = nothing could be done.
+    //          HISTORY, because it explains why 'nopath' exists: the browser's folder picker hands
+    //          over files WITHOUT a path on disk, so `getPathForFile` comes back empty, and for a
+    //          while that meant no photo opened with "Load Folder" could reach the Windows Recycle
+    //          Bin (verified 2026-08-17 on the real app: "Photos moved to the Windows Recycle Bin:
+    //          0"). The path is now captured by the main process at pick time and arrives here as
+    //          `img.filePath`, so the normal case is 'trashed'. Two situations stay on 'nopath':
+    //          NETWORK folders (Windows has no Recycle Bin at all for network shares) and the
+    //          browser preview, where there is no Electron shell.
+    const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed'> => {
         const api = (window as any).electronAPI;
-        if (api && typeof api.getPathForFile === 'function' && typeof api.trashFiles === 'function') {
-            try {
-                const imgPath = api.getPathForFile(img.file);
-                if (imgPath) {
-                    const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
-                    const res = await api.trashFiles([imgPath, txtPath]);
-                    if (res && res.ok) return true;
-                }
-            } catch (err) {
-                console.warn('[Cestino] Cestino di sistema non disponibile, uso la cancellazione diretta:', err);
-            }
+        if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
+            return img.dirHandle ? 'nopath' : 'failed';
         }
-        // ITALIANO: ripiego — cancellazione diretta dalla cartella dell'immagine
-        // ENGLISH: fallback — direct delete from the image's own folder
+        try {
+            // ITALIANO: `getPathForFile` resta PRIMO, cosi' le foto caricate una per una o
+            //           trascinate continuano a comportarsi esattamente come prima. `img.filePath`
+            //           copre solo il buco che lascia il selettore di cartelle del browser.
+            // ENGLISH: `getPathForFile` stays FIRST, so photos loaded individually or dropped in
+            //          keep behaving exactly as before. `img.filePath` only fills the gap left by
+            //          the browser's folder picker.
+            const imgPath = api.getPathForFile(img.file) || img.filePath || '';
+            if (!imgPath) return img.dirHandle ? 'nopath' : 'failed';
+            const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
+            // ITALIANO: due chiamate separate, non una sola con due percorsi: il canale ritorna un
+            //           `ok` unico per tutto il gruppo, quindi con un .txt bloccato l'esito diceva
+            //           "non riuscito" mentre l'IMMAGINE era gia' nel Cestino di Windows — e la foto
+            //           restava nel cestino dell'app a puntare a un file che non c'e' piu'.
+            //           Quello che conta per togliere la foto dal progetto e' l'immagine; un .txt
+            //           rimasto indietro e' un residuo innocuo, e viene annotato nel registro.
+            // ENGLISH: two separate calls, not one with both paths: the channel returns a single `ok`
+            //          for the whole batch, so a locked .txt reported failure while the IMAGE had
+            //          already reached the Recycle Bin - and the photo stayed in the app's trash
+            //          pointing at a file that was gone. What decides whether the photo leaves the
+            //          project is the image; a .txt left behind is a harmless leftover, logged here.
+            const resImg = await api.trashFiles([imgPath]);
+            const resTxt = await api.trashFiles([txtPath]);
+            if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
+            // ITALIANO: 'rifiutato' vuol dire che il Cestino di Windows non e' applicabile a questo
+            //           file (cartella di rete, o estensione fuori elenco). Non e' un fallimento
+            //           definitivo: si torna 'nopath', cioe' la strada della seconda conferma, che
+            //           puo' comunque cancellare passando dalla cartella aperta. Senza questo, una
+            //           foto su NAS resterebbe per sempre nel cestino dell'app.
+            // ENGLISH: 'rifiutato' means the Windows Recycle Bin does not apply to this file (network
+            //          folder, or an extension outside the list). That is not a dead end: we return
+            //          'nopath', the second-confirmation road, which can still delete through the
+            //          open folder. Without this, a photo on a NAS would sit in the app's trash
+            //          forever.
+            const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
+            if (esitoImg === 'ok') return 'trashed';
+            if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'failed';
+            return 'failed';
+        } catch (err) {
+            console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
+            return 'failed';
+        }
+    };
+
+    // ITALIANO: cancellazione DEFINITIVA dalla cartella aperta, senza Cestino di Windows e senza
+    //           possibilita' di recupero. Si usa SOLO dopo che l'utente ha letto e confermato la
+    //           seconda finestra, quella che lo dice a parole. Fino a stamattina questa stessa
+    //           chiamata partiva da sola, in silenzio, ogni volta che il Cestino non era
+    //           raggiungibile — cioe' sempre, per le cartelle aperte con "Carica Cartella" — e
+    //           l'app annunciava comunque "File eliminati con successo".
+    // ENGLISH: PERMANENT delete from the open folder: no Recycle Bin, no way back. Used ONLY after
+    //          the user has read and confirmed the second dialog, the one that says so in words.
+    //          Until this morning this very call ran on its own, silently, whenever the Recycle Bin
+    //          was out of reach - that is, always, for folders opened with "Load Folder" - and the
+    //          app still announced "Files deleted successfully".
+    const deleteImageFilesForGood = async (img: any): Promise<boolean> => {
         const folder = img.dirHandle;
-        if (!folder) return true; // ITALIANO: nessun file su disco da togliere — ENGLISH: no file on disk to remove
-        const safeName = sanitizeFileName(img.file.name);
-        await folder.removeEntry(safeName);
-        const txtName = buildTagFileName(img.file.name);
-        try { await folder.removeEntry(txtName); } catch (e) { /* ignore if txt doesn't exist */ }
-        return true;
+        if (!folder || typeof folder.removeEntry !== 'function') return false;
+        try {
+            await folder.removeEntry(sanitizeFileName(img.file.name));
+            try { await folder.removeEntry(buildTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
+            return true;
+        } catch (err) {
+            console.error('[Cestino] Cancellazione definitiva non riuscita:', img.file.name, err);
+            return false;
+        }
     };
 
     // ITALIANO: Le anteprime vivono in memoria finche' non le si libera esplicitamente. Non veniva
@@ -1054,10 +1158,27 @@ export default function App() {
         const img = images.find(i => i.id === id);
         if (!img) return;
 
+        let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
         try {
-            await deleteImageFiles(img);
+            esito = await deleteImageFiles(img);
         } catch (error) {
             console.error(error);
+        }
+        // ITALIANO: il Cestino di Windows non e' raggiungibile per questa foto: si puo' solo
+        //           cancellarla per sempre, e non lo si fa senza chiederlo.
+        // ENGLISH: the Windows Recycle Bin is out of reach for this photo: the only option is a
+        //          permanent delete, and that is not done without asking.
+        if (esito === 'nopath') {
+            chiediEliminazioneDefinitiva([img]);
+            return;
+        }
+        // ITALIANO: se il file non e' finito nel Cestino di Windows, la foto RESTA nel cestino
+        //           dell'app: cosi' si puo' riprovare. Prima veniva tolta comunque dal progetto e
+        //           spariva dalla vista pur essendo ancora sul disco.
+        // ENGLISH: if the file did not reach the Windows Recycle Bin, the photo STAYS in the app's
+        //          trash so it can be retried. It used to be dropped from the project anyway,
+        //          vanishing from view while still sitting on disk.
+        if (esito !== 'trashed') {
             showNotification(t.deleteError, 'error');
             return;
         }
@@ -1074,24 +1195,107 @@ export default function App() {
 
     const handleEmptyTrash = async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-        setIsTrashOpen(false);
 
-        const removedIds = new Set(trashedImages.map(img => img.id));
+        // ITALIANO: si tolgono dal progetto SOLO le foto che sono davvero arrivate nel Cestino di
+        //           Windows. Quelle che non ce l'hanno fatta restano nel cestino dell'app, sotto gli
+        //           occhi, e la finestra non si chiude: prima si svuotava tutto e si annunciava
+        //           "riuscito" comunque, quindi un file bloccato spariva dalla vista e restava su
+        //           disco senza che nessuno lo sapesse.
+        // ENGLISH: only the photos that actually reached the Windows Recycle Bin leave the project.
+        //          The ones that failed stay in the app's trash, in plain sight, and the window does
+        //          not close: it used to empty everything and report success regardless, so a locked
+        //          file vanished from view and stayed on disk with nobody the wiser.
+        // ITALIANO: durante il ciclo la finestra resta aperta, quindi "Ripristina tutte" sarebbe
+        //           cliccabile: premuto a meta' svuotamento rimetteva le foto in galleria mentre il
+        //           ciclo continuava a spostarne i file nel Cestino, lasciando in progetto card che
+        //           puntano a file spariti. Con la spia accesa i due tasti sono spenti.
+        // ENGLISH: the window stays open during the loop, so "Restore all" would be clickable:
+        //          pressed halfway it put the photos back in the gallery while the loop kept moving
+        //          their files to the Recycle Bin, leaving cards pointing at files that are gone.
+        //          With this flag set, both buttons are disabled.
+        setIsEmptyingTrash(true);
+        const removedIds = new Set<string>();
+        const senzaPercorso: any[] = [];
+        let failed = 0;
         for (const img of trashedImages) {
+            let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
             try {
-                await deleteImageFiles(img);
+                esito = await deleteImageFiles(img);
             } catch (error) {
-                console.error("Failed to delete", img.file.name);
+                console.error("Failed to delete", img.file.name, error);
             }
+            if (esito === 'trashed') removedIds.add(img.id);
+            else if (esito === 'nopath') senzaPercorso.push(img);
+            else failed++;
         }
+        setIsEmptyingTrash(false);
 
-        setImages(prev => prev.filter(i => !i.isTrashed));
+        // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe
+        //           comunque un array nuovo, l'effetto che registra la cronologia lo vedrebbe come una
+        //           modifica e il primo Ctrl+Z successivo si consumerebbe su un passo vuoto invece di
+        //           annullare l'ultima modifica vera ai tag.
+        // ENGLISH: if not a single photo was removed, do NOT touch `images`: `filter` would still make
+        //          a new array, the history effect would read it as a change, and the next Ctrl+Z would
+        //          burn itself on an empty step instead of undoing the user's last real tag edit.
+        if (removedIds.size > 0) setImages(prev => prev.filter(i => !removedIds.has(i.id)));
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
         // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
         //          the panel counter would over-report.
         setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
+        // ITALIANO: per queste il Cestino di Windows non c'e'. Non si cancella di nascosto: si apre
+        //           la seconda finestra, che dice quante sono, perche', e che non si torna indietro.
+        // ENGLISH: for these the Windows Recycle Bin is not available. Nothing is deleted behind the
+        //          user's back: the second dialog opens, saying how many, why, and that it is final.
+        if (senzaPercorso.length > 0) {
+            chiediEliminazioneDefinitiva(senzaPercorso);
+            return;
+        }
+        if (failed > 0) {
+            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            return;
+        }
+        setIsTrashOpen(false);
         showNotification(t.deleteSuccess, 'success');
+        soundManager.pop();
+    };
+
+    // ITALIANO: la seconda finestra. Compare solo quando il Cestino di Windows non e' raggiungibile,
+    //           dice quante foto riguarda e che la cancellazione e' definitiva. Se si annulla, le
+    //           foto restano dove sono: nel cestino dell'app e sul disco.
+    // ENGLISH: the second dialog. It shows only when the Windows Recycle Bin is out of reach, says
+    //          how many photos it covers and that the delete is final. On cancel the photos stay
+    //          where they are: in the app's trash and on disk.
+    const chiediEliminazioneDefinitiva = (imgs: any[]) => {
+        setConfirmDialog({
+            isOpen: true,
+            title: t.deleteForGood,
+            message: t.confirmHardDelete.replace('{n}', String(imgs.length)),
+            onConfirm: () => eliminaPerSempre(imgs),
+            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+        });
+    };
+
+    const eliminaPerSempre = async (imgs: any[]) => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        setIsEmptyingTrash(true);
+        const removedIds = new Set<string>();
+        let failed = 0;
+        for (const img of imgs) {
+            if (await deleteImageFilesForGood(img)) removedIds.add(img.id); else failed++;
+        }
+        setIsEmptyingTrash(false);
+
+        if (removedIds.size > 0) {
+            setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+            setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
+        }
+        if (failed > 0) {
+            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            return;
+        }
+        setIsTrashOpen(false);
+        showNotification(t.deleteForGoodDone.replace('{done}', String(removedIds.size)), 'success');
         soundManager.pop();
     };
 
@@ -1108,7 +1312,7 @@ export default function App() {
     const TXT_MAX_TAGS_PER_FILE = 200;
     const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -1295,6 +1499,16 @@ export default function App() {
                     // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash.
                     // ENGLISH: the key under which this photo is stored in the crash backup.
                     backupKey: chiaveBackup,
+                    // ITALIANO: percorso VERO del file sul disco, quello che serve a Windows per
+                    //           mandarlo nel Cestino. Vuoto quando non si conosce: cartella di rete
+                    //           (dove il Cestino di Windows non esiste), oppure fuori da Electron.
+                    //           In quel caso il programma chiede conferma e cancella per sempre,
+                    //           come faceva prima.
+                    // ENGLISH: the file's REAL path on disk, the one Windows needs to move it to the
+                    //          Recycle Bin. Empty when unknown: a network folder (where Windows has
+                    //          no Recycle Bin at all), or outside Electron. In that case the app asks
+                    //          for confirmation and deletes for good, as it did before.
+                    filePath: (pathOf && pathOf.get(imgFiles[i])) || '',
                     // ITALIANO: OGNI immagine si porta dietro la cartella da cui proviene. Prima
                     //           esisteva una sola cartella globale: aprendo una seconda cartella
                     //           senza chiudere la prima, i tag della prima venivano scritti dentro
@@ -1325,7 +1539,7 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
         // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
         //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
         // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
@@ -1351,12 +1565,20 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf }
+            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf }
         });
     };
 
     const handleLoadFolderClick = async () => {
         if ('showDirectoryPicker' in window) {
+            // ITALIANO: avviso il processo principale che sta per essere scelta una cartella: da
+            //           questo momento e' l'unico a poter registrare il percorso che Electron gli
+            //           passa. La pagina non lo conosce e non lo manda mai.
+            // ENGLISH: tell the main process a folder pick is starting: from now on it is the only
+            //          one allowed to record the path Electron hands it. The page never knows the
+            //          path and never sends one.
+            const api = (window as any).electronAPI;
+            try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
             try {
                 // ITALIANO: l'id fa ricordare al sistema l'ULTIMA cartella usata: la volta dopo
                 //           il selettore si riapre lì. startIn come riserva al primo utilizzo.
@@ -1412,9 +1634,66 @@ export default function App() {
                     return showNotification(t.noImagesTitle, "info");
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf);
+                // ITALIANO: il percorso della cartella si ritira DOPO la scansione, non prima:
+                //           riaprendo una cartella gia' usata Electron non chiede piu' il permesso
+                //           (ce l'ha in memoria) e il percorso arriva solo con i "controlli", che
+                //           scattano mentre si leggono i file. Misurato il 17 agosto 2026.
+                //           Da qui compongo il percorso di ogni foto: cartella scelta + la parte di
+                //           sottocartella che ho gia' costruito scendendo (relPathOf), meno il nome
+                //           della radice, che nel percorso c'e' gia'.
+                //           Se resta vuoto (cartella di rete, o fuori da Electron) non cambia niente:
+                //           il programma si comporta esattamente come prima.
+                // ENGLISH: the folder path is collected AFTER the scan, not before: re-opening a
+                //          folder already used raises no permission request (the grant is cached) and
+                //          the path only arrives with the "checks", which fire while the files are
+                //          read. Measured 2026-08-17. From it I compose each photo's path: the picked
+                //          folder plus the subfolder part already built while descending (relPathOf),
+                //          minus the root's own name, which the path already carries.
+                //          If it stays empty (network folder, or outside Electron) nothing changes:
+                //          the app behaves exactly as before.
+                //           NON basta chiedere "che percorso hai visto": in quella finestra arrivano
+                //           anche cartelle che non c'entrano — al rientro del fuoco, quando il
+                //           selettore si chiude, la pagina rilegge la foto selezionata di una cartella
+                //           aperta prima, e anche quel percorso viene visto. Quindi mando le PROVE di
+                //           cosa ho appena letto (nome, sottocartella, dimensione, data di modifica di
+                //           qualche file) e il processo principale risponde solo se una cartella
+                //           contiene DAVVERO quei file. Il nome della cartella non decide niente: qui
+                //           si chiamano quasi tutte "dataset" o "img".
+                // ENGLISH: asking "which path did you see" is NOT enough: unrelated folders land in
+                //          that window too - on focus, as the picker closes, the page re-reads the
+                //          selected photo of a previously opened folder, and that path is seen as
+                //          well. So I send PROOF of what I just read (name, subfolder, size and
+                //          modification time of a few files) and the main process answers only if a
+                //          folder really holds those files. The folder's name decides nothing: around
+                //          here they are nearly all called "dataset" or "img".
+                const proveLettura = imgFiles.slice(0, 5).map(f => ({
+                    rel: (relPathOf.get(f) || '').split('/').slice(1).join('/'),
+                    name: f.name,
+                    size: f.size,
+                    mtime: f.lastModified,
+                }));
+                let rootPath = '';
+                try { rootPath = (await api?.takePickedFolderPath?.(proveLettura)) || ''; } catch (_) { rootPath = ''; }
+                const pathOf = new Map<any, string>();
+                if (rootPath) {
+                    const sep = rootPath.includes('\\') ? '\\' : '/';
+                    for (const f of [...imgFiles, ...txtFiles]) {
+                        const rel = relPathOf.get(f) || '';
+                        const sub = rel.split('/').slice(1).join(sep);
+                        pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
+                    }
+                }
+
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf);
 
             } catch (err: any) {
+                // ITALIANO: scelta annullata o fallita: chiudo comunque la finestra di registrazione
+                //           del processo principale (elenco vuoto = non chiedo niente, azzera e basta),
+                //           altrimenti resterebbe aperta a raccogliere cartelle per tutta la sessione.
+                // ENGLISH: pick aborted or failed: close the main process's recording window anyway
+                //          (empty list = ask for nothing, just reset), otherwise it would stay open
+                //          collecting folders for the rest of the session.
+                try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
                 if (err.name !== 'AbortError') {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
                     if (folderInputRef.current) folderInputRef.current.click();
@@ -2029,7 +2308,14 @@ export default function App() {
     // ITALIANO: "Esporta tutti" crea SEMPRE un unico archivio .zip (niente piu' file singoli).
     // ENGLISH: "Export all" ALWAYS creates a single .zip archive (no more one-file-per-image).
     const handleExportAll = () => {
-        const imagesWithTags = images.filter(img => img.tags && img.tags.length > 0);
+        // ITALIANO: `!img.isTrashed` — le foto messe nel cestino sono state SCARTATE dal dataset:
+        //           i loro .txt non devono finire nell'archivio esportato. Mancava, ed era l'unico
+        //           punto del codice che non filtrava le cestinate (il salvataggio, la galleria e
+        //           le statistiche lo fanno tutti).
+        // ENGLISH: `!img.isTrashed` — photos in the trash were DISCARDED from the dataset: their
+        //          .txt must not land in the exported archive. This guard was missing here, the one
+        //          spot that did not filter the trash (save, gallery and stats all do).
+        const imagesWithTags = images.filter(img => !img.isTrashed && img.tags && img.tags.length > 0);
 
         if (imagesWithTags.length === 0) {
             return showNotification(t.errorNoTagsToExport, "info");
@@ -2771,7 +3057,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -2853,9 +3139,10 @@ export default function App() {
                             <div className="flex items-center gap-3">
                                 {trashedImages.length > 0 && (
                                     <>
-                                        <button 
+                                        <button
                                             onClick={handleRestoreAll}
-                                            className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm`}
+                                            disabled={isEmptyingTrash}
+                                            className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed`}
                                         >
                                             <RefreshCw size={18} />
                                             <span className="hidden sm:inline">{t.restoreAll}</span>
@@ -2870,7 +3157,8 @@ export default function App() {
                                                     onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                 });
                                             }}
-                                            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm"
+                                            disabled={isEmptyingTrash}
+                                            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <Trash size={18} />
                                             <span className="hidden sm:inline">{t.emptyTrash}</span>
@@ -2884,6 +3172,24 @@ export default function App() {
                         </div>
                         
                         <div className={`flex-1 flex flex-col min-h-0 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                            {/* ITALIANO: Dove stanno DAVVERO questi file. Il cestino dell'app e' solo una lista: le
+                                foto restano nella cartella dell'utente finche' non si svuota, e allora escono di li'
+                                e vanno nel Cestino di Windows. L'app non lo diceva da nessuna parte, e in tre altre
+                                finestre rassicura invece che "i file su disco non vengono toccati": chi legge quelle
+                                arriva qui convinto che nemmeno questo tasto tocchi niente. Detto PRIMA di premere,
+                                non dentro la finestra di conferma che si legge di fretta.
+                                ENGLISH: where these files REALLY are. The app's trash is just a list: the photos stay
+                                in the user's folder until it is emptied, and only then do they leave it for the
+                                Windows Recycle Bin. The app said this nowhere, while three other dialogs promise that
+                                "files on disk are not touched" - whoever read those arrives here sure that this
+                                button touches nothing either. Said BEFORE the click, not inside the confirm box
+                                that gets skimmed. */}
+                            {trashedImages.length > 0 && (
+                                <div className={`px-4 py-2.5 border-b flex items-start gap-2 shrink-0 text-xs ${isDarkMode ? 'border-gray-800 bg-amber-500/10 text-amber-300' : 'border-gray-200 bg-amber-50 text-amber-800'}`}>
+                                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                    <span>{t.trashInfo}</span>
+                                </div>
+                            )}
                             {trashedImages.length > 0 && (
                                 <div className={`p-4 border-b flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 ${isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-white/50'}`}>
                                     <div className="flex items-center gap-2">
@@ -3422,7 +3728,15 @@ export default function App() {
                                     <span className="hidden sm:inline">{t.saveChanges}</span>
                                     <span className="sm:hidden">{t.saveShort}</span>
                                 </button>
-                                <button onClick={handleExportAll} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                {/* ITALIANO: il tasto diceva "Esporta tutti" e l'archivio conteneva solo i .txt:
+                                    chi lo premeva si aspettava il dataset intero, foto comprese, e doveva aprire
+                                    lo zip per scoprire che dentro c'erano le sole didascalie. Ora il nome dice
+                                    cosa esce e il suggerimento dice cosa NON esce.
+                                    ENGLISH: the button said "Export All" while the archive held only the .txt
+                                    files: people expected the whole dataset, images included, and had to open the
+                                    zip to find out it was captions only. The name now says what comes out, and
+                                    the tooltip says what does not. */}
+                                <button onClick={handleExportAll} title={t.exportAllTip} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                     <SaveAll size={16} />
                                     <span className="hidden sm:inline">{t.exportAllTxt}</span>
                                     <span className="sm:hidden">{t.exportShort}</span>
@@ -3533,7 +3847,7 @@ export default function App() {
                             //           riusciva a scrivere/toccare i loro tag.
                             // ENGLISH: with the selection panel open I leave space BELOW (pb-[52vh]) to scroll ALL
                             //          cards above the panel: the last ones used to stay covered and unusable.
-                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[52vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))` }}>
+                            <div className={`grid gap-4 md:gap-6 transition-all duration-300 items-start relative z-0 ${selectedForBulk.length > 0 ? 'pb-[52vh]' : 'pb-2'}`} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${imageWidth}px, 1fr))`, ['--card-h' as any]: viewMode === 'square' ? `${imageWidth + 180}px` : '320px' }}>
                                 {displayedImages.map((img) => (
                                     <GalleryCard
                                         key={img.id}

@@ -1,7 +1,81 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 29 luglio 2026
+**Ultimo aggiornamento:** 17 agosto 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 95): **il Cestino di Windows funziona di nuovo per le cartelle aperte con
+"Carica Cartella"**. Era il difetto del traguardo 94, ora chiuso alla radice invece che con la sola
+conferma. Il programma apre la cartella con il selettore del browser, che di proposito non gli dice
+dove quella cartella si trovi sul disco — ed è per questo che non poteva chiedere a Windows di
+cestinare niente. Ma il percorso Windows lo dice a Electron, quando concede il permesso di leggere e
+scrivere quella cartella: ora quel dato viene raccolto e da lì si ricostruisce il percorso di ogni
+foto, sottocartelle comprese. Nessun cambiamento per chi usa il programma, tranne che **le foto
+tornano recuperabili dal Cestino di Windows** e la seconda finestra non compare più.
+Non è stato tolto niente per ottenerlo: l'editor dei tag continua a sincronizzarsi col progetto, il
+backup anti-crash usa le stesse chiavi di prima, il ricarico delle foto ritoccate da fuori e il
+salvataggio sono intatti, e non è stata cambiata **nessuna** delle scritte nelle 9 lingue.
+Il ricontrollo di questa stessa riparazione ha poi trovato il difetto peggiore della giornata, ed è
+stato chiuso subito: il programma teneva **l'ultimo** percorso visto, ma in quel momento ne arrivano
+anche di altre cartelle (basta che rilegga la foto selezionata di una cartella aperta prima), e
+l'unica difesa era il **nome** della cartella — cioè l'assunto che qui è già costato caro due volte,
+visto che i dataset si chiamano quasi tutti "dataset" o "img". Con due cartelle omonime, le foto
+della seconda potevano prendersi il percorso della prima, e svuotando il cestino sarebbero finiti nel
+Cestino di Windows i file **dell'altra cartella**. Ora il programma non chiede più "che percorso hai
+visto": porta le prove di cosa ha appena letto (nome, sottocartella, dimensione e data di qualche
+file) e riceve un percorso solo se una cartella contiene davvero quei file, ed è l'unica a contenerli.
+Se due combaciano non risponde: meglio la seconda conferma che un percorso indovinato.
+Restano fuori le **cartelle di rete** (i dataset sul NAS): lì Windows un Cestino non ce l'ha proprio,
+quindi vale ancora la seconda conferma con la cancellazione definitiva, che è l'unica verità
+possibile. Provato guidando il programma vero: una foto dentro una sottocartella è finita nel Cestino
+di Windows col suo percorso completo, senza nessuna finestra in più.
+Novità 1.2.0 (traguardo 94): **scoperto un difetto grave nella 1.1.0 già consegnata: svuotando il
+cestino le foto non finivano nel Cestino di Windows, venivano cancellate per sempre.** Non riguarda
+tutti allo stesso modo: capita alle foto aperte con **Carica Cartella**, che è la strada normale.
+Quella strada usa il selettore di cartelle del browser, e i file che ne escono non si portano dietro
+il percorso su disco: il programma quindi non sapeva quale file dire a Windows di cestinare, e
+ripiegava di nascosto sulla cancellazione diretta, annunciando lo stesso "File eliminati con
+successo". Provato sull'app vera il 17 agosto 2026. Chi ha caricato le foto una per una o
+trascinandole non è mai stato toccato dal difetto.
+Ora il programma prova il Cestino di Windows e, quando non può usarlo, **si ferma e apre una seconda
+finestra**: dice quante foto riguarda, perché non è possibile, e che quei file escono dalla cartella
+per sempre. Solo un sì esplicito cancella; annullando resta tutto dov'è. La riparazione vera —
+aprire la cartella con la finestra di Windows invece che con quella del browser, così ogni foto ha un
+percorso e il Cestino funziona per tutti — è più lunga ed è in elenco.
+Novità 1.2.0 (traguardo 93): **la schermata di avvio non fa più scorrere testi**. Erano quattro frasi
+che si davano il cambio ogni 0,8 secondi in un ciclo senza fine: sembravano scritte a caso, e in un
+certo senso lo erano, perché non seguivano nessun avanzamento vero ma giravano solo a tempo, troppo
+in fretta perché si facesse in tempo a leggerle. Ora c'è una riga sola e ferma. E al primissimo
+avvio la schermata parla la **lingua di Windows** invece che inglese sempre: prima su un PC italiano
+si vedeva una schermata in inglese e subito dopo la scelta della lingua in italiano.
+Novità 1.2.0 (traguardo 92): **riparazioni nate da una segnalazione di un utente su Civitai**. Uno
+che usa il programma ha scritto tre cose, e tutte e tre erano vere.
+La più seria l'ha fatta scoprire senza saperlo: **il cestino diceva bugie sui tuoi file**. Svuotando
+il cestino, se Windows non riusciva a spostare un file (bloccato, permessi), il programma lo
+cancellava **per davvero**, senza Cestino di Windows e senza possibilità di recupero — proprio nel
+momento in cui serviva poter tornare indietro. E in ogni caso annunciava "File eliminati con
+successo", togliendo la foto dal progetto anche quando il file era rimasto al suo posto. Ora o il
+file arriva nel Cestino di Windows o non si tocca niente e te lo dice: le foto che non ce l'hanno
+fatta **restano nel cestino**, sotto gli occhi, con il conto di quante sono. (Questo bastava solo a
+metà: vedi il traguardo 94, dove si scopre che nel caso più comune il Cestino di Windows non era
+nemmeno raggiungibile.)
+Sistemati anche i **testi del cestino**, che non dicevano mai la cosa più importante: che le foto
+escono dalla tua cartella. La conferma diceva perfino "questa azione non può essere annullata", che
+è falso (i file si recuperano dal Cestino di Windows), mentre altre tre finestre rassicurano che "i
+file su disco non vengono toccati" — chi legge quelle arriva qui convinto che nemmeno questo tasto
+tocchi niente. Ora tutte e 9 le lingue nominano il Cestino di Windows, una riga gialla dentro la
+vista Cestino lo dice **prima** di premere, e "Elimina definitivamente" non si chiama più così.
+Il tasto **"Esporta tutti"** si chiama ora **"Esporta tag"**: l'archivio ha sempre contenuto solo i
+file di testo, mai le foto, ma il nome faceva pensare al dataset intero e l'unico modo di scoprirlo
+era aprire lo zip. Aggiunto un suggerimento che lo dice. E l'export **non porta più via le foto che
+hai messo nel cestino**: era l'unico punto dell'esportazione delle didascalie che non le filtrava.
+Attenzione, non è tutto: l'elenco dei tag del progetto (e il suo export in JSON o TXT) conta ancora
+anche i tag delle foto cestinate. È un'altra cosa e non è stata toccata qui.
+Infine la **vista Quadrate**: lo spazio che il programma riserva alle anteprime non ancora disegnate
+era lo stesso per le due viste, ma una card quadrata è molto più alta — con lo zoom in alto valeva
+meno della metà del vero, e alla prima scorsa di una cartella grande la pagina si ricalcolava di
+continuo. Ora in Quadrate il valore è molto più vicino al vero; in Intere non cambia niente, lì era
+già ragionevole. Resta comunque una stima per difetto, perché le colonne si allargano oltre il minimo
+scelto con lo zoom. E se questo basti a togliere gli scatti che l'utente ha visto non è dimostrato:
+serve una misura su una cartella vera, che non è stata fatta ed è annotata.
 Novità 1.2.0 (traguardo 91): **due foto non possono più scambiarsi i tag**. Ogni foto caricata riceve
 un'etichetta interna che serve al programma per distinguerla dalle altre. Era un numero a caso corto:
 su una cartella da 3000 foto, circa una volta su 160, due foto ricevevano la stessa etichetta e

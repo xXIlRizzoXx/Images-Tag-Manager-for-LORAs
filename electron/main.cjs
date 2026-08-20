@@ -32,6 +32,25 @@ const isDev = !app.isPackaged;
 // ENGLISH: The user's chosen language, saved to a userData file by the renderer. The splash screen
 //          (a separate window that cannot see the app's localStorage) uses it to show its own text
 //          in the right language from the very first moment.
+// ITALIANO: le 9 lingue dell'interfaccia. Serve solo a non passare allo splash una lingua che poi
+//           non saprebbe tradurre (in quel caso ripiega sull'inglese da solo).
+// ENGLISH: the 9 UI languages. Only used so we never hand the splash a language it cannot translate
+//          (in which case it falls back to English on its own).
+const SPLASH_LANGS = ['it', 'en', 'fr', 'es', 'de', 'zh', 'ja', 'pt', 'ru'];
+
+// ITALIANO: lingua di Windows ridotta alle due lettere iniziali ("it-IT" -> "it"), usata al primo
+//           avvio quando l'utente non ha ancora scelto. Stessa regola del selettore nell'app.
+// ENGLISH: Windows' language cut to its first two letters ("it-IT" -> "it"), used on first launch
+//          when the user has not chosen yet. Same rule the in-app picker uses.
+const systemUiLang = () => {
+    try {
+        const code = String(app.getLocale() || '').slice(0, 2).toLowerCase();
+        return SPLASH_LANGS.includes(code) ? code : '';
+    } catch (_) {
+        return '';
+    }
+};
+
 const getUiLangPath = () => path.join(app.getPath('userData'), 'ui-lang.json');
 const readUiLang = () => {
     try {
@@ -291,13 +310,34 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
 const TRASH_ALLOWED_EXT = new Set([...SIDECAR_IMAGE_EXT, '.txt']);
 const TRASH_MAX_FILES = 5000;
 
+// ITALIANO: l'esito torna adesso FILE PER FILE, in `results`, con tre valori distinti:
+//   'ok'       il file e' nel Cestino di Windows, oppure non c'era gia' piu' (niente da fare)
+//   'rifiutato' questo canale non puo' toccarlo: percorso di RETE (il Cestino di Windows non
+//              esiste per le condivisioni di rete) oppure estensione fuori dall'elenco ammesso
+//   'errore'   il file c'e' ma non si e' riusciti a spostarlo (bloccato, permessi)
+//   Prima i tre casi erano indistinguibili: i primi due uscivano da un `continue` silenzioso e il
+//   gruppo tornava {ok:true, trashed:0}, cioe' "riuscito" senza aver spostato niente. 'rifiutato'
+//   NON e' un vicolo cieco: chi chiama lo tratta come "Cestino non raggiungibile" e offre la
+//   cancellazione definitiva con la seconda conferma, altrimenti una foto su una cartella di rete
+//   resterebbe per sempre nel cestino dell'app senza modo di toglierla.
+// ENGLISH: the outcome now comes back FILE BY FILE in `results`, with three distinct values:
+//   'ok'        the file reached the Windows Recycle Bin, or was already gone (nothing to do)
+//   'rifiutato' this channel cannot touch it: a NETWORK path (Windows has no Recycle Bin for
+//               network shares) or an extension outside the allowed list
+//   'errore'    the file is there but could not be moved (locked, permissions)
+//   The three used to be indistinguishable: the first two left through a silent `continue` and the
+//   batch returned {ok:true, trashed:0} - "success" having moved nothing. 'rifiutato' is NOT a dead
+//   end: the caller reads it as "Recycle Bin out of reach" and offers the permanent delete behind
+//   the second confirmation, otherwise a photo on a network folder would sit in the app's trash
+//   forever with no way to remove it.
 ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
-    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0 };
+    if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0, results: [] };
     let trashed = 0;
     let failed = 0;
+    const results = [];
     for (const raw of filePaths.slice(0, TRASH_MAX_FILES)) {
-        if (!isSafeLocalPath(raw)) continue;
-        if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) continue;
+        if (!isSafeLocalPath(raw)) { results.push('rifiutato'); continue; }
+        if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) { results.push('rifiutato'); continue; }
         // ITALIANO: un file assente (es. il .txt di una foto senza tag) e' NORMALE: si salta e
         //           non conta come errore. Un file che ESISTE ma non si riesce a cestinare
         //           (bloccato, permessi) e' un errore vero.
@@ -306,10 +346,11 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
         //          permissions) is a real error.
         let exists = false;
         try { exists = fs.statSync(raw).isFile(); } catch (_) { exists = false; }
-        if (!exists) continue;
+        if (!exists) { results.push('ok'); continue; }
         try {
             await shell.trashItem(raw);
             trashed++;
+            results.push('ok');
         } catch (e) {
             // ITALIANO: NON annunciamo un successo falso: prima si ritornava sempre ok:true, cosi'
             //           una foto che il cestino NON era riuscito a spostare veniva comunque tolta dal
@@ -319,9 +360,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             //          never ran. Now ok is false if anything failed.
             console.error('trash-files: could not trash', raw, e);
             failed++;
+            results.push('errore');
         }
     }
-    return { ok: failed === 0, trashed, failed };
+    return { ok: failed === 0, trashed, failed, results };
 });
 
 /* ITALIANO: APERTURA DI UN INDIRIZZO WEB NEL BROWSER DI SISTEMA
@@ -342,6 +384,112 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
     } catch (_) {
         return false;
     }
+});
+
+/* ITALIANO: PERCORSO DELLA CARTELLA SCELTA CON "CARICA CARTELLA"
+   La pagina apre la cartella col selettore del browser, che di proposito NON le dice dove
+   quella cartella si trovi sul disco: i file che ne escono non portano il percorso, e senza
+   percorso non si puo' chiedere a Windows di cestinarli. Il percorso pero' Electron lo
+   conosce, e lo passa QUI, al processo principale, quando concede il permesso di leggere e
+   scrivere quella cartella. Lo intercettiamo e lo teniamo da parte per la pagina.
+   Misurato il 17 agosto 2026 sull'app vera: alla PRIMA scelta arriva una "richiesta"; se si
+   riapre la STESSA cartella la richiesta non arriva piu' (il permesso resta in memoria) ma
+   arrivano i "controlli", che portano lo stesso percorso. Per questo si ascoltano entrambi.
+   SICUREZZA: il percorso non arriva mai dalla pagina — e' il processo principale l'unica
+   fonte. La finestra di registrazione resta aperta solo fra `begin-pick` e `take-picked-dir`,
+   e il valore passa comunque per isSafeLocalPath e per un controllo che sia una cartella.
+   ENGLISH: PATH OF THE FOLDER PICKED WITH "LOAD FOLDER"
+   The page opens the folder with the browser's picker, which deliberately does NOT tell it
+   where that folder lives on disk: the files it yields carry no path, and with no path there
+   is no way to ask Windows to bin them. Electron does know the path, and hands it HERE, to the
+   main process, when it grants read/write permission on that folder. We intercept it and keep
+   it for the page.
+   Measured 2026-08-17 on the real app: the FIRST pick raises a "request"; re-picking the SAME
+   folder raises no request (the grant is cached) but does raise "checks", which carry the same
+   path. That is why both are listened to.
+   SECURITY: the path never comes from the page - the main process is the only source. The
+   recording window is open only between `begin-pick` and `take-picked-dir`, and the value still
+   goes through isSafeLocalPath plus a check that it really is a directory. */
+let pickPending = false;
+let pickedDirCandidates = [];
+const PICK_MAX_CANDIDATES = 32;
+
+const rememberPickedDir = (p) => {
+    if (!pickPending) return;
+    if (typeof p !== 'string' || !p) return;
+    // ITALIANO: le cartelle di RETE non passano di qui, ed e' voluto: Windows non ha un Cestino
+    //           per le condivisioni di rete, quindi un percorso del genere non servirebbe a
+    //           niente. Restando vuoto, la pagina ricade sulla strada gia' esistente, cioe' la
+    //           seconda conferma con la cancellazione definitiva, che li' e' l'unica verita'.
+    // ENGLISH: NETWORK folders do not get through here, deliberately: Windows has no Recycle Bin
+    //          for network shares, so such a path would buy nothing. Left empty, the page falls
+    //          back to the road that already exists - the second confirmation with the permanent
+    //          delete - which over there is the only truthful answer.
+    if (!isSafeLocalPath(p)) return;
+    try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
+    // ITALIANO: si RACCOLGONO tutti i candidati, non si tiene solo l'ultimo. In quella finestra
+    //           arrivano anche cartelle che non c'entrano: basta che la pagina rilegga una foto di
+    //           una cartella aperta prima (succede al rientro del fuoco, quando il selettore si
+    //           chiude) e quel percorso arriva qui. Tenendo l'ultimo, la cartella sbagliata poteva
+    //           vincere. Chi sceglie e' `take-picked-dir`, e sceglie in base ai FILE, non ai nomi.
+    // ENGLISH: we COLLECT every candidate instead of keeping the last one. Folders that have nothing
+    //          to do with the pick also arrive in that window: the page only has to re-read a photo
+    //          from a previously opened folder (which happens on focus, as the picker closes) and
+    //          that path lands here. Keeping the last one let the wrong folder win. The choosing is
+    //          done by `take-picked-dir`, and it chooses on the FILES, not on names.
+    if (!pickedDirCandidates.includes(p)) pickedDirCandidates.push(p);
+    if (pickedDirCandidates.length > PICK_MAX_CANDIDATES) pickedDirCandidates.shift();
+};
+
+ipcMain.handle('folder:begin-pick', () => { pickPending = true; pickedDirCandidates = []; return true; });
+
+/* ITALIANO: la pagina non chiede "dammi il percorso": porta le PROVE di cosa ha appena letto —
+   per qualche file, il suo nome, la sottocartella relativa, la dimensione e la data di modifica —
+   e il processo principale restituisce un percorso SOLO se una cartella candidata contiene davvero
+   quei file, identici. Se nessuna combacia, o se ne combaciano due, non torna niente: meglio la
+   seconda conferma che un percorso indovinato, perche' quel percorso finisce dritto nel cestino di
+   Windows e cancellerebbe i file di un'ALTRA cartella.
+   Il nome della cartella non decide piu' niente: in questi dataset le cartelle si chiamano quasi
+   tutte uguale ("dataset", "img", "10_soggetto"), ed e' un assunto che questo programma ha gia'
+   pagato caro due volte (vedi la firma del backup anti-crash e l'abbinamento dell'editor dei tag).
+   La pagina non manda mai un percorso: manda nomi di file e numeri, e ogni percorso composto qui
+   viene ricontrollato perche' resti dentro la cartella candidata.
+   ENGLISH: the page does not ask "give me the path": it brings PROOF of what it just read - for a
+   few files, the name, the relative subfolder, the size and the modification time - and the main
+   process returns a path ONLY if a candidate folder really holds those files, identical. If none
+   match, or if two do, it returns nothing: the second confirmation beats a guessed path, because
+   that path goes straight to the Windows Recycle Bin and would delete ANOTHER folder's files.
+   The folder's name no longer decides anything: in these datasets folders are nearly always named
+   the same ("dataset", "img", "10_subject"), an assumption this app has already paid for twice (see
+   the crash-backup signature and the tag editor's pairing). The page never sends a path: it sends
+   file names and numbers, and every path composed here is re-checked to stay inside its candidate. */
+ipcMain.handle('folder:take-picked-dir', (_event, proofs) => {
+    const candidates = pickedDirCandidates;
+    pickPending = false;
+    pickedDirCandidates = [];
+    if (!Array.isArray(proofs) || proofs.length === 0) return '';
+
+    const holdsAll = (dir) => proofs.every((pr) => {
+        if (!pr || typeof pr.name !== 'string' || !pr.name) return false;
+        if (typeof pr.size !== 'number' || typeof pr.mtime !== 'number') return false;
+        const rel = typeof pr.rel === 'string' ? pr.rel : '';
+        if (pr.name.includes('/') || pr.name.includes('\\')) return false;
+        if (rel.split(/[\\/]+/).includes('..')) return false;
+        const full = path.join(dir, rel, pr.name);
+        if (!isSafeLocalPath(full)) return false;
+        if (path.relative(dir, full).startsWith('..')) return false;
+        try {
+            const st = fs.statSync(full);
+            // ITALIANO: 2 secondi di tolleranza sulla data: certi file system la arrotondano.
+            // ENGLISH: 2 seconds of slack on the timestamp: some file systems round it.
+            return st.isFile() && st.size === pr.size && Math.abs(st.mtimeMs - pr.mtime) < 2000;
+        } catch (_) {
+            return false;
+        }
+    });
+
+    const winners = candidates.filter(holdsAll);
+    return winners.length === 1 ? winners[0] : '';
 });
 
 // ITALIANO: Header Content-Security-Policy applicato in produzione
@@ -397,10 +545,16 @@ function createSplashWindow() {
         },
     });
     // ITALIANO: passo allo splash la lingua salvata (se c'e'), cosi' i suoi testi compaiono
-    //           gia' tradotti. Al primissimo avvio non c'e' ancora: lo splash usa l'inglese.
+    //           gia' tradotti. Al primissimo avvio non c'e' ancora: prima si ripiegava sull'inglese
+    //           comunque, quindi su un PC italiano la schermata di avvio parlava inglese e quella
+    //           subito dopo (scelta della lingua) italiano. Ora si guarda la lingua di Windows, che
+    //           e' la stessa che il programma propone gia' nel selettore al primo avvio.
     // ENGLISH: pass the saved language (if any) to the splash so its text shows already translated.
-    //          On the very first launch there is none yet: the splash falls back to English.
-    const uiLang = readUiLang();
+    //          On the very first launch there is none: it used to fall back to English regardless, so
+    //          on an Italian PC the splash spoke English and the very next screen (the language
+    //          picker) spoke Italian. Now we look at Windows' own language, the same one the picker
+    //          already proposes on first run.
+    const uiLang = readUiLang() || systemUiLang();
     splashWindow.loadFile(path.join(__dirname, 'splash.html'), uiLang ? { query: { lang: uiLang } } : undefined);
     splashWindow.on('closed', () => { splashWindow = null; });
 }
@@ -531,6 +685,23 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
     applyContentSecurityPolicy(session.defaultSession);
+
+    // ITALIANO: qui passa il percorso della cartella scelta (vedi rememberPickedDir). Concedere
+    //           sempre il permesso riproduce ESATTAMENTE il comportamento di prima: senza handler
+    //           registrato Electron concede da solo. Questo non e' il posto per stringere i
+    //           permessi — sarebbe un cambiamento a se', da provare a parte.
+    // ENGLISH: this is where the picked folder's path arrives (see rememberPickedDir). Always
+    //          granting reproduces EXACTLY the previous behaviour: with no handler registered
+    //          Electron grants by itself. This is not the place to tighten permissions - that
+    //          would be a separate change, to be tested on its own.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+        if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
+        callback(true);
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+        if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
+        return true;
+    });
     // ITALIANO: Nessuna barra dei menù di default in produzione
     // ENGLISH: No default menu bar in production
     if (!isDev) Menu.setApplicationMenu(null);
