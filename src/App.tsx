@@ -1291,7 +1291,7 @@ export default function App() {
             setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
         }
         if (failed > 0) {
-            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            showNotification(t.deleteForGoodPartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
             return;
         }
         setIsTrashOpen(false);
