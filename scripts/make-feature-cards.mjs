@@ -104,7 +104,7 @@ const SCHEDE = [
         occhiello: 'Two views',
         titolo: 'Square crops or<br>the whole frame',
         testo: 'The grid can crop every thumbnail into a square, or show each image at its real proportions.',
-        punti: ['Switch at any moment', 'Zoom from a contact sheet to a few big cards', 'Sort by name or by number of tags'],
+        punti: ['Switch at any moment', 'Zoom from a contact sheet to a few big cards', 'Sort by name or by date added'],
     },
     {
         file: '07-ai-settings.png', nome: '12-ai',
