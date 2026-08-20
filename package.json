@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.2.0",
   "description": "Privacy-focused desktop tool to manage, edit and auto-generate tags for image datasets used in LoRA / Stable Diffusion training.",
+  "license": "MIT",
   "author": {
     "name": "xXIlRizzoXx",
     "url": "https://github.com/xXIlRizzoXx"

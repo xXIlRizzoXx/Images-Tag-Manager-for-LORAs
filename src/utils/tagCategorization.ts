@@ -54,7 +54,33 @@ const bodyTypesKeywords = ['muscular', 'toned', 'ripped', 'skinny', 'slender', '
 const intimateKeywords = ['hugging', 'kissing', 'kiss on the cheek', 'french kiss', 'cuddling', 'holding hands', 'arms around neck', 'hands on waist', 'lap pillow', 'carrying', 'bridal carry', 'piggyback', 'pressed together', 'cheek to cheek', 'sleeping together', 'leaning on someone', 'head on shoulder', 'petting', 'stroking'];
 const accessoriesKeywords = ['collar', 'spiked collar', 'leather collar', 'leash', 'harness', 'bell', 'piercing', 'ear piercing', 'nose piercing', 'body piercing', 'tattoos', 'tribal tattoos', 'body art', 'glowing tattoos', 'scars', 'facial scar', 'bandages', 'band-aid', 'glasses', 'sunglasses', 'jewelry', 'necklace', 'earrings', 'rings', 'bracelet', 'choker'];
 
+// ITALIANO: la categoria di un tag non cambia mai: dipende solo dal testo del tag, e i dizionari da
+//           cui si ricava sono costanti di modulo. La funzione pero' veniva rifatta da capo ogni
+//           volta, e ogni volta significa: minuscolo, taglio in parole, ricerca nel dizionario e poi
+//           fino a venti scansioni di elenchi di parole chiave. Su un dataset da migliaia di foto,
+//           con i tag ridisegnati a ogni modifica, e' il lavoro ripetuto piu' grosso del programma.
+//           Qui il risultato si ricorda: la seconda volta che lo stesso tag passa di qui, la risposta
+//           e' gia' pronta. Il tetto evita che la memoria cresca all'infinito con tag scritti a mano.
+// ENGLISH: a tag's category never changes: it depends only on the tag's text, and the dictionaries it
+//          comes from are module constants. Yet the function redid the whole thing every time, and
+//          every time means: lowercase, split into words, a dictionary lookup and then up to twenty
+//          keyword-list scans. On a dataset of thousands of photos, with tags re-rendered on every
+//          edit, this is the biggest repeated work in the app. Here the answer is remembered: the
+//          second time the same tag comes through, it is already there. The cap keeps the memory from
+//          growing forever on hand-written tags.
+const categoryCache = new Map<string, TagCategory>();
+const CATEGORY_CACHE_MAX = 20000;
+
 export const getTagCategory = (tag: string): TagCategory => {
+    const cached = categoryCache.get(tag);
+    if (cached !== undefined) return cached;
+    const category = computeTagCategory(tag);
+    if (categoryCache.size >= CATEGORY_CACHE_MAX) categoryCache.clear();
+    categoryCache.set(tag, category);
+    return category;
+};
+
+const computeTagCategory = (tag: string): TagCategory => {
     const lowerTag = tag.toLowerCase();
 
     // ITALIANO: NSFW — match a parole intere per evitare falsi positivi (grass, class, glasses, ecc.)

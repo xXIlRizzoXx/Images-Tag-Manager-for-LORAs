@@ -542,6 +542,18 @@ function createSplashWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
+            // ITALIANO: correttore ortografico SPENTO. Electron lo tiene acceso di serie, e per
+            //           funzionare scarica i dizionari dai server di Google al primo avvio: era
+            //           l'unico collegamento a internet che il programma faceva senza che l'utente
+            //           lo avesse chiesto, in un'app che promette di lavorare offline. Qui non serve
+            //           a niente: i tag non sono prosa e le sottolineature rosse sotto ogni tag
+            //           erano solo rumore.
+            // ENGLISH: spellchecker OFF. Electron turns it on by default and, to work, downloads its
+            //          dictionaries from Google's servers on first run: it was the only internet
+            //          connection the app made without the user asking for it, in an app that
+            //          promises to work offline. It buys nothing here: tags are not prose, and the
+            //          red squiggles under every tag were just noise.
+            spellcheck: false,
         },
     });
     // ITALIANO: passo allo splash la lingua salvata (se c'e'), cosi' i suoi testi compaiono
@@ -572,6 +584,18 @@ function createMainWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
+            // ITALIANO: correttore ortografico SPENTO. Electron lo tiene acceso di serie, e per
+            //           funzionare scarica i dizionari dai server di Google al primo avvio: era
+            //           l'unico collegamento a internet che il programma faceva senza che l'utente
+            //           lo avesse chiesto, in un'app che promette di lavorare offline. Qui non serve
+            //           a niente: i tag non sono prosa e le sottolineature rosse sotto ogni tag
+            //           erano solo rumore.
+            // ENGLISH: spellchecker OFF. Electron turns it on by default and, to work, downloads its
+            //          dictionaries from Google's servers on first run: it was the only internet
+            //          connection the app made without the user asking for it, in an app that
+            //          promises to work offline. It buys nothing here: tags are not prose, and the
+            //          red squiggles under every tag were just noise.
+            spellcheck: false,
             webSecurity: true,
             allowRunningInsecureContent: false,
             // ITALIANO: DevTools solo in sviluppo. In produzione la scorciatoia Ctrl+Shift+I e'
