@@ -262,7 +262,7 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
                 <button onClick={(e) => { e.stopPropagation(); onClose(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
                 {/* ITALIANO: Contatore tag della singola foto */}
                 {/* ENGLISH: Per-photo tag count */}
-                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={`${img.tags?.length || 0} ${t.tagCountLabel || 'tag'}`}>
+                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={(t.tagCountLabel || 'Tag: {n}').replace('{n}', String(img.tags?.length || 0))}>
                     <Tag size={11} />{img.tags?.length || 0}
                 </div>
                 {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
@@ -994,7 +994,7 @@ export default function App() {
         setSelectedForBulk([]);
         setStagedBulkTags([]);
         soundManager.pop();
-        showNotification(`${quante} ${quante === 1 ? t.selectedImageSingle : t.selectedImagePlural} → ${t.trash}`, 'info');
+        showNotification(t.movedToTrashCount.replace('{n}', String(quante)), 'info');
     }, [t]);
 
     // ITALIANO: Cestina la foto APERTA nel visualizzatore e passa direttamente alla
@@ -1527,7 +1527,7 @@ export default function App() {
             });
             soundManager.chime();
             const extras = `${restoredCount > 0 ? ` · ↻ ${restoredCount}` : ''}${skippedTxtCount > 0 ? ` · ⊘ ${skippedTxtCount} .txt` : ''}`;
-            showNotification(`${newImages.length} ${t.successImport}${extras}`, "success");
+            showNotification(`${t.successImport.replace('{n}', String(newImages.length))}${extras}`, "success");
         } catch (error: any) {
             console.error('[Import] Failed', error);
             showNotification(`${t.aiError || 'Error'}: ${String(error?.message || error || '').slice(0, 150)}`, 'error');
@@ -2803,7 +2803,7 @@ export default function App() {
             return img;
         }));
         soundManager.chime();
-        showNotification(`${t.added} ${stagedBulkTags.length} ${t.tagsTo} ${quante} ${t.imagesLabel}!`, "success");
+        showNotification(t.bulkTagsAdded.replace('{tags}', String(stagedBulkTags.length)).replace('{images}', String(quante)), "success");
         setStagedBulkTags([]);
         // ITALIANO: finito il lavoro si deselezionano le immagini, e cosi' il pannello si chiude
         //           da solo (compare solo quando c'e' almeno un'immagine selezionata). Prima
@@ -3903,7 +3903,7 @@ export default function App() {
                                 {hiddenSelectedCount > 0 && (
                                     <div className={`shrink-0 flex items-start gap-2 px-3 py-2 rounded-lg border text-xs leading-snug ${isDarkMode ? 'bg-amber-900/30 border-amber-700/60 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
                                         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                                        <span>{hiddenSelectedCount} {t.bulkHiddenWarn}</span>
+                                        <span>{t.bulkHiddenWarn.replace('{n}', String(hiddenSelectedCount))}</span>
                                     </div>
                                 )}
                                 {/* ITALIANO: riga responsive — a sinistra scrivi un tag NUOVO (Invio) da applicare alle
