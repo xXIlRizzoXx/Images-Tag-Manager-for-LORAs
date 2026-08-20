@@ -105,7 +105,7 @@ Bugs go **[here](../../issues/new?template=bug.yml)**. If tag files were ever ch
 
 ## 📝 Credits
 
-Developed and designed by **xXIlRizzoXx**.
+Developed and designed by **xXIlRizzoXx**. Released under the [MIT License](LICENSE).
 
 <div align="center">
   <br />
