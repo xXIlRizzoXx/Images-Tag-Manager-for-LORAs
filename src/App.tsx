@@ -2549,7 +2549,17 @@ export default function App() {
             console.error('AI tag failed', e);
             const { kind } = classifyGeminiError(e);
             if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
-            const friendly = kind === 'billing_required'
+            // ITALIANO: `invalid_key` e' il caso piu' frequente di tutti — la chiave sbagliata o
+            //           scaduta — ed era l'unico che cadeva sul messaggio grezzo di Google, sempre
+            //           in inglese, in tutte e 9 le lingue. La traduzione esisteva gia' (`aiKeyInvalid`,
+            //           usata nella finestra della chiave): mancava solo qui.
+            // ENGLISH: `invalid_key` is the most common case of all - a wrong or expired key - and it
+            //          was the only one falling through to Google's raw message, always in English, in
+            //          all 9 languages. The translation already existed (`aiKeyInvalid`, used in the
+            //          key dialog): it was simply never used here.
+            const friendly = kind === 'invalid_key'
+                ? (t.aiKeyInvalid || 'API key not valid')
+                : kind === 'billing_required'
                 ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
                 : kind === 'rate_limit'
                 ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
@@ -2676,6 +2686,12 @@ export default function App() {
                         const { kind, message } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (kind === 'invalid_key') {
+                            // ITALIANO: si apre la finestra della chiave, ma senza una riga di
+                            //           spiegazione la taggatura in blocco si fermava in silenzio e
+                            //           non era detto che si capisse perche'.
+                            // ENGLISH: the key dialog opens, but with no line of explanation the bulk
+                            //          tagging just stopped in silence and the reason was not obvious.
+                            showNotification(`${t.aiError || 'AI Error'}: ${t.aiKeyInvalid || 'API key not valid'}`, 'error');
                             setIsApiKeyDialogOpen(true);
                             fatalAbort = true;
                             break;
