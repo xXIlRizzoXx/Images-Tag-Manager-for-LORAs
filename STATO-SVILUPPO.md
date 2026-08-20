@@ -1,7 +1,36 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 17 agosto 2026
+**Ultimo aggiornamento:** 20 agosto 2026
 **Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+Novità 1.2.0 (traguardo 97): **le nove lingue hanno un controllo che gira da solo**. Il controllo
+dei tipi, che dalla 1.2.0 parte prima di ogni costruzione, non vede circa 50 delle 254 scritte
+dell'interfaccia: sono quelle che le finestre interne (editor dei tag, visualizzatore, finestrelle di
+conferma) ricevono per strada, e su quelle il computer non ha modo di accorgersi se una lingua ne ha
+una in meno. Ora c'è `scripts/check-translations.mjs`, che confronta tutte e nove le lingue con
+l'inglese e si ferma se trova una voce mancante o in più, una casella vuota, un doppione, o un
+segnaposto (le parti che vengono riempite con un numero o un nome) diverso da quello inglese; in coda
+elenca le voci rimaste identiche all'inglese, che a volte sono giuste e a volte sono una traduzione
+dimenticata. Oggi passa pulito su 254 voci per 9 lingue. Quello che una macchina non sa giudicare —
+se una frase dice davvero la stessa cosa, se sta dentro un pulsante, se è la lingua giusta — resta
+affidato a una squadra di controllori, uno per lingua, che tengono un quaderno di quello che imparano
+per non ripetere le stesse domande: quelli però vivono fuori dal programma e non finiscono nel
+pacchetto che si scarica.
+Novità 1.2.0 (traguardo 96): **le ultime rifiniture prima di costruire**. Il correttore ortografico
+di Electron era acceso: era l'unico collegamento a internet che il programma apriva senza che nessuno
+glielo avesse chiesto, e per un programma che si vanta di non far uscire niente dal PC era una
+contraddizione. Ora è spento in tutte e due le finestre. Aggiunto il file **LICENSE (MIT)**, che la
+copertina prometteva già da mesi con la scritta "Free & open source" senza che nel progetto ci fosse.
+L'errore **"chiave AI non valida"** usciva in inglese in tutte e nove le lingue, pur avendo la
+traduzione già scritta e mai usata: ora parla la lingua scelta, e se la chiave manca mentre si tagga
+in blocco il programma lo dice **prima** di aprire la finestra della chiave, invece di aprirla e
+basta. La funzione che assegna una categoria a ogni tag (serve per il colore e per le statistiche)
+rifaceva lo stesso calcolo migliaia di volte sullo stesso tag: ora se lo ricorda, ed è il guadagno di
+velocità più grosso di tutta l'analisi. Nel **portoghese** due parole erano portoghese europeo
+("ficheiro", "guardar") dentro un blocco per il resto brasiliano; nel **tedesco** il tema grafico si
+chiamava "Thema", che in tedesco è l'argomento di un discorso, non l'aspetto di un programma. Infine
+la **scheda 11** della pagina di presentazione prometteva un ordinamento "per numero di tag" che non
+esiste — si ordina per nome o per data, e lo si legge perfino nella stessa immagine, dove c'è scritto
+"SORT BY: Name (A-Z)".
 Novità 1.2.0 (traguardo 95): **il Cestino di Windows funziona di nuovo per le cartelle aperte con
 "Carica Cartella"**. Era il difetto del traguardo 94, ora chiuso alla radice invece che con la sola
 conferma. Il programma apre la cartella con il selettore del browser, che di proposito non gli dice
