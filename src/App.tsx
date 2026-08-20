@@ -262,7 +262,7 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
                 <button onClick={(e) => { e.stopPropagation(); onClose(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
                 {/* ITALIANO: Contatore tag della singola foto */}
                 {/* ENGLISH: Per-photo tag count */}
-                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={(t.tagCountLabel || 'Tag: {n}').replace('{n}', String(img.tags?.length || 0))}>
+                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={t.tagCountLabel.replace('{n}', String(img.tags?.length || 0))}>
                     <Tag size={11} />{img.tags?.length || 0}
                 </div>
                 {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
@@ -2291,7 +2291,7 @@ export default function App() {
             // ENGLISH: if there were duplicate names I say so: all files ARE in the archive (renamed),
             //          so the user knows why some .txt have a different name than their photo.
             if (collisionCount > 0) {
-                showNotification(`${t.zipSuccess} — ${collisionCount} ${t.zipNameCollisionWarn}`, "info");
+                showNotification(`${t.zipSuccess} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
             } else {
                 showNotification(t.zipSuccess, "success");
             }
@@ -2543,7 +2543,7 @@ export default function App() {
             const added = merged.length - baseTags.length;
             updateImageTags(imageId, merged);
             soundManager.chime();
-            showNotification(`${added} ${t.aiTagsGenerated || 'tags generated'}`, 'success');
+            showNotification(t.aiTagsGenerated.replace('{n}', String(added)), 'success');
             return added;
         } catch (e: any) {
             console.error('AI tag failed', e);
@@ -2738,7 +2738,7 @@ export default function App() {
                 : errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
             const prefix = cancelled ? `${t.aiCancelled || 'Cancelled'} · ` : '';
             const skippedSuffix = skippedCount > 0 ? ` · ⊘ ${skippedCount}` : '';
-            const summary = `${prefix}${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount}${skippedSuffix} · +${totalTagsAdded} ${t.aiTagsGenerated || 'tags'}`;
+            const summary = `${prefix}${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount}${skippedSuffix} · ${t.aiTagsGenerated.replace('{n}', String(totalTagsAdded))}`;
             showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;
@@ -3149,7 +3149,7 @@ export default function App() {
                                 </div>
                                 <div>
                                     <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.trash}</h2>
-                                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{trashedImages.length} {t.imagesFound}</p>
+                                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.trashCount.replace('{n}', String(trashedImages.length))}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
