@@ -1,7 +1,38 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 21 agosto 2026
-**Versione attuale:** 1.2.0 (costruita e collaudata il 21 agosto 2026, non ancora pubblicata)
+**Versione attuale:** 1.2.0 (ricostruita il 21 agosto 2026 con l'archivio nuovo e l'annullamento dello svuotamento, non ancora pubblicata)
+Novità 1.2.0 (traguardo 101): **svuotare il cestino si può annullare.** Fino a ieri quello era
+l'ultimo passo senza ritorno dal programma: i file finivano nel Cestino di Windows — recuperabili,
+sì, ma solo andando a cercarseli lì dentro, in mezzo alla roba di tutti. Adesso, dopo uno
+svuotamento, nel cestino compare **"Annulla lo svuotamento"**: le foto tornano al loro posto sul
+disco e riappaiono nel cestino dell'app, cioè esattamente dove stavano un attimo prima. È il
+contrario esatto del passo che si vuole annullare, non una scorciatoia che le rimette in galleria
+saltando un passaggio. Funziona finché il Cestino di Windows non viene svuotato a sua volta, e la
+scritta lo dice invece di lasciarlo scoprire.
+Tre cose sono venute fuori **solo provandolo davvero**, e ognuna sarebbe finita nel programma senza
+farsi notare: Windows restituisce i nomi **senza estensione** se sul computer è attiva
+l'impostazione "nascondi le estensioni", quindi cercando per nome mostrato non si ritroverebbe
+niente su mezzo mondo; il comando giusto si chiama "undelete" e **non** è la voce di menu
+"Ripristina", che è tradotta e su un Windows tedesco o cinese non si troverebbe mai; e un comando di
+sistema rifiutava due opzioni messe insieme, protestando in silenzio dentro una rete di sicurezza
+che lo faceva tornare come un onesto "non riuscito" senza dire perché.
+Se nel frattempo al posto del file ne è nato un altro con lo stesso nome, il file **non** viene
+rimesso e il programma lo dice: questa funzione esiste per non perdere file, non per perderne di
+nuovi.
+Novità 1.2.0 (traguardo 100): **l'archivio si porta dentro anche le foto, e sa numerarle.**
+"Esporta (.zip)" adesso fa due domande. La prima: solo i file di testo con i tag, oppure **anche le
+foto**, ognuna accanto al suo testo e con lo stesso nome — cioè un dataset pronto all'uso. Sotto
+ogni scelta si vedono **quanti file sono e quanto pesano**, perché fra le due strade ci passano i KB
+da una parte e i GB dall'altra, e la differenza va vista **prima** di premere, non dopo.
+La seconda domanda compare **solo se dentro ci vanno le foto**: tenere i nomi originali, oppure
+rinominare in sequenza 0001, 0002, 0003… che è la convenzione dei dataset LoRA e fa sparire da sola
+la questione dei nomi doppi. Rinominare i soli file di testo darebbe file che non corrispondono più
+a nessuna immagine sul disco, quindi lì la domanda non si fa nemmeno. **I file nella cartella non
+vengono rinominati**: cambiano i nomi solo dentro l'archivio, e la scritta lo dice.
+L'archivio non si costruisce più tutto in memoria prima di essere salvato: i pezzi vengono scritti
+**direttamente sul file scelto** man mano che escono, così anche un dataset da qualche migliaio di
+foto non fa morire la finestra.
 Novità 1.2.0 (traguardo 99): **il programma è stato costruito e provato davvero, e il Cestino di
 Windows funziona anche nell'exe.** Era il dubbio che non si poteva sciogliere in nessun altro modo:
 la riparazione del Cestino era stata misurata solo sul programma in prova, che carica le pagine da

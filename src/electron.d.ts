@@ -52,6 +52,7 @@ export interface ElectronAPI {
     readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content: string; dir?: string }>>;
     writeSidecarTags: (items: Array<{ imagePath: string; content: string }>) => Promise<WriteSidecarResult>;
     trashFiles: (paths: string[]) => Promise<TrashResult>;
+    restoreTrashed: (paths: string[]) => Promise<{ ok: boolean; restored: number; results: { percorso: string; esito: string }[] }>;
     beginFolderPick: () => Promise<boolean>;
     // ITALIANO: le prove di cosa la pagina ha appena letto. Il processo principale risponde con un
     //           percorso solo se una cartella contiene davvero quei file. Un elenco vuoto chiude la
