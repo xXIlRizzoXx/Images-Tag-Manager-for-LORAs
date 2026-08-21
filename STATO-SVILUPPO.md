@@ -2,6 +2,27 @@
 
 **Ultimo aggiornamento:** 21 agosto 2026
 **Versione attuale:** 1.2.0 (ricostruita il 21 agosto 2026 con l'archivio nuovo e l'annullamento dello svuotamento, non ancora pubblicata)
+Novità 1.2.0 (traguardo 102): **le due funzioni nuove provate sul programma vero, e due difetti
+che solo la prova poteva far uscire.** Il collaudo è stato fatto con una cartella costruita
+apposta per essere scomoda: un nome con lo spazio, uno con l'accento, una foto senza testo, due
+foto con lo stesso nome in cartelle diverse. Ogni risultato è stato controllato **sul disco e
+dentro il Cestino di Windows**, non sul messaggio che il programma dava.
+L'export ha superato tutto: le due foto omonime restano distinte e con i tag giusti, la rinomina
+in sequenza appaia ogni numero alla sua estensione vera, e la cartella di partenza resta intatta
+byte per byte in tutti e tre i giri. L'annullamento ha rimesso le foto al loro posto con le
+miniature e i tag; che fossero i file veri e non una ricostruzione lo dimostra un dettaglio: il
+file di testo è tornato con l'ordine originale dei tag, non con quello riordinato che il
+programma userebbe riscrivendolo.
+I due difetti sono usciti dall'ultima prova, quella col file omonimo. Il primo: il programma si
+rifiutava correttamente di sovrascrivere, e poi annunciava che nel Cestino non aveva trovato
+niente — mandando a cercare nel posto sbagliato e facendo sembrare perso un file che era al
+sicuro. Il secondo, che nessuno aveva previsto: la foto restava bloccata ma il suo file di testo
+tornava da solo, e si sarebbe piazzato accanto all'immagine diversa che aveva preso quel nome,
+passandole in silenzio i tag di un'altra foto — per un dataset, un errore che poi non si scopre
+più. Adesso la coppia foto+testo torna insieme o non torna, e il messaggio dice il motivo vero.
+È il terzo giro di fila in cui una riparazione ne nasconde un'altra: ricontrollare le
+riparazioni non è prudenza, è parte del lavoro.
+
 Novità 1.2.0 (traguardo 101): **svuotare il cestino si può annullare.** Fino a ieri quello era
 l'ultimo passo senza ritorno dal programma: i file finivano nel Cestino di Windows — recuperabili,
 sì, ma solo andando a cercarseli lì dentro, in mezzo alla roba di tutti. Adesso, dopo uno
