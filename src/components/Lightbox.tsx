@@ -269,7 +269,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                     <AlertTriangle size={24} strokeWidth={2.5} />
                                 </div>
                                 <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                    {`${t.minQualityWarning || 'Qualità minima richiesta dal sistema: 1 Megapixel (es. 1024x1024)'}\n${t.imageQualityLabel || 'Qualità di questa immagine'}: ${image.width}x${image.height} (${(image.width * image.height / 1000000).toFixed(2)} MP)`}
+                                    {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${image.width}x${image.height} (${(image.width * image.height / 1000000).toFixed(2)} MP)`}
                                 </div>
                             </div>
                         )}

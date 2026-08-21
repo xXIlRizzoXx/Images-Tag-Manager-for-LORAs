@@ -56,4 +56,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ITALIANO: apre un indirizzo web nel browser di sistema (solo http/https)
     // ENGLISH: opens a web address in the system browser (http/https only)
     openExternal: (url) => ipcRenderer.invoke('shell:open-external', String(url)),
+
+    // ITALIANO: Chiede a GitHub se e' uscita una versione nuova. Restituisce null quando
+    //           non c'e' niente di nuovo, quando non c'e' rete, o quando l'utente non ha
+    //           acconsentito (in quel caso la pagina non chiama proprio).
+    // ENGLISH: Asks GitHub whether a newer version exists. Returns null when there is
+    //          nothing new, when there is no network, or when the user never agreed (in
+    //          which case the page does not call at all).
+    checkForUpdate: () => ipcRenderer.invoke('updates:check'),
 });

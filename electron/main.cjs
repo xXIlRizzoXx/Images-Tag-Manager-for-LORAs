@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-const { app, BrowserWindow, ipcMain, safeStorage, session, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net, safeStorage, session, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -374,6 +374,77 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    Used by the app's links (e.g. the GitHub profile on the splash screen). Only http and
    https are accepted, so this channel cannot be used to launch programs or open local
    files. */
+/* ITALIANO: CONTROLLO DELLE VERSIONI NUOVE
+   L'unico collegamento a internet che il programma apre di sua iniziativa, e lo apre SOLO
+   se l'utente ha risposto di si' alla domanda che gli viene fatta una volta sola: e' la
+   pagina a decidere se chiamare questo canale. Di serie non lo chiama.
+   Sta nel processo principale e non nella pagina per due motivi: la Content-Security-Policy
+   della pagina permette solo Google (main.cjs, connect-src), e allargarla vorrebbe dire
+   aprire quella porta anche a tutto il resto del codice della pagina.
+   Esce solo il numero di versione: nessun dato dell'utente, nessun identificativo.
+   Fallisce in silenzio - senza rete, con GitHub giu', o oltre il tempo massimo, il
+   programma parte come sempre e non dice niente.
+
+   ENGLISH: NEW VERSION CHECK. The only connection to the internet the program opens on its
+   own, and it opens it ONLY when the user has said yes to a question asked once: the page
+   decides whether to call this channel at all, and by default it does not.
+   It lives in the main process, not in the page, for two reasons: the page's
+   Content-Security-Policy only allows Google, and widening it would open that door to every
+   other piece of page code too. Nothing but a version number comes back: no user data, no
+   identifier. It fails silently - offline, GitHub down, or past the timeout, the program
+   starts as always and says nothing. */
+const UPDATE_REPO = 'xXIlRizzoXx/Images-Tag-Manager-for-LORAs';
+const UPDATE_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
+const UPDATE_PAGE = `https://github.com/${UPDATE_REPO}/releases`;
+const UPDATE_TIMEOUT_MS = 6000;
+const UPDATE_MAX_BYTES = 200000;
+
+/* ITALIANO: Confronta due numeri di versione pezzo per pezzo (1.10.0 e' piu' recente di
+   1.9.0, che l'ordine alfabetico sbaglierebbe). Ignora una eventuale 'v' iniziale e tutto
+   cio' che non e' una cifra, cosi' 'v1.3.0-beta' vale 1.3.0.
+   ENGLISH: Compares two version numbers part by part (1.10.0 is newer than 1.9.0, which a
+   string sort would get wrong). Ignores a leading 'v' and any non-digits. */
+const pezziVersione = (v) => String(v || '').replace(/^v/i, '').split('.')
+    .map((p) => parseInt(p, 10)).map((n) => (Number.isFinite(n) ? n : 0));
+
+const versionePiuRecente = (candidata, attuale) => {
+    const a = pezziVersione(candidata);
+    const b = pezziVersione(attuale);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const x = a[i] || 0;
+        const y = b[i] || 0;
+        if (x !== y) return x > y;
+    }
+    return false;
+};
+
+ipcMain.handle('updates:check', async () => new Promise((resolve) => {
+    let chiuso = false;
+    const rispondi = (v) => { if (!chiuso) { chiuso = true; clearTimeout(scadenza); resolve(v); } };
+    const scadenza = setTimeout(() => rispondi(null), UPDATE_TIMEOUT_MS);
+    try {
+        const req = net.request({ method: 'GET', url: UPDATE_API });
+        // GitHub rifiuta le richieste senza User-Agent
+        req.setHeader('User-Agent', 'Images-Tag-Manager-for-LORAs');
+        req.setHeader('Accept', 'application/vnd.github+json');
+        req.on('response', (res) => {
+            if (res.statusCode !== 200) { res.resume(); rispondi(null); return; }
+            let corpo = '';
+            res.on('data', (c) => { if (corpo.length < UPDATE_MAX_BYTES) corpo += c.toString('utf8'); });
+            res.on('end', () => {
+                try {
+                    const dati = JSON.parse(corpo);
+                    const trovata = String(dati && dati.tag_name ? dati.tag_name : '').trim();
+                    if (!trovata || !versionePiuRecente(trovata, app.getVersion())) { rispondi(null); return; }
+                    rispondi({ versione: trovata.replace(/^v/i, ''), pagina: UPDATE_PAGE });
+                } catch (_) { rispondi(null); }
+            });
+            res.on('error', () => rispondi(null));
+        });
+        req.on('error', () => rispondi(null));
+        req.end();
+    } catch (_) { rispondi(null); }
+}));
 ipcMain.handle('shell:open-external', async (_event, url) => {
     if (typeof url !== 'string') return false;
     try {

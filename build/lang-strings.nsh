@@ -54,3 +54,50 @@ LangString AV_NOTICE_TEXT ${LANG_SIMPCHINESE}           "注意：Windows 或杀
 LangString AV_NOTICE_TEXT ${LANG_JAPANESE}              "注意: 有料のデジタル署名がないため、Windows やウイルス対策ソフトが警告を表示することがあります。危険はなく、初期設定ではインターネットへ何も送信しません。警告が出たら「詳細情報」、次に「実行」を選んでください。"
 LangString AV_NOTICE_TEXT ${LANG_PORTUGUESEBR}          "Observação: o Windows ou o antivírus podem avisar: sem assinatura digital paga. Ele não é perigoso e por padrão não envia nada pela Internet. Se o aviso aparecer, escolha Mais informações e depois Executar assim mesmo."
 LangString AV_NOTICE_TEXT ${LANG_RUSSIAN}               "Примечание: Windows или антивирус могут предупредить: нет платной цифровой подписи. Она не опасна и по умолчанию ничего не отправляет в Интернет. При появлении предупреждения выберите Подробнее, затем Выполнить в любом случае."
+
+; ITALIANO: Pagina "Installazione pulita", che compare solo se in %APPDATA% c'e' gia'
+;           qualcosa da cancellare (cioe' su un aggiornamento, non alla prima installazione).
+;           La descrizione dice per esteso cosa sparisce, perche' "pulita" fa paura a ragione,
+;           e soprattutto dice cosa NON viene toccato: le foto e i .txt dell'utente.
+; ENGLISH: "Clean install" page, shown only when %APPDATA% already holds something to delete
+;          (an upgrade, not a first install). The description spells out what goes - and, more
+;          importantly, what does not: the user's photos and .txt files.
+LangString CLEAN_INSTALL_TITLE ${LANG_ENGLISH}               "Clean install"
+LangString CLEAN_INSTALL_TITLE ${LANG_ITALIAN}               "Installazione pulita"
+LangString CLEAN_INSTALL_TITLE ${LANG_FRENCH}                "Installation propre"
+LangString CLEAN_INSTALL_TITLE ${LANG_SPANISHINTERNATIONAL}  "Instalación limpia"
+LangString CLEAN_INSTALL_TITLE ${LANG_GERMAN}                "Saubere Installation"
+LangString CLEAN_INSTALL_TITLE ${LANG_SIMPCHINESE}           "全新安装"
+LangString CLEAN_INSTALL_TITLE ${LANG_JAPANESE}              "クリーンインストール"
+LangString CLEAN_INSTALL_TITLE ${LANG_PORTUGUESEBR}          "Instalação limpa"
+LangString CLEAN_INSTALL_TITLE ${LANG_RUSSIAN}               "Чистая установка"
+
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_ENGLISH}               "Choose whether to start from scratch"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_ITALIAN}               "Scegli se ripartire da zero"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_FRENCH}                "Choisissez de repartir de zéro ou non"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_SPANISHINTERNATIONAL}  "Elige si quieres empezar de cero"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_GERMAN}                "Wählen Sie, ob Sie neu beginnen möchten"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_SIMPCHINESE}           "选择是否从零开始"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_JAPANESE}              "最初からやり直すかどうかを選びます"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_PORTUGUESEBR}          "Escolha se quer começar do zero"
+LangString CLEAN_INSTALL_SUBTITLE ${LANG_RUSSIAN}               "Выберите, начинать ли с нуля"
+
+LangString CLEAN_INSTALL_CHECK ${LANG_ENGLISH}               "Delete the settings and start from scratch"
+LangString CLEAN_INSTALL_CHECK ${LANG_ITALIAN}               "Cancella le impostazioni e riparti da zero"
+LangString CLEAN_INSTALL_CHECK ${LANG_FRENCH}                "Effacer les réglages et repartir de zéro"
+LangString CLEAN_INSTALL_CHECK ${LANG_SPANISHINTERNATIONAL}  "Borrar los ajustes y empezar de cero"
+LangString CLEAN_INSTALL_CHECK ${LANG_GERMAN}                "Einstellungen löschen und neu beginnen"
+LangString CLEAN_INSTALL_CHECK ${LANG_SIMPCHINESE}           "删除设置并从零开始"
+LangString CLEAN_INSTALL_CHECK ${LANG_JAPANESE}              "設定を削除して最初からやり直す"
+LangString CLEAN_INSTALL_CHECK ${LANG_PORTUGUESEBR}          "Apagar as configurações e começar do zero"
+LangString CLEAN_INSTALL_CHECK ${LANG_RUSSIAN}               "Удалить настройки и начать с нуля"
+
+LangString CLEAN_INSTALL_DESC ${LANG_ENGLISH}               "This deletes the program's own settings: the saved AI key (you will have to enter it again), the chosen language, theme and sounds, and the automatic backup of unsaved tags.$\r$\n$\r$\nYour photos and your .txt files are NOT touched: they live in your own folders, not here.$\r$\n$\r$\nLeave the box empty to keep everything as it is."
+LangString CLEAN_INSTALL_DESC ${LANG_ITALIAN}               "Vengono cancellate le impostazioni del programma: la chiave AI salvata (andrà rimessa), la lingua scelta, tema e suoni, e il backup automatico dei tag non salvati.$\r$\n$\r$\nLe tue foto e i tuoi file .txt NON vengono toccati: stanno nelle tue cartelle, non qui.$\r$\n$\r$\nLascia la casella vuota per conservare tutto."
+LangString CLEAN_INSTALL_DESC ${LANG_FRENCH}                "Cela efface les réglages du programme : la clé AI enregistrée (à saisir de nouveau), la langue choisie, le thème et les sons, ainsi que la sauvegarde automatique des tags non enregistrés.$\r$\n$\r$\nVos photos et vos fichiers .txt ne sont PAS touchés : ils sont dans vos dossiers, pas ici.$\r$\n$\r$\nLaissez la case vide pour tout conserver."
+LangString CLEAN_INSTALL_DESC ${LANG_SPANISHINTERNATIONAL}  "Se borran los ajustes del programa: la clave de AI guardada (habrá que introducirla otra vez), el idioma elegido, el tema y los sonidos, y la copia automática de las etiquetas sin guardar.$\r$\n$\r$\nTus fotos y tus archivos .txt NO se tocan: están en tus carpetas, no aquí.$\r$\n$\r$\nDeja la casilla vacía para conservarlo todo."
+LangString CLEAN_INSTALL_DESC ${LANG_GERMAN}                "Damit werden die Einstellungen des Programms gelöscht: der gespeicherte AI-Schlüssel (er muss neu eingegeben werden), die gewählte Sprache, Design und Töne sowie die automatische Sicherung nicht gespeicherter Tags.$\r$\n$\r$\nIhre Fotos und Ihre .txt-Dateien werden NICHT angerührt: sie liegen in Ihren Ordnern, nicht hier.$\r$\n$\r$\nLassen Sie das Kästchen leer, um alles zu behalten."
+LangString CLEAN_INSTALL_DESC ${LANG_SIMPCHINESE}           "这会删除程序自身的设置：已保存的 AI 密钥（需要重新输入）、已选择的语言、主题和声音，以及未保存标签的自动备份。$\r$\n$\r$\n您的照片和 .txt 文件不会被触碰：它们在您自己的文件夹里，不在这里。$\r$\n$\r$\n留空此复选框可保留全部设置。"
+LangString CLEAN_INSTALL_DESC ${LANG_JAPANESE}              "プログラム自身の設定を削除します: 保存済みの AI キー（入力し直しが必要）、選んだ言語、デザインと効果音、未保存タグの自動バックアップ。$\r$\n$\r$\nあなたの写真と .txt ファイルには触れません。それらはご自身のフォルダーにあり、ここにはありません。$\r$\n$\r$\nすべて残す場合はチェックを入れないでください。"
+LangString CLEAN_INSTALL_DESC ${LANG_PORTUGUESEBR}          "Isso apaga as configurações do programa: a chave de AI salva (será preciso digitá-la de novo), o idioma escolhido, o tema e os sons, e o backup automático das tags não salvas.$\r$\n$\r$\nSuas fotos e seus arquivos .txt NÃO são tocados: eles ficam nas suas pastas, não aqui.$\r$\n$\r$\nDeixe a caixa vazia para manter tudo."
+LangString CLEAN_INSTALL_DESC ${LANG_RUSSIAN}               "Будут удалены настройки самой программы: сохранённый ключ AI (его придётся ввести заново), выбранный язык, оформление и звуки, а также автоматическая копия несохранённых тегов.$\r$\n$\r$\nВаши фотографии и файлы .txt НЕ затрагиваются: они лежат в ваших папках, а не здесь.$\r$\n$\r$\nОставьте флажок пустым, чтобы сохранить всё как есть."
