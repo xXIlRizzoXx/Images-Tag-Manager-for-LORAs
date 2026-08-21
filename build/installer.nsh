@@ -67,8 +67,18 @@
 ;           principale dello script generato, quindi qui va bene.
 ; ENGLISH: State of the "clean install" checkbox. Var must be declared at top level, never
 ;          inside a Function; this file is included at the generated script's top level.
-Var CleanInstall
-Var CleanInstallCheckbox
+; ITALIANO: Solo nella passata dell'INSTALLER. Il disinstallatore non ha ne' la pagina ne'
+;           la cancellazione, quindi li' queste due Var sarebbero dichiarate e mai usate:
+;           NSIS lo segnala (warning 6001) e warningsAsErrors lo trasforma in un errore.
+;           Verificato: e' esattamente cosi' che si e' fermata la prima costruzione.
+; ENGLISH: INSTALLER pass only. The uninstaller has neither the page nor the deletion, so
+;          there these two Var would be declared and never used: NSIS reports it (warning
+;          6001) and warningsAsErrors turns it into an error. Verified: that is exactly how
+;          the first build stopped.
+!ifndef BUILD_UNINSTALLER
+  Var CleanInstall
+  Var CleanInstallCheckbox
+!endif
 
 !macro customHeader
   BrandingText "${PRODUCT_NAME} ${VERSION} - by xXIlRizzoXx"
