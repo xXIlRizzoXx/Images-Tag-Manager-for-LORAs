@@ -32,7 +32,7 @@ import {
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
-import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog, UpdateDialog } from './components/ui';
+import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog, UpdateDialog, ExportChoiceDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
@@ -344,6 +344,14 @@ export default function App() {
         catch (_) { return null; }
     });
     const [updateAskOpen, setUpdateAskOpen] = useState(false);
+
+    // ITALIANO: La scelta di cosa mettere nell'archivio. Tiene dentro anche l'elenco gia'
+    //           filtrato, cosi' fra la domanda e l'esportazione non si rischia di lavorare su
+    //           un elenco diverso da quello su cui sono stati calcolati numero e peso.
+    // ENGLISH: The choice of what goes into the archive. It also holds the already-filtered
+    //          list, so the export cannot end up working on a different set than the one the
+    //          count and size were computed from.
+    const [exportChoice, setExportChoice] = useState<any>(null);
     const [updateFound, setUpdateFound] = useState<{ versione: string; pagina: string } | null>(null);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
@@ -2263,7 +2271,20 @@ export default function App() {
     //           compressione, cosi' su dataset grandi si vede che il programma sta lavorando.
     // ENGLISH: Builds a single .zip holding one .txt per image. The progress bar follows the
     //          compression, so on large datasets it is visible that the app is working.
-    const exportAllAsZip = async (imagesToExport: any[]): Promise<boolean> => {
+    // ITALIANO: Peso in parole. Serve per far vedere in anticipo quanto pesera' l'archivio:
+    //           la differenza fra le due strade e' fra i KB e i GB, e va vista PRIMA di premere.
+    // ENGLISH: Human-readable size, shown before starting: the gap between the two roads is
+    //          KB against GB, and it has to be visible BEFORE the button is pressed.
+    const formatoPeso = (byte: number): string => {
+        if (byte < 1024) return byte + ' B';
+        const unita = ['KB', 'MB', 'GB', 'TB'];
+        let v = byte / 1024;
+        let i = 0;
+        while (v >= 1024 && i < unita.length - 1) { v /= 1024; i++; }
+        return (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace('.', ',') + ' ' + unita[i];
+    };
+
+    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean): Promise<boolean> => {
         setIsSaving(true); setImportProgress(0);
         try {
             showNotification(t.zipProcessing, "info");
@@ -2299,18 +2320,79 @@ export default function App() {
                 }
                 usedNames.add(name);
                 zip.file(name, getOrderedTagString(img.tags));
+                if (conImmagini) {
+                    // ITALIANO: la foto prende lo STESSO nome del suo .txt, estensione a parte. Cosi'
+                    //           la coppia resta abbinata anche nei casi risolti qui sopra, dove il
+                    //           nome e' stato cambiato per non sovrascrivere un omonimo: se il .txt
+                    //           e' diventato "10_viso/img.txt", la foto diventa "10_viso/img.png".
+                    // ENGLISH: the photo takes the SAME name as its .txt, extension aside. That keeps
+                    //          the pair together even in the cases resolved above, where the name was
+                    //          changed to avoid overwriting a namesake: if the .txt became
+                    //          "10_face/img.txt", the photo becomes "10_face/img.png".
+                    const nomeFoto = String(img.file.name || '');
+                    const punto = nomeFoto.lastIndexOf('.');
+                    const estensione = punto > 0 ? nomeFoto.slice(punto) : '';
+                    zip.file(name.slice(0, -4) + estensione, img.file);
+                }
             });
-            const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
-                setImportProgress(Math.round(metadata.percent));
-            });
-            const url = URL.createObjectURL(blob);
-            try {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = "tags_all.zip";
-                document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            } finally {
-                URL.revokeObjectURL(url);
+            // ITALIANO: SCRITTURA A PEZZI, DIRETTAMENTE SUL DISCO. Prima l'archivio veniva
+            //           costruito tutto in memoria e poi scaricato: con i soli .txt sono pochi KB,
+            //           ma con le foto un dataset da qualche migliaio di immagini fa dieci e passa
+            //           GB, e la finestra muore. Con generateInternalStream i pezzi escono man mano
+            //           e finiscono subito sul file scelto; la pausa a ogni pezzo e' quella che tiene
+            //           bassa la memoria: si riprende solo quando il pezzo precedente e' sul disco,
+            //           altrimenti si accumulerebbe in coda esattamente quello che si voleva evitare.
+            //           Nessuna compressione: JPEG e PNG sono gia' compressi, comprimerli costa
+            //           minuti e guadagna quasi zero (ed e' quello che il codice faceva gia' prima).
+            // ENGLISH: CHUNKED WRITE, STRAIGHT TO DISK. The archive used to be built whole in memory
+            //          and then downloaded: a few KB with .txt alone, but with photos a few thousand
+            //          images make ten-plus GB and the window dies. generateInternalStream emits
+            //          chunks as they are produced and each lands on the chosen file at once; the
+            //          pause on every chunk is what keeps memory low — it resumes only once the
+            //          previous chunk is on disk, otherwise the queue would grow into exactly the
+            //          thing this avoids. No compression: JPEG and PNG are already compressed, so
+            //          compressing them costs minutes for almost nothing (as the code already did).
+            const nomeSuggerito = conImmagini ? 'dataset.zip' : 'tags_all.zip';
+            const salvaSuDisco = 'showSaveFilePicker' in window;
+            if (salvaSuDisco) {
+                const handle = await (window as any).showSaveFilePicker({
+                    id: 'itm-zip-export',
+                    suggestedName: nomeSuggerito,
+                    types: [{ description: 'ZIP', accept: { 'application/zip': ['.zip'] } }],
+                });
+                const writable = await handle.createWritable();
+                try {
+                    await new Promise<void>((risolvi, rifiuta) => {
+                        const flusso = zip.generateInternalStream({ type: 'uint8array', streamFiles: true });
+                        flusso.on('data', (pezzo: any, stato: any) => {
+                            flusso.pause();
+                            writable.write(pezzo).then(() => {
+                                setImportProgress(Math.round(stato.percent));
+                                flusso.resume();
+                            }, rifiuta);
+                        });
+                        flusso.on('error', rifiuta);
+                        flusso.on('end', () => risolvi());
+                        flusso.resume();
+                    });
+                } finally {
+                    await writable.close();
+                }
+            } else {
+                // ITALIANO: riserva per il browser di prova, che non ha la finestra di salvataggio.
+                // ENGLISH: fallback for the preview browser, which has no save picker.
+                const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
+                    setImportProgress(Math.round(metadata.percent));
+                });
+                const url = URL.createObjectURL(blob);
+                try {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = nomeSuggerito;
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                } finally {
+                    URL.revokeObjectURL(url);
+                }
             }
             soundManager.chime();
             // ITALIANO: se c'erano nomi doppi lo dico: i file sono TUTTI nell'archivio (rinominati),
@@ -2323,7 +2405,10 @@ export default function App() {
                 showNotification(t.zipSuccess, "success");
             }
             return true;
-        } catch (err) {
+        } catch (err: any) {
+            // ITALIANO: chiudere la finestra di salvataggio non e' un errore: non si dice niente.
+            // ENGLISH: dismissing the save dialog is not an error: stay quiet.
+            if (err && err.name === 'AbortError') return false;
             console.error(err);
             showNotification(t.zipError, "error");
             return false;
@@ -2348,7 +2433,19 @@ export default function App() {
             return showNotification(t.errorNoTagsToExport, "info");
         }
 
-        exportAllAsZip(imagesWithTags);
+        // ITALIANO: si chiede PRIMA cosa mettere dentro, con numero di file e peso delle due
+        //           strade gia' calcolati: la differenza fra le due e' fra KB e GB.
+        // ENGLISH: ask FIRST what goes in, with the file count and size of both roads already
+        //          worked out: the gap between them is KB against GB.
+        const pesoTag = imagesWithTags.reduce((n, img) => n + new Blob([getOrderedTagString(img.tags)]).size, 0);
+        const pesoFoto = imagesWithTags.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0);
+        setExportChoice({
+            imgs: imagesWithTags,
+            riepilogo: {
+                soloTag: { file: imagesWithTags.length, peso: formatoPeso(pesoTag) },
+                conImmagini: { file: imagesWithTags.length * 2, peso: formatoPeso(pesoTag + pesoFoto) },
+            },
+        });
     };
 
     // ITALIANO: useCallback (dip. solo dalle trigger word): identita' stabile mentre si modificano i
@@ -3094,6 +3191,18 @@ export default function App() {
             {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
+            <ExportChoiceDialog
+                isOpen={!!exportChoice}
+                riepilogo={exportChoice ? exportChoice.riepilogo : null}
+                t={t}
+                isDarkMode={isDarkMode}
+                onCancel={() => setExportChoice(null)}
+                onConfirm={(conImmagini: boolean) => {
+                    const scelta = exportChoice;
+                    setExportChoice(null);
+                    if (scelta) exportAllAsZip(scelta.imgs, conImmagini);
+                }}
+            />
             <UpdateDialog
                 isOpen={updateAskOpen}
                 title={t.updateAskTitle}

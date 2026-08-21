@@ -12,7 +12,7 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useRef, useEffect } from 'react';
-import { X, TriangleAlert, Info, Check, Download } from 'lucide-react';
+import { X, TriangleAlert, Info, Check, Download, FileArchive, Images, FileText } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 
 // ITALIANO: Levetta stile Apple per attivare/disattivare opzioni
@@ -134,6 +134,65 @@ export const Toast = ({ message, type, onClose }: any) => {
  *   label - which here would produce a button reading "A newer version is out". These two
  *   labels are passed in, so each button says what it does.
  */
+/**
+ * ITALIANO: Scelta di cosa mettere nell'archivio: solo i .txt con i tag, oppure anche le foto.
+ *   La scelta si fa ogni volta e non ha un valore preferito salvato, perche' le due strade
+ *   pesano in modo molto diverso: pochi KB contro parecchi GB. Sotto ogni voce c'e' il numero
+ *   di file e il peso, cosi' nessuno si ritrova un archivio da 12 GB per aver premuto un tasto
+ *   che credeva leggero.
+ *
+ * ENGLISH: Choice of what goes into the archive: only the .txt files with the tags, or the
+ *   photos as well. It is asked every time and no preference is stored, because the two roads
+ *   weigh wildly differently: a few KB against several GB. Each option shows its file count and
+ *   size, so nobody ends up with a 12 GB archive from a button they thought was light.
+ */
+export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm, onCancel }: any) => {
+    const [conImmagini, setConImmagini] = React.useState(false);
+    React.useEffect(() => { if (isOpen) setConImmagini(false); }, [isOpen]);
+    if (!isOpen || !riepilogo) return null;
+
+    const voce = (attiva: boolean, icona: any, titolo: string, dati: any, onClick: () => void) => (
+        <button
+            onClick={onClick}
+            className={`w-full text-left px-4 py-3 rounded-xl border transition-all flex items-start gap-3 ${attiva
+                ? 'border-indigo-500 ring-2 ring-indigo-500/40 ' + (isDarkMode ? 'bg-indigo-900/25' : 'bg-indigo-50')
+                : (isDarkMode ? 'border-gray-700 hover:bg-gray-700/40' : 'border-gray-200 hover:bg-gray-50')}`}
+        >
+            <span className={`mt-0.5 shrink-0 ${attiva ? 'text-indigo-500' : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>{icona}</span>
+            <span className="min-w-0">
+                <span className={`block text-sm font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{titolo}</span>
+                <span className={`block text-xs mt-0.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {(t.exportFilesAndSize || 'Files: {n} · about {size}').replace('{n}', String(dati.file)).replace('{size}', dati.peso)}
+                </span>
+            </span>
+        </button>
+    );
+
+    return (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+            <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
+                <div className="p-6">
+                    <div className="flex items-center gap-3 mb-4 text-indigo-500 dark:text-indigo-400">
+                        <FileArchive size={24} />
+                        <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.exportChoiceTitle}</h3>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        {voce(!conImmagini, <FileText size={18} />, t.exportOnlyTags, riepilogo.soloTag, () => setConImmagini(false))}
+                        {voce(conImmagini, <Images size={18} />, t.exportTagsAndImages, riepilogo.conImmagini, () => setConImmagini(true))}
+                    </div>
+                    {conImmagini && (
+                        <p className={`text-[11px] leading-snug mt-3 ${isDarkMode ? 'text-amber-300/80' : 'text-amber-700'}`}>{t.exportSizeWarn}</p>
+                    )}
+                </div>
+                <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
+                    <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{t.cancel}</button>
+                    <button onClick={() => onConfirm(conImmagini)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.exportStart}</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const UpdateDialog = ({ isOpen, title, message, confirmLabel, cancelLabel, onConfirm, onCancel, isDarkMode }: any) => {
     if (!isOpen) return null;
     return (
