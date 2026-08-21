@@ -1,7 +1,42 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 20 agosto 2026
-**Versione attuale:** 1.2.0 (in lavorazione, non ancora costruita)
+**Ultimo aggiornamento:** 21 agosto 2026
+**Versione attuale:** 1.2.0 (costruita e collaudata il 21 agosto 2026, non ancora pubblicata)
+Novità 1.2.0 (traguardo 99): **il programma è stato costruito e provato davvero, e il Cestino di
+Windows funziona anche nell'exe.** Era il dubbio che non si poteva sciogliere in nessun altro modo:
+la riparazione del Cestino era stata misurata solo sul programma in prova, che carica le pagine da
+un indirizzo di rete locale, mentre il programma consegnato le carica dal disco — e i permessi, in
+Chromium, sono legati a quell'indirizzo. Se lì non avesse funzionato, la novità principale della
+1.2.0 sarebbe stata finta. La prova è andata così: una foto dentro una **sottocartella**, messa nel
+cestino e poi svuotata dal programma portable. Il programma ha detto "File spostati nel Cestino di
+Windows", senza aprire nessuna seconda finestra, e andando a guardare **dentro il Cestino di
+Windows** i due file c'erano davvero, con scritto che venivano dalla sottocartella giusta: quindi il
+percorso viene ricostruito anche per le foto che stanno dentro le cartelle interne. Non è stato
+creduto il messaggio, è stato controllato il Cestino. **Il difetto di perdita dati della 1.1.0 è
+chiuso alla radice**, sul programma vero.
+Nello stesso giro si sono viste tutte le frasi riscritte in questi giorni, con una foto sola davanti:
+"Immagini caricate: 3", "Aggiungi tag alle foto selezionate: 1", "Foto spostate nel cestino: 1",
+"Foto nel cestino: 1". Nessuna si sgrammatica più.
+Novità 1.2.0 (traguardo 98): **tre cose nuove nel programma di installazione.**
+La prima è l'**installazione pulita**: una casella, spenta di serie, che compare solo se sul computer
+ci sono già le impostazioni di una volta precedente (alla prima installazione non ci sarebbe niente
+da pulire e la domanda sarebbe rumore). Spuntandola si riparte da zero: sparisce la chiave AI salvata
+— va rimessa a mano — la lingua scelta, tema e suoni, e il salvataggio automatico dei tag non salvati.
+La scritta dice tutto questo per esteso, e dice soprattutto la cosa che conta: **le foto e i file di
+testo non vengono toccati**, perché stanno nelle cartelle di chi usa il programma, non lì.
+La seconda **c'era già e non serviva scriverla**: se il programma è aperto mentre si installa, esce
+un avviso che chiede di chiuderlo, tradotto in tutte e nove le lingue. Vale per il programma
+installato, non per quello portable — e va bene così, perché il portable gira da un'altra parte e
+l'installazione non tocca niente di suo.
+La terza è l'**avviso di una versione nuova**, e su questa c'è una scelta da spiegare. Il programma
+si vanta di non mandare niente su internet, e proprio in questi giorni gli è stato spento il
+correttore ortografico perché era l'unico collegamento che apriva senza che nessuno glielo avesse
+chiesto. Quindi l'avviso non è stato acceso di nascosto: al primo avvio il programma **chiede una
+volta sola** se controllare, spiega che si collega soltanto a GitHub e che legge soltanto il numero
+di versione, e finché non si risponde non si collega. Chi dice di no non vedrà mai un collegamento
+partire, e la frase "non manda niente" resta vera alla lettera; chi dice di sì, quando esce una
+versione nuova si vede il numero vecchio, quello nuovo e un tasto che apre la pagina da cui
+scaricarla. Si cambia idea quando si vuole dalle Impostazioni.
 Novità 1.2.0 (traguardo 97): **le nove lingue hanno un controllo che gira da solo**. Il controllo
 dei tipi, che dalla 1.2.0 parte prima di ogni costruzione, non vede circa 50 delle 254 scritte
 dell'interfaccia: sono quelle che le finestre interne (editor dei tag, visualizzatore, finestrelle di
