@@ -1,7 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 21 agosto 2026
-**Versione attuale:** 1.2.0 (ricostruita il 21 agosto 2026 con l'archivio nuovo e l'annullamento dello svuotamento, non ancora pubblicata)
+**Versione attuale:** 1.2.0 — **pubblicata** su GitHub il 21 agosto 2026
+Novità 1.2.0 (traguardo 103): **la 1.2.0 è pubblicata.** Sulla pagina delle release ci sono i due
+file da scaricare, installer e portable, con la spiegazione di quale scegliere, la nota sull'avviso
+dell'antivirus e, in cima a tutto, l'avvertimento a chi ha la 1.1.0: quella versione poteva
+cancellare per sempre i file svuotando il cestino, e conviene aggiornare. Da adesso la regola del
++0.0.1 è di nuovo attiva: la prossima modifica farà 1.2.1.
+Una cosa da sapere: **chi ha la 1.1.0 non vedrà nessun avviso di aggiornamento**, perché il
+controllo è nato dentro la 1.2.0. Comincia a funzionare da questa versione in avanti, e chi ha la
+vecchia deve passare dalla pagina delle release.
+
 Novità 1.2.0 (traguardo 102): **le due funzioni nuove provate sul programma vero, e due difetti
 che solo la prova poteva far uscire.** Il collaudo è stato fatto con una cartella costruita
 apposta per essere scomoda: un nome con lo spazio, uno con l'accento, una foto senza testo, due
