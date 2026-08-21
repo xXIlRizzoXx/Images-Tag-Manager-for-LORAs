@@ -14,6 +14,7 @@
 const { app, BrowserWindow, ipcMain, net, safeStorage, session, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 // ITALIANO: "sviluppo" si decide dal fatto che l'app NON sia impacchettata, non da una
 //           variabile d'ambiente. NODE_ENV puo' essere impostata da chiunque avvii l'exe:
@@ -364,6 +365,156 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
         }
     }
     return { ok: failed === 0, trashed, failed, results };
+});
+
+/* ITALIANO: FUORI DAL CESTINO DI WINDOWS (l'annullamento dello svuotamento)
+   Electron sa mettere un file nel Cestino ma non sa tirarlo fuori: Windows quella strada la
+   espone solo alla shell. Si passa quindi da PowerShell, che parla con la shell via COM.
+
+   Tre cose imparate provandolo davvero, e ognuna sarebbe stata un difetto silenzioso:
+   1. il nome che la shell mostra segue l'impostazione "nascondi le estensioni", quindi puo'
+      arrivare senza ".txt": l'estensione vera si prende dal nome interno ($R......txt), che
+      non mente mai. Cercando per nome mostrato non si ritroverebbe niente su mezzo mondo.
+   2. il verbo si chiama 'undelete', NON la voce di menu "Ripristina": quella e' tradotta, e
+      su un Windows tedesco o cinese cercarla per nome non troverebbe mai niente.
+   3. se al posto del file e' nato un omonimo, NON si ripristina: si torna 'occupato' e lo si
+      dice. Il ripristino della shell sovrascriverebbe, e questo canale esiste per NON perdere
+      file, non per perderne di nuovi.
+
+   Il testo dello script e' una costante: i percorsi entrano da stdin come JSON, mai dentro la
+   riga di comando, cosi' un nome di file con virgolette o punti e virgola non puo' diventare
+   un comando. La finestra della console resta nascosta.
+
+   ENGLISH: OUT OF THE WINDOWS RECYCLE BIN (undoing the emptying)
+   Electron can put a file in the Recycle Bin but cannot take it back out: Windows exposes that
+   road only to the shell. So we go through PowerShell, which talks to the shell over COM.
+
+   Three things learned by actually trying it, each of which would have been a silent defect:
+   1. the name the shell reports follows the "hide known extensions" setting, so it can arrive
+      without ".txt": the real extension comes from the internal name ($R......txt), which never
+      lies. Matching on the displayed name would find nothing on half the machines out there.
+   2. the verb is 'undelete', NOT the menu entry "Restore": that one is translated, and on a
+      German or Chinese Windows looking it up by name would never find it.
+   3. if a namesake has appeared in the meantime, we do NOT restore: we return 'occupato' and
+      say so. The shell's own restore would overwrite, and this channel exists so files are NOT
+      lost, not so that new ones are.
+
+   The script text is a constant: paths come in through stdin as JSON, never on the command
+   line, so a file name containing quotes or semicolons cannot become a command. The console
+   window stays hidden. */
+const RESTORE_MAX_FILES = 5000;
+const RESTORE_TIMEOUT_MS = 60000;
+const SCRIPT_RIPRISTINO = [
+    "$ErrorActionPreference = 'Stop'",
+    "$ProgressPreference = 'SilentlyContinue'",
+    "$voluti = @()",
+    "$grezzo = [Console]::In.ReadToEnd()",
+    "# ConvertFrom-Json NON sgrana l elenco: lo consegna tutto intero come un oggetto solo.",
+    "# Senza questo giro $voluti diventa un elenco con dentro un elenco, il ciclo gira una",
+    "# volta sola e non ripristina niente. Provato: senza, il canale torna tutto fallito.",
+    "if ($grezzo) { foreach ($x in (ConvertFrom-Json $grezzo)) { $voluti += [string]$x } }",
+    "$esiti = @{}",
+    "foreach ($p in $voluti) { $esiti[$p.ToLowerInvariant()] = 'nonTrovato' }",
+    "$shell = New-Object -ComObject Shell.Application",
+    "$bin = $shell.Namespace(0xA)",
+    "# PRIMA si guarda tutto il Cestino e si segna cosa serve, POI si ripristina. Ripristinare",
+    "# mentre si sta ancora scorrendo l elenco lo cambia sotto i piedi: il verbo non protesta,",
+    "# semplicemente non fa niente. Provato: mescolando le due fasi non torna indietro un file.",
+    "$daFare = @()",
+    "foreach ($v in @($bin.Items())) {",
+    "  $nome = $v.Name",
+    "  $est = [System.IO.Path]::GetExtension($v.Path)",
+    "  if ($est -and -not $nome.EndsWith($est, 'OrdinalIgnoreCase')) { $nome = $nome + $est }",
+    "  $orig = Join-Path ($bin.GetDetailsOf($v, 1)) $nome",
+    "  $k = $orig.ToLowerInvariant()",
+    "  if (-not $esiti.ContainsKey($k)) { continue }",
+    "  if ($esiti[$k] -ne 'nonTrovato') { continue }",
+    "  if (Test-Path -LiteralPath $orig) { $esiti[$k] = 'occupato'; continue }",
+    "  $esiti[$k] = 'inCorso'",
+    "  $daFare += [pscustomobject]@{ voce = $v; orig = $orig; k = $k }",
+    "}",
+    "$avviati = @()",
+    "foreach ($d in $daFare) {",
+    "  try {",
+    "    # Split-Path non accetta -LiteralPath insieme a -Parent: protesta e il catch qui",
+    "    # sotto se la mangiava, tornando un fallito senza motivo. Il metodo .NET non ha",
+    "    # set di parametri e non si fa ingannare dalle parentesi quadre nei nomi.",
+    "    $cart = [System.IO.Path]::GetDirectoryName($d.orig)",
+    "    if (-not (Test-Path -LiteralPath $cart)) { New-Item -ItemType Directory -Path $cart -Force | Out-Null }",
+    "    $d.voce.InvokeVerb('undelete')",
+    "    $avviati += $d.orig",
+    "  } catch { $esiti[$d.k] = 'fallito' }",
+    "}",
+    "$scadenza = (Get-Date).AddSeconds(20)",
+    "while ($avviati.Count -gt 0 -and (Get-Date) -lt $scadenza) {",
+    "  Start-Sleep -Milliseconds 200",
+    "  $ancora = @()",
+    "  foreach ($o in $avviati) { if (Test-Path -LiteralPath $o) { $esiti[$o.ToLowerInvariant()] = 'ok' } else { $ancora += $o } }",
+    "  $avviati = $ancora",
+    "}",
+    "foreach ($o in $avviati) { $esiti[$o.ToLowerInvariant()] = 'fallito' }",
+    "$pezzi = @()",
+    "foreach ($p in $voluti) { $pezzi += ([pscustomobject]@{ percorso = $p; esito = $esiti[$p.ToLowerInvariant()] } | ConvertTo-Json -Compress) }",
+    "[Console]::Out.Write('[' + ($pezzi -join ',') + ']')",
+].join('\n');
+
+ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
+    const results = [];
+    if (process.platform !== 'win32' || !Array.isArray(filePaths)) return { ok: false, restored: 0, results };
+    const voluti = [];
+    for (const raw of filePaths.slice(0, RESTORE_MAX_FILES)) {
+        // ITALIANO: stesso contratto stretto degli altri canali: solo percorsi locali assoluti.
+        // ENGLISH: same narrow contract as the other channels: local absolute paths only.
+        if (!isSafeLocalPath(raw)) { results.push({ percorso: String(raw || ''), esito: 'rifiutato' }); continue; }
+        voluti.push(raw);
+    }
+    if (voluti.length === 0) return { ok: false, restored: 0, results };
+
+    const esitiPS = await new Promise((resolve) => {
+        let uscito = false;
+        const fine = (v) => { if (!uscito) { uscito = true; resolve(v); } };
+        try {
+            const psExe = process.env.SystemRoot
+                ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                : 'powershell.exe';
+            // ITALIANO: -Sta serve a Shell.Application (COM vuole quell'apartment); windowsHide
+            //           tiene la finestra nera fuori dallo schermo di chi usa il programma.
+            // ENGLISH: -Sta is what Shell.Application needs (COM wants that apartment);
+            //          windowsHide keeps the black console window off the user's screen.
+            const ps = spawn(psExe, ['-NoProfile', '-NonInteractive', '-Sta', '-Command', SCRIPT_RIPRISTINO], { windowsHide: true });
+            let out = '';
+            const orologio = setTimeout(() => { try { ps.kill(); } catch (_) {} fine(null); }, RESTORE_TIMEOUT_MS);
+            ps.stdout.on('data', (d) => { out += String(d); });
+            ps.on('error', (e) => { clearTimeout(orologio); console.error('restore-trashed: PowerShell non partito', e); fine(null); });
+            ps.on('close', () => {
+                clearTimeout(orologio);
+                try { fine(JSON.parse(out.trim() || '[]')); } catch (e) { console.error('restore-trashed: risposta illeggibile', e); fine(null); }
+            });
+            ps.stdin.on('error', () => {});
+            ps.stdin.end(JSON.stringify(voluti));
+        } catch (e) {
+            console.error('restore-trashed: non riuscito', e);
+            fine(null);
+        }
+    });
+
+    // ITALIANO: se PowerShell non ha risposto NON si inventa un esito: ogni percorso torna
+    //           'fallito'. Un finto "riuscito" qui sarebbe la bugia peggiore di tutte.
+    // ENGLISH: if PowerShell did not answer we do NOT invent an outcome: every path comes back
+    //          as 'fallito'. A fake "success" here would be the worst lie of the lot.
+    const perPercorso = new Map();
+    if (Array.isArray(esitiPS)) {
+        for (const e of esitiPS) {
+            if (e && typeof e.percorso === 'string') perPercorso.set(e.percorso, String(e.esito || 'fallito'));
+        }
+    }
+    let restored = 0;
+    for (const p of voluti) {
+        const esito = perPercorso.get(p) || 'fallito';
+        if (esito === 'ok') restored++;
+        results.push({ percorso: p, esito });
+    }
+    return { ok: restored === voluti.length, restored, results };
 });
 
 /* ITALIANO: APERTURA DI UN INDIRIZZO WEB NEL BROWSER DI SISTEMA

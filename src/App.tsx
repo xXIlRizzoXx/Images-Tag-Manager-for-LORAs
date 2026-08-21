@@ -13,7 +13,7 @@
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
@@ -352,6 +352,17 @@ export default function App() {
     //          list, so the export cannot end up working on a different set than the one the
     //          count and size were computed from.
     const [exportChoice, setExportChoice] = useState<any>(null);
+
+    // ITALIANO: L'ultimo svuotamento del cestino, tenuto da parte per poterlo annullare: le foto
+    //           con i loro tag e i percorsi dei file finiti nel Cestino di Windows. Dura quanto
+    //           la sessione: chiudendo il programma se ne va, e da li' in poi resta il Cestino
+    //           di Windows, che e' comunque la rete di sicurezza vera.
+    // ENGLISH: The last emptying of the trash, kept aside so it can be undone: the photos with
+    //          their tags and the paths of the files that went to the Windows Recycle Bin. It
+    //          lasts as long as the session: close the program and it is gone, and from then on
+    //          the Windows Recycle Bin is there, which is the real safety net anyway.
+    const [ultimoSvuotamento, setUltimoSvuotamento] = useState<any>(null);
+    const [ripristinoInCorso, setRipristinoInCorso] = useState(false);
     const [updateFound, setUpdateFound] = useState<{ versione: string; pagina: string } | null>(null);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
@@ -1101,6 +1112,23 @@ export default function App() {
     //          `img.filePath`, so the normal case is 'trashed'. Two situations stay on 'nopath':
     //          NETWORK folders (Windows has no Recycle Bin at all for network shares) and the
     //          browser preview, where there is no Electron shell.
+    // ITALIANO: I due percorsi su disco di una foto: l'immagine e il .txt con lo stesso nome.
+    //           Sta qui, in un posto solo, perche' lo usano sia chi manda i file nel Cestino di
+    //           Windows sia chi ce li ripesca. Se i due calcolassero il nome in modo anche solo
+    //           leggermente diverso, l'annullamento andrebbe a cercare file che non ha mai
+    //           cestinato e direbbe "non trovato" su roba che nel Cestino c'e' eccome.
+    // ENGLISH: The two on-disk paths of a photo: the image and the same-named .txt. It lives here,
+    //          in one place, because both the code that sends files to the Windows Recycle Bin and
+    //          the code that fishes them back out use it. If the two worked the name out even
+    //          slightly differently, the undo would look for files it never trashed and report
+    //          "not found" for things that are sitting right there in the Recycle Bin.
+    const percorsiSuDisco = (img: any): { imgPath: string; txtPath: string } => {
+        const apiLocale = (window as any).electronAPI;
+        const imgPath = (apiLocale && typeof apiLocale.getPathForFile === 'function' ? apiLocale.getPathForFile(img.file) : '') || img.filePath || '';
+        if (!imgPath) return { imgPath: '', txtPath: '' };
+        return { imgPath, txtPath: imgPath.replace(/\.[^.\\/]+$/, '') + '.txt' };
+    };
+
     const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
@@ -1113,9 +1141,8 @@ export default function App() {
             // ENGLISH: `getPathForFile` stays FIRST, so photos loaded individually or dropped in
             //          keep behaving exactly as before. `img.filePath` only fills the gap left by
             //          the browser's folder picker.
-            const imgPath = api.getPathForFile(img.file) || img.filePath || '';
+            const { imgPath, txtPath } = percorsiSuDisco(img);
             if (!imgPath) return img.dirHandle ? 'nopath' : 'failed';
-            const txtPath = imgPath.replace(/\.[^.\\/]+$/, '') + '.txt';
             // ITALIANO: due chiamate separate, non una sola con due percorsi: il canale ritorna un
             //           `ok` unico per tutto il gruppo, quindi con un .txt bloccato l'esito diceva
             //           "non riuscito" mentre l'IMMAGINE era gia' nel Cestino di Windows — e la foto
@@ -1228,6 +1255,64 @@ export default function App() {
         soundManager.pop();
     };
 
+    // ITALIANO: ANNULLA LO SVUOTAMENTO
+    //   Rimette al loro posto i file dell'ultimo svuotamento, ripescandoli dal Cestino di Windows.
+    //   Le foto tornano nel cestino dell'app, cioe' esattamente dove stavano un attimo prima: e'
+    //   il contrario esatto del passo che si vuole annullare, non una scorciatoia che le rimette
+    //   in galleria saltando un passaggio che l'utente non ha chiesto di saltare.
+    //
+    //   Si conta la FOTO, non il file: moltissime foto non hanno un .txt accanto, e un .txt che
+    //   non e' mai esistito non e' un fallimento da annunciare. Quello che decide e' l'immagine.
+    // ENGLISH: UNDO THE EMPTYING
+    //   Puts the files of the last emptying back where they were, fishing them out of the Windows
+    //   Recycle Bin. The photos return to the app's trash, exactly where they were a moment
+    //   earlier: that is the precise opposite of the step being undone, not a shortcut that drops
+    //   them back in the gallery, skipping a step the user never asked to skip.
+    //
+    //   We count the PHOTO, not the file: plenty of photos have no .txt beside them, and a .txt
+    //   that never existed is not a failure worth announcing. The image is what decides.
+    const annullaSvuotamento = async () => {
+        if (!ultimoSvuotamento || ripristinoInCorso) return;
+        const apiLocale = (window as any).electronAPI;
+        if (!apiLocale || typeof apiLocale.restoreTrashed !== 'function') return;
+        setRipristinoInCorso(true);
+        try {
+            const voci: any[] = ultimoSvuotamento.voci || [];
+            const percorsi: string[] = [];
+            voci.forEach((v: any) => {
+                if (v.imgPath) percorsi.push(v.imgPath);
+                if (v.txtPath) percorsi.push(v.txtPath);
+            });
+            const esito = await apiLocale.restoreTrashed(percorsi);
+            const perPercorso = new Map<string, string>();
+            if (esito && Array.isArray(esito.results)) {
+                esito.results.forEach((r: any) => { if (r && r.percorso) perPercorso.set(r.percorso, String(r.esito || '')); });
+            }
+            const tornate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'ok');
+            const rimaste = voci.filter((v: any) => perPercorso.get(v.imgPath) !== 'ok');
+
+            if (tornate.length > 0) {
+                // ITALIANO: tornano nel cestino dell'app, da dove "Ripristina" le riporta in galleria.
+                // ENGLISH: back into the app's trash, from where "Restore" brings them to the gallery.
+                setImages(prev => [...prev, ...tornate.map((v: any) => ({ ...v.img, isTrashed: true }))]);
+            }
+            // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
+            //           per quelle e sparisce quando non c'e' piu' niente da ripescare.
+            // ENGLISH: keep only what did NOT come back, so the button stays available for those
+            //          and disappears once there is nothing left to fish out.
+            setUltimoSvuotamento(rimaste.length > 0 ? { voci: rimaste } : null);
+
+            if (tornate.length === 0) showNotification(t.undoEmptyNone, 'error');
+            else if (rimaste.length > 0) showNotification(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length)), 'info');
+            else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
+        } catch (err) {
+            console.error('[Cestino] Annullamento dello svuotamento non riuscito:', err);
+            showNotification(t.undoEmptyNone, 'error');
+        } finally {
+            setRipristinoInCorso(false);
+        }
+    };
+
     const handleEmptyTrash = async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
 
@@ -1250,20 +1335,36 @@ export default function App() {
         //          With this flag set, both buttons are disabled.
         setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
+        const ripescabili: any[] = [];
         const senzaPercorso: any[] = [];
         let failed = 0;
         for (const img of trashedImages) {
             let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
+            // ITALIANO: i percorsi si prendono PRIMA di spostare il file: dopo, al suo posto non
+            //           c'e' piu' niente da cui ricavarli.
+            // ENGLISH: take the paths BEFORE moving the file: afterwards nothing is left in its
+            //          place to work them out from.
+            const percorsi = percorsiSuDisco(img);
             try {
                 esito = await deleteImageFiles(img);
             } catch (error) {
                 console.error("Failed to delete", img.file.name, error);
             }
-            if (esito === 'trashed') removedIds.add(img.id);
+            if (esito === 'trashed') {
+                removedIds.add(img.id);
+                if (percorsi.imgPath) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: percorsi.txtPath });
+            }
             else if (esito === 'nopath') senzaPercorso.push(img);
             else failed++;
         }
         setIsEmptyingTrash(false);
+        // ITALIANO: cio' che si puo' ancora ripescare dal Cestino di Windows. Senza questo elenco,
+        //           dopo lo svuotamento non resterebbe traccia di dove stavano i file, e nel Cestino
+        //           di Windows c'e' la roba di tutti: la propria non si riconoscerebbe piu'.
+        // ENGLISH: what can still be fished back out of the Windows Recycle Bin. Without this list
+        //          nothing would record where the files used to be, and the Windows Recycle Bin
+        //          holds everybody's things: ours could no longer be told apart.
+        if (ripescabili.length > 0) setUltimoSvuotamento({ voci: ripescabili });
 
         // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe
         //           comunque un array nuovo, l'effetto che registra la cronologia lo vedrebbe come una
@@ -3367,6 +3468,17 @@ export default function App() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
+                                {ultimoSvuotamento && (
+                                    <button
+                                        onClick={annullaSvuotamento}
+                                        disabled={ripristinoInCorso || isEmptyingTrash}
+                                        title={t.undoEmptyHint}
+                                        className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    >
+                                        {ripristinoInCorso ? <Loader2 size={18} className="animate-spin" /> : <Undo2 size={18} />}
+                                        <span className="hidden sm:inline">{t.undoEmptyTrash}</span>
+                                    </button>
+                                )}
                                 {trashedImages.length > 0 && (
                                     <>
                                         <button
@@ -3445,6 +3557,19 @@ export default function App() {
                                             <Trash2 size={48} />
                                         </div>
                                         <h3 className={`text-xl font-bold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>{t.trashEmpty}</h3>
+                                        {ultimoSvuotamento && (
+                                            <>
+                                                <p className={`text-sm max-w-md leading-relaxed mb-5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.undoEmptyHint}</p>
+                                                <button
+                                                    onClick={annullaSvuotamento}
+                                                    disabled={ripristinoInCorso}
+                                                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-md shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {ripristinoInCorso ? <Loader2 size={18} className="animate-spin" /> : <Undo2 size={18} />}
+                                                    {ripristinoInCorso ? t.undoEmptyWorking : t.undoEmptyTrash}
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="grid gap-4 md:gap-6 transition-all duration-300 items-start" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${trashImageWidth}px, 1fr))` }}>
