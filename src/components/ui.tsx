@@ -12,7 +12,7 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useRef, useEffect } from 'react';
-import { X, TriangleAlert, Info, Check } from 'lucide-react';
+import { X, TriangleAlert, Info, Check, Download } from 'lucide-react';
 import { soundManager } from '../utils/soundManager';
 
 // ITALIANO: Levetta stile Apple per attivare/disattivare opzioni
@@ -120,6 +120,41 @@ export const Toast = ({ message, type, onClose }: any) => {
 
 // ITALIANO: Finestra di dialogo per confermare azioni importanti
 // ENGLISH: Dialog box to confirm important actions
+/**
+ * ITALIANO: Finestra a due scelte per le NOTIZIE, non per i pericoli. Serve due volte:
+ *   per chiedere una sola volta se controllare gli aggiornamenti, e per dire che ne e'
+ *   uscito uno. Perche' non riusare CustomConfirmDialog: quella ha il triangolo rosso, il
+ *   tasto rosso, e usa il TITOLO come etichetta del tasto - qui verrebbe un pulsante che
+ *   dice "E' uscita una versione nuova". Qui le due etichette arrivano da fuori, cosi'
+ *   dicono che cosa fa il tasto.
+ *
+ * ENGLISH: A two-choice dialog for NEWS, not for danger. Used twice: to ask once whether to
+ *   check for updates, and to say one has come out. CustomConfirmDialog is not reused
+ *   because it carries a red triangle, a red button, and uses the TITLE as the button
+ *   label - which here would produce a button reading "A newer version is out". These two
+ *   labels are passed in, so each button says what it does.
+ */
+export const UpdateDialog = ({ isOpen, title, message, confirmLabel, cancelLabel, onConfirm, onCancel, isDarkMode }: any) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+            <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
+                <div className="p-6">
+                    <div className="flex items-center gap-3 mb-3 text-indigo-500 dark:text-indigo-400">
+                        <Download size={24} />
+                        <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
+                    </div>
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} leading-relaxed ml-9`}>{message}</p>
+                </div>
+                <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
+                    <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{cancelLabel}</button>
+                    <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{confirmLabel}</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: any) => {
     if (!isOpen) return null;
     return (

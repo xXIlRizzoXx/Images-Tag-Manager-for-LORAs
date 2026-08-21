@@ -61,6 +61,10 @@ export interface ElectronAPI {
     //          asking for anything (pick aborted).
     takePickedFolderPath: (proofs: Array<{ rel: string; name: string; size: number; mtime: number }>) => Promise<string>;
     openExternal: (url: string) => Promise<boolean>;
+
+    /** ITALIANO: null = niente di nuovo, nessuna rete, o controllo non acconsentito.
+     *  ENGLISH: null = nothing new, no network, or the check was never agreed to. */
+    checkForUpdate: () => Promise<{ versione: string; pagina: string } | null>;
 }
 
 declare global {

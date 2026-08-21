@@ -32,7 +32,7 @@ import {
 import { translations } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
-import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog } from './components/ui';
+import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog, UpdateDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
@@ -318,6 +318,33 @@ export default function App() {
     const [images, setImages] = useState<any[]>([]);
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
     const [soundEnabled, setSoundEnabled] = useState(true);
+
+    // ITALIANO: CONTROLLO DELLE VERSIONI NUOVE. Tre stati, non due: 'on', 'off', e NON ANCORA
+    //           CHIESTO. Il terzo serve: finche' l'utente non ha risposto il programma non si
+    //           collega, e la domanda gli viene fatta una volta sola. La risposta sta in
+    //           localStorage e non nei dati cifrati perche' non e' un segreto, e perche'
+    //           l'installazione pulita deve poterla azzerare insieme al resto.
+    // ENGLISH: NEW VERSION CHECK. Three states, not two: 'on', 'off', and NOT ASKED YET. The
+    //          third one matters: until the user answers, the program does not connect, and
+    //          the question is asked once. The answer lives in localStorage, not in the
+    //          encrypted store: it is not a secret, and a clean install must be able to wipe
+    //          it along with everything else.
+    // ITALIANO: Il guscio Electron letto una volta per il corpo del componente. Nelle funzioni
+    //           piu' sotto resta l'abitudine di rileggerlo in locale: quelle non le tocco.
+    //           Nel browser di prova vale undefined, e tutto quello che dipende da lui sparisce
+    //           da solo: la domanda non compare e nessun collegamento viene aperto.
+    // ENGLISH: The Electron shell, read once for the component body. The functions below keep
+    //          reading it locally; those are left alone. In the browser preview it is
+    //          undefined, so everything that depends on it disappears by itself: the question
+    //          never shows and no connection is ever opened.
+    const apiElectron = (window as any).electronAPI;
+
+    const [updateCheckChoice, setUpdateCheckChoice] = useState<'on' | 'off' | null>(() => {
+        try { const v = localStorage.getItem('updateCheck'); return v === 'on' || v === 'off' ? v : null; }
+        catch (_) { return null; }
+    });
+    const [updateAskOpen, setUpdateAskOpen] = useState(false);
+    const [updateFound, setUpdateFound] = useState<{ versione: string; pagina: string } | null>(null);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
     
@@ -2840,6 +2867,42 @@ export default function App() {
     };
 
     useEffect(() => { soundManager.enabled = soundEnabled; }, [soundEnabled]);
+
+    // ITALIANO: La domanda arriva DOPO la scelta della lingua, mai insieme: due finestre
+    //           sovrapposte al primo avvio sono un muro. Se la lingua non e' ancora stata
+    //           scelta l'effetto non fa nulla e ripassa quando cambia showLangPicker.
+    // ENGLISH: The question comes AFTER the language choice, never alongside it: two stacked
+    //          dialogs on a first run are a wall. If the language has not been picked yet the
+    //          effect does nothing and runs again when showLangPicker changes.
+    useEffect(() => {
+        // ITALIANO: tutte le uscite restituiscono la stessa pulizia. Con uscite anticipate "nude"
+        //           il controllo dei tipi si lamenta che non tutti i rami restituiscono un valore.
+        // ENGLISH: every exit returns the same cleanup. With bare early returns the type check
+        //          complains that not all code paths return a value.
+        let vivo = true;
+        const pulisci = () => { vivo = false; };
+        if (!apiElectron || typeof apiElectron.checkForUpdate !== 'function') return pulisci;
+        if (showLangPicker) return pulisci;
+        if (updateCheckChoice === null) { setUpdateAskOpen(true); return pulisci; }
+        if (updateCheckChoice !== 'on') return pulisci;
+        (async () => {
+            try {
+                const esito = await apiElectron.checkForUpdate();
+                if (vivo && esito && esito.versione) setUpdateFound(esito);
+            } catch (_) { /* senza rete non si dice niente / stays quiet when offline */ }
+        })();
+        return pulisci;
+    }, [updateCheckChoice, showLangPicker]);
+
+    // ITALIANO: Registra la risposta. Un solo punto che scrive, cosi' lo stato in memoria e
+    //           quello su disco non possono divergere.
+    // ENGLISH: Records the answer. A single writing point, so the in-memory state and the
+    //          stored one cannot drift apart.
+    const rispondiAggiornamenti = useCallback((scelta: 'on' | 'off') => {
+        try { localStorage.setItem('updateCheck', scelta); } catch (_) { /* ignore */ }
+        setUpdateCheckChoice(scelta);
+        setUpdateAskOpen(false);
+    }, []);
     useEffect(() => {
         const initAudio = () => { soundManager.init(); document.removeEventListener('click', initAudio); };
         document.addEventListener('click', initAudio);
@@ -3031,6 +3094,29 @@ export default function App() {
             {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
+            <UpdateDialog
+                isOpen={updateAskOpen}
+                title={t.updateAskTitle}
+                message={t.updateAskMsg}
+                confirmLabel={t.updateAskYes}
+                cancelLabel={t.updateAskNo}
+                onConfirm={() => rispondiAggiornamenti('on')}
+                onCancel={() => rispondiAggiornamenti('off')}
+                isDarkMode={isDarkMode}
+            />
+            <UpdateDialog
+                isOpen={!!updateFound}
+                title={t.updateFoundTitle}
+                message={t.updateFoundMsg.replace('{current}', appVersion).replace('{latest}', updateFound ? updateFound.versione : '')}
+                confirmLabel={t.updateOpenPage}
+                cancelLabel={t.updateLater}
+                onConfirm={() => {
+                    if (updateFound && apiElectron && typeof apiElectron.openExternal === 'function') apiElectron.openExternal(updateFound.pagina);
+                    setUpdateFound(null);
+                }}
+                onCancel={() => setUpdateFound(null)}
+                isDarkMode={isDarkMode}
+            />
             <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
             {/* ITALIANO: area di RILASCIO che appare mentre si trascinano file sopra la finestra. */}
             {/* ENGLISH: DROP overlay shown while files are dragged over the window. */}
@@ -3356,6 +3442,15 @@ export default function App() {
                                             <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{soundEnabled ? <Volume2 size={16} className="text-indigo-500"/> : <VolumeX size={16} className={isDarkMode ? 'text-gray-400' : 'text-gray-400'}/>} {t.uiSounds}</div>
                                             <AppleToggle checked={soundEnabled} onChange={setSoundEnabled} colorClass="bg-indigo-500" />
                                         </div>
+                                        {apiElectron && typeof apiElectron.checkForUpdate === 'function' && (
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center justify-between">
+                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{t.updateCheckLabel}</div>
+                                                    <AppleToggle checked={updateCheckChoice === 'on'} onChange={(v: boolean) => rispondiAggiornamenti(v ? 'on' : 'off')} colorClass="bg-indigo-500" />
+                                                </div>
+                                                <p className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.updateCheckHint}</p>
+                                            </div>
+                                        )}
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
                                         <div className="flex items-center justify-between">
                                             <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{isDarkMode ? <Moon size={16} className="text-purple-400"/> : <Sun size={16} className="text-amber-500"/>} {t.theme}</div>

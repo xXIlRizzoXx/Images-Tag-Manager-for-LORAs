@@ -62,6 +62,14 @@
 ; ENGLISH: Etched signature at the bottom-left of every wizard page and of the
 ;          uninstaller. Overrides common.nsh:4 (included earlier - in NSIS the
 ;          last BrandingText wins). ASCII only: this file has no BOM.
+; ITALIANO: Stato della casella "installazione pulita". Le Var vanno dichiarate al livello
+;           principale, mai dentro una Function; questo file e' incluso al livello
+;           principale dello script generato, quindi qui va bene.
+; ENGLISH: State of the "clean install" checkbox. Var must be declared at top level, never
+;          inside a Function; this file is included at the generated script's top level.
+Var CleanInstall
+Var CleanInstallCheckbox
+
 !macro customHeader
   BrandingText "${PRODUCT_NAME} ${VERSION} - by xXIlRizzoXx"
 
@@ -96,6 +104,53 @@
     ; ENGLISH: Create the desktop shortcut only when the checkbox is ticked.
     ;          Literal name: it must match the one deleted by the uninstaller,
     ;          where the defines are not available.
+    ; ITALIANO: Pagina "installazione pulita". Compare SOLO se in %APPDATA% c'e' gia'
+    ;           qualcosa da cancellare: alla prima installazione la domanda non avrebbe senso.
+    ;           Abort dentro una funzione di CREAZIONE pagina vuol dire "salta questa pagina",
+    ;           non annulla l'installazione.
+    ;           La guardia !ifdef e' la stessa che usa electron-builder in uninstaller.nsh:242
+    ;           e non e' pignoleria: se APP_PACKAGE_NAME non fosse definito, il percorso
+    ;           diventerebbe "$APPDATA\" e la cancellazione porterebbe via TUTTA la Roaming.
+    ;           Salti relativi (+2, 0) invece di etichette: un'etichetta non usata sarebbe un
+    ;           avviso NSIS, e warningsAsErrors trasforma ogni avviso in un errore.
+    ;           nsDialogs e LogicLib arrivano da MUI2.nsh (installer.nsi:9), incluso prima di
+    ;           questa macro: non vanno re-inclusi.
+    ; ENGLISH: The "clean install" page. Shown ONLY when %APPDATA% already holds something to
+    ;          delete; on a first install the question would be meaningless. Abort inside a page
+    ;          CREATE function means "skip this page", it does not cancel the install.
+    ;          The !ifdef guard is the one electron-builder itself uses (uninstaller.nsh:242):
+    ;          without it an undefined APP_PACKAGE_NAME would make the path "$APPDATA\" and
+    ;          the deletion would take the whole Roaming folder with it. Relative jumps instead
+    ;          of labels: an unused label is an NSIS warning, and warningsAsErrors fails on it.
+    Function CleanInstallPageCreate
+      !ifndef APP_PACKAGE_NAME
+        Abort
+      !else
+        IfFileExists "$APPDATA\${APP_PACKAGE_NAME}\*.*" +2 0
+          Abort
+        !insertmacro MUI_HEADER_TEXT "$(CLEAN_INSTALL_TITLE)" "$(CLEAN_INSTALL_SUBTITLE)"
+        nsDialogs::Create 1018
+        Pop $0
+        ${If} $0 == error
+          Abort
+        ${EndIf}
+        ${NSD_CreateCheckbox} 0 0 100% 12u "$(CLEAN_INSTALL_CHECK)"
+        Pop $CleanInstallCheckbox
+        ${NSD_CreateLabel} 0 20u 100% 100u "$(CLEAN_INSTALL_DESC)"
+        Pop $0
+        nsDialogs::Show
+      !endif
+    FunctionEnd
+
+    ; ITALIANO: Lo stato si legge USCENDO dalla pagina: dopo nsDialogs::Show i controlli non
+    ;           esistono piu'. Se la pagina e' stata saltata, $CleanInstall resta vuoto e la
+    ;           cancellazione non parte.
+    ; ENGLISH: Read the state on the way OUT: after nsDialogs::Show the controls are gone. If
+    ;          the page was skipped, $CleanInstall stays empty and nothing is deleted.
+    Function CleanInstallPageLeave
+      ${NSD_GetState} $CleanInstallCheckbox $CleanInstall
+    FunctionEnd
+
     Function CreateDesktopShortcutNow
       CreateShortCut "$DESKTOP\Images Tag Manager for LORAs.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0
     FunctionEnd
@@ -162,7 +217,33 @@
     !insertmacro MUI_PAGE_FINISH
   !macroend
 
+  ; ITALIANO: electron-builder inserisce questa macro fra la pagina della cartella e
+  ;           MUI_PAGE_INSTFILES (assistedInstaller.nsh:42-44): e' il punto giusto per una
+  ;           domanda che riguarda l'installazione ma va fatta prima di toccare il disco.
+  ; ENGLISH: electron-builder inserts this macro between the directory page and
+  ;          MUI_PAGE_INSTFILES (assistedInstaller.nsh:42-44) - the right spot for a question
+  ;          about the install that has to be asked before anything is written.
+  !macro customPageAfterChangeDir
+    Page custom CleanInstallPageCreate CleanInstallPageLeave
+  !macroend
+
 !endif
+
+; ITALIANO: La cancellazione vera, solo se la casella era spuntata. Sta in customInstall, che
+;           gira dentro la sezione di installazione: i file nuovi sono gia' al loro posto e il
+;           programma e' gia' stato chiuso da CHECK_APP_RUNNING. Tocca SOLO la cartella dei
+;           dati dell'app: le foto e i .txt dell'utente stanno nelle sue cartelle, non qui.
+; ENGLISH: The deletion itself, only when the box was ticked. It sits in customInstall, which
+;          runs inside the install section: the new files are already in place and the app has
+;          already been closed by CHECK_APP_RUNNING. It touches ONLY the app's own data folder;
+;          the user's photos and .txt files live in their own folders, not here.
+!macro customInstall
+  !ifdef APP_PACKAGE_NAME
+    ${If} $CleanInstall == ${BST_CHECKED}
+      RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
+    ${EndIf}
+  !endif
+!macroend
 
 ; ITALIANO: Lingua PREDEFINITA del wizard = INGLESE, qualunque sia la lingua di
 ;           Windows. Senza questo, NSIS preseleziona la lingua di sistema (su un
