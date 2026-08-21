@@ -148,7 +148,8 @@ export const Toast = ({ message, type, onClose }: any) => {
  */
 export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm, onCancel }: any) => {
     const [conImmagini, setConImmagini] = React.useState(false);
-    React.useEffect(() => { if (isOpen) setConImmagini(false); }, [isOpen]);
+    const [rinomina, setRinomina] = React.useState(false);
+    React.useEffect(() => { if (isOpen) { setConImmagini(false); setRinomina(false); } }, [isOpen]);
     if (!isOpen || !riepilogo) return null;
 
     const voce = (attiva: boolean, icona: any, titolo: string, dati: any, onClick: () => void) => (
@@ -168,6 +169,18 @@ export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm
         </button>
     );
 
+    const sceltaNome = (attiva: boolean, testo: string, onClick: () => void) => (
+        <button
+            onClick={onClick}
+            className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-all flex items-center gap-2 ${attiva
+                ? 'border-indigo-500 ' + (isDarkMode ? 'bg-indigo-900/25 text-gray-100' : 'bg-indigo-50 text-gray-900')
+                : (isDarkMode ? 'border-gray-700 text-gray-400 hover:bg-gray-700/40' : 'border-gray-200 text-gray-600 hover:bg-gray-50')}`}
+        >
+            <span className={`w-3 h-3 rounded-full border-2 shrink-0 ${attiva ? 'border-indigo-500 bg-indigo-500' : (isDarkMode ? 'border-gray-600' : 'border-gray-300')}`} />
+            {testo}
+        </button>
+    );
+
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
@@ -181,12 +194,27 @@ export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm
                         {voce(conImmagini, <Images size={18} />, t.exportTagsAndImages, riepilogo.conImmagini, () => setConImmagini(true))}
                     </div>
                     {conImmagini && (
-                        <p className={`text-[11px] leading-snug mt-3 ${isDarkMode ? 'text-amber-300/80' : 'text-amber-700'}`}>{t.exportSizeWarn}</p>
+                        <>
+                            {/* ITALIANO: la scelta dei nomi compare SOLO con le foto dentro. Rinominare i
+                                soli .txt darebbe file che non corrispondono piu' a nessuna immagine sul
+                                disco: sarebbero inservibili, quindi la domanda li' non si fa nemmeno.
+                                ENGLISH: the naming choice appears ONLY when the photos are in. Renaming the
+                                .txt alone would produce files matching no image on disk -- useless, so the
+                                question is not even asked there. */}
+                            <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                                <p className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>{t.exportNamesTitle}</p>
+                                <div className="flex flex-col gap-2">
+                                    {sceltaNome(!rinomina, t.exportKeepNames, () => setRinomina(false))}
+                                    {sceltaNome(rinomina, t.exportRenameSeq, () => setRinomina(true))}
+                                </div>
+                            </div>
+                            <p className={`text-[11px] leading-snug mt-3 ${isDarkMode ? 'text-amber-300/80' : 'text-amber-700'}`}>{rinomina ? t.exportRenameHint : t.exportSizeWarn}</p>
+                        </>
                     )}
                 </div>
                 <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
                     <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{t.cancel}</button>
-                    <button onClick={() => onConfirm(conImmagini)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.exportStart}</button>
+                    <button onClick={() => onConfirm(conImmagini, conImmagini && rinomina)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.exportStart}</button>
                 </div>
             </div>
         </div>

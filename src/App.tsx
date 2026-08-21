@@ -2284,7 +2284,7 @@ export default function App() {
         return (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace('.', ',') + ' ' + unita[i];
     };
 
-    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean): Promise<boolean> => {
+    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean, rinomina: boolean): Promise<boolean> => {
         setIsSaving(true); setImportProgress(0);
         try {
             showNotification(t.zipProcessing, "info");
@@ -2301,7 +2301,26 @@ export default function App() {
             //          "10_face/img.txt") or, if needed, a numeric suffix; no .txt is lost, and I warn.
             const usedNames = new Set<string>();
             let collisionCount = 0;
+            // ITALIANO: rinominando, il nome e' il posto in fila: 0001, 0002... Le cifre sono
+            //           almeno quattro (e' la convenzione dei dataset LoRA) e diventano di piu'
+            //           solo se le foto sono piu' di 9999, cosi' i nomi restano in ordine anche
+            //           per chi li guarda in una cartella. Cosi' i nomi doppi non esistono proprio.
+            // ENGLISH: when renaming, the name is the position in line: 0001, 0002... At least
+            //          four digits (the LoRA dataset convention), more only past 9999 photos, so
+            //          the names still sort correctly in a folder listing. Duplicate names simply
+            //          cannot happen this way.
+            const cifre = Math.max(4, String(imagesToExport.length).length);
+            let progressivo = 0;
             imagesToExport.forEach((img) => {
+                if (rinomina) {
+                    progressivo++;
+                    const numero = String(progressivo).padStart(cifre, '0');
+                    const nf = String(img.file.name || '');
+                    const pt = nf.lastIndexOf('.');
+                    zip.file(numero + '.txt', getOrderedTagString(img.tags));
+                    zip.file(numero + (pt > 0 ? nf.slice(pt) : ''), img.file);
+                    return;
+                }
                 const baseName = buildTagFileName(img.file.name);
                 let name = baseName;
                 if (usedNames.has(name)) {
@@ -3197,10 +3216,10 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
                 onCancel={() => setExportChoice(null)}
-                onConfirm={(conImmagini: boolean) => {
+                onConfirm={(conImmagini: boolean, rinomina: boolean) => {
                     const scelta = exportChoice;
                     setExportChoice(null);
-                    if (scelta) exportAllAsZip(scelta.imgs, conImmagini);
+                    if (scelta) exportAllAsZip(scelta.imgs, conImmagini, rinomina);
                 }}
             />
             <UpdateDialog
