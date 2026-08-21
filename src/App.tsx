@@ -1278,18 +1278,38 @@ export default function App() {
         setRipristinoInCorso(true);
         try {
             const voci: any[] = ultimoSvuotamento.voci || [];
-            const percorsi: string[] = [];
-            voci.forEach((v: any) => {
-                if (v.imgPath) percorsi.push(v.imgPath);
-                if (v.txtPath) percorsi.push(v.txtPath);
-            });
-            const esito = await apiLocale.restoreTrashed(percorsi);
+            // ITALIANO: PRIMA le sole immagini, e i .txt solo dopo, solo per le foto tornate
+            //           davvero. Il .txt di una foto che NON puo' tornare non va rimesso: finirebbe
+            //           accanto all'immagine diversa che nel frattempo ha preso il suo nome, e le
+            //           attaccherebbe in silenzio i tag di un'altra foto. Per un dataset e' un
+            //           errore che poi non si scopre piu'. La coppia torna insieme o non torna.
+            // ENGLISH: images FIRST, and the .txt files only afterwards, only for the photos that
+            //          actually came back. The .txt of a photo that CANNOT return must not be put
+            //          back: it would land beside the different image that has taken its name in the
+            //          meantime and silently attach another photo's tags to it. For a dataset that is
+            //          a mistake nobody ever catches. The pair comes back together or not at all.
+            const esito = await apiLocale.restoreTrashed(voci.map((v: any) => v.imgPath).filter(Boolean));
             const perPercorso = new Map<string, string>();
             if (esito && Array.isArray(esito.results)) {
                 esito.results.forEach((r: any) => { if (r && r.percorso) perPercorso.set(r.percorso, String(r.esito || '')); });
             }
             const tornate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'ok');
+            const bloccate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'occupato');
             const rimaste = voci.filter((v: any) => perPercorso.get(v.imgPath) !== 'ok');
+
+            const testi = tornate.map((v: any) => v.txtPath).filter(Boolean);
+            if (testi.length > 0) {
+                const esitoTesti = await apiLocale.restoreTrashed(testi);
+                // ITALIANO: un .txt che non torna non e' una perdita: i tag sono gia' in memoria,
+                //           accanto alla foto, e "Salva modifiche" li riscrive. Si annota e basta.
+                // ENGLISH: a .txt that does not come back is not a loss: the tags are already in
+                //          memory beside the photo and "Save changes" rewrites them. Just log it.
+                if (esitoTesti && Array.isArray(esitoTesti.results)) {
+                    esitoTesti.results.forEach((r: any) => {
+                        if (r && r.esito !== 'ok') console.warn('[Cestino] Il file di testo non e\' tornato:', r.percorso, r.esito);
+                    });
+                }
+            }
 
             if (tornate.length > 0) {
                 // ITALIANO: tornano nel cestino dell'app, da dove "Ripristina" le riporta in galleria.
@@ -1302,9 +1322,27 @@ export default function App() {
             //          and disappears once there is nothing left to fish out.
             setUltimoSvuotamento(rimaste.length > 0 ? { voci: rimaste } : null);
 
-            if (tornate.length === 0) showNotification(t.undoEmptyNone, 'error');
-            else if (rimaste.length > 0) showNotification(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length)), 'info');
-            else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
+            // ITALIANO: IL MOTIVO CAMBIA IL MESSAGGIO. Dire "non trovate nel Cestino di Windows"
+            //           quando il file c'era eccome, e non e' stato rimesso apposta per non
+            //           sovrascrivere un omonimo, e' una bugia: manda a cercare nel posto sbagliato
+            //           e fa sembrare perso un file che invece e' li'. Il canale la distinzione ce
+            //           l'ha; buttarla via qui sarebbe stato lo stesso difetto che questa versione
+            //           e' andata a estirpare dappertutto.
+            // ENGLISH: THE REASON CHANGES THE MESSAGE. Saying "not found in the Windows Recycle Bin"
+            //          when the file was very much there, and was deliberately left alone so as not
+            //          to overwrite a namesake, is a lie: it sends the user looking in the wrong
+            //          place and makes a file that is safe look lost. The channel keeps the
+            //          distinction; throwing it away here would have been the very defect this
+            //          version went round the whole program to remove.
+            if (tornate.length === 0 && bloccate.length > 0) {
+                showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
+            } else if (tornate.length === 0) {
+                showNotification(t.undoEmptyNone, 'error');
+            } else if (bloccate.length > 0 && bloccate.length === rimaste.length) {
+                showNotification(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length)), 'info');
+            } else if (rimaste.length > 0) {
+                showNotification(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length)), 'info');
+            } else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
         } catch (err) {
             console.error('[Cestino] Annullamento dello svuotamento non riuscito:', err);
             showNotification(t.undoEmptyNone, 'error');
