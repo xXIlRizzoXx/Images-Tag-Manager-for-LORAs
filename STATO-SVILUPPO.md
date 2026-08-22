@@ -1,7 +1,35 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 21 agosto 2026
-**Versione attuale:** 1.2.0 — **pubblicata** su GitHub il 21 agosto 2026
+**Versione attuale:** 1.2.1 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 1.2.1 (traguardo 104): **il programma non è più legato a un modello AI preciso.** Prima
+dentro il codice c'era una sigla sola, `gemini-3.6-flash`: il giorno che Google la chiude, l'AI
+smette di funzionare per tutti e l'unico rimedio è andare a cambiarla a mano. Adesso **quali
+modelli esistano lo dice Google**: il programma chiede l'elenco (allo stesso indirizzo a cui già
+parlava, e la richiesta non consuma nulla) e sceglie da sé il più recente della linea gratuita.
+L'elenco scritto nel codice non è più una gabbia: è la riserva, quella che si usa finché non si
+è potuto chiedere l'elenco vero.
+Quattro trappole, tutte verificate con un elenco finto fatto come quello vero. La prima è la più
+insidiosa: **in ordine alfabetico "3.10" viene prima di "3.6"**, perché confronta l'1 con il 6.
+Ordinando i nomi come testo, il giorno che Google supera il .9 il programma tornerebbe indietro
+da solo, in silenzio. La versione va letta come numero. La seconda: **nell'elenco c'è di tutto**,
+anteprime, modelli sperimentali, per l'audio, per generare immagini, per gli embedding — alcuni
+non accettano nemmeno una foto, cioè proprio il mestiere che serve qui. La terza: **essere
+nell'elenco non vuol dire poterlo usare**, perché un modello può comparire e poi rispondere che
+serve la fatturazione; per questo, prima di adottarne uno, glielo si fa fare davvero — una
+chiamata con un'immagine di un pixel e lo stesso schema del tagging. Adottarlo sperando che
+funzioni sarebbe di nuovo dichiarare un successo senza averlo controllato. La quarta: **un
+limite di frequenza non dice niente sul modello**; se la prova torna "troppe richieste" il
+modello esiste eccome, e scartarlo farebbe scendere di versione il programma al primo momento
+di traffico.
+Il controllo parte una volta al giorno all'avvio, e subito quando il modello in uso risponde
+"non esisto" — così chi ci finisce sopra non resta con l'AI rotta senza capire perché. Parte
+**solo con l'AI accesa e la chiave presente**: chi non usa l'AI continua a non far partire
+nessun collegamento, e quella promessa resta vera alla lettera. E ogni cambio **viene detto**:
+un modello nuovo può taggare in modo diverso, e se si è a metà di un dataset è una cosa da
+sapere. Nelle Impostazioni si vede quando è stato fatto l'ultimo controllo, c'è un tasto per
+farlo subito, e scegliendo un modello a mano quello resta fermo.
+
 Novità 1.2.0 (traguardo 103): **la 1.2.0 è pubblicata.** Sulla pagina delle release ci sono i due
 file da scaricare, installer e portable, con la spiegazione di quale scegliere, la nota sull'avviso
 dell'antivirus e, in cima a tutto, l'avvertimento a chi ha la 1.1.0: quella versione poteva
