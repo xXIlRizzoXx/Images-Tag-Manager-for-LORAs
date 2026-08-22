@@ -149,20 +149,32 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
 //          needed here. Tier stays 'limited': the free tier has low rate limits and heavy
 //          use requires billing to be enabled.
 export type GeminiTier = 'free' | 'limited' | 'paid';
+// ITALIANO: Questo elenco NON e' piu' la gabbia del programma: e' la RISERVA, cio' che si usa
+//           quando non si e' ancora potuto chiedere l'elenco vero a Google (nessuna chiave,
+//           niente rete, primo avvio). Appena si puo', i modelli disponibili li dice Google.
+// ENGLISH: This list is NOT the program's cage any more: it is the FALLBACK, what gets used
+//          until the real list can be asked of Google (no key, no network, first run). As
+//          soon as possible, Google is the one that says which models exist.
 export const GEMINI_MODELS: ReadonlyArray<{ id: string; label: string; tier: GeminiTier; recommended: boolean }> = [
     { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', tier: 'limited', recommended: true },
 ];
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 
-// ITALIANO: Chi aveva gia' scelto un modello ora rimosso (es. gemini-2.5-flash salvato
-//           nelle impostazioni) verrebbe lasciato con un id inesistente, e ogni chiamata
-//           all'AI fallirebbe. Qui riportiamo sempre a un modello valido.
-// ENGLISH: Anyone who had picked a model we just removed (e.g. a saved gemini-2.5-flash)
-//          would be left with an id that no longer exists and every AI call would fail.
-//          This always brings them back to a valid model.
+// ITALIANO: Si controlla solo che il nome abbia la FORMA giusta, non che sia in un elenco
+//           deciso qui dentro: i modelli veri li scopre `aggiornaModelloAutomatico` da
+//           Google, e un elenco fisso li butterebbe via a ogni avvio riportando tutti
+//           indietro. Un id storto o vuoto torna comunque alla riserva. Chi usa un modello
+//           che nel frattempo Google ha chiuso non resta a piedi: al primo errore "non
+//           esisto" il programma cerca il sostituto e lo dice.
+// ENGLISH: We only check the SHAPE of the name, not membership of a list decided in here:
+//          the real models are discovered from Google by `aggiornaModelloAutomatico`, and a
+//          fixed list would throw them away on every launch, dragging everyone back. A
+//          malformed or empty id still falls back to the built-in one. Anyone on a model
+//          Google has since retired is not stranded: on the first "I do not exist" error the
+//          program looks for the replacement and says so.
 export const normalizeModelId = (modelId: string | null | undefined): string =>
-    GEMINI_MODELS.some(m => m.id === modelId) ? (modelId as string) : DEFAULT_GEMINI_MODEL;
+    (typeof modelId === 'string' && /^gemini-[a-z0-9.-]+$/i.test(modelId)) ? modelId : DEFAULT_GEMINI_MODEL;
 
 export const isFreeTierModel = (modelId: string): boolean => {
     const m = GEMINI_MODELS.find(x => x.id === modelId);
@@ -171,7 +183,14 @@ export const isFreeTierModel = (modelId: string): boolean => {
 
 export const getModelTier = (modelId: string): GeminiTier => {
     const m = GEMINI_MODELS.find(x => x.id === modelId);
-    return m ? m.tier : 'paid';
+    if (m) return m.tier;
+    // ITALIANO: un modello scoperto da Google e non presente nella riserva: se e' della linea
+    //           flash vale 'limited' come gli altri. Dargli 'paid' farebbe comparire l'avviso
+    //           "serve la fatturazione" a chi invece sta benissimo sul piano gratuito.
+    // ENGLISH: a model discovered from Google and absent from the fallback list: if it is on
+    //          the flash line it counts as 'limited' like the rest. Calling it 'paid' would
+    //          show a "billing required" notice to someone who is perfectly fine on the free plan.
+    return String(modelId || '').toLowerCase().includes('flash') ? 'limited' : 'paid';
 };
 
 // ITALIANO: Classifica un errore restituito da Gemini in modo leggibile per l'utente
@@ -217,4 +236,215 @@ export const verifyGeminiApiKey = async (apiKey: string, modelId: string = DEFAU
         const { kind, message } = classifyGeminiError(err);
         return { ok: false, error: message.slice(0, 200), errorKind: kind };
     }
+};
+
+/* ITALIANO: SCELTA AUTOMATICA DEL MODELLO
+   Il programma non e' legato a un modello preciso: l'elenco lo chiede a Google (ListModels,
+   stesso indirizzo gia' permesso dalla CSP, non consuma token) e sceglie da se' il piu'
+   recente della linea gratuita.
+
+   Quattro cose imparate scrivendola, e ognuna sarebbe stata un difetto silenzioso:
+   1. I NOMI NON SI ORDINANO DA SOLI. In ordine alfabetico "gemini-3.10-flash" viene PRIMA di
+      "gemini-3.6-flash", perche' '1' < '6'. La versione va confrontata come NUMERO, pezzo per
+      pezzo, altrimenti il giorno che Google supera il .9 il programma torna indietro da solo.
+   2. NELL'ELENCO C'E' DI TUTTO: anteprime, modelli sperimentali, per l'audio, per generare
+      immagini, per gli embedding. Alcuni non accettano nemmeno una foto in ingresso, cioe'
+      esattamente il mestiere che serve qui. Si tengono solo quelli stabili della linea flash.
+   3. ESSERE NELL'ELENCO NON VUOL DIRE POTERLO USARE: un modello puo' comparire e poi
+      rispondere "serve la fatturazione" sul tuo account. Per questo, prima di adottarne uno,
+      GLIELO SI FA FARE: una chiamata vera con un'immagine di un pixel e lo stesso schema JSON
+      del tagging. Adottarlo sperando che funzioni sarebbe di nuovo dichiarare un successo
+      senza averlo controllato.
+   4. UN LIMITE DI FREQUENZA NON DICE NIENTE SUL MODELLO. Se la prova torna "troppe richieste",
+      il modello esiste eccome: siamo solo di corsa. Trattarlo come uno scarto farebbe scendere
+      il programma di versione al primo momento di traffico.
+
+   Se qualunque cosa non torna - rete assente, risposta di forma inattesa, nessun candidato che
+   passi la prova - NON si cambia niente e resta il modello di adesso. Meglio fermi che spostati
+   su qualcosa che non sappiamo se funziona.
+
+   ENGLISH: AUTOMATIC MODEL SELECTION
+   The program is not tied to one specific model: the list comes from Google (ListModels, the
+   same host the CSP already allows, and it costs no tokens) and it picks the newest of the
+   free line by itself.
+
+   Four things learned writing it, each of which would have been a silent defect:
+   1. NAMES DO NOT SORT THEMSELVES. Alphabetically "gemini-3.10-flash" comes BEFORE
+      "gemini-3.6-flash", because '1' < '6'. Versions must be compared as NUMBERS, part by
+      part, or the day Google passes .9 the program quietly downgrades itself.
+   2. THE LIST CONTAINS EVERYTHING: previews, experiments, audio models, image generators,
+      embedding models. Some do not even accept an image as input - which is precisely the job
+      needed here. Only stable models of the flash line are kept.
+   3. BEING IN THE LIST DOES NOT MEAN YOU CAN USE IT: a model can appear and then answer
+      "billing required" on your account. So before adopting one, WE MAKE IT DO THE JOB: a real
+      call with a one-pixel image and the same JSON schema the tagging uses. Adopting it and
+      hoping would be declaring success without checking, all over again.
+   4. A RATE LIMIT SAYS NOTHING ABOUT THE MODEL. If the probe comes back "too many requests",
+      the model exists just fine - we are simply going too fast. Treating that as a rejection
+      would downgrade the program at the first busy moment.
+
+   If anything does not add up - no network, an unexpected response shape, no candidate passing
+   the probe - NOTHING changes and the current model stays. Better still than moved onto
+   something we do not know works. */
+
+export type ModelloTrovato = { id: string; label: string; versione: number[]; lite: boolean };
+
+// ITALIANO: pezzi di nome che escludono un modello: anteprime, sperimentali, e tutto cio' che
+//           fa un altro mestiere (audio, immagini, embedding, video...).
+// ENGLISH: name fragments that rule a model out: previews, experiments, and anything doing a
+//          different job (audio, images, embeddings, video...).
+const MODELLI_ESCLUSI = [
+    'preview', 'exp', 'thinking', 'tts', 'audio', 'image', 'imagen', 'embedding', 'embed',
+    'live', 'aqa', 'learnlm', 'veo', 'robotics', 'computer-use', 'dialog', 'native',
+];
+
+const PROVA_TIMEOUT_MS = 25_000;
+const MODELLI_MAX = 400;
+const PROVE_MAX = 3;
+
+// ITALIANO: un PNG di un pixel trasparente: basta a dimostrare che il modello accetta immagini.
+// ENGLISH: a one-pixel transparent PNG: enough to prove the model takes images at all.
+const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+// ITALIANO: "gemini-3.6-flash" -> [3, 6]. Senza nome di versione torna [] e finisce in fondo.
+// ENGLISH: "gemini-3.6-flash" -> [3, 6]. With no version in the name it returns [] and ranks last.
+export const versioneDi = (id: string): number[] =>
+    (String(id).match(/\d+(?:\.\d+)*/g) || []).flatMap(n => n.split('.').map(p => parseInt(p, 10)))
+        .filter(n => Number.isFinite(n));
+
+export const confrontaVersioni = (a: number[], b: number[]): number => {
+    const quanti = Math.max(a.length, b.length);
+    for (let i = 0; i < quanti; i++) {
+        const x = i < a.length ? a[i] : -1;
+        const y = i < b.length ? b[i] : -1;
+        if (x !== y) return x - y;
+    }
+    return 0;
+};
+
+// ITALIANO: dall'elenco grezzo di Google ai soli candidati sensati, gia' in ordine: prima la
+//           versione piu' alta, e a parita' di versione il flash pieno prima del flash-lite.
+// ENGLISH: from Google's raw list to the sensible candidates only, already ordered: highest
+//          version first, and at equal version the full flash before flash-lite.
+export const scegliCandidati = (grezzi: any[]): ModelloTrovato[] => {
+    const buoni: ModelloTrovato[] = [];
+    const visti = new Set<string>();
+    for (const m of Array.isArray(grezzi) ? grezzi : []) {
+        const pieno = String((m && m.name) || '');
+        const id = pieno.startsWith('models/') ? pieno.slice(7) : pieno;
+        if (!id.startsWith('gemini-')) continue;
+        if (visti.has(id)) continue;
+        // ITALIANO: se Google dichiara le azioni, deve saper generare contenuti. Se non le
+        //           dichiara non si scarta a priori: ci pensa la prova sul campo.
+        // ENGLISH: if Google states the actions, it must be able to generate content. If it
+        //          states none we do not rule it out here: the real probe will decide.
+        const azioni = (m && Array.isArray(m.supportedActions)) ? m.supportedActions : [];
+        if (azioni.length > 0 && !azioni.includes('generateContent')) continue;
+        const minuscolo = id.toLowerCase();
+        if (!minuscolo.includes('flash')) continue;
+        if (MODELLI_ESCLUSI.some(p => minuscolo.includes(p))) continue;
+        visti.add(id);
+        buoni.push({
+            id,
+            label: String((m && m.displayName) || id),
+            versione: versioneDi(id),
+            lite: minuscolo.includes('lite'),
+        });
+    }
+    buoni.sort((a, b) => {
+        const v = confrontaVersioni(b.versione, a.versione);
+        if (v !== 0) return v;
+        if (a.lite !== b.lite) return a.lite ? 1 : -1;
+        return a.id.localeCompare(b.id);
+    });
+    return buoni;
+};
+
+export const elencaModelliRemoti = async (apiKey: string): Promise<ModelloTrovato[]> => {
+    const ai = new GoogleGenAI({ apiKey });
+    const pagine = await ai.models.list({ config: { queryBase: true, pageSize: 200 } });
+    const grezzi: any[] = [];
+    for await (const m of pagine) {
+        grezzi.push(m);
+        if (grezzi.length >= MODELLI_MAX) break;
+    }
+    return scegliCandidati(grezzi);
+};
+
+// ITALIANO: la prova sul campo. 'incerto' quando l'esito non dice niente sul modello.
+// ENGLISH: the real probe. 'incerto' when the outcome says nothing about the model itself.
+export const provaModello = async (apiKey: string, id: string): Promise<'ok' | 'no' | 'incerto'> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const risposta = await ai.models.generateContent({
+            model: id,
+            contents: {
+                parts: [
+                    { inlineData: { data: PIXEL_PNG, mimeType: 'image/png' } },
+                    { text: 'Reply with the JSON array ["ok"] and nothing else.' },
+                ],
+            },
+            config: {
+                abortSignal: buildAbortSignal(undefined, PROVA_TIMEOUT_MS),
+                responseMimeType: 'application/json',
+                responseSchema: { type: Type.ARRAY, items: { type: Type.STRING } },
+            },
+        });
+        return risposta.text ? 'ok' : 'no';
+    } catch (err: any) {
+        const { kind } = classifyGeminiError(err);
+        if (kind === 'rate_limit' || kind === 'unknown') return 'incerto';
+        return 'no';
+    }
+};
+
+export type EsitoModello = {
+    modello: string;
+    precedente: string;
+    cambiato: boolean;
+    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRiuscito';
+    disponibili: ModelloTrovato[];
+};
+
+// ITALIANO: il giro completo. `rotto` = il modello di adesso ha appena risposto "non esisto":
+//           in quel caso si cerca comunque, anche se e' gia' in cima all'elenco.
+// ENGLISH: the whole round. `rotto` = the current model has just answered "I do not exist":
+//          in that case we look anyway, even if it is already at the top of the list.
+export const aggiornaModelloAutomatico = async (
+    apiKey: string,
+    attuale: string,
+    rotto: boolean = false,
+): Promise<EsitoModello> => {
+    const fermo = (esito: EsitoModello['esito'], disponibili: ModelloTrovato[] = []): EsitoModello =>
+        ({ modello: attuale, precedente: attuale, cambiato: false, esito, disponibili });
+
+    if (!apiKey || typeof apiKey !== 'string') return fermo('nonRiuscito');
+
+    let candidati: ModelloTrovato[];
+    try {
+        candidati = await elencaModelliRemoti(apiKey);
+    } catch (err) {
+        console.warn('[AI] Elenco dei modelli non ottenuto:', err);
+        return fermo('nonRiuscito');
+    }
+    if (candidati.length === 0) return fermo('nonRiuscito');
+
+    // ITALIANO: gia' sul piu' recente e funzionante: non si spende nemmeno una chiamata.
+    // ENGLISH: already on the newest one and working: not a single call is spent.
+    if (!rotto && candidati[0].id === attuale) return { ...fermo('invariato', candidati), disponibili: candidati };
+
+    for (const c of candidati.slice(0, PROVE_MAX)) {
+        const esito = await provaModello(apiKey, c.id);
+        if (esito === 'incerto') break;   // non si sa: si resta dove si e'
+        if (esito !== 'ok') continue;
+        if (c.id === attuale) return { modello: attuale, precedente: attuale, cambiato: false, esito: 'invariato', disponibili: candidati };
+        return {
+            modello: c.id,
+            precedente: attuale,
+            cambiato: true,
+            esito: rotto ? 'riparato' : 'aggiornato',
+            disponibili: candidati,
+        };
+    }
+    return { ...fermo('nonRiuscito', candidati), disponibili: candidati };
 };

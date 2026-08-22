@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredVa
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -481,7 +481,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.2.0');
+    const [appVersion, setAppVersion] = useState<string>('1.2.1');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -871,6 +871,113 @@ export default function App() {
     }, [trashedImages, trashSortOrder]);
 
     const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
+
+    // ITALIANO: SCELTA AUTOMATICA DEL MODELLO AI
+    //   Quali modelli esistano lo dice Google, non questo file: cosi' il programma non resta
+    //   legato a una sigla che un giorno Google chiude, e chi la usava non si ritrova l'AI
+    //   rotta senza capire perche'. La regola di scelta, e il motivo per cui ogni candidato
+    //   viene PROVATO prima di essere adottato, stanno in geminiService. Qui c'e' solo il
+    //   QUANDO: una volta al giorno all'avvio, e subito quando il modello di adesso risponde
+    //   "non esisto".
+    //   Nota sulla privacy: si parte solo con l'AI accesa E la chiave presente. Chi non usa
+    //   l'AI non fa partire nessun collegamento, e quella promessa resta vera alla lettera.
+    // ENGLISH: AUTOMATIC AI MODEL SELECTION
+    //   Which models exist is Google's word, not this file's: that way the program is not tied
+    //   to an id Google may retire one day, leaving whoever used it with a broken AI and no
+    //   explanation. The selection rule, and why every candidate is PROBED before being
+    //   adopted, live in geminiService. Here there is only the WHEN: once a day at startup,
+    //   and immediately when the current model answers "I do not exist".
+    //   Privacy note: this runs only with AI enabled AND a key present. Whoever does not use
+    //   the AI starts no connection at all, and that promise stays true to the letter.
+    const [modelliDisponibili, setModelliDisponibili] = useState<any[]>(() => {
+        try {
+            const grezzo = JSON.parse(localStorage.getItem('aiModelliTrovati') || '[]');
+            return Array.isArray(grezzo) ? grezzo : [];
+        } catch (_) { return []; }
+    });
+    const [controlloModelloInCorso, setControlloModelloInCorso] = useState(false);
+    const [modelloControllatoIl, setModelloControllatoIl] = useState<number>(() => {
+        const n = parseInt(localStorage.getItem('aiModelloControllatoIl') || '0', 10);
+        return Number.isFinite(n) ? n : 0;
+    });
+    const controlloModelloRef = useRef(false);
+    const [riparaModello, setRiparaModello] = useState(0);
+
+    const controllaModello = async (rotto: boolean, dilloComunque: boolean) => {
+        // ITALIANO: il ref, non lo stato: due controlli in parallelo sprecherebbero chiamate e
+        //           potrebbero scriversi addosso il modello scelto.
+        // ENGLISH: the ref, not the state: two checks in parallel would waste calls and could
+        //          overwrite each other's chosen model.
+        if (controlloModelloRef.current) return;
+        if (!geminiApiKey) { if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error'); return; }
+        controlloModelloRef.current = true;
+        setControlloModelloInCorso(true);
+        try {
+            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
+            if (esito.disponibili.length > 0) {
+                setModelliDisponibili(esito.disponibili);
+                try { localStorage.setItem('aiModelliTrovati', JSON.stringify(esito.disponibili)); } catch (_) { }
+            }
+            const adesso = Date.now();
+            setModelloControllatoIl(adesso);
+            try { localStorage.setItem('aiModelloControllatoIl', String(adesso)); } catch (_) { }
+
+            if (esito.cambiato) {
+                // ITALIANO: il cambio si annuncia SEMPRE. Un modello nuovo puo' taggare in modo
+                //           diverso, e se sei a meta' di un dataset e' una cosa che devi sapere:
+                //           cambiare di nascosto sarebbe comodo da programmare e sleale da usare.
+                // ENGLISH: the switch is ALWAYS announced. A new model can tag differently, and
+                //          if you are halfway through a dataset that is something you need to
+                //          know: switching quietly would be easy to code and unfair to use.
+                setAiModel(esito.modello);
+                const testo = esito.esito === 'riparato' ? t.aiModelRepaired : t.aiModelSwitched;
+                showNotification(testo.replace('{da}', esito.precedente).replace('{a}', esito.modello), 'info');
+            } else if (dilloComunque) {
+                if (esito.esito === 'nonRiuscito') showNotification(t.aiModelCheckFailed, 'error');
+                else showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
+            }
+        } catch (err) {
+            console.warn('[AI] Controllo del modello non riuscito:', err);
+            if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error');
+        } finally {
+            controlloModelloRef.current = false;
+            setControlloModelloInCorso(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!aiEnabled || !geminiApiKey) return;
+        if (Date.now() - modelloControllatoIl < 24 * 60 * 60 * 1000) return;
+        controllaModello(false, false);
+    }, [aiEnabled, geminiApiKey]);
+
+    // ITALIANO: il modello di adesso ha appena risposto "non esisto": si cerca subito il
+    //           sostituto, senza aspettare il controllo del giorno dopo. Passa da un contatore
+    //           invece che da una chiamata diretta, cosi' la funzione che tagga non si rifa'
+    //           a ogni battito di questo controllo.
+    // ENGLISH: the current model has just answered "I do not exist": look for the replacement
+    //          right away instead of waiting for tomorrow's check. It goes through a counter
+    //          rather than a direct call, so the tagging function is not rebuilt on every beat
+    //          of this check.
+    useEffect(() => {
+        if (riparaModello > 0) controllaModello(true, false);
+    }, [riparaModello]);
+
+    // ITALIANO: quello che si vede nella tendina. Se Google ha gia' risposto una volta, sono i
+    //           suoi modelli; altrimenti la riserva incorporata. Il modello IN USO ci dev'essere
+    //           sempre, altrimenti la tendina resterebbe vuota proprio mentre lo si sta usando.
+    // ENGLISH: what the dropdown shows. If Google has answered at least once, those are its
+    //          models; otherwise the built-in fallback. The model IN USE must always be there,
+    //          or the dropdown would sit blank precisely while it is being used.
+    const elencoModelli = useMemo(() => {
+        const base = modelliDisponibili.length > 0
+            ? modelliDisponibili.map((m: any) => ({ id: String(m.id), label: String(m.label || m.id), tier: getModelTier(String(m.id)), recommended: false }))
+            : GEMINI_MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier as string, recommended: m.recommended }));
+        if (!base.some(m => m.id === aiModel)) {
+            base.unshift({ id: aiModel, label: aiModel, tier: getModelTier(aiModel), recommended: false });
+        }
+        return base;
+    }, [modelliDisponibili, aiModel]);
 
     // ITALIANO: "Impronta" di una cartella: nome + quante immagini + la prima e l'ultima in ordine
     //           alfabetico. Serve a riconoscere che il backup anti-crash appartiene DAVVERO alla
@@ -2849,6 +2956,11 @@ export default function App() {
                 ? (t.aiModelUnavailable || 'Model unavailable for your account.')
                 : String(e?.message || e || '').slice(0, 200);
             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+            // ITALIANO: il modello non esiste piu': invece di lasciare l'AI rotta finche'
+            //           qualcuno non va a cambiarla a mano, si cerca subito il sostituto.
+            // ENGLISH: the model is gone: rather than leaving the AI broken until someone goes
+            //          and changes it by hand, look for the replacement right away.
+            if (kind === 'model_unavailable') setRiparaModello(n => n + 1);
             return 0;
         } finally {
             setIsAIBusy(false);
@@ -3859,7 +3971,7 @@ export default function App() {
                                                             onChange={(e) => setAiModel(e.target.value)}
                                                             className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
                                                         >
-                                                            {GEMINI_MODELS.map(m => {
+                                                            {elencoModelli.map(m => {
                                                                 const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : ' $';
                                                                 return (
                                                                     <option key={m.id} value={m.id}>
@@ -3880,6 +3992,21 @@ export default function App() {
                                                                 <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
                                                             </div>
                                                         )}
+                                                        <p className={`text-[10px] leading-snug mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>{t.aiModelAutoHint}</p>
+                                                        <div className="flex items-center justify-between gap-2 mt-1">
+                                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                                {modelloControllatoIl > 0
+                                                                    ? t.aiModelCheckedOn.replace('{quando}', new Date(modelloControllatoIl).toLocaleDateString(lang))
+                                                                    : t.aiModelCheckedNever}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => controllaModello(false, true)}
+                                                                disabled={controlloModelloInCorso || !geminiApiKey}
+                                                                className={`text-[10px] px-2 py-1 rounded-md border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                                                            >
+                                                                {controlloModelloInCorso ? '…' : t.aiModelCheckNow}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">
