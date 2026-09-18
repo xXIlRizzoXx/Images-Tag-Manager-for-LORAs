@@ -216,20 +216,27 @@ export const classifyGeminiError = (err: any): { kind: GeminiErrorKind; message:
     return { kind: 'unknown', message: msg };
 };
 
-// ITALIANO: Test rapido della API key per verifica (call leggera)
-// ENGLISH: Quick API key validation call
-export const verifyGeminiApiKey = async (apiKey: string, modelId: string = DEFAULT_GEMINI_MODEL): Promise<{ ok: boolean; error?: string; errorKind?: GeminiErrorKind }> => {
+// ITALIANO: VERIFICA DELLA CHIAVE, SENZA LEGARSI A NESSUN MODELLO.
+//   Prima la chiave si provava chiedendo una risposta a un modello preciso. Il giorno che
+//   Google lo chiude, la prova torna "modello non trovato" e una chiave BUONA viene
+//   rifiutata: non si riesce nemmeno a salvarla. Cioe' proprio il vincolo che la scelta
+//   automatica del modello esiste per togliere, rimasto vivo nel punto d'ingresso.
+//   Adesso si chiede la prima pagina dell'elenco dei modelli: dimostra che la chiave e'
+//   valida, non consuma token e non dipende da quali modelli esistano oggi.
+// ENGLISH: KEY VERIFICATION, WITHOUT BINDING TO ANY MODEL.
+//   The key used to be tested by asking one specific model for an answer. The day Google
+//   retires it, the test returns "model not found" and a GOOD key is rejected: it cannot
+//   even be saved. That is exactly the tie the automatic model selection exists to remove,
+//   still alive at the front door. Now we ask for the first page of the model list: it
+//   proves the key is valid, costs no tokens, and does not depend on which models exist.
+export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean; error?: string; errorKind?: GeminiErrorKind }> => {
     if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 20) {
         return { ok: false, error: 'API key looks invalid (too short)', errorKind: 'invalid_key' };
     }
     try {
         const ai = new GoogleGenAI({ apiKey });
-        await ai.models.generateContent({
-            model: modelId,
-            contents: { parts: [{ text: 'ping' }] },
-            config: {
-                abortSignal: buildAbortSignal(undefined, VERIFY_TIMEOUT_MS),
-            },
+        await ai.models.list({
+            config: { queryBase: true, pageSize: 1, abortSignal: buildAbortSignal(undefined, VERIFY_TIMEOUT_MS) },
         });
         return { ok: true };
     } catch (err: any) {
@@ -306,11 +313,20 @@ const PROVE_MAX = 3;
 // ENGLISH: a one-pixel transparent PNG: enough to prove the model takes images at all.
 const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
-// ITALIANO: "gemini-3.6-flash" -> [3, 6]. Senza nome di versione torna [] e finisce in fondo.
-// ENGLISH: "gemini-3.6-flash" -> [3, 6]. With no version in the name it returns [] and ranks last.
-export const versioneDi = (id: string): number[] =>
-    (String(id).match(/\d+(?:\.\d+)*/g) || []).flatMap(n => n.split('.').map(p => parseInt(p, 10)))
-        .filter(n => Number.isFinite(n));
+// ITALIANO: la versione e' SOLO il numero subito dopo "gemini-": "gemini-3.6-flash" -> [3, 6].
+//           Gli altri numeri del nome NON sono versioni: "-8b" e' la taglia (un modello
+//           piu' piccolo) e "-001" e' un'istantanea. Leggerli tutti metteva
+//           "gemini-3.6-flash-8b" [3,6,8] DAVANTI a "gemini-3.6-flash" [3,6], cioe' faceva
+//           scegliere il modello piu' debole. Senza numero dopo "gemini-" torna [] e va in fondo.
+// ENGLISH: the version is ONLY the number right after "gemini-": "gemini-3.6-flash" -> [3, 6].
+//          The other numbers in the name are NOT versions: "-8b" is the size (a smaller model)
+//          and "-001" is a snapshot. Reading them all put "gemini-3.6-flash-8b" [3,6,8] AHEAD of
+//          "gemini-3.6-flash" [3,6], i.e. it picked the weaker model. With no number after
+//          "gemini-" it returns [] and ranks last.
+export const versioneDi = (id: string): number[] => {
+    const m = /^gemini-(\d+(?:\.\d+)*)/i.exec(String(id || ''));
+    return m ? m[1].split('.').map(p => parseInt(p, 10)).filter(n => Number.isFinite(n)) : [];
+};
 
 export const confrontaVersioni = (a: number[], b: number[]): number => {
     const quanti = Math.max(a.length, b.length);
@@ -348,7 +364,11 @@ export const scegliCandidati = (grezzi: any[]): ModelloTrovato[] => {
             id,
             label: String((m && m.displayName) || id),
             versione: versioneDi(id),
-            lite: minuscolo.includes('lite'),
+            // ITALIANO: "lite" e le taglie ridotte ("-8b") sono varianti piu' piccole: a
+            //           parita' di versione vengono DOPO il flash pieno.
+            // ENGLISH: "lite" and reduced sizes ("-8b") are smaller variants: at equal version
+            //          they come AFTER the full flash.
+            lite: minuscolo.includes('lite') || /-\d+b(?=-|$)/.test(minuscolo),
         });
     }
     buoni.sort((a, b) => {
@@ -373,7 +393,7 @@ export const elencaModelliRemoti = async (apiKey: string): Promise<ModelloTrovat
 
 // ITALIANO: la prova sul campo. 'incerto' quando l'esito non dice niente sul modello.
 // ENGLISH: the real probe. 'incerto' when the outcome says nothing about the model itself.
-export const provaModello = async (apiKey: string, id: string): Promise<'ok' | 'no' | 'incerto'> => {
+export const provaModello = async (apiKey: string, id: string): Promise<'ok' | 'no' | 'occupato' | 'incerto'> => {
     try {
         const ai = new GoogleGenAI({ apiKey });
         const risposta = await ai.models.generateContent({
@@ -393,7 +413,8 @@ export const provaModello = async (apiKey: string, id: string): Promise<'ok' | '
         return risposta.text ? 'ok' : 'no';
     } catch (err: any) {
         const { kind } = classifyGeminiError(err);
-        if (kind === 'rate_limit' || kind === 'unknown') return 'incerto';
+        if (kind === 'rate_limit') return 'occupato';
+        if (kind === 'unknown') return 'incerto';
         return 'no';
     }
 };
@@ -402,7 +423,13 @@ export type EsitoModello = {
     modello: string;
     precedente: string;
     cambiato: boolean;
-    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRiuscito';
+    // ITALIANO: quando non si cambia per un problema, il PERCHE' decide il messaggio. Un'unica
+    //           voce "non riuscito" costringeva l'interfaccia a dire la stessa frase per tre
+    //           cose diverse - e per due su tre era sbagliata.
+    // ENGLISH: when nothing changes because of a problem, the WHY decides the message. A single
+    //          "failed" value forced the interface to say one sentence for three different
+    //          things - wrong for two of them.
+    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRaggiungibile' | 'occupato' | 'nessunoValido';
     disponibili: ModelloTrovato[];
 };
 
@@ -418,16 +445,16 @@ export const aggiornaModelloAutomatico = async (
     const fermo = (esito: EsitoModello['esito'], disponibili: ModelloTrovato[] = []): EsitoModello =>
         ({ modello: attuale, precedente: attuale, cambiato: false, esito, disponibili });
 
-    if (!apiKey || typeof apiKey !== 'string') return fermo('nonRiuscito');
+    if (!apiKey || typeof apiKey !== 'string') return fermo('nonRaggiungibile');
 
     let candidati: ModelloTrovato[];
     try {
         candidati = await elencaModelliRemoti(apiKey);
     } catch (err) {
         console.warn('[AI] Elenco dei modelli non ottenuto:', err);
-        return fermo('nonRiuscito');
+        return fermo('nonRaggiungibile');
     }
-    if (candidati.length === 0) return fermo('nonRiuscito');
+    if (candidati.length === 0) return fermo('nonRaggiungibile');
 
     // ITALIANO: gia' sul piu' recente e funzionante: non si spende nemmeno una chiamata.
     // ENGLISH: already on the newest one and working: not a single call is spent.
@@ -435,7 +462,10 @@ export const aggiornaModelloAutomatico = async (
 
     for (const c of candidati.slice(0, PROVE_MAX)) {
         const esito = await provaModello(apiKey, c.id);
-        if (esito === 'incerto') break;   // non si sa: si resta dove si e'
+        // ITALIANO: non si sa niente del modello: ci si ferma dove si e', dicendo il perche'.
+        // ENGLISH: nothing is known about the model: stay put, and say why.
+        if (esito === 'occupato') return { ...fermo('occupato', candidati), disponibili: candidati };
+        if (esito === 'incerto') return { ...fermo('nonRaggiungibile', candidati), disponibili: candidati };
         if (esito !== 'ok') continue;
         if (c.id === attuale) return { modello: attuale, precedente: attuale, cambiato: false, esito: 'invariato', disponibili: candidati };
         return {
@@ -446,5 +476,5 @@ export const aggiornaModelloAutomatico = async (
             disponibili: candidati,
         };
     }
-    return { ...fermo('nonRiuscito', candidati), disponibili: candidati };
+    return { ...fermo('nessunoValido', candidati), disponibili: candidati };
 };

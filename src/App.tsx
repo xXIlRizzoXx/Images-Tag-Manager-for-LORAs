@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredVa
 import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -903,7 +903,28 @@ export default function App() {
     const controlloModelloRef = useRef(false);
     const [riparaModello, setRiparaModello] = useState(0);
 
-    const controllaModello = async (rotto: boolean, dilloComunque: boolean) => {
+    // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
+    //           ("scegliendo un modello preciso, resta fisso quello") e prima non era vero: nel
+    //           codice non c'era nessun blocco, e il controllo del giorno dopo scavalcava la
+    //           scelta senza chiedere. Scegliendo "Automatico" il blocco si toglie.
+    //           Chi arriva dalla 1.2.0 parte da Automatico: e' la scelta che si voleva di serie.
+    // ENGLISH: A MODEL PICKED BY HAND STAYS FIXED. That is what the hint promises ("pick a
+    //          specific model and that one stays fixed") and it used to be false: there was no
+    //          lock in the code, and the next day's check overrode the choice without asking.
+    //          Picking "Automatic" removes the lock. Anyone coming from 1.2.0 starts on
+    //          Automatic: that is the intended default.
+    const [aiModelloFissato, setAiModelloFissato] = useState<boolean>(() => localStorage.getItem('aiModelloFissato') === 'true');
+    useEffect(() => {
+        try { localStorage.setItem('aiModelloFissato', aiModelloFissato ? 'true' : 'false'); } catch (_) { }
+    }, [aiModelloFissato]);
+
+    // ITALIANO: `fissato` si passa esplicitamente quando lo stato sta per cambiare nello stesso
+    //           clic (passaggio ad Automatico): React non l'avrebbe ancora aggiornato, e il
+    //           controllo partirebbe credendo il modello ancora bloccato.
+    // ENGLISH: `fissato` is passed explicitly when the state is about to change in the same
+    //          click (switching to Automatic): React would not have updated it yet, and the
+    //          check would run believing the model still locked.
+    const controllaModello = async (rotto: boolean, dilloComunque: boolean, fissato: boolean = aiModelloFissato) => {
         // ITALIANO: il ref, non lo stato: due controlli in parallelo sprecherebbero chiamate e
         //           potrebbero scriversi addosso il modello scelto.
         // ENGLISH: the ref, not the state: two checks in parallel would waste calls and could
@@ -912,28 +933,76 @@ export default function App() {
         if (!geminiApiKey) { if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error'); return; }
         controlloModelloRef.current = true;
         setControlloModelloInCorso(true);
-        try {
-            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
-            if (esito.disponibili.length > 0) {
-                setModelliDisponibili(esito.disponibili);
-                try { localStorage.setItem('aiModelliTrovati', JSON.stringify(esito.disponibili)); } catch (_) { }
-            }
+
+        // ITALIANO: "ultimo controllo" si scrive SOLO quando Google ha dato una risposta vera.
+        //           Prima si scriveva sempre, anche dopo un fallimento: le Impostazioni dicevano
+        //           "controllato oggi" su un controllo mai riuscito, e il tentativo successivo
+        //           aspettava 24 ore.
+        // ENGLISH: "last check" is written ONLY when Google gave a real answer. It used to be
+        //          written every time, even after a failure: Settings said "checked today" for a
+        //          check that never succeeded, and the next attempt waited 24 hours.
+        const segnaControllo = () => {
             const adesso = Date.now();
             setModelloControllatoIl(adesso);
             try { localStorage.setItem('aiModelloControllatoIl', String(adesso)); } catch (_) { }
+        };
+        const tieniElenco = (elenco: any[]) => {
+            if (!elenco || elenco.length === 0) return;
+            setModelliDisponibili(elenco);
+            try { localStorage.setItem('aiModelliTrovati', JSON.stringify(elenco)); } catch (_) { }
+        };
+
+        try {
+            // ITALIANO: modello bloccato e ancora vivo: niente cambi da soli. Si aggiorna solo
+            //           l'elenco nella tendina e, se lo si e' chiesto, si dice se ce n'e' uno piu'
+            //           nuovo. Se invece il modello bloccato non esiste piu' (rotto), si ripara
+            //           comunque: tenere un modello morto non e' rispettare una scelta.
+            // ENGLISH: model locked and still alive: no changes on our own. Only the dropdown
+            //          list is refreshed and, if asked, we say whether a newer one exists. If the
+            //          locked model no longer exists (rotto), it is repaired anyway: keeping a
+            //          dead model is not respecting a choice.
+            if (fissato && !rotto) {
+                const elenco = await elencaModelliRemoti(geminiApiKey);
+                if (elenco.length === 0) {
+                    if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error');
+                    return;
+                }
+                tieniElenco(elenco);
+                segnaControllo();
+                if (dilloComunque) {
+                    if (elenco[0].id !== aiModel) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
+                    else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
+                }
+                return;
+            }
+
+            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
+            tieniElenco(esito.disponibili);
+            if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'occupato') segnaControllo();
 
             if (esito.cambiato) {
                 // ITALIANO: il cambio si annuncia SEMPRE. Un modello nuovo puo' taggare in modo
                 //           diverso, e se sei a meta' di un dataset e' una cosa che devi sapere:
                 //           cambiare di nascosto sarebbe comodo da programmare e sleale da usare.
+                //           Dopo una riparazione il blocco cade: il modello bloccato non c'e' piu'.
                 // ENGLISH: the switch is ALWAYS announced. A new model can tag differently, and
                 //          if you are halfway through a dataset that is something you need to
                 //          know: switching quietly would be easy to code and unfair to use.
+                //          After a repair the lock is dropped: the locked model is gone.
                 setAiModel(esito.modello);
+                setAiModelloFissato(false);
                 const testo = esito.esito === 'riparato' ? t.aiModelRepaired : t.aiModelSwitched;
                 showNotification(testo.replace('{da}', esito.precedente).replace('{a}', esito.modello), 'info');
             } else if (dilloComunque) {
-                if (esito.esito === 'nonRiuscito') showNotification(t.aiModelCheckFailed, 'error');
+                // ITALIANO: il motivo decide la frase: "non raggiungibile", "Google chiede di
+                //           rallentare" e "nessuno passa la prova" sono tre cose diverse, e prima
+                //           dicevano tutte la stessa - sbagliata per due su tre.
+                // ENGLISH: the reason picks the sentence: "unreachable", "Google asks to slow
+                //          down" and "none passes the test" are three different things, and they
+                //          all used to say the same one - wrong for two of the three.
+                if (esito.esito === 'nonRaggiungibile') showNotification(t.aiModelCheckFailed, 'error');
+                else if (esito.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
+                else if (esito.esito === 'nessunoValido') showNotification(t.aiModelNoneWorking, 'error');
                 else showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
             }
         } catch (err) {
@@ -944,6 +1013,7 @@ export default function App() {
             setControlloModelloInCorso(false);
         }
     };
+
 
     useEffect(() => {
         if (!aiEnabled || !geminiApiKey) return;
@@ -960,7 +1030,11 @@ export default function App() {
     //          rather than a direct call, so the tagging function is not rebuilt on every beat
     //          of this check.
     useEffect(() => {
-        if (riparaModello > 0) controllaModello(true, false);
+        // ITALIANO: la riparazione dice SEMPRE com'e' andata: chi ha appena visto "modello non
+        //           disponibile' deve sapere se e' stato sostituito o se non c'e' riuscita.
+        // ENGLISH: the repair ALWAYS reports how it went: whoever just saw "model unavailable"
+        //          needs to know whether it was replaced or whether that failed.
+        if (riparaModello > 0) controllaModello(true, true);
     }, [riparaModello]);
 
     // ITALIANO: quello che si vede nella tendina. Se Google ha gia' risposto una volta, sono i
@@ -1509,7 +1583,16 @@ export default function App() {
         // ENGLISH: what can still be fished back out of the Windows Recycle Bin. Without this list
         //          nothing would record where the files used to be, and the Windows Recycle Bin
         //          holds everybody's things: ours could no longer be told apart.
-        if (ripescabili.length > 0) setUltimoSvuotamento({ voci: ripescabili });
+        if (ripescabili.length > 0) {
+            // ITALIANO: si annulla solo l'ULTIMO svuotamento: quello prima esce di scena, e le sue
+            //           anteprime - che nessuno mostra piu' - si liberano invece di restare in
+            //           memoria fino alla chiusura.
+            // ENGLISH: only the LAST emptying can be undone: the one before leaves the stage, and
+            //          its thumbnails - shown by nobody any more - are freed instead of sitting in
+            //          memory until the program closes.
+            if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
+            setUltimoSvuotamento({ voci: ripescabili });
+        }
 
         // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe
         //           comunque un array nuovo, l'effetto che registra la cronologia lo vedrebbe come una
@@ -2328,6 +2411,14 @@ export default function App() {
             aiAbortControllerRef.current?.abort();
             try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
             releaseThumbnails(images);
+            // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
+            //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
+            //           quello chiuso. Le sue anteprime si liberano come tutte le altre.
+            // ENGLISH: undoing the emptying belongs to THIS project: if it survived, the button would
+            //          appear in the next project and push the closed project's photos into it.
+            //          Its thumbnails are freed like all the others.
+            if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
+            setUltimoSvuotamento(null);
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
             setHistory([]); setHistoryIndex(-1);
             soundManager.chime(); showNotification(t.successReset, "success");
@@ -2640,9 +2731,17 @@ export default function App() {
                         flusso.on('end', () => risolvi());
                         flusso.resume();
                     });
-                } finally {
-                    await writable.close();
+                } catch (errScrittura) {
+                    // ITALIANO: si butta via, NON si chiude: close() SALVEREBBE il pezzo scritto
+                    //           fin qui, e resterebbe sul disco un dataset.zip troncato che
+                    //           sembra buono. abort() lascia il file di prima com'era.
+                    // ENGLISH: discard it, do NOT close: close() would SAVE the part written so
+                    //          far, leaving a truncated dataset.zip on disk that looks fine.
+                    //          abort() leaves the previous file as it was.
+                    try { await writable.abort(); } catch (_) { }
+                    throw errScrittura;
                 }
+                await writable.close();
             } else {
                 // ITALIANO: riserva per il browser di prova, che non ha la finestra di salvataggio.
                 // ENGLISH: fallback for the preview browser, which has no save picker.
@@ -2832,6 +2931,14 @@ export default function App() {
         // ENGLISH: free the thumbnails, otherwise they stay in memory for the whole session
         //          (with 2000 photos that is hundreds of MB that never come back).
         releaseThumbnails(images);
+        // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
+        //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
+        //           quello chiuso. Le sue anteprime si liberano come tutte le altre.
+        // ENGLISH: undoing the emptying belongs to THIS project: if it survived, the button would
+        //          appear in the next project and push the closed project's photos into it.
+        //          Its thumbnails are freed like all the others.
+        if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
+        setUltimoSvuotamento(null);
         setImages([]);
         setGlobalTriggers([]);
         setSelectedForBulk([]);
@@ -3095,6 +3202,11 @@ export default function App() {
                                 ? (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.')
                                 : (t.aiModelUnavailable || 'Model unavailable for your account.');
                             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+                            // ITALIANO: la riparazione automatica era collegata solo al tagging di
+                            //           una foto: qui, nel caso normale, non partiva mai.
+                            // ENGLISH: the automatic repair was wired only to single-photo tagging:
+                            //          here, in the normal case, it never started.
+                            if (kind === 'model_unavailable') setRiparaModello(n => n + 1);
                             fatalAbort = true;
                             break;
                         }
@@ -3142,17 +3254,19 @@ export default function App() {
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, aiSkipTagged, images, isGlobalAITagging, t, updateImageTags]);
 
-    // ITALIANO: Verifica la API key. Usa SEMPRE 2.5 Flash (free tier) per la verifica,
-    //           così non confondiamo "key invalida" con "modello a pagamento".
-    // ENGLISH: Verify the API key. ALWAYS uses 2.5 Flash (free tier) for verification
-    //          so we don't confuse "invalid key" with "paid-only model".
+    // ITALIANO: Verifica la API key chiedendo l'elenco dei modelli, NON una risposta a un
+    //           modello preciso: cosi' una chiave buona resta buona anche il giorno che
+    //           Google chiude il modello di riserva. Vedi verifyGeminiApiKey.
+    // ENGLISH: Verify the API key by asking for the model list, NOT for an answer from one
+    //          specific model: a good key stays good even the day Google retires the
+    //          fallback model. See verifyGeminiApiKey.
     const handleVerifyApiKey = useCallback(async () => {
         const key = tempApiKey.trim();
         if (!key) { setApiKeyError(t.aiKeyEmpty || 'Please enter a key'); return; }
         setIsVerifyingApiKey(true);
         setApiKeyError('');
         try {
-            const result = await verifyGeminiApiKey(key, DEFAULT_GEMINI_MODEL);
+            const result = await verifyGeminiApiKey(key);
             if (result.ok) {
                 setGeminiApiKey(key);
                 setIsApiKeyDialogOpen(false);
@@ -3967,10 +4081,20 @@ export default function App() {
                                                     <div className="flex flex-col gap-1">
                                                         <label className="font-medium text-[11px]">{t.aiModelLabel || 'Modello'}</label>
                                                         <select
-                                                            value={aiModel}
-                                                            onChange={(e) => setAiModel(e.target.value)}
+                                                            value={aiModelloFissato ? aiModel : '__auto__'}
+                                                            onChange={(e) => {
+                                                                const scelto = e.target.value;
+                                                                if (scelto === '__auto__') {
+                                                                    setAiModelloFissato(false);
+                                                                    if (geminiApiKey) controllaModello(false, true, false);
+                                                                } else {
+                                                                    setAiModel(scelto);
+                                                                    setAiModelloFissato(true);
+                                                                }
+                                                            }}
                                                             className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
                                                         >
+                                                            <option value="__auto__">{t.aiModelAutomatic.replace('{a}', aiModel)}</option>
                                                             {elencoModelli.map(m => {
                                                                 const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : ' $';
                                                                 return (
