@@ -1,7 +1,12 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 21 agosto 2026
-**Versione attuale:** 1.2.1 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+**Ultimo aggiornamento:** 24 settembre 2026
+**Versione attuale:** 1.3.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 1.3.0 (traguardo 105, 24 settembre 2026): **la versione in lavorazione diventa 1.3.0.** Il
+lavoro nato come 1.2.1 (scelta automatica del modello AI, qui sotto) e il giro di controllo completo
+che lo accompagna cambiano abbastanza cose da meritare un salto della seconda cifra: il numero sale
+di 0.1.0 e la terza cifra torna a zero. La 1.2.1 non e' mai stata costruita ne' pubblicata, quindi
+nessuno la ha sul proprio computer: la prossima versione che si potra' scaricare sara' la 1.3.0.
 Novità 1.2.1 (traguardo 104): **il programma non è più legato a un modello AI preciso.** Prima
 dentro il codice c'era una sigla sola, `gemini-3.6-flash`: il giorno che Google la chiude, l'AI
 smette di funzionare per tutti e l'unico rimedio è andare a cambiarla a mano. Adesso **quali
