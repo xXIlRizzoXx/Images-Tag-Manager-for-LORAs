@@ -210,14 +210,31 @@ const isSafeLocalPath = (p) => {
 };
 
 const SIDECAR_MAX_BYTES = 1024 * 1024;
-const SIDECAR_MAX_FILES = 5000;
-const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff']);
+// ITALIANO: nessun tetto sul NUMERO di foto per richiesta. Prima si leggevano solo le prime 5000,
+//           in silenzio: dalla 5001esima la foto arrivava senza tag, e un'aggiunta in blocco
+//           seguita da "Salva" le riscriveva il .txt con la sola parola chiave, cancellando i tag
+//           veri. I limiti che proteggono restano quelli per file: solo .txt, solo accanto a
+//           un'immagine vera, mai oltre 1 MB.
+// ENGLISH: no cap on the NUMBER of photos per request. Only the first 5000 used to be read,
+//          silently: from the 5001st on the photo arrived without tags, and a bulk addition
+//          followed by "Save" rewrote its .txt with the trigger word alone, wiping the real tags.
+//          The limits that protect stay per file: .txt only, only next to a real image, never
+//          above 1 MB.
+// ITALIANO: la pagina accetta un'immagine dal tipo che le da' il browser (image/...), non
+//           dall'estensione, e il browser chiama image/jpeg anche .jfif, .jpe, .pjpeg e .pjp
+//           (Windows salva cosi' molti JPEG scaricati). Senza queste voci quelle foto si
+//           caricavano, ma il loro .txt non si leggeva, non si salvava, e il Cestino le rifiutava.
+// ENGLISH: the page accepts an image by the type the browser gives it (image/...), not by its
+//          extension, and the browser calls .jfif, .jpe, .pjpeg and .pjp image/jpeg too (Windows
+//          saves many downloaded JPEGs that way). Without these entries those photos loaded, but
+//          their .txt was not read, could not be saved, and the Recycle Bin refused them.
+const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pjp', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff']);
 
 ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
     const out = [];
     const seen = new Set();
-    for (const raw of imagePaths.slice(0, SIDECAR_MAX_FILES)) {
+    for (const raw of imagePaths) {
         if (!isSafeLocalPath(raw)) continue;
         try {
             // ITALIANO: dev'essere un'immagine VERA presente su disco
@@ -265,14 +282,17 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
    as reading: it writes ONLY a .txt next to an image that truly exists on disk — it cannot become
    a "write any file" primitive. */
 const WRITE_MAX_BYTES = 1024 * 1024;
-const WRITE_MAX_FILES = 5000;
+// ITALIANO: come per la lettura, nessun tetto sul numero di foto: prima dalla 5001esima in poi
+//           non si scriveva niente, e la risposta, piu' corta della richiesta, diceva ok:true.
+// ENGLISH: as for reading, no cap on the number of photos: from the 5001st on nothing used to be
+//          written, and the answer, shorter than the request, still said ok:true.
 
 ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
     if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
     let written = 0;
     let failed = 0;
     const results = [];
-    for (const it of items.slice(0, WRITE_MAX_FILES)) {
+    for (const it of items) {
         const imagePath = it && typeof it.imagePath === 'string' ? it.imagePath : '';
         const content = it && typeof it.content === 'string' ? it.content : '';
         try {
@@ -313,8 +333,9 @@ const TRASH_MAX_FILES = 5000;
 
 // ITALIANO: l'esito torna adesso FILE PER FILE, in `results`, con tre valori distinti:
 //   'ok'       il file e' nel Cestino di Windows, oppure non c'era gia' piu' (niente da fare)
-//   'rifiutato' questo canale non puo' toccarlo: percorso di RETE (il Cestino di Windows non
-//              esiste per le condivisioni di rete) oppure estensione fuori dall'elenco ammesso
+//   'rifiutato' questo canale non puo' toccarlo: percorso di RETE, scritto \\server\... o con una
+//              lettera di unita' collegata (il Cestino di Windows non esiste per le condivisioni
+//              di rete) oppure estensione fuori dall'elenco ammesso
 //   'errore'   il file c'e' ma non si e' riusciti a spostarlo (bloccato, permessi)
 //   Prima i tre casi erano indistinguibili: i primi due uscivano da un `continue` silenzioso e il
 //   gruppo tornava {ok:true, trashed:0}, cioe' "riuscito" senza aver spostato niente. 'rifiutato'
@@ -323,8 +344,9 @@ const TRASH_MAX_FILES = 5000;
 //   resterebbe per sempre nel cestino dell'app senza modo di toglierla.
 // ENGLISH: the outcome now comes back FILE BY FILE in `results`, with three distinct values:
 //   'ok'        the file reached the Windows Recycle Bin, or was already gone (nothing to do)
-//   'rifiutato' this channel cannot touch it: a NETWORK path (Windows has no Recycle Bin for
-//               network shares) or an extension outside the allowed list
+//   'rifiutato' this channel cannot touch it: a NETWORK path, spelled \\server\... or through a
+//               mapped drive letter (Windows has no Recycle Bin for network shares) or an
+//               extension outside the allowed list
 //   'errore'    the file is there but could not be moved (locked, permissions)
 //   The three used to be indistinguishable: the first two left through a silent `continue` and the
 //   batch returned {ok:true, trashed:0} - "success" having moved nothing. 'rifiutato' is NOT a dead
@@ -348,6 +370,23 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
         let exists = false;
         try { exists = fs.statSync(raw).isFile(); } catch (_) { exists = false; }
         if (!exists) { results.push('ok'); continue; }
+        // ITALIANO: una lettera di unita' collegata a una condivisione di rete (Z:\ -> \\nas\dati)
+        //           sembra un disco locale e passava il controllo qui sopra, ma il Cestino non c'e'
+        //           nemmeno li': Windows rifiutava lo spostamento e la foto restava bloccata nel
+        //           cestino dell'app, senza mai arrivare alla seconda conferma. Il percorso VERO lo
+        //           dice Windows (per un'unita' di rete risponde \\server\...): se e' di rete si
+        //           risponde 'rifiutato', come per \\server\... scritto per esteso. Se non si
+        //           riesce a leggerlo, o non e' di rete, si fa come prima.
+        // ENGLISH: a drive letter mapped to a network share (Z:\ -> \\nas\data) looks like a local
+        //          disk and got past the check above, but there is no Recycle Bin there either:
+        //          Windows refused the move and the photo stayed stuck in the app's trash, never
+        //          reaching the second confirmation. Windows tells the REAL path (for a network
+        //          drive it answers \\server\...): if it is a network one we answer 'rifiutato', as
+        //          for a \\server\... path spelled out. If it cannot be read, or is not a network
+        //          one, we do as before.
+        let percorsoVero = raw;
+        try { percorsoVero = fs.realpathSync.native(raw); } catch (_) { percorsoVero = raw; }
+        if (/^[\\/]{2}/.test(String(percorsoVero || ''))) { results.push('rifiutato'); continue; }
         try {
             await shell.trashItem(raw);
             trashed++;
@@ -371,7 +410,7 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    Electron sa mettere un file nel Cestino ma non sa tirarlo fuori: Windows quella strada la
    espone solo alla shell. Si passa quindi da PowerShell, che parla con la shell via COM.
 
-   Tre cose imparate provandolo davvero, e ognuna sarebbe stata un difetto silenzioso:
+   Cinque cose imparate provandolo davvero, e ognuna sarebbe stata un difetto silenzioso:
    1. il nome che la shell mostra segue l'impostazione "nascondi le estensioni", quindi puo'
       arrivare senza ".txt": l'estensione vera si prende dal nome interno ($R......txt), che
       non mente mai. Cercando per nome mostrato non si ritroverebbe niente su mezzo mondo.
@@ -380,6 +419,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    3. se al posto del file e' nato un omonimo, NON si ripristina: si torna 'occupato' e lo si
       dice. Il ripristino della shell sovrascriverebbe, e questo canale esiste per NON perdere
       file, non per perderne di nuovi.
+   4. nel Cestino possono esserci due voci con lo stesso percorso d'origine (un omonimo cancellato
+      prima): si ripristina quella cancellata per ULTIMA, cioe' quella appena svuotata dall'app.
+   5. PowerShell legge e scrive con la code page della console, non in UTF-8: senza dirglielo
+      ogni percorso con una lettera accentata, cirillica o cinese tornava "non trovato".
 
    Il testo dello script e' una costante: i percorsi entrano da stdin come JSON, mai dentro la
    riga di comando, cosi' un nome di file con virgolette o punti e virgola non puo' diventare
@@ -389,7 +432,7 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    Electron can put a file in the Recycle Bin but cannot take it back out: Windows exposes that
    road only to the shell. So we go through PowerShell, which talks to the shell over COM.
 
-   Three things learned by actually trying it, each of which would have been a silent defect:
+   Five things learned by actually trying it, each of which would have been a silent defect:
    1. the name the shell reports follows the "hide known extensions" setting, so it can arrive
       without ".txt": the real extension comes from the internal name ($R......txt), which never
       lies. Matching on the displayed name would find nothing on half the machines out there.
@@ -398,6 +441,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    3. if a namesake has appeared in the meantime, we do NOT restore: we return 'occupato' and
       say so. The shell's own restore would overwrite, and this channel exists so files are NOT
       lost, not so that new ones are.
+   4. the Recycle Bin can hold two entries with the same original path (a namesake deleted
+      earlier): the one deleted LAST is restored, i.e. the one the app has just emptied.
+   5. PowerShell reads and writes with the console code page, not UTF-8: unless told otherwise,
+      every path with an accented, Cyrillic or Chinese letter came back "not found".
 
    The script text is a constant: paths come in through stdin as JSON, never on the command
    line, so a file name containing quotes or semicolons cannot become a command. The console
@@ -408,6 +455,12 @@ const SCRIPT_RIPRISTINO = [
     "$ErrorActionPreference = 'Stop'",
     "$ProgressPreference = 'SilentlyContinue'",
     "$voluti = @()",
+    "# main.cjs scrive i percorsi in UTF-8 e legge la risposta in UTF-8. Senza questa riga PowerShell",
+    "# usa la code page della console (850, 1252, 932...): una lettera accentata arriva come due",
+    "# caratteri sbagliati e nessun percorso non ASCII combacia col Cestino. Provato: tutto nonTrovato.",
+    "# Servono tutte e due: con la sola entrata il file torna ma il percorso rimandato indietro si",
+    "# rompe e main.cjs lo segna fallito. Se manca la console il catch lascia tutto come prima.",
+    "try { [Console]::OutputEncoding = (New-Object System.Text.UTF8Encoding $false); [Console]::InputEncoding = (New-Object System.Text.UTF8Encoding $false) } catch {}",
     "$grezzo = [Console]::In.ReadToEnd()",
     "# ConvertFrom-Json NON sgrana l elenco: lo consegna tutto intero come un oggetto solo.",
     "# Senza questo giro $voluti diventa un elenco con dentro un elenco, il ciclo gira una",
@@ -420,7 +473,7 @@ const SCRIPT_RIPRISTINO = [
     "# PRIMA si guarda tutto il Cestino e si segna cosa serve, POI si ripristina. Ripristinare",
     "# mentre si sta ancora scorrendo l elenco lo cambia sotto i piedi: il verbo non protesta,",
     "# semplicemente non fa niente. Provato: mescolando le due fasi non torna indietro un file.",
-    "$daFare = @()",
+    "$scelte = @{}",
     "foreach ($v in @($bin.Items())) {",
     "  $nome = $v.Name",
     "  $est = [System.IO.Path]::GetExtension($v.Path)",
@@ -428,11 +481,24 @@ const SCRIPT_RIPRISTINO = [
     "  $orig = Join-Path ($bin.GetDetailsOf($v, 1)) $nome",
     "  $k = $orig.ToLowerInvariant()",
     "  if (-not $esiti.ContainsKey($k)) { continue }",
-    "  if ($esiti[$k] -ne 'nonTrovato') { continue }",
-    "  if (Test-Path -LiteralPath $orig) { $esiti[$k] = 'occupato'; continue }",
+    "  if ($esiti[$k] -eq 'occupato') { continue }",
+    "  if (Test-Path -LiteralPath $orig) { $esiti[$k] = 'occupato'; $scelte.Remove($k); continue }",
+    "  # Nel Cestino possono esserci DUE voci con lo stesso percorso (un omonimo cancellato prima):",
+    "  # l ordine dell elenco e casuale, e prendere la prima poteva rimettere la foto VECCHIA sotto",
+    "  # la scheda di quella nuova. Si tiene la voce cancellata per ULTIMA, cioe quella che il",
+    "  # programma ha appena mandato li. La data e un DateTime, non il testo tradotto della colonna;",
+    "  # una voce senza data non scavalca mai una che ce l ha, e senza date si fa come prima.",
+    "  $quando = $null",
+    "  try { $quando = $v.ExtendedProperty('System.Recycle.DateDeleted') } catch { $quando = $null }",
+    "  if ($quando -isnot [datetime]) { $quando = $null }",
+    "  if ($scelte.ContainsKey($k)) {",
+    "    $prima = $scelte[$k].quando",
+    "    if (($null -eq $quando) -or (($null -ne $prima) -and ($prima -ge $quando))) { continue }",
+    "  }",
     "  $esiti[$k] = 'inCorso'",
-    "  $daFare += [pscustomobject]@{ voce = $v; orig = $orig; k = $k }",
+    "  $scelte[$k] = [pscustomobject]@{ voce = $v; orig = $orig; k = $k; quando = $quando }",
     "}",
+    "$daFare = @($scelte.Values)",
     "$avviati = @()",
     "foreach ($d in $daFare) {",
     "  try {",
@@ -484,6 +550,11 @@ ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
             const ps = spawn(psExe, ['-NoProfile', '-NonInteractive', '-Sta', '-Command', SCRIPT_RIPRISTINO], { windowsHide: true });
             let out = '';
             const orologio = setTimeout(() => { try { ps.kill(); } catch (_) {} fine(null); }, RESTORE_TIMEOUT_MS);
+            // ITALIANO: la risposta e' UTF-8 (vedi lo script): una lettera di piu' byte puo' cadere
+            //           a cavallo di due pezzi, e decodificarli uno per uno la romperebbe.
+            // ENGLISH: the answer is UTF-8 (see the script): a multi-byte letter can straddle two
+            //          chunks, and decoding them one by one would break it.
+            ps.stdout.setEncoding('utf8');
             ps.stdout.on('data', (d) => { out += String(d); });
             ps.on('error', (e) => { clearTimeout(orologio); console.error('restore-trashed: PowerShell non partito', e); fine(null); });
             ps.on('close', () => {
@@ -643,10 +714,14 @@ const rememberPickedDir = (p) => {
     //           per le condivisioni di rete, quindi un percorso del genere non servirebbe a
     //           niente. Restando vuoto, la pagina ricade sulla strada gia' esistente, cioe' la
     //           seconda conferma con la cancellazione definitiva, che li' e' l'unica verita'.
+    //           Una cartella su una LETTERA collegata alla rete (Z:\) invece passa: per quella e'
+    //           il canale del Cestino a rispondere 'rifiutato', che porta alla stessa strada.
     // ENGLISH: NETWORK folders do not get through here, deliberately: Windows has no Recycle Bin
     //          for network shares, so such a path would buy nothing. Left empty, the page falls
     //          back to the road that already exists - the second confirmation with the permanent
     //          delete - which over there is the only truthful answer.
+    //          A folder on a network-MAPPED drive letter (Z:\) does get through: for that one the
+    //          Recycle Bin channel answers 'rifiutato', which leads to the same road.
     if (!isSafeLocalPath(p)) return;
     try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
     // ITALIANO: si RACCOLGONO tutti i candidati, non si tiene solo l'ultimo. In quella finestra
