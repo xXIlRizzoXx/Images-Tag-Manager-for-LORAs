@@ -4,12 +4,12 @@
 **  ITALIANO: STORAGE SICURO PER SEGRETI                                      **
 **  Salva valori sensibili (es. API key Gemini) nello storage cifrato di      **
 **  Electron (safeStorage, basato sul keychain del sistema operativo).        **
-**  In browser/dev fa fallback su localStorage.                               **
+**  In browser/dev la chiave resta solo in memoria: mai scritta in chiaro.    **
 **                                                                            **
 **  ENGLISH: SECURE STORAGE FOR SECRETS                                       **
 **  Stores sensitive values (e.g. Gemini API key) in Electron's encrypted     **
-**  storage (safeStorage, backed by the OS keychain). Falls back to           **
-**  localStorage in browser/dev.                                              **
+**  storage (safeStorage, backed by the OS keychain). In browser/dev the      **
+**  key stays in memory only: never written in clear text.                    **
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
@@ -53,7 +53,14 @@ export const getSecret = async (key: string): Promise<string> => {
             return localStorage.getItem(key) || '';
         }
     }
-    return localStorage.getItem(key) || '';
+    // ITALIANO: Fuori da Electron non c'e' storage cifrato e la chiave non si scrive mai in
+    //           chiaro (vedi setSecret): non c'e' niente da leggere. Un eventuale residuo in
+    //           chiaro di versioni precedenti NON si usa; sparisce quando si salva o si toglie
+    //           la chiave.
+    // ENGLISH: Outside Electron there is no encrypted storage and the key is never written in
+    //          clear text (see setSecret): there is nothing to read. Any clear-text leftover from
+    //          earlier versions is NOT used; it goes away when the key is saved or removed.
+    return '';
 };
 
 export const setSecret = async (key: string, value: string): Promise<boolean> => {
@@ -75,14 +82,16 @@ export const setSecret = async (key: string, value: string): Promise<boolean> =>
         try { localStorage.removeItem(key); } catch (_) { /* ignore */ }
         return false;
     }
-    // ITALIANO: Fallback solo browser/dev (fuori da Electron non esiste storage cifrato)
-    // ENGLISH: Browser/dev-only fallback (no encrypted storage outside Electron)
-    if (value) {
-        localStorage.setItem(key, value);
-    } else {
-        localStorage.removeItem(key);
-    }
-    return true;
+    // ITALIANO: Browser/dev (fuori da Electron non esiste storage cifrato): stessa regola di
+    //           Electron, la chiave NON si scrive in chiaro. Resta solo in memoria per la
+    //           sessione e si risponde false, cosi' l'app avvisa che non e' stata salvata.
+    //           Togliere la chiave (valore vuoto) invece riesce. Si puliscono i residui.
+    // ENGLISH: Browser/dev (no encrypted storage outside Electron): same rule as Electron, the
+    //          key is NOT written in clear text. It stays in memory for the session only and we
+    //          answer false, so the app warns it was not saved. Removing the key (empty value)
+    //          does succeed. Clean up any leftovers.
+    try { localStorage.removeItem(key); } catch (_) { /* ignore */ }
+    return !value;
 };
 
 export const deleteSecret = async (key: string): Promise<void> => {

@@ -63,6 +63,53 @@ const ERR = {
     fretta: () => errore('[429] RESOURCE_EXHAUSTED: quota exceeded'),
     rete:   () => errore('fetch failed: ECONNRESET'),
 };
+
+// ITALIANO: gli errori come li costruisce DAVVERO la libreria di Google (ApiError): il messaggio
+//           e' TUTTO il corpo JSON della risposta e lo stato HTTP sta a parte, come numero. Il
+//           "troppe richieste" vero del piano gratuito contiene la frase "check your plan and
+//           billing details": con la sola parola 'billing' diventava "serve la fatturazione".
+// ENGLISH: the errors as Google's library REALLY builds them (ApiError): the message is the
+//          WHOLE JSON body of the response and the HTTP status sits apart, as a number. The real
+//          free-tier "too many requests" contains the phrase "check your plan and billing
+//          details": on the word 'billing' alone it became "billing required".
+class ApiError extends Error {
+    constructor(messaggio, stato) { super(messaggio); this.name = 'ApiError'; this.status = stato; }
+}
+const apiErrore = (stato, corpo) => new ApiError(JSON.stringify({ error: corpo }), stato);
+const fretta429 = ({ limite = 10, quotaId = 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', attesa = '23.5' } = {}) => apiErrore(429, {
+    code: 429,
+    message: 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.\n'
+        + '* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: ' + limite + ', model: gemini-3.10-flash\n'
+        + 'Please retry in ' + attesa + 's.',
+    status: 'RESOURCE_EXHAUSTED',
+    details: [
+        { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{
+            quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+            quotaId, quotaDimensions: { location: 'global', model: 'gemini-3.10-flash' }, quotaValue: String(limite) }] },
+        { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '23s' },
+    ],
+});
+const VERI = {
+    fretta:        () => fretta429(),
+    frettaGiorno:  () => fretta429({ limite: 250, quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }),
+    // ITALIANO: i decimali dell'attesa sono a caso: qui contengono "401", che da solo sembrava "chiave sbagliata".
+    // ENGLISH: the decimals of the wait are random: here they contain "401", which alone looked like "bad key".
+    fretta401:     () => fretta429({ attesa: '41.401625' }),
+    // ITALIANO: limite 0 = il modello NON ha un piano gratuito: non e' "di corsa", e' "non usabile gratis".
+    // ENGLISH: limit 0 = the model has NO free tier: not "too fast", but "not usable for free".
+    senzaGratuito: () => fretta429({ limite: 0 }),
+    chiave: () => apiErrore(400, { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' }] }),
+    // ITALIANO: il numero del progetto contiene "429": non deve sembrare un limite di frequenza.
+    // ENGLISH: the project number contains "429": it must not look like a rate limit.
+    servizioSpento: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED',
+        message: 'Generative Language API has not been used in project 842942901234 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=842942901234 then retry.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'SERVICE_DISABLED', domain: 'googleapis.com', metadata: { consumer: 'projects/842942901234' } }] }),
+    fatturazione: () => apiErrore(400, { code: 400, status: 'FAILED_PRECONDITION',
+        message: 'Gemini API free tier is not available in your country. Please enable billing on your project in Google AI Studio.' }),
+    chiuso: () => apiErrore(404, { code: 404, status: 'NOT_FOUND',
+        message: 'models/gemini-9.9-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.' }),
+};
 const M = (nome, azioni = ['generateContent']) => ({ name: 'models/' + nome, displayName: nome, supportedActions: azioni });
 const pagine = (voci) => ({ async *[Symbol.asyncIterator]() { for (const v of voci) yield v; } });
 
@@ -117,8 +164,15 @@ dice('per verificarla si chiede solo l\'elenco, nessuna generazione', ['list'], 
 googleCon({ list: async () => { throw ERR.chiave(); } });
 v = await S.verifyGeminiApiKey(CHIAVE);
 dice('chiave sbagliata rifiutata come chiave sbagliata', ['invalid_key', false], [v.errorKind, v.ok]);
+// ITALIANO: un Google NUOVO, con l'elenco delle chiamate vuoto: il finto di prima ha gia' una
+//           'list' registrata, e se la chiave corta arrivasse a Google risponderebbe comunque
+//           "chiave sbagliata", cioe' ok:false. Si guarda quindi l'elenco delle chiamate.
+// ENGLISH: a FRESH Google, with an empty call list: the previous fake already holds a 'list',
+//          and if the short key reached Google it would still answer "bad key", i.e. ok:false.
+//          So the call list is what gets checked.
+g = googleCon({ list: async () => { throw ERR.chiave(); } });
 v = await S.verifyGeminiApiKey('corta');
-dice('chiave troppo corta rifiutata senza chiamare Google', false, v.ok);
+dice('chiave troppo corta rifiutata senza chiamare Google', [false, 'invalid_key', []], [v.ok, v.errorKind, g.chiamate]);
 
 // =============================================================================
 console.log('\n--- il giro automatico: ogni esito con il suo motivo (difetti E, H) ---');
@@ -165,6 +219,52 @@ dice('...e l\'elenco trovato viene comunque restituito', 2, e.disponibili.length
 g = googleCon({ modelli: [M('gemini-3.10-flash')] });
 e = await S.aggiornaModelloAutomatico('', 'gemini-3.6-flash');
 dice('senza chiave non si chiama nemmeno Google', [[], 'nonRaggiungibile'], [g.chiamate, e.esito]);
+
+// =============================================================================
+console.log('\n--- gli errori VERI di Google, costruiti come li costruisce la sua libreria ---');
+dice('"troppe richieste" vero del piano gratuito: limite di frequenza, NON fatturazione', 'rate_limit', S.classifyGeminiError(VERI.fretta()).kind);
+dice('quota del giorno finita: limite di frequenza', 'rate_limit', S.classifyGeminiError(VERI.frettaGiorno()).kind);
+dice('"401" nei decimali dell\'attesa non lo trasforma in chiave sbagliata', 'rate_limit', S.classifyGeminiError(VERI.fretta401()).kind);
+dice('limite 0 = senza piano gratuito: non usabile, NE occupato NE fatturazione', 'model_unavailable', S.classifyGeminiError(VERI.senzaGratuito()).kind);
+dice('il vecchio testo "[429] RESOURCE_EXHAUSTED" resta un limite di frequenza', 'rate_limit', S.classifyGeminiError(ERR.fretta()).kind);
+dice('chiave sbagliata vera: chiave sbagliata', 'invalid_key', S.classifyGeminiError(VERI.chiave()).kind);
+dice('servizio spento (progetto con "429" nel numero): fatturazione', 'billing_required', S.classifyGeminiError(VERI.servizioSpento()).kind);
+dice('piano gratuito non disponibile nel paese: fatturazione', 'billing_required', S.classifyGeminiError(VERI.fatturazione()).kind);
+dice('modello chiuso vero: non disponibile', 'model_unavailable', S.classifyGeminiError(VERI.chiuso()).kind);
+
+googleCon({ generate: async () => { throw VERI.fretta(); } });
+dice('la prova di un modello sotto "troppe richieste": occupato', 'occupato', await S.provaModello(CHIAVE, 'gemini-3.10-flash'));
+googleCon({ generate: async () => { throw VERI.senzaGratuito(); } });
+dice('la prova di un modello senza piano gratuito: no', 'no', await S.provaModello(CHIAVE, 'gemini-3.10-flash'));
+
+googleCon({ modelli: [M('gemini-3.10-flash'), M('gemini-3.10-flash-lite'), M('gemini-3.6-flash')],
+    generate: async (_k, p) => { if (p.model === 'gemini-3.10-flash') throw VERI.fretta(); return { text: '["ok"]' }; } });
+e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
+dice('il piu recente e di corsa: si resta dove si e, NIENTE discesa al -lite', ['occupato', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
+
+googleCon({ modelli: [M('gemini-3.10-flash'), M('gemini-3.10-flash-lite'), M('gemini-3.6-flash')], generate: async () => { throw VERI.fretta(); } });
+e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
+dice('tutte le prove di corsa: occupato, NON nessunoValido', ['occupato', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
+
+googleCon({ modelli: [M('gemini-3.10-flash'), M('gemini-3.9-flash'), M('gemini-3.6-flash')],
+    generate: async (_k, p) => { if (p.model === 'gemini-3.10-flash') throw VERI.senzaGratuito(); return { text: '["ok"]' }; } });
+e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
+dice('il piu recente non e gratuito: si passa al successivo che lo e', ['aggiornato', 'gemini-3.9-flash', true], [e.esito, e.modello, e.cambiato]);
+
+googleCon({ list: async () => { throw VERI.fretta(); } });
+v = await S.verifyGeminiApiKey(CHIAVE);
+dice('chiave buona ma di corsa: limite di frequenza, NON fatturazione', [false, 'rate_limit'], [v.ok, v.errorKind]);
+
+// =============================================================================
+console.log('\n--- l\'elenco dei modelli non puo restare appeso per sempre ---');
+// ITALIANO: su una connessione che si apre e non risponde mai, senza un segnale con scadenza la
+//           richiesta non finisce piu' e il pulsante "Controlla ora" resta bloccato fino al riavvio.
+// ENGLISH: on a connection that opens and never answers, without a signal with a deadline the
+//          request never ends and the "Check now" button stays stuck until a restart.
+let segnale;
+googleCon({ list: async (_k, p) => { segnale = p && p.config && p.config.abortSignal; return pagine([M('gemini-3.10-flash')]); } });
+await S.elencaModelliRemoti(CHIAVE);
+dice('l\'elenco parte con un segnale di scadenza', true, segnale instanceof AbortSignal && !segnale.aborted);
 
 // =============================================================================
 console.log('\n--- il modello salvato non viene piu buttato via ---');

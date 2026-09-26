@@ -66,12 +66,22 @@ const validateAndCleanTags = (raw: unknown, maxTags: number): string[] => {
     const seen = new Set<string>();
     for (const item of raw) {
         if (typeof item !== 'string') continue;
-        const cleaned = item.toLowerCase().trim().slice(0, TAG_MAX_LENGTH);
-        if (!cleaned) continue;
-        if (seen.has(cleaned)) continue;
-        seen.add(cleaned);
-        out.push(cleaned);
-        if (out.length >= maxTags) break;
+        // ITALIANO: un elemento puo' contenere piu' tag separati da virgola o a capo ("red hair,
+        //           blue eyes"): si spezza qui come fanno incolla, importazione ed editor,
+        //           altrimenti nel .txt finiscono due tag mostrati come una pillola sola, la
+        //           deduplica non li vede e il limite di tag conta gli elementi invece dei tag.
+        // ENGLISH: one element may hold several tags split by comma or newline ("red hair, blue
+        //          eyes"): split here as paste, import and the editor do, or the .txt gets two
+        //          tags shown as a single pill, the dedupe cannot see them and the tag limit
+        //          counts elements instead of tags.
+        for (const pezzo of item.split(/[,\n\r]+/)) {
+            const cleaned = pezzo.toLowerCase().trim().slice(0, TAG_MAX_LENGTH);
+            if (!cleaned) continue;
+            if (seen.has(cleaned)) continue;
+            seen.add(cleaned);
+            out.push(cleaned);
+            if (out.length >= maxTags) return out;
+        }
     }
     return out;
 };
@@ -198,14 +208,39 @@ export const getModelTier = (modelId: string): GeminiTier => {
 export type GeminiErrorKind = 'invalid_key' | 'billing_required' | 'rate_limit' | 'model_unavailable' | 'unknown';
 export const classifyGeminiError = (err: any): { kind: GeminiErrorKind; message: string } => {
     const msg = String(err?.message || err || '');
+    // ITALIANO: il "troppe richieste" VERO di Google (429 RESOURCE_EXHAUSTED) dice "check your
+    //           plan and billing details": deciso sulla parola 'billing' diventava "serve la
+    //           fatturazione", e la taggatura in blocco si fermava invece di aspettare e
+    //           riprovare. Per questo: prima lo stato HTTP numerico che la libreria mette
+    //           sull'errore (il testo e' tutto il corpo JSON, con cifre a caso nell'attesa che
+    //           possono contenere "401"), poi nel testo il limite viene prima della parola
+    //           'billing'. Limite 0 invece vuol dire che il modello NON ha un piano gratuito:
+    //           non e' "di corsa" e non e' "fatturazione", e' "non usabile": cosi' la prova lo
+    //           scarta e la riparazione cerca un modello gratuito.
+    // ENGLISH: Google's REAL "too many requests" (429 RESOURCE_EXHAUSTED) says "check your plan
+    //          and billing details": decided on the word 'billing' it became "billing
+    //          required", and bulk tagging stopped instead of waiting and retrying. Hence: first
+    //          the numeric HTTP status the library puts on the error (the text is the whole
+    //          JSON body, with random digits in the wait that may contain "401"), then in the
+    //          text the limit comes before the word 'billing'. A limit of 0 instead means the
+    //          model has NO free tier: not "too fast" and not "billing", but "not usable": so the
+    //          probe discards it and the repair looks for a free model.
+    const limite = (): { kind: GeminiErrorKind; message: string } => {
+        const senzaGratuito = /limit:\s*0(?![\d.])/i.test(msg) || /quotaValue[^0-9]{0,6}0(?![\d.])/.test(msg);
+        return { kind: senzaGratuito ? 'model_unavailable' : 'rate_limit', message: msg };
+    };
+    if (err?.status === 429) return limite();
     if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('401')) {
         return { kind: 'invalid_key', message: msg };
     }
-    if (msg.includes('FAILED_PRECONDITION') || msg.includes('billing') || msg.includes('SERVICE_DISABLED') || msg.includes('does not have access')) {
+    if (msg.includes('FAILED_PRECONDITION') || msg.includes('SERVICE_DISABLED') || msg.includes('does not have access')) {
         return { kind: 'billing_required', message: msg };
     }
     if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429') || msg.toLowerCase().includes('quota')) {
-        return { kind: 'rate_limit', message: msg };
+        return limite();
+    }
+    if (msg.includes('billing')) {
+        return { kind: 'billing_required', message: msg };
     }
     if (msg.includes('NOT_FOUND') || msg.includes('404') || msg.toLowerCase().includes('model') && msg.toLowerCase().includes('not found')) {
         return { kind: 'model_unavailable', message: msg };
@@ -382,7 +417,15 @@ export const scegliCandidati = (grezzi: any[]): ModelloTrovato[] => {
 
 export const elencaModelliRemoti = async (apiKey: string): Promise<ModelloTrovato[]> => {
     const ai = new GoogleGenAI({ apiKey });
-    const pagine = await ai.models.list({ config: { queryBase: true, pageSize: 200 } });
+    // ITALIANO: anche l'elenco ha il suo limite di tempo, come ogni altra chiamata: senza, su una
+    //           connessione che non risponde il controllo del modello restava appeso per tutta la
+    //           sessione. Le pagine successive riusano lo stesso segnale: un solo limite per tutto.
+    // ENGLISH: the listing has its time limit too, like every other call: without it, on a
+    //          connection that never answers the model check hung for the whole session. The
+    //          next pages reuse the same signal: one budget for the whole listing.
+    const pagine = await ai.models.list({
+        config: { queryBase: true, pageSize: 200, abortSignal: buildAbortSignal(undefined, VERIFY_TIMEOUT_MS) },
+    });
     const grezzi: any[] = [];
     for await (const m of pagine) {
         grezzi.push(m);
