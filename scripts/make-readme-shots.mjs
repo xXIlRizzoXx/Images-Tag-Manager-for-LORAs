@@ -414,6 +414,8 @@ async function main() {
             ${primoAvvio ? `localStorage.removeItem('langChosen');` : `localStorage.setItem('langChosen','1');`}
             localStorage.removeItem('tagBackup');
             localStorage.setItem('aiEnabled', 'false');
+            localStorage.removeItem('isDarkMode');
+            localStorage.removeItem('soundEnabled');
         } catch(e) {}; true`).catch(() => { });
         await wc.reload();
         await sleep(1600);

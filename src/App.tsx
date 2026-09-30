@@ -38,7 +38,8 @@ import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, parseSidecarText, tagDiImport } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, costruisciBackup, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { avvisoImport } from './utils/importNotice';
-import { purgeIdsFromHistory } from './utils/historyUtils';
+import { purgeIdsFromHistory, withLiveOriginalTags } from './utils/historyUtils';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
@@ -280,7 +281,17 @@ export default function App() {
     }, [lang]);
     const [images, setImages] = useState<any[]>([]);
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
-    const [soundEnabled, setSoundEnabled] = useState(true);
+    // ITALIANO: Suoni e tema (piu' sotto) vengono ricordati tra un avvio e l'altro, come la lingua.
+    //           Prima ripartivano sempre accesi e scuri, mentre l'installazione pulita dice di
+    //           cancellarli: vuol dire che sono impostazioni salvate. Senza niente di salvato (o con
+    //           localStorage non disponibile) si parte come prima: suoni accesi, tema scuro.
+    // ENGLISH: Sounds and theme (below) are remembered across launches, like the language. They
+    //          always came back on and dark, while the clean install says it wipes them: that makes
+    //          them saved settings. With nothing saved (or localStorage unavailable) the start is as
+    //          before: sounds on, dark theme.
+    const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+        try { return localStorage.getItem('soundEnabled') !== 'false'; } catch (_) { return true; }
+    });
 
     // ITALIANO: CONTROLLO DELLE VERSIONI NUOVE. Tre stati, non due: 'on', 'off', e NON ANCORA
     //           CHIESTO. Il terzo serve: finche' l'utente non ha risposto il programma non si
@@ -326,8 +337,15 @@ export default function App() {
     //          the Windows Recycle Bin is there, which is the real safety net anyway.
     const [ultimoSvuotamento, setUltimoSvuotamento] = useState<any>(null);
     const [ripristinoInCorso, setRipristinoInCorso] = useState(false);
+    // ITALIANO: lo stesso segnale, sempre aggiornato, per handleEmptyTrash: la finestra di conferma
+    //           ne conserva la versione del momento in cui e' stata aperta, che non lo vedrebbe.
+    // ENGLISH: the same signal, always current, for handleEmptyTrash: the confirm dialog keeps the
+    //          version from the moment it opened, which would not see it.
+    const ripristinoInCorsoRef = useRef(false);
     const [updateFound, setUpdateFound] = useState<{ versione: string; pagina: string } | null>(null);
-    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+        try { return localStorage.getItem('isDarkMode') !== 'false'; } catch (_) { return true; }
+    });
     const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
     
     const [dirHandle, setDirHandle] = useState<any>(null);
@@ -458,6 +476,10 @@ export default function App() {
     useEffect(() => { localStorage.setItem('aiCustomPrompt', aiCustomPrompt); }, [aiCustomPrompt]);
     useEffect(() => { localStorage.setItem('aiRpm', String(aiRpm)); }, [aiRpm]);
     useEffect(() => { localStorage.setItem('aiSkipTagged', String(aiSkipTagged)); }, [aiSkipTagged]);
+    // ITALIANO: tema e suoni scelti in Impostazioni (letti all'avvio, vedi soundEnabled).
+    // ENGLISH: theme and sounds picked in Settings (read at start, see soundEnabled).
+    useEffect(() => { try { localStorage.setItem('isDarkMode', String(isDarkMode)); } catch (_) { /* ignore */ } }, [isDarkMode]);
+    useEffect(() => { try { localStorage.setItem('soundEnabled', String(soundEnabled)); } catch (_) { /* ignore */ } }, [soundEnabled]);
 
     // ITALIANO: Carico la API key dallo storage cifrato all'avvio
     // ENGLISH: Load the API key from encrypted storage on mount
@@ -555,6 +577,17 @@ export default function App() {
     //          when the file really leaves the disk (trash emptied, deleted for good) and are
     //          cleared by Close project and Reset.
     const fotoChiuseRef = useRef<Map<string, FotoChiusa>>(new Map());
+    // ITALIANO: TUTTE le anteprime create per il progetto (import e ricarico dopo un ritocco
+    //           esterno). Le foto chiuse con la X o cancellate per sempre escono dall'elenco ma la
+    //           loro anteprima resta viva (Ctrl+Z le riporta), e alla chiusura nessuno la vedeva
+    //           piu': restava in memoria per tutta la sessione. Chiudi progetto e Reset le liberano
+    //           tutte da qui (vedi liberaAnteprimeProgetto).
+    // ENGLISH: EVERY thumbnail made for the project (import and reload after an outside retouch).
+    //          Photos closed with the X or deleted for good leave the list but their thumbnail stays
+    //          alive (Ctrl+Z brings them back), and on close nobody saw it any more: it stayed in
+    //          memory for the whole session. Close project and Reset release them all from here
+    //          (see liberaAnteprimeProgetto).
+    const anteprimeProgettoRef = useRef<Set<string>>(new Set());
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -642,11 +675,19 @@ export default function App() {
         return () => clearTimeout(handle);
     }, [images, dirHandle]);
 
+    // ITALIANO: Ctrl+Z e Ctrl+Shift+Z rimettono i tag del passo, ma non il ricordo di cosa c'e' su
+    //           disco: quello resta quello di adesso (vedi withLiveOriginalTags). Prima, dopo un
+    //           salvataggio, annullare riportava indietro anche lui e l'app diceva "niente da
+    //           salvare" mentre il .txt conteneva ancora i tag appena tolti.
+    // ENGLISH: Ctrl+Z and Ctrl+Shift+Z put back the step's tags, but not the record of what is on
+    //          disk: that stays the current one (see withLiveOriginalTags). After a save, undoing
+    //          used to roll it back too, and the app said "nothing to save" while the .txt still
+    //          held the tags just removed.
     const handleUndo = useCallback(() => {
         if (historyIndex > 0) {
             isUndoRedoAction.current = true;
             setHistoryIndex(prev => prev - 1);
-            setImages(history[historyIndex - 1]);
+            setImages(withLiveOriginalTags(history[historyIndex - 1], imagesRef.current));
             setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info' });
         }
     }, [history, historyIndex, t]);
@@ -655,7 +696,7 @@ export default function App() {
         if (historyIndex < history.length - 1) {
             isUndoRedoAction.current = true;
             setHistoryIndex(prev => prev + 1);
-            setImages(history[historyIndex + 1]);
+            setImages(withLiveOriginalTags(history[historyIndex + 1], imagesRef.current));
             setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info' });
         }
     }, [history, historyIndex, t]);
@@ -663,6 +704,20 @@ export default function App() {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+            // ITALIANO: con una finestra aperta SOPRA il progetto, Ctrl+Z non lo tocca: nell'editor
+            //           di tag (dopo la X su una pillola il fuoco torna alla pagina) annullava in
+            //           silenzio l'ultima modifica del progetto dietro la finestra, e su una conferma
+            //           cambiava le foto prima del "Conferma". Restano attivi galleria, visualizzatore,
+            //           cestino e gestione dei tag del progetto, dove il progetto si vede.
+            // ENGLISH: with a dialog open OVER the project, Ctrl+Z leaves it alone: in the tag editor
+            //          (after the X on a pill the focus goes back to the page) it silently undid the
+            //          project's last edit behind the dialog, and on a confirmation it changed the
+            //          photos before "Confirm". Gallery, viewer, trash and project tag manager keep
+            //          it, as the project is in view there.
+            if (isTagEditorOpen || confirmDialog.isOpen || saveCloseDialog.isOpen || importSummary.isOpen
+                || isApiKeyDialogOpen || isStatsOpen || !!exportChoice || updateAskOpen || !!updateFound) {
                 return;
             }
             if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') {
@@ -675,7 +730,8 @@ export default function App() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [handleUndo, handleRedo]);
+    }, [handleUndo, handleRedo, isTagEditorOpen, confirmDialog.isOpen, saveCloseDialog.isOpen, importSummary.isOpen,
+        isApiKeyDialogOpen, isStatsOpen, exportChoice, updateAskOpen, updateFound]);
 
     const allUniqueTags = useMemo(() => {
         const imgTags = images.flatMap(img => img.tags);
@@ -760,6 +816,20 @@ export default function App() {
         if (fuori.length === 0) return displayedImages;
         return applySort([...displayedImages, ...fuori], sortOrder);
     }, [displayedImages, images, selectedImageId, sortOrder, trattenuteNelVisualizzatore]);
+
+    // ITALIANO: la foto aperta nel visualizzatore non c'e' piu' o e' nel cestino (Ctrl+Z, Ctrl+Shift+Z
+    //           o un annullamento oltre l'import): il visualizzatore si chiude davvero, come fanno
+    //           "Sposta nel cestino" e la X. Prima spariva ma l'app lo credeva ancora aperto: un tag
+    //           suggerito finiva sulla foto nascosta nel cestino invece che sulle foto selezionate,
+    //           Esc non rispondeva e ripristinando la foto il visualizzatore si riapriva da solo.
+    // ENGLISH: the photo open in the viewer is gone or in the trash (Ctrl+Z, Ctrl+Shift+Z or an undo
+    //          past the import): the viewer really closes, as "Move to trash" and the X do. It used to
+    //          vanish while the app still believed it open: a suggested tag landed on the photo hidden
+    //          in the trash instead of the selected photos, Esc did not answer and restoring the photo
+    //          reopened the viewer by itself.
+    useEffect(() => {
+        if (selectedImageId && !images.some(img => img.id === selectedImageId && !img.isTrashed)) setSelectedImageId(null);
+    }, [selectedImageId, images]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
 
@@ -1032,7 +1102,17 @@ export default function App() {
             title: t.deleteAllTags,
             message: t.confirmDeleteAllTagsMsg,
             onConfirm: () => {
-                setImages(prev => prev.map(img => ({ ...img, tags: [] })));
+                // ITALIANO: le trigger word restano sulle foto che le avevano. Prima se ne andavano
+                //           anche loro mentre il riquadro delle trigger continuava a mostrarle, e
+                //           niente le rimetteva: i .txt salvati dopo uscivano senza trigger, quelli
+                //           delle foto importate dopo con. Non si svuota il riquadro: Ctrl+Z non lo
+                //           ripristina, e riportando i tag si perderebbe l'ordine delle trigger.
+                // ENGLISH: trigger words stay on the photos that had them. They used to go too while
+                //          the trigger box kept showing them, and nothing put them back: .txt files
+                //          saved afterwards came out without the trigger, those of photos imported
+                //          later with it. The box is not emptied: Ctrl+Z does not restore it, and the
+                //          tags brought back would lose the trigger order.
+                setImages(prev => prev.map(img => ({ ...img, tags: globalTriggers.filter(tg => img.tags.includes(tg)) })));
                 setCustomProjectTags([]);
                 setConfirmDialog(prev => ({ ...prev, isOpen: false }));
                 soundManager.pop();
@@ -1377,6 +1457,17 @@ export default function App() {
         }
     };
 
+    // ITALIANO: libera ogni anteprima annotata per il progetto, anche quelle delle foto che non sono
+    //           piu' nell'elenco, e riparte da zero per il progetto dopo. Liberarne una due volte
+    //           non fa niente.
+    // ENGLISH: releases every thumbnail recorded for the project, including those of photos no
+    //          longer in the list, and starts from zero for the next project. Releasing one twice
+    //          does nothing.
+    const liberaAnteprimeProgetto = () => {
+        releaseThumbnails([...anteprimeProgettoRef.current].map(thumb => ({ thumb })));
+        anteprimeProgettoRef.current.clear();
+    };
+
     const handleDeletePermanently = async (id: string) => {
         // ITALIANO: la foto com'e' ADESSO, non com'era quando si e' aperta la conferma: se nel
         //           frattempo e' tornata in galleria (Ctrl+Z), non si tocca.
@@ -1454,6 +1545,7 @@ export default function App() {
         const apiLocale = (window as any).electronAPI;
         if (!apiLocale || typeof apiLocale.restoreTrashed !== 'function') return;
         setRipristinoInCorso(true);
+        ripristinoInCorsoRef.current = true;
         try {
             const voci: any[] = ultimoSvuotamento.voci || [];
             // ITALIANO: PRIMA le sole immagini, e i .txt solo dopo, solo per le foto tornate
@@ -1560,11 +1652,21 @@ export default function App() {
             showNotification(t.undoEmptyFailed, 'error');
         } finally {
             setRipristinoInCorso(false);
+            ripristinoInCorsoRef.current = false;
         }
     };
 
     const handleEmptyTrash = async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        // ITALIANO: mentre "Annulla lo svuotamento" ripesca i file non si svuota: il nuovo
+        //           svuotamento liberava le anteprime delle foto che stavano tornando, e
+        //           l'annullamento, finendo, ne cancellava il ricordo. Il tasto e' spento, ma una
+        //           conferma aperta prima arriva lo stesso fin qui: si dice che cosa sta succedendo.
+        // ENGLISH: while "Undo the emptying" is fishing files back nothing is emptied: the new
+        //          emptying released the thumbnails of the photos on their way back, and the undo,
+        //          on finishing, erased its record. The button is off, but a confirmation opened
+        //          earlier still gets here: the user is told what is going on.
+        if (ripristinoInCorsoRef.current) { showNotification(t.undoEmptyWorking, 'info'); return; }
 
         // ITALIANO: si tolgono dal progetto SOLO le foto che sono davvero arrivate nel Cestino di
         //           Windows. Quelle che non ce l'hanno fatta restano nel cestino dell'app, sotto gli
@@ -1640,7 +1742,14 @@ export default function App() {
             // ENGLISH: only the LAST emptying can be undone: the one before leaves the stage, and
             //          its thumbnails - shown by nobody any more - are freed instead of sitting in
             //          memory until the program closes.
-            if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
+            // ITALIANO: mai l'anteprima di una foto che sta nel progetto: se l'annullamento l'ha
+            //           rimessa nel cestino dell'app, quell'anteprima e' a schermo.
+            // ENGLISH: never the thumbnail of a photo that is in the project: if the undo put it
+            //          back in the app's trash, that thumbnail is on screen.
+            if (ultimoSvuotamento) {
+                const nelProgetto = new Set(imagesRef.current.map(i => i.id));
+                releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img).filter((img: any) => !nelProgetto.has(img.id)));
+            }
             setUltimoSvuotamento({ voci: ripescabili });
         }
 
@@ -1983,6 +2092,11 @@ export default function App() {
                 });
             }
 
+            // ITALIANO: le anteprime si annotano qui, nel momento in cui entrano nel progetto: un
+            //           Reset premuto durante l'import non deve liberare quelle che stanno arrivando.
+            // ENGLISH: thumbnails are recorded here, the moment they enter the project: a Reset pressed
+            //          during the import must not release the ones on their way in.
+            newImages.forEach(img => { if (img.thumb) anteprimeProgettoRef.current.add(img.thumb); });
             setImages(prev => {
                 const combined = [...prev, ...newImages];
                 return combined.sort((a, b) => a.file.name.localeCompare(b.file.name));
@@ -2352,7 +2466,10 @@ export default function App() {
                     let thumbData: any = null;
                     try { thumbData = await generateThumbnail(fresh); } catch (_) { /* tengo la vecchia anteprima */ }
                     // ITALIANO: NON revoco la vecchia anteprima (potrebbe essere nella cronologia annulla).
+                    //           Si liberano tutte e due alla chiusura del progetto (anteprimeProgettoRef).
                     // ENGLISH: do NOT revoke the old thumbnail (it may live in the undo history).
+                    //          Both are released when the project closes (anteprimeProgettoRef).
+                    if (thumbData?.url) anteprimeProgettoRef.current.add(thumbData.url);
                     // ITALIANO: questo ricarico NON e' un'azione dell'utente: non deve entrare nella
                     //           cronologia. Prima ci finiva, e allora "Annulla" riportava la foto al
                     //           file VECCHIO invece di annullare l'ultima modifica ai tag; peggio, un
@@ -2510,6 +2627,9 @@ export default function App() {
             try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
             fotoChiuseRef.current.clear();
             releaseThumbnails(images);
+            // ITALIANO: anche quelle delle foto chiuse con la X o cancellate per sempre.
+            // ENGLISH: also those of the photos closed with the X or deleted for good.
+            liberaAnteprimeProgetto();
             // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
             //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
             //           quello chiuso. Le sue anteprime si liberano come tutte le altre.
@@ -2991,7 +3111,11 @@ export default function App() {
         //           doppi (che finirebbero nel .txt esportato e darebbero due pillole con la stessa key React).
         // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
         //          (they would end up in the exported .txt and render two pills with the same React key).
-        const uniqueTags = [...new Set(newTags)];
+        // ITALIANO: anche "smile" e "Smile" sono doppioni: resta la grafia che c'era gia', o quella
+        //           della trigger word (vedi tagCase). Nessun tag viene messo in minuscolo.
+        // ENGLISH: "smile" and "Smile" are duplicates too: the spelling already there stays, or the
+        //          trigger word's (see tagCase). No tag is lowercased.
+        const uniqueTags = uniqueTagsIgnoringCase(newTags, globalTriggers);
         // ITALIANO: Ordine dei tag: prima le trigger word (nell'ordine impostato dall'utente,
         //           convenzione LoRA), poi tutti gli altri in ORDINE ALFABETICO. Vale ovunque,
         //           perche' questo e' l'unico punto in cui i tag di un'immagine vengono scritti.
@@ -3102,6 +3226,11 @@ export default function App() {
         // ENGLISH: free the thumbnails, otherwise they stay in memory for the whole session
         //          (with 2000 photos that is hundreds of MB that never come back).
         releaseThumbnails(images);
+        // ITALIANO: anche quelle delle foto chiuse con la X o cancellate per sempre, che
+        //           nell'elenco non ci sono piu'.
+        // ENGLISH: also those of the photos closed with the X or deleted for good, which are no
+        //          longer in the list.
+        liberaAnteprimeProgetto();
         // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
         //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
         //           quello chiuso. Le sue anteprime si liberano come tutte le altre.
@@ -3497,7 +3626,7 @@ export default function App() {
         const quante = images.filter(img => selectedForBulk.includes(img.id) && !img.isTrashed).length;
         setImages(prev => prev.map(img => {
             if (selectedForBulk.includes(img.id) && !img.isTrashed) {
-                const combinedTags = [...new Set([...img.tags, ...stagedBulkTags])];
+                const combinedTags = uniqueTagsIgnoringCase([...img.tags, ...stagedBulkTags], globalTriggers);
                 // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
                 // ENGLISH: same order as everywhere else: triggers first, then alphabetical
                 const orderedTags = [
@@ -3534,6 +3663,9 @@ export default function App() {
                 let updatedTags = [...img.tags];
                 added.forEach(tag => { if (!updatedTags.includes(tag)) updatedTags.unshift(tag); });
                 removed.forEach(tag => { updatedTags = updatedTags.filter(t => t !== tag); });
+                // ITALIANO: la trigger "OHWX" su una foto che ha "ohwx" non diventa un secondo tag.
+                // ENGLISH: the trigger "OHWX" on a photo that has "ohwx" does not become a second tag.
+                updatedTags = uniqueTagsIgnoringCase(updatedTags, newGlobalTags);
                 
                 const orderedTags = [
                     ...newGlobalTags.filter(t => updatedTags.includes(t)),
@@ -3957,7 +4089,7 @@ export default function App() {
                                                     onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                 });
                                             }}
-                                            disabled={isEmptyingTrash}
+                                            disabled={isEmptyingTrash || ripristinoInCorso}
                                             className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <Trash size={18} />
@@ -4752,7 +4884,7 @@ export default function App() {
                                                 e.preventDefault();
                                                 const newTag = e.target.value.trim().replace(/,$/, '');
                                                 if (newTag) {
-                                                    setStagedBulkTags(prev => prev.includes(newTag) ? prev : [...prev, newTag]);
+                                                    setStagedBulkTags(prev => hasTagIgnoringCase(prev, newTag) ? prev : [...prev, newTag]);
                                                     e.target.value = '';
                                                     soundManager.pop();
                                                 }
@@ -4889,7 +5021,7 @@ export default function App() {
                                     if (e.key === 'Enter' || e.key === ',') {
                                         e.preventDefault();
                                         const newTag = e.target.value.trim().replace(/,$/, '');
-                                        if (newTag && !allUniqueTags.includes(newTag)) {
+                                        if (newTag && !hasTagIgnoringCase(allUniqueTags, newTag)) {
                                             setCustomProjectTags(prev => [...prev, newTag]);
                                             e.target.value = '';
                                             soundManager.pop();

@@ -86,8 +86,8 @@ const nomiFacoltativi = FACOLTATIVE.filter(n => testi.some(x => x.startsWith(`  
 const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuotamento', 'ripristinoInCorso',
     'setImages', 'setHistory', 'setHistoryIndex', 'setUltimoSvuotamento', 'setRipristinoInCorso', 'setIsEmptyingTrash',
     'setSelectedForBulk', 'setConfirmDialog', 'setIsTrashOpen', 'setToast', 'showNotification',
-    'imagesRef', 'isUndoRedoAction', 'fotoChiuseRef', 't', 'soundManager', 'sidecarTagFileName', 'purgeIdsFromHistory',
-    'useCallback', 'window', 'URL', 'console'];
+    'imagesRef', 'isUndoRedoAction', 'fotoChiuseRef', 'ripristinoInCorsoRef', 't', 'soundManager', 'sidecarTagFileName', 'purgeIdsFromHistory',
+    'withLiveOriginalTags', 'useCallback', 'window', 'URL', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', 'effettoCronologia'].join(', ') + ' };');
 
@@ -156,7 +156,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
         isEmptyingTrash: false, selectedForBulk: [], confirmDialog: { isOpen: false }, isTrashOpen: true,
     };
     const r = { stato, notifiche: [], revocati: [], avvisi: [] };
-    const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() } };
+    const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false } };
     const coda = [];
     let programmato = false;
     const finestra = api ? { electronAPI: api } : {};
@@ -185,8 +185,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
         imposta('selectedForBulk'), imposta('confirmDialog'), imposta('isTrashOpen'),
         (x) => r.notifiche.push([x.message, x.type]),
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
-        refs.imagesRef, refs.isUndoRedoAction, refs.fotoChiuseRef, t, { pop() { }, chime() { } }, P.sidecarTagFileName, H.purgeIdsFromHistory,
-        (f) => f, finestra, url, quieto);
+        refs.imagesRef, refs.isUndoRedoAction, refs.fotoChiuseRef, refs.ripristinoInCorsoRef, t, { pop() { }, chime() { } }, P.sidecarTagFileName, H.purgeIdsFromHistory,
+        H.withLiveOriginalTags, (f) => f, finestra, url, quieto);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();

@@ -29,6 +29,7 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 // ENGLISH: Input field for tags with suggestions and deletion
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from '../utils/tagCase';
 
 // ITALIANO: `lang` serve a mostrare la traduzione del tag al passaggio del mouse: prima
 //           accadeva solo nel visualizzatore a foto singola, non sulle miniature.
@@ -43,7 +44,9 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         if (e.key === ',' || e.key === 'Enter') {
             e.preventDefault();
             const newTag = inputValue.trim().replace(/,$/, '');
-            if (newTag && !tags.includes(newTag)) { setTags([...tags, newTag]); setInputValue(''); soundManager.pop(); }
+            // ITALIANO: "Smile" su una foto che ha "smile" non e' un tag nuovo (vedi tagCase).
+            // ENGLISH: "Smile" on a photo that has "smile" is not a new tag (see tagCase).
+            if (newTag && !hasTagIgnoringCase(tags, newTag)) { setTags([...tags, newTag]); setInputValue(''); soundManager.pop(); }
         } else if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
             setTags(tags.slice(0, -1)); soundManager.click();
         }
@@ -53,9 +56,9 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         if (readOnly) return;
         e.preventDefault();
         const pasteData = e.clipboardData.getData('text');
-        const newTags = pasteData.split(/[,\n\r]+/)
+        const newTags = uniqueTagsIgnoringCase(pasteData.split(/[,\n\r]+/)
             .map((t: string) => t.trim())
-            .filter((t: string) => t && !tags.includes(t));
+            .filter((t: string) => t && !hasTagIgnoringCase(tags, t)));
         
         if (newTags.length > 0) {
             setTags([...tags, ...newTags]);

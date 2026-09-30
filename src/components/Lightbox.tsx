@@ -22,6 +22,7 @@ import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../uti
 import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
+import { hasTagIgnoringCase } from '../utils/tagCase';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
@@ -89,7 +90,14 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         ...tags.filter((tag: string) => !globalTriggers.includes(tag)).sort((a: string, b: string) => a.localeCompare(b))
     ];
     const appliedTags = orderTags(currentTags).filter((tag: string) => tag.toLowerCase().includes(filterLc));
-    const availableTags = allTags.filter((tag: string) => !currentTags.includes(tag) && tag.toLowerCase().includes(filterLc)).sort((a: string, b: string) => a.localeCompare(b));
+    // ITALIANO: "Smile" di un'altra foto non si offre a questa, che ha gia' "smile" (vedi tagCase).
+    //           Un Set in minuscolo, fatto una volta: l'elenco del progetto puo' avere migliaia di tag
+    //           e si ricalcola a ogni lettera scritta nel filtro.
+    // ENGLISH: another photo's "Smile" is not offered to this one, which already has "smile" (see
+    //          tagCase). A lowercase Set, built once: the project list can hold thousands of tags and
+    //          is recomputed on every letter typed in the filter.
+    const giaQui = new Set(currentTags.map((tag: string) => tag.toLowerCase()));
+    const availableTags = allTags.filter((tag: string) => !giaQui.has(tag.toLowerCase()) && tag.toLowerCase().includes(filterLc)).sort((a: string, b: string) => a.localeCompare(b));
 
     const toggleTag = (tag: string) => {
         if (currentTags.includes(tag)) {
@@ -138,7 +146,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         if (e.key === ',' || e.key === 'Enter') {
             e.preventDefault();
             const newTag = filterText.trim().replace(/,$/, '');
-            if (newTag && !currentTags.includes(newTag)) {
+            if (newTag && !hasTagIgnoringCase(currentTags, newTag)) {
                 updateTags(image.id, [...currentTags, newTag]);
                 setFilterText('');
                 soundManager.pop();
