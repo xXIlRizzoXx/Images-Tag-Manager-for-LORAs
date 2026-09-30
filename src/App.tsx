@@ -38,6 +38,7 @@ import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, parseSidecarText, tagDiImport } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, costruisciBackup, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { avvisoImport } from './utils/importNotice';
+import { purgeIdsFromHistory } from './utils/historyUtils';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
@@ -862,7 +863,16 @@ export default function App() {
     //          Picking "Automatic" removes the lock. Anyone coming from 1.2.0 starts on
     //          Automatic: that is the intended default.
     const [aiModelloFissato, setAiModelloFissato] = useState<boolean>(() => localStorage.getItem('aiModelloFissato') === 'true');
+    // ITALIANO: due ref che il controllo dei modelli legge DOPO le sue attese (lo stato che ha in
+    //           mano e' quello di quando e' partito): il blocco com'e' adesso, e quante volte si e'
+    //           scelto un modello a mano nella tendina.
+    // ENGLISH: two refs the model check reads AFTER its awaits (the state it holds is the one from
+    //          when it started): the lock as it is now, and how many times a model was picked by
+    //          hand in the dropdown.
+    const aiModelloFissatoRef = useRef(aiModelloFissato);
+    const sceltaManualeRef = useRef(0);
     useEffect(() => {
+        aiModelloFissatoRef.current = aiModelloFissato;
         try { localStorage.setItem('aiModelloFissato', aiModelloFissato ? 'true' : 'false'); } catch (_) { }
     }, [aiModelloFissato]);
 
@@ -881,6 +891,7 @@ export default function App() {
         if (!geminiApiKey) { if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error'); return; }
         controlloModelloRef.current = true;
         setControlloModelloInCorso(true);
+        const scelteAllInizio = sceltaManualeRef.current;
 
         // ITALIANO: "ultimo controllo" si scrive SOLO quando Google ha dato una risposta vera.
         //           Prima si scriveva sempre, anche dopo un fallimento: le Impostazioni dicevano
@@ -927,6 +938,20 @@ export default function App() {
             const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
             tieniElenco(esito.disponibili);
             if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'occupato') segnaControllo();
+
+            // ITALIANO: mentre Google rispondeva (qualche secondo: elenco e fino a tre prove)
+            //           l'utente ha scelto a mano un modello preciso, ed e' ancora bloccato: vale
+            //           la sua scelta. Il risultato si mette da parte senza dire niente (l'elenco
+            //           della tendina e' gia' aggiornato). Prima lo si applicava lo stesso: la
+            //           scelta spariva, il blocco cadeva e l'avviso diceva "Prima:" col modello
+            //           di prima della scelta. Se invece e' tornato su Automatico, il risultato vale.
+            // ENGLISH: while Google was answering (a few seconds: the list and up to three probes)
+            //          the user picked a specific model by hand, and it is still locked: their
+            //          choice stands. The result is set aside without a word (the dropdown list is
+            //          already refreshed). It used to be applied anyway: the choice vanished, the
+            //          lock dropped and the notice said "Before:" with the model from before the
+            //          pick. If they went back to Automatic instead, the result stands.
+            if (sceltaManualeRef.current !== scelteAllInizio && aiModelloFissatoRef.current) return;
 
             if (esito.cambiato) {
                 // ITALIANO: il cambio si annuncia SEMPRE. Un modello nuovo puo' taggare in modo
@@ -1274,9 +1299,15 @@ export default function App() {
             //          already reached the Recycle Bin - and the photo stayed in the app's trash
             //          pointing at a file that was gone. What decides whether the photo leaves the
             //          project is the image; a .txt left behind is a harmless leftover, logged here.
+            // ITALIANO: e il .txt parte SOLO DOPO che l'immagine e' arrivata nel Cestino di Windows.
+            //           Prima partiva comunque: con l'immagine bloccata la foto restava nel cestino
+            //           dell'app ("Non rimosse: 1") ma il suo .txt era gia' sparito dal disco, e
+            //           ripristinandola Salva non trovava niente da riscrivere. La coppia resta unita.
+            // ENGLISH: and the .txt goes ONLY AFTER the image has reached the Windows Recycle Bin.
+            //          It used to go regardless: with the image locked the photo stayed in the app's
+            //          trash ("Not removed: 1") but its .txt had already left the disk, and after a
+            //          restore Save found nothing to rewrite. The pair stays together.
             const resImg = await api.trashFiles([imgPath]);
-            const resTxt = await api.trashFiles([txtPath]);
-            if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
             // ITALIANO: 'rifiutato' vuol dire che il Cestino di Windows non e' applicabile a questo
             //           file (cartella di rete, o estensione fuori elenco). Non e' un fallimento
             //           definitivo: si torna 'nopath', cioe' la strada della seconda conferma, che
@@ -1288,7 +1319,11 @@ export default function App() {
             //          open folder. Without this, a photo on a NAS would sit in the app's trash
             //          forever.
             const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
-            if (esitoImg === 'ok') return 'trashed';
+            if (esitoImg === 'ok') {
+                const resTxt = await api.trashFiles([txtPath]);
+                if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
+                return 'trashed';
+            }
             if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'failed';
             return 'failed';
         } catch (err) {
@@ -1343,8 +1378,12 @@ export default function App() {
     };
 
     const handleDeletePermanently = async (id: string) => {
-        const img = images.find(i => i.id === id);
-        if (!img) return;
+        // ITALIANO: la foto com'e' ADESSO, non com'era quando si e' aperta la conferma: se nel
+        //           frattempo e' tornata in galleria (Ctrl+Z), non si tocca.
+        // ENGLISH: the photo as it is NOW, not as it was when the confirmation opened: if it went
+        //          back to the gallery meanwhile (Ctrl+Z), it is left alone.
+        const img = imagesRef.current.find(i => i.id === id);
+        if (!img || !img.isTrashed) return;
 
         let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
         try {
@@ -1376,7 +1415,15 @@ export default function App() {
         // ENGLISH: the file has left the disk: it no longer counts in the backup's fingerprint, even
         //          if it had been closed and brought back with Ctrl+Z.
         fotoChiuseRef.current.delete(id);
+        // ITALIANO: e non conta piu' nemmeno nella cronologia: un Ctrl+Z la rimetteva nel cestino
+        //           dell'app mentre il file era nel Cestino di Windows (vedi purgeIdsFromHistory).
+        //           L'uscita della foto non e' un passo da annullare: il file non c'e' piu'.
+        // ENGLISH: nor in the history any more: one Ctrl+Z put it back in the app's trash while the
+        //          file sat in the Windows Recycle Bin (see purgeIdsFromHistory). The photo leaving
+        //          is not a step to undo: the file is gone.
+        isUndoRedoAction.current = true;
         setImages(prev => prev.filter(i => i.id !== id));
+        setHistory(prev => purgeIdsFromHistory(prev, new Set([id])));
         // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
         //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
         // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
@@ -1427,6 +1474,15 @@ export default function App() {
             const tornate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'ok');
             const bloccate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'occupato');
             const rimaste = voci.filter((v: any) => perPercorso.get(v.imgPath) !== 'ok');
+            // ITALIANO: 'nonTrovato' = il Cestino di Windows e' stato letto fino in fondo e il file
+            //           non c'e': da li' non tornera' piu'. Tutti gli altri esiti ('fallito',
+            //           'rifiutato', nessuna risposta) dicono solo che questa volta non ci si e'
+            //           riusciti: il file e' ancora nel Cestino e si puo' riprovare.
+            // ENGLISH: 'nonTrovato' = the Windows Recycle Bin was read to the end and the file is not
+            //          there: it will never come back from it. Every other outcome ('fallito',
+            //          'rifiutato', no answer) only says it did not work this time: the file is still
+            //          in the Recycle Bin and a retry is possible.
+            const nonTrovate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'nonTrovato');
 
             const testi = tornate.map((v: any) => v.txtPath).filter(Boolean);
             if (testi.length > 0) {
@@ -1445,13 +1501,28 @@ export default function App() {
             if (tornate.length > 0) {
                 // ITALIANO: tornano nel cestino dell'app, da dove "Ripristina" le riporta in galleria.
                 // ENGLISH: back into the app's trash, from where "Restore" brings them to the gallery.
-                setImages(prev => [...prev, ...tornate.map((v: any) => ({ ...v.img, isTrashed: true }))]);
+                // ITALIANO: mai due volte: una foto che nel progetto c'e' gia' non si aggiunge di
+                //           nuovo, o ci sarebbero due card con lo stesso id.
+                // ENGLISH: never twice: a photo already in the project is not added again, or
+                //          there would be two cards with the same id.
+                setImages(prev => {
+                    const presenti = new Set(prev.map(i => i.id));
+                    return [...prev, ...tornate.filter((v: any) => !presenti.has(v.img.id)).map((v: any) => ({ ...v.img, isTrashed: true }))];
+                });
             }
             // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
             //           per quelle e sparisce quando non c'e' piu' niente da ripescare.
             // ENGLISH: keep only what did NOT come back, so the button stays available for those
             //          and disappears once there is nothing left to fish out.
-            setUltimoSvuotamento(rimaste.length > 0 ? { voci: rimaste } : null);
+            // ITALIANO: e non si tiene cio' che nel Cestino non c'e' piu': prima restava, e il tasto
+            //           rifaceva a ogni clic lo stesso giro a vuoto fino alla chiusura del progetto.
+            //           Le loro anteprime non le mostra piu' nessuno: si liberano.
+            // ENGLISH: and what is no longer in the Recycle Bin is not kept: it used to stay, and the
+            //          button redid the same empty round at every click until the project closed.
+            //          Their thumbnails are shown by nobody any more: they are released.
+            const riprovabili = rimaste.filter((v: any) => perPercorso.get(v.imgPath) !== 'nonTrovato');
+            releaseThumbnails(nonTrovate.map((v: any) => v.img));
+            setUltimoSvuotamento(riprovabili.length > 0 ? { voci: riprovabili } : null);
 
             // ITALIANO: IL MOTIVO CAMBIA IL MESSAGGIO. Dire "non trovate nel Cestino di Windows"
             //           quando il file c'era eccome, e non e' stato rimesso apposta per non
@@ -1465,10 +1536,18 @@ export default function App() {
             //          place and makes a file that is safe look lost. The channel keeps the
             //          distinction; throwing it away here would have been the very defect this
             //          version went round the whole program to remove.
+            // ITALIANO: e "non trovato, forse e' stato svuotato" solo se e' vero per TUTTE: quando
+            //           PowerShell viene fermato, e' bloccato o risponde male, i file sono ancora
+            //           nel Cestino di Windows e dirlo svuotato li farebbe credere persi.
+            // ENGLISH: and "not found, it may have been emptied" only when true for ALL of them:
+            //          when PowerShell is stopped, blocked or answers badly, the files are still in
+            //          the Windows Recycle Bin and calling it emptied would make them look lost.
             if (tornate.length === 0 && bloccate.length > 0) {
                 showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
-            } else if (tornate.length === 0) {
+            } else if (tornate.length === 0 && nonTrovate.length === rimaste.length) {
                 showNotification(t.undoEmptyNone, 'error');
+            } else if (tornate.length === 0) {
+                showNotification(t.undoEmptyFailed, 'error');
             } else if (bloccate.length > 0 && bloccate.length === rimaste.length) {
                 showNotification(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length)), 'info');
             } else if (rimaste.length > 0) {
@@ -1476,7 +1555,9 @@ export default function App() {
             } else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
         } catch (err) {
             console.error('[Cestino] Annullamento dello svuotamento non riuscito:', err);
-            showNotification(t.undoEmptyNone, 'error');
+            // ITALIANO: un errore del canale non dice niente del Cestino: i file sono ancora li'.
+            // ENGLISH: a channel error says nothing about the Recycle Bin: the files are still there.
+            showNotification(t.undoEmptyFailed, 'error');
         } finally {
             setRipristinoInCorso(false);
         }
@@ -1502,12 +1583,26 @@ export default function App() {
         //          pressed halfway it put the photos back in the gallery while the loop kept moving
         //          their files to the Recycle Bin, leaving cards pointing at files that are gone.
         //          With this flag set, both buttons are disabled.
+        // ITALIANO: spenti anche "Ripristina" e la X di ogni singola foto, che prima restavano
+        //           attivi durante lo svuotamento.
+        // ENGLISH: the "Restore" and the X of every single photo are disabled too; they used to
+        //          stay live during the emptying.
         setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
         const ripescabili: any[] = [];
         const senzaPercorso: any[] = [];
         let failed = 0;
-        for (const img of trashedImages) {
+        for (const scelta of trashedImages) {
+            // ITALIANO: l'elenco e' quello del clic su "Svuota"; la foto si guarda com'e' ADESSO.
+            //           Una foto tornata in galleria nel frattempo (Ctrl+Z con la conferma aperta,
+            //           o il suo "Ripristina" durante lo svuotamento) non va nel Cestino di Windows:
+            //           prima ci finiva lo stesso e spariva anche dalla galleria.
+            // ENGLISH: the list is the one from the click on "Empty"; the photo is looked at as it
+            //          is NOW. A photo that went back to the gallery meanwhile (Ctrl+Z with the
+            //          confirmation open, or its own "Restore" during the emptying) does not go to
+            //          the Windows Recycle Bin: it used to go anyway and vanish from the gallery too.
+            const img = imagesRef.current.find(i => i.id === scelta.id);
+            if (!img || !img.isTrashed) continue;
             let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
             // ITALIANO: i percorsi si prendono PRIMA di spostare il file: dopo, al suo posto non
             //           c'e' piu' niente da cui ricavarli.
@@ -1527,6 +1622,11 @@ export default function App() {
             else failed++;
         }
         setIsEmptyingTrash(false);
+        // ITALIANO: nel cestino non era rimasto niente da svuotare (tutto ripristinato nel
+        //           frattempo): nessun messaggio di file spostati che non si sono mossi.
+        // ENGLISH: nothing was left in the trash to empty (all restored meanwhile): no message
+        //          about files moved that never moved.
+        if (removedIds.size === 0 && failed === 0 && senzaPercorso.length === 0) return;
         // ITALIANO: cio' che si puo' ancora ripescare dal Cestino di Windows. Senza questo elenco,
         //           dopo lo svuotamento non resterebbe traccia di dove stavano i file, e nel Cestino
         //           di Windows c'e' la roba di tutti: la propria non si riconoscerebbe piu'.
@@ -1551,8 +1651,22 @@ export default function App() {
         // ENGLISH: if not a single photo was removed, do NOT touch `images`: `filter` would still make
         //          a new array, the history effect would read it as a change, and the next Ctrl+Z would
         //          burn itself on an empty step instead of undoing the user's last real tag edit.
+        // ITALIANO: e quando delle foto escono, escono anche da OGNI passo della cronologia, e la
+        //           loro uscita non diventa un passo: prima un Ctrl+Z dopo lo svuotamento le
+        //           rimetteva nel cestino dell'app mentre i file erano nel Cestino di Windows, e da
+        //           li' Salva scriveva .txt orfani nella cartella. Cosi' anche le anteprime del
+        //           penultimo svuotamento, liberate qui sopra, non restano in nessun passo.
+        // ENGLISH: and when photos leave, they leave EVERY step of the history too, and their
+        //          leaving does not become a step: a Ctrl+Z after emptying used to put them back in
+        //          the app's trash while the files sat in the Windows Recycle Bin, and from there
+        //          Save wrote orphan .txt files into the folder. This way the thumbnails of the
+        //          previous emptying, released above, are not left in any step either.
         removedIds.forEach(id => fotoChiuseRef.current.delete(id));
-        if (removedIds.size > 0) setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+        if (removedIds.size > 0) {
+            isUndoRedoAction.current = true;
+            setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+            setHistory(prev => purgeIdsFromHistory(prev, removedIds));
+        }
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
         // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
@@ -1562,8 +1676,12 @@ export default function App() {
         //           la seconda finestra, che dice quante sono, perche', e che non si torna indietro.
         // ENGLISH: for these the Windows Recycle Bin is not available. Nothing is deleted behind the
         //          user's back: the second dialog opens, saying how many, why, and that it is final.
+        // ITALIANO: con loro viaggia il conto di questa prima parte (spostate nel Cestino di Windows,
+        //           non riuscite): prima si perdeva qui, e il messaggio finale non ne diceva niente.
+        // ENGLISH: the count of this first part travels with them (moved to the Windows Recycle
+        //          Bin, failed): it used to be lost here, and the final message said nothing of it.
         if (senzaPercorso.length > 0) {
-            chiediEliminazioneDefinitiva(senzaPercorso);
+            chiediEliminazioneDefinitiva(senzaPercorso, { done: removedIds.size, failed });
             return;
         }
         if (failed > 0) {
@@ -1581,17 +1699,33 @@ export default function App() {
     // ENGLISH: the second dialog. It shows only when the Windows Recycle Bin is out of reach, says
     //          how many photos it covers and that the delete is final. On cancel the photos stay
     //          where they are: in the app's trash and on disk.
-    const chiediEliminazioneDefinitiva = (imgs: any[]) => {
+    // ITALIANO: `prima` = com'e' andata la prima parte dello stesso svuotamento, quella del Cestino
+    //           di Windows. Si dice sempre, che si confermi o che si annulli: prima le foto spostate
+    //           sparivano dal cestino dell'app senza una parola, e quelle bloccate non venivano
+    //           nominate.
+    // ENGLISH: `prima` = how the first part of the same emptying went, the Windows Recycle Bin
+    //          one. It is always said, on confirm or on cancel: the moved photos used to vanish from
+    //          the app's trash without a word, and the locked ones were never named.
+    const fraseCestinoWindows = (prima: { done: number; failed: number }): string => {
+        if (prima.failed > 0) return t.deletePartial.replace('{done}', String(prima.done)).replace('{failed}', String(prima.failed));
+        return prima.done > 0 ? t.deleteSuccess : '';
+    };
+
+    const chiediEliminazioneDefinitiva = (imgs: any[], prima: { done: number; failed: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog({
             isOpen: true,
             title: t.deleteForGood,
             message: t.confirmHardDelete.replace('{n}', String(imgs.length)),
-            onConfirm: () => eliminaPerSempre(imgs),
-            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+            onConfirm: () => eliminaPerSempre(imgs, prima),
+            onCancel: () => {
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                const frase = fraseCestinoWindows(prima);
+                if (frase) showNotification(frase, prima.failed > 0 ? 'error' : 'success');
+            }
         });
     };
 
-    const eliminaPerSempre = async (imgs: any[]) => {
+    const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
@@ -1603,15 +1737,34 @@ export default function App() {
 
         if (removedIds.size > 0) {
             removedIds.forEach(id => fotoChiuseRef.current.delete(id));
+            // ITALIANO: come per lo svuotamento: i file non esistono piu', Ctrl+Z non li riporta.
+            // ENGLISH: as for the emptying: the files no longer exist, Ctrl+Z does not bring them back.
+            isUndoRedoAction.current = true;
             setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+            setHistory(prev => purgeIdsFromHistory(prev, removedIds));
             setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
         }
-        if (failed > 0) {
-            showNotification(t.deleteForGoodPartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+        // ITALIANO: un solo messaggio con le due parti, prima il Cestino di Windows e poi questa.
+        //           Se qualcosa e' rimasto nel cestino dell'app (qui o nella prima parte) e' un
+        //           errore e la finestra resta aperta, con quelle foto sotto gli occhi.
+        // ENGLISH: one message with both parts, first the Windows Recycle Bin and then this one. If
+        //          anything stayed in the app's trash (here or in the first part) it is an error and
+        //          the window stays open, with those photos in plain sight.
+        const testo = [fraseCestinoWindows(prima), failed > 0
+            ? t.deleteForGoodPartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed))
+            : t.deleteForGoodDone.replace('{done}', String(removedIds.size))].filter(Boolean).join(' · ');
+        if (failed > 0 || prima.failed > 0) {
+            showNotification(testo, 'error');
             return;
         }
-        setIsTrashOpen(false);
-        showNotification(t.deleteForGoodDone.replace('{done}', String(removedIds.size)), 'success');
+        // ITALIANO: la finestra si chiude solo se il cestino e' vuoto davvero: con la X su una sola
+        //           foto le altre restano li'. imagesRef non ha ancora tolto quelle appena
+        //           cancellate, per questo si escludono a mano.
+        // ENGLISH: the window closes only when the trash is really empty: with the X on a single
+        //          photo the others stay there. imagesRef has not dropped the ones just deleted yet,
+        //          hence they are left out by hand.
+        if (!imagesRef.current.some(i => i.isTrashed && !removedIds.has(i.id))) setIsTrashOpen(false);
+        showNotification(testo, 'success');
         soundManager.pop();
     };
 
@@ -3266,10 +3419,21 @@ export default function App() {
             const successType: 'success' | 'info' | 'error' = cancelled
                 ? 'info'
                 : errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
-            const prefix = cancelled ? `${t.aiCancelled || 'Cancelled'} · ` : '';
-            const skippedSuffix = skippedCount > 0 ? ` · ⊘ ${skippedCount}` : '';
-            const summary = `${prefix}${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount}${skippedSuffix} · ${t.aiTagsGenerated.replace('{n}', String(totalTagsAdded))}`;
-            showNotification(summary, successType);
+            // ITALIANO: una frase intera, "finito" OPPURE "annullato", con i numeri dopo i due punti
+            //           (si legge giusta anche con 1). Prima si incollavano pezzi e simboli, e un
+            //           tagging annullato diceva "Annullato · Completato! · ✓ 2 · ✗ 0 · ...".
+            //           Dopo un errore grave (chiave, fatturazione, modello) il riepilogo non si
+            //           mostra: prendeva il posto del messaggio d'errore appena comparso, in verde.
+            // ENGLISH: one whole sentence, "finished" OR "cancelled", with the numbers after the
+            //          colon (it reads right with 1 too). Pieces and symbols used to be glued, and a
+            //          cancelled run said "Cancelled · Completed! · ✓ 2 · ✗ 0 · ...". After a fatal
+            //          error (key, billing, model) the summary is not shown: it used to replace the
+            //          error message that had just appeared, in green.
+            const modello = cancelled
+                ? (t.aiBatchCancelled || 'AI tagging cancelled. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.')
+                : (t.aiBatchDone || 'AI tagging finished. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.');
+            const summary = modello.replace('{ok}', String(okCount)).replace('{err}', String(errorCount)).replace('{skip}', String(skippedCount)).replace('{n}', String(totalTagsAdded));
+            if (!fatalAbort) showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;
             setAiCancelRequested(false);
@@ -3297,7 +3461,17 @@ export default function App() {
                 soundManager.chime();
                 showNotification(t.aiKeySaved || 'API Key verified and saved', 'success');
             } else {
-                const friendly = result.errorKind === 'billing_required'
+                // ITALIANO: la chiave sbagliata e' il primo caso, con la sua frase tradotta. Prima
+                //           cadeva sul testo grezzo del servizio: i primi 200 caratteri della risposta
+                //           JSON di Google, o l'inglese fisso "too short" premendo Invio con una
+                //           chiave corta. Il testo grezzo resta solo per gli errori sconosciuti.
+                // ENGLISH: a wrong key is the first case, with its translated sentence. It used to
+                //          fall to the service's raw text: the first 200 characters of Google's JSON
+                //          answer, or the fixed English "too short" when pressing Enter with a short
+                //          key. The raw text stays only for unknown errors.
+                const friendly = result.errorKind === 'invalid_key'
+                    ? (t.aiKeyInvalid || 'API Key invalid')
+                    : result.errorKind === 'billing_required'
                     ? (t.aiBillingRequired || 'Billing required on your Google Cloud project.')
                     : result.errorKind === 'rate_limit'
                     ? (t.aiRateLimit || 'Rate limit (key valid but throttled).')
@@ -3873,7 +4047,7 @@ export default function App() {
                                                         </div>
                                                     )}
                                                     
-                                                    <button onClick={() => handleRestore(img.id)} className="absolute top-2 left-2 p-1.5 bg-black/50 hover:bg-green-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.restore}><RefreshCw size={14} /></button>
+                                                    <button onClick={() => handleRestore(img.id)} disabled={isEmptyingTrash} className="absolute top-2 left-2 p-1.5 bg-black/50 hover:bg-green-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 disabled:cursor-not-allowed" title={t.restore}><RefreshCw size={14} /></button>
                                                     <button onClick={() => {
                                                         setConfirmDialog({
                                                             isOpen: true,
@@ -3885,7 +4059,7 @@ export default function App() {
                                                             },
                                                             onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                         });
-                                                    }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.deletePermanently}><X size={14} /></button>
+                                                    }} disabled={isEmptyingTrash} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 disabled:cursor-not-allowed`} title={t.deletePermanently}><X size={14} /></button>
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
@@ -4108,6 +4282,7 @@ export default function App() {
                                                                     setAiModelloFissato(false);
                                                                     if (geminiApiKey) controllaModello(false, true, false);
                                                                 } else {
+                                                                    sceltaManualeRef.current += 1;
                                                                     setAiModel(scelto);
                                                                     setAiModelloFissato(true);
                                                                 }
