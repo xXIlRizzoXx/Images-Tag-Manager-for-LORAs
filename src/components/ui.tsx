@@ -108,8 +108,20 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
 
 // ITALIANO: Messaggio a comparsa (notifica) in basso a destra
 // ENGLISH: Pop-up message (notification) at the bottom right
-export const Toast = ({ message, type, onClose }: any) => {
-    useEffect(() => { const timer = setTimeout(onClose, 4000); return () => clearTimeout(timer); }, [onClose]);
+export const Toast = ({ message, type, onClose, id }: any) => {
+    // ITALIANO: i 4 secondi partono con ogni notifica NUOVA (testo, tipo o `id` diversi: l'id
+    //           cambia anche quando torna lo stesso testo, es. "Tag copiati" due volte di fila).
+    //           Prima dipendevano da onClose, che App crea nuova a ogni disegno: scrivendo nella
+    //           ricerca, o durante "Tagga tutte con AI" veloce, ripartivano a ogni disegno e il
+    //           messaggio non spariva piu'. La chiusura usata e' sempre l'ultima ricevuta.
+    // ENGLISH: the 4 seconds start with every NEW notification (different text, type or `id`: the
+    //          id changes even when the same text comes back, e.g. "Tags copied" twice in a row).
+    //          They used to depend on onClose, which App creates anew on every render: typing in
+    //          the search, or a fast "Auto-tag all with AI", restarted them on every render and
+    //          the message never went away. The close function used is always the latest one.
+    const chiudiRef = useRef(onClose);
+    useEffect(() => { chiudiRef.current = onClose; });
+    useEffect(() => { const timer = setTimeout(() => chiudiRef.current(), 4000); return () => clearTimeout(timer); }, [message, type, id]);
     const bgColor = type === 'error' ? 'bg-red-600' : 'bg-emerald-500';
     const infoColor = type === 'info' ? 'bg-blue-600' : bgColor;
     return (

@@ -63,6 +63,15 @@ for (const k of ['formatoPeso', 'exportAllAsZip', 'handleExportAll']) {
 }
 export const haAvviaExport = pezzi.avviaExport !== '';
 
+// ITALIANO: l'ordinamento VERO condiviso da galleria ed esportazione (applySort, in cima ad App.tsx,
+//           fuori dal componente). creaApp riceve l'ordine scelto in "Ordina per" (sortOrder).
+// ENGLISH: the REAL sorting shared by gallery and export (applySort, at the top of App.tsx, outside
+//          the component). creaApp receives the order picked in "Sort by" (sortOrder).
+const iOrdina = sorgente.indexOf('const applySort = (');
+const fOrdina = iOrdina < 0 ? -1 : sorgente.indexOf('\n};', iOrdina);
+if (fOrdina < 0) { console.log('NO  applySort non trovato in src/App.tsx'); process.exit(1); }
+export const applySort = new Function((await esbuild.transform(sorgente.slice(iOrdina, fOrdina + 3), { loader: 'ts' })).code + '\nreturn applySort;')();
+
 // ITALIANO: il codice di prima leggeva le foto con il FileReader del browser (dentro JSZip), che
 //           Node non ha: questo lo imita leggendo con arrayBuffer(), cosi' le foto contano la lettura.
 // ENGLISH: the previous code read the photos through the browser's FileReader (inside JSZip), which
@@ -129,11 +138,13 @@ export const cartellaFinta = (attuali) => ({
 
 /* ITALIANO: prepara l'app finta con queste foto. apri() preme "Esporta (.zip)"; conferma(foto,
    rinomina) preme "Esporta" nella finestra di scelta. Restituisce notifiche, scelta mostrata,
-   byte dell'archivio e come si e' chiuso il file di destinazione.
+   byte dell'archivio e come si e' chiuso il file di destinazione. `ordine` = la scelta di
+   "Ordina per" (sortOrder dell'app).
    ENGLISH: sets up the fake app with these photos. apri() presses "Export (.zip)"; conferma(photos,
    rename) presses "Export" in the choice dialog. Returns notifications, the choice shown, the
-   archive bytes and how the destination file ended. */
-export const creaApp = (images, sonda, { conFinestra = true } = {}) => {
+   archive bytes and how the destination file ended. `ordine` = the "Sort by" choice (the app's
+   sortOrder). */
+export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc' } = {}) => {
     const r = { notifiche: [], scelta: null, pezzi: [], chiuso: false, annullato: false, scaricato: null };
     const finestra = {};
     if (conFinestra) {
@@ -170,13 +181,15 @@ export const creaApp = (images, sonda, { conFinestra = true } = {}) => {
         revokeObjectURL() { },
     };
     const nomi = ['images', 't', 'showNotification', 'setIsSaving', 'setImportProgress', 'getOrderedTagString', 'soundManager', 'window', 'document', 'URL', 'console',
-        'setExportChoice', 'exportChoice', 'JSZip', 'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'scriviZip', 'ERRORE_LETTURA_ZIP'];
+        'setExportChoice', 'exportChoice', 'JSZip', 'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'scriviZip', 'ERRORE_LETTURA_ZIP',
+        'applySort', 'sortOrder'];
     const costruisci = (exportChoice) => new Function(...nomi,
         pezzi.formatoPeso + '\n' + pezzi.exportAllAsZip + '\n' + pezzi.handleExportAll + '\n' + pezzi.avviaExport +
         '\nreturn { exportAllAsZip, handleExportAll, avviaExport: typeof avviaExport === "function" ? avviaExport : null };')(
         images, t, (m, tipo) => r.notifiche.push([m, tipo]), () => { }, () => { }, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         { chime() { }, pop() { } }, finestra, documento, url, { log() { }, warn() { }, error() { } },
-        (v) => { r.scelta = v; }, exportChoice, JSZip, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, Z.scriviZip, Z.ERRORE_LETTURA_ZIP);
+        (v) => { r.scelta = v; }, exportChoice, JSZip, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, Z.scriviZip, Z.ERRORE_LETTURA_ZIP,
+        applySort, ordine);
     r.apri = () => { costruisci(null).handleExportAll(); return r; };
     r.conferma = async (conImmagini, rinomina = false) => {
         const f = costruisci(r.scelta);

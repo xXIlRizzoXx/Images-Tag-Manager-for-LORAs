@@ -357,7 +357,7 @@ export default function App() {
     const [viewMode, setViewMode] = useState('square'); 
     const [selectedImageId, setSelectedImageId] = useState<string | null>(null); 
     const [slideDirection, setSlideDirection] = useState('right');
-    const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+    const [toast, setToast] = useState({ show: false, message: '', type: 'info', id: 0 });
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
     // ITALIANO: Finestra a tre scelte mostrata chiudendo il progetto con modifiche non salvate
     // ENGLISH: Three-choice dialog shown when closing the project with unsaved changes
@@ -688,7 +688,7 @@ export default function App() {
             isUndoRedoAction.current = true;
             setHistoryIndex(prev => prev - 1);
             setImages(withLiveOriginalTags(history[historyIndex - 1], imagesRef.current));
-            setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info' });
+            setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
 
@@ -697,7 +697,7 @@ export default function App() {
             isUndoRedoAction.current = true;
             setHistoryIndex(prev => prev + 1);
             setImages(withLiveOriginalTags(history[historyIndex + 1], imagesRef.current));
-            setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info' });
+            setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
 
@@ -832,6 +832,13 @@ export default function App() {
     }, [selectedImageId, images]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
+    // ITALIANO: le foto del progetto, cioe' quelle fuori dal cestino: il contatore della barra le
+    //           conta cosi' con e senza ricerca, come la galleria e le Statistiche. Senza ricerca
+    //           contava anche le foto nel cestino ("5 immagini aperte" sopra una galleria di 3).
+    // ENGLISH: the project's photos, i.e. those outside the trash: the bar counter counts them this
+    //          way with and without a search, like the gallery and Statistics. Without a search it
+    //          counted the trashed photos too ("5 images opened" above a gallery of 3).
+    const fotoAttive = images.length - trashedImages.length;
 
     // ITALIANO: PRESTAZIONI — selezione come Set per un test O(1) "questa foto e' selezionata?".
     //           Serve alle card memorizzate della galleria (prop booleana isSelected).
@@ -889,7 +896,11 @@ export default function App() {
         return applySort([...trashedImages], trashSortOrder);
     }, [trashedImages, trashSortOrder]);
 
-    const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
+    // ITALIANO: `id` distingue ogni notifica, anche con lo stesso testo: da li' Toast fa ripartire
+    //           i suoi 4 secondi (vedi Toast in components/ui.tsx).
+    // ENGLISH: `id` tells every notification apart, even with the same text: Toast restarts its
+    //          4 seconds from it (see Toast in components/ui.tsx).
+    const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type, id: Date.now() });
 
     // ITALIANO: SCELTA AUTOMATICA DEL MODELLO AI
     //   Quali modelli esistano lo dice Google, non questo file: cosi' il programma non resta
@@ -3066,7 +3077,13 @@ export default function App() {
         //          tagged ones too: the still-untagged photos vanished from the exported dataset,
         //          with "archive created" as the only message, and if none had tags the export
         //          refused altogether.
-        const attive = images.filter(img => !img.isTrashed);
+        // ITALIANO: in fila come nella galleria ("Ordina per"): e' l'ordine che "Rinomina in
+        //           sequenza" promette per 0001, 0002... Prima restava quello in memoria (A-Z
+        //           dall'import, con in fondo le foto tornate annullando lo svuotamento del cestino).
+        // ENGLISH: lined up as in the gallery ("Sort by"): the order "Rename in sequence" promises
+        //          for 0001, 0002... It used to stay the in-memory one (A-Z from the import, with the
+        //          photos brought back by undoing the trash emptying at the end).
+        const attive = applySort(images.filter(img => !img.isTrashed), sortOrder);
         const imagesWithTags = attive.filter(img => img.tags && img.tags.length > 0);
 
         if (attive.length === 0) {
@@ -3902,7 +3919,7 @@ export default function App() {
                 </div>
             )}
             
-            {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
+            {toast.show && <Toast id={toast.id} message={toast.message} type={toast.type} onClose={() => setToast(prev => ({ ...prev, show: false }))} />}
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <ExportChoiceDialog
@@ -4742,7 +4759,7 @@ export default function App() {
                         <div className={`basis-full xl:basis-auto flex flex-wrap items-center gap-2 text-sm font-medium min-w-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                             {/* ITALIANO: conteggio — se c'e' una ricerca per tag mostro "filtrate / totali" */}
                             {/* ENGLISH: count — if a tag search is active I show "filtered / total" */}
-                            <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${images.filter(i => !i.isTrashed).length}` : `${images.length} ${images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
+                            <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${fotoAttive}` : `${fotoAttive} ${fotoAttive === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
                             {/* ITALIANO: ricerca per TAG — filtra le immagini mostrate (uno o piu' tag separati da virgola) */}
                             {/* ENGLISH: TAG search — filters the shown images (one or more comma-separated tags) */}
                             <div className="relative flex-1 min-w-[150px] max-w-xs">
