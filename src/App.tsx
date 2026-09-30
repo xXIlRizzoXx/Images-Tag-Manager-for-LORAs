@@ -36,6 +36,9 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, parseSidecarText, tagDiImport } from './utils/sidecarTags';
+import { BACKUP_KEY_SEP, folderSignature, costruisciBackup, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
@@ -75,12 +78,6 @@ const detectInitialLang = (): string => {
     return 'en';
 };
 
-// ITALIANO: Nome-base di un file, senza estensione (foto.jpg -> foto). Stessa regola usata
-//           storicamente dall'import, estratta qui per usarla in un solo posto.
-// ENGLISH: A file's base name, without extension (photo.jpg -> photo). Same rule the import
-//          has always used, pulled out here so it lives in one place.
-const fileBaseName = (name: string): string => name.split('.').slice(0, -1).join('.');
-
 // ITALIANO: IDENTIFICATIVO INTERNO di ogni foto importata. Prima era
 //   `Math.random().toString(36).substring(7)`: una stringa di 4-6 caratteri che su un import da
 //   3000 foto dava due id uguali circa una volta su 160. Due foto con lo stesso id diventano
@@ -109,41 +106,6 @@ const nuovoIdFoto = (): string => {
     }
 };
 
-// ITALIANO: CHIAVE "CARTELLA + NOME" per abbinare ogni immagine al SUO .txt.
-//   Due foto con lo STESSO nome in sottocartelle diverse (es. 10_viso\img_001.png e
-//   20_corpo\img_001.png, la disposizione tipica dei dataset LoRA) NON devono scambiarsi
-//   i tag. Prima l'abbinamento usava solo il nome-base: la seconda cartella sovrascriveva
-//   la prima e ogni foto con quel nome riceveva i tag della cartella letta per ultima —
-//   poi, al salvataggio, quei tag stranieri finivano scritti sul .txt vero dell'altra foto.
-//   La chiave unisce l'IDENTITA' DELLA CARTELLA al nome-base. La cartella puo' essere:
-//     - un handle (oggetto) dalla scelta cartella  -> gli si assegna un id stabile
-//     - un percorso (stringa) dal caricamento di singole immagini / dal fallback
-//     - assente (nessuna info cartella)            -> un unico spazio, come prima
-// ENGLISH: "FOLDER + NAME" KEY to pair each image with ITS OWN .txt.
-//   Two photos with the SAME name in different subfolders (e.g. 10_face\img_001.png and
-//   20_body\img_001.png, the typical LoRA dataset layout) must NOT swap tags. Matching used
-//   to key on the base name alone: the second folder overwrote the first and every photo
-//   with that name got the last-scanned folder's tags — which the save then wrote onto the
-//   OTHER photo's real .txt. The key joins the FOLDER IDENTITY to the base name. The folder
-//   may be: a handle (object) from the folder picker -> given a stable id; a path (string)
-//   from the individual-image / fallback load; or absent (no folder info) -> one namespace,
-//   exactly as before.
-const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
-    const dirIds = new Map<any, number>();
-    let next = 0;
-    return (file: any): string => {
-        const dir = folderOf ? folderOf.get(file) : null;
-        let ns = '';
-        if (typeof dir === 'string') {
-            ns = dir ? 'p:' + dir : '';
-        } else if (dir) {
-            if (!dirIds.has(dir)) dirIds.set(dir, next++);
-            ns = 'h:' + dirIds.get(dir);
-        }
-        return ns + '' + fileBaseName(file.name);
-    };
-};
-
 // ITALIANO: Chiave del BACKUP anti-crash: cartella + nome del file. Deve restare identica fra
 //           una sessione e l'altra (il backup si rilegge dopo un riavvio), quindi NON puo' usare
 //           i numeri progressivi di makeFolderKeyer, che dipendono dall'ordine di scansione.
@@ -158,7 +120,6 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
 //          20_body\img.png, the typical LoRA layout) overwrote each other in the backup: after a
 //          crash one photo's tags were restored onto the OTHER and the first save wrote them into
 //          the wrong .txt.
-const BACKUP_KEY_SEP = '\x1f';
 // ITALIANO: `relPathOf` (quando c'e') porta il percorso RELATIVO completo della sottocartella,
 //           es. "anna_bea/char_anna/10_face". Serve perche' l'handle di una cartella espone solo
 //           il nome FOGLIA: con quello, char_anna\10_face e char_bea\10_face davano la stessa
@@ -583,6 +544,15 @@ export default function App() {
     // ITALIANO: Specchio sempre aggiornato di `images` per i loop async (evita snapshot stantii che sovrascrivono le modifiche manuali)
     // ENGLISH: Always-fresh mirror of `images` for async loops (avoids stale snapshots that overwrite manual edits)
     const imagesRef = useRef<any[]>([]);
+    // ITALIANO: Le foto CHIUSE con la "x" (per id): tolte dalla vista ma ancora su disco, quindi
+    //           ancora contate nell'impronta del backup anti-crash (vedi costruisciBackup). Ne
+    //           escono solo quando il file lascia davvero il disco (cestino svuotato, eliminata per
+    //           sempre) e si azzerano con Chiudi progetto e Reset.
+    // ENGLISH: The photos CLOSED with the "x" (by id): out of view but still on disk, so still
+    //          counted in the crash backup's fingerprint (see costruisciBackup). They leave only
+    //          when the file really leaves the disk (trash emptied, deleted for good) and are
+    //          cleared by Close project and Reset.
+    const fotoChiuseRef = useRef<Map<string, FotoChiusa>>(new Map());
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -644,50 +614,27 @@ export default function App() {
         if (selectedForBulk.length === 0 && stagedBulkTags.length > 0) setStagedBulkTags([]);
     }, [selectedForBulk.length, stagedBulkTags.length]);
 
-    // ITALIANO: Backup automatico (debounce 1s) di tag e didascalie in localStorage —
-    //           rete anti-crash: al re-import della cartella le modifiche non salvate vengono ripristinate.
-    //           Non si svuota mai da solo: viene cancellato solo dal Reset progetto.
-    // ENGLISH: Debounced (1s) automatic backup of tags and captions to localStorage —
-    //          crash safety net: re-importing the folder restores unsaved edits.
-    //          Never auto-cleared: only Project Reset removes it.
+    // ITALIANO: Backup automatico (debounce 1s) dei tag in localStorage — rete anti-crash: al
+    //           re-import della cartella le modifiche non salvate vengono ripristinate.
+    //           Contiene SOLO le foto con modifiche non salvate, con un'impronta per ogni cartella
+    //           aperta (le regole e il perche' stanno in costruisciBackup). Quando non resta niente
+    //           da salvare si cancella da solo; lo cancellano anche Reset e Chiudi progetto. Con la
+    //           lista vuota (avvio del programma) non si tocca: e' proprio li' che serve il
+    //           recupero dopo un crash.
+    // ENGLISH: Debounced (1s) automatic backup of the tags to localStorage — crash safety net:
+    //          re-importing the folder restores unsaved edits.
+    //          It holds ONLY the photos with unsaved edits, with one fingerprint per open folder
+    //          (the rules and the why live in costruisciBackup). When nothing is left unsaved it
+    //          removes itself; Reset and Close project remove it too. With an empty list (program
+    //          start) it is left alone: that is exactly when crash recovery is needed.
     useEffect(() => {
         if (images.length === 0) return undefined;
         const handle = setTimeout(() => {
             try {
-                const data: Record<string, { tags: string[] }> = {};
-                for (const img of images) {
-                    if (img.isTrashed) continue;
-                    // ITALIANO: chiave cartella+nome assegnata all'import (vedi makeBackupKeyer):
-                    //           due foto omonime in sottocartelle diverse restano separate.
-                    // ENGLISH: folder+name key assigned at import (see makeBackupKeyer): two
-                    //          same-named photos in different subfolders stay separate.
-                    data[img.backupKey || (BACKUP_KEY_SEP + img.file.name)] = { tags: img.tags };
-                }
-                // ITALIANO: Oltre al nome cartella salviamo una "impronta" del contenuto. Il solo nome
-                //           non basta: i dataset LoRA si chiamano quasi sempre allo stesso modo
-                //           (dataset, img, 10_soggetto), quindi chiudendo l'app su char1\dataset e
-                //           riaprendo char2\dataset i tag del primo venivano ripristinati sul secondo
-                //           e al primo salvataggio finivano su disco, cancellando quelli veri.
-                // ENGLISH: Besides the folder name we store a content "fingerprint". The name alone is
-                //          not enough: LoRA datasets are almost always named the same (dataset, img,
-                //          10_subject), so quitting on char1\dataset and reopening char2\dataset
-                //          restored the first one's tags onto the second, and the first save wrote them
-                //          to disk over the real ones.
                 const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-                // ITALIANO: l'impronta va calcolata sulla STESSA popolazione dell'import (TUTTE le
-                //           immagini, comprese quelle nel cestino — che sono ancora su disco finche'
-                //           non si svuota il cestino — e coi nomi ripetuti). Prima si usavano le sole
-                //           chiavi di `data` (senza cestinate, senza doppioni): bastava cestinare una
-                //           foto e al riavvio il conteggio non combaciava piu', cosi' il recupero
-                //           anti-crash veniva scartato in silenzio e i tag non salvati andavano persi.
-                // ENGLISH: the fingerprint must be computed from the SAME population as the import
-                //          (ALL images, including trashed ones — still on disk until the trash is
-                //          emptied — and with repeated names kept). It used to use only `data`'s keys
-                //          (trash-filtered, de-duplicated): trashing a single photo made the count
-                //          diverge on restart, so the crash recovery was silently discarded and any
-                //          unsaved tags were lost.
-                const signature = folderSignature(folder, images.map(img => img.file.name));
-                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, signature, data }));
+                const backup = costruisciBackup(images, fotoChiuseRef.current.values(), folder);
+                if (!backup) localStorage.removeItem('tagBackup');
+                else localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), ...backup }));
             } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
         }, 1000);
         return () => clearTimeout(handle);
@@ -1053,18 +1000,6 @@ export default function App() {
         return base;
     }, [modelliDisponibili, aiModel]);
 
-    // ITALIANO: "Impronta" di una cartella: nome + quante immagini + la prima e l'ultima in ordine
-    //           alfabetico. Serve a riconoscere che il backup anti-crash appartiene DAVVERO alla
-    //           cartella che si sta aprendo. Col solo nome, due dataset chiamati entrambi "dataset"
-    //           risultavano lo stesso progetto.
-    // ENGLISH: A folder "fingerprint": name + how many images + the alphabetically first and last
-    //          one. It tells whether the crash backup REALLY belongs to the folder being opened.
-    //          With the name alone, two datasets both called "dataset" looked like the same project.
-    const folderSignature = (folderName: string, fileNames: string[]): string => {
-        const sorted = [...fileNames].sort();
-        return `${folderName}|${sorted.length}|${sorted[0] || ''}|${sorted[sorted.length - 1] || ''}`;
-    };
-
     const handleDeleteAllTags = () => {
         setConfirmDialog({
             isOpen: true,
@@ -1115,6 +1050,9 @@ export default function App() {
             //          brings it back): revoking its preview now would make the photo come back with a
             //          BROKEN image on undo. Like the trash, the preview stays valid and is freed in
             //          bulk on project close/reset.
+            // ITALIANO: il file resta su disco: la foto conta ancora nell'impronta del backup.
+            // ENGLISH: the file stays on disk: the photo still counts in the backup's fingerprint.
+            fotoChiuseRef.current.set(id, { id, name: img.file.name, lotto: String(img.lottoImport || ''), cartella: String(img.cartellaImport || '') });
             setImages(prev => prev.filter(i => i.id !== id));
             setSelectedForBulk(prev => prev.filter(x => x !== id));
             setSelectedImageId(prev => prev === id ? null : prev);
@@ -1426,6 +1364,11 @@ export default function App() {
             return;
         }
 
+        // ITALIANO: il file ha lasciato il disco: non conta piu' nell'impronta del backup, anche se
+        //           era stato chiuso e riportato con Ctrl+Z.
+        // ENGLISH: the file has left the disk: it no longer counts in the backup's fingerprint, even
+        //          if it had been closed and brought back with Ctrl+Z.
+        fotoChiuseRef.current.delete(id);
         setImages(prev => prev.filter(i => i.id !== id));
         // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
         //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
@@ -1601,6 +1544,7 @@ export default function App() {
         // ENGLISH: if not a single photo was removed, do NOT touch `images`: `filter` would still make
         //          a new array, the history effect would read it as a change, and the next Ctrl+Z would
         //          burn itself on an empty step instead of undoing the user's last real tag edit.
+        removedIds.forEach(id => fotoChiuseRef.current.delete(id));
         if (removedIds.size > 0) setImages(prev => prev.filter(i => !removedIds.has(i.id)));
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
@@ -1651,6 +1595,7 @@ export default function App() {
         setIsEmptyingTrash(false);
 
         if (removedIds.size > 0) {
+            removedIds.forEach(id => fotoChiuseRef.current.delete(id));
             setImages(prev => prev.filter(i => !removedIds.has(i.id)));
             setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
         }
@@ -1670,11 +1615,11 @@ export default function App() {
         soundManager.pop();
     };
 
-    // ITALIANO: Limiti di sicurezza sull'ingestione dei .txt sidecar (un dataset scaricato è input non fidato)
-    // ENGLISH: Safety caps on sidecar .txt ingestion (a downloaded dataset is untrusted input)
+    // ITALIANO: Limiti di sicurezza sull'ingestione dei .txt sidecar (un dataset scaricato è input non fidato).
+    //           Quelli sul numero e sulla lunghezza dei tag stanno con la lettura, in sidecarTags.
+    // ENGLISH: Safety caps on sidecar .txt ingestion (a downloaded dataset is untrusted input).
+    //          The caps on tag count and length live with the reading, in sidecarTags.
     const TXT_MAX_BYTES = 1024 * 1024;
-    const TXT_MAX_TAGS_PER_FILE = 200;
-    const TXT_TAG_MAX_CHARS = 100;
 
     const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
@@ -1688,36 +1633,29 @@ export default function App() {
         setIsImporting(true);
         setImportProgress(0);
         let skippedTxtCount = 0;
+        let shortenedTxtCount = 0;
         let restoredCount = 0;
         try {
             await new Promise(r => setTimeout(r, 300));
 
             // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'.
-            //           Lo applichiamo SOLO se l'IMPRONTA coincide (nome cartella + numero di immagini +
-            //           prima e ultima in ordine alfabetico). Prima bastava il nome della cartella, e
-            //           siccome i dataset LoRA si chiamano quasi tutti uguale ("dataset", "img"), i tag
-            //           di un progetto potevano essere ripristinati su un altro e poi scritti su disco.
-            //           I backup vecchi non hanno l'impronta: non vengono applicati, che e' il lato sicuro.
+            //           Lo applichiamo SOLO se l'IMPRONTA di questa cartella coincide (nome cartella +
+            //           numero di immagini + prima e ultima in ordine alfabetico): le regole stanno in
+            //           backupDellImport. Ogni import e' un "lotto": le foto se lo portano dietro, con il
+            //           nome della cartella, cosi' il backup tiene un'impronta per ogni cartella aperta.
             // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect.
-            //          Applied ONLY when the FINGERPRINT matches (folder name + image count + first and
-            //          last name alphabetically). The folder name alone used to be enough, and since LoRA
-            //          datasets are nearly all named the same ("dataset", "img"), one project's tags could
-            //          be restored onto another and then written to disk. Older backups carry no
-            //          fingerprint: they are not applied, which is the safe side.
-            let backupMap: Record<string, { tags?: unknown; caption?: unknown }> | null = null;
+            //          Applied ONLY when THIS folder's FINGERPRINT matches (folder name + image count +
+            //          first and last name alphabetically): the rules live in backupDellImport. Every
+            //          import is a "batch": the photos carry it, with the folder's name, so the backup
+            //          keeps one fingerprint per open folder.
             const importFolder = (handle && handle.name) ? String(handle.name) : '';
             const importSignature = folderSignature(importFolder, imgFiles.map(f => f.name));
+            const lottoImport = nuovoIdFoto();
+            let backup: { voci: Record<string, any>; ts: number | null } | null = null;
             try {
-                const raw = localStorage.getItem('tagBackup');
-                if (raw) {
-                    const parsed = JSON.parse(raw);
-                    const backupSignature = parsed && typeof parsed.signature === 'string' ? parsed.signature : '';
-                    const sameFolder = importFolder !== '' && backupSignature !== '' && backupSignature === importSignature;
-                    if (sameFolder && parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
-                        backupMap = parsed.data;
-                    }
-                }
-            } catch (_) { backupMap = null; }
+                backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature);
+            } catch (_) { backup = null; }
+            const backupMap = backup ? backup.voci : null;
 
             // ITALIANO: chiave cartella+nome (vedi makeFolderKeyer): stessa immagine e stesso
             //           .txt SOLO se stanno nella stessa sottocartella.
@@ -1755,6 +1693,11 @@ export default function App() {
                 conteggioFoglia.set(k, (conteggioFoglia.get(k) || 0) + 1);
             }
             const textMap = new Map();
+            // ITALIANO: data di modifica di ogni .txt: serve solo ai backup della versione precedente
+            //           (vedi tagDaRipristinare).
+            // ENGLISH: each .txt's modification date: only needed by the previous version's backups
+            //          (see tagDaRipristinare).
+            const txtMtime = new Map<string, number>();
             for (let i = 0; i < txtFiles.length; i++) {
                 try {
                     if (txtFiles[i].size > TXT_MAX_BYTES) {
@@ -1764,11 +1707,13 @@ export default function App() {
                         skippedTxtCount++;
                     } else {
                         const text = await txtFiles[i].text();
-                        const parsedTags = text.split(/[,\n\r]+/)
-                            .map((tag: string) => tag.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, TXT_TAG_MAX_CHARS))
-                            .filter((tag: string) => tag.length > 0)
-                            .slice(0, TXT_MAX_TAGS_PER_FILE);
-                        textMap.set(folderKeyOf(txtFiles[i]), [...new Set(parsedTags)]);
+                        const letti = parseSidecarText(text);
+                        if (letti.truncated) {
+                            console.warn('[Import] .txt oltre i limiti, accorciato / over the caps, shortened:', txtFiles[i].name);
+                            shortenedTxtCount++;
+                        }
+                        textMap.set(folderKeyOf(txtFiles[i]), letti.tags);
+                        txtMtime.set(folderKeyOf(txtFiles[i]), Number(txtFiles[i].lastModified) || 0);
                     }
                 } catch (e) {
                     // ITALIANO: File illeggibile (lockato/spostato): si salta, l'import non deve bloccarsi
@@ -1808,11 +1753,11 @@ export default function App() {
             const newImages = [];
             for (let i = 0; i < imgFiles.length; i++) {
                 const thumbData: any = thumbs[i];
-                const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(folderKeyOf(imgFiles[i])) || [])])];
-                const orderedTags = [
-                    ...globalTriggers.filter(t => combinedTags.includes(t)),
-                    ...combinedTags.filter(t => !globalTriggers.includes(t))
-                ];
+                // ITALIANO: tags = trigger attive + .txt; originalTags = solo cio' che e' davvero nel .txt
+                //           (vedi tagDiImport), cosi' "Salva modifiche" scrive la trigger dove manca.
+                // ENGLISH: tags = active triggers + .txt; originalTags = only what is really in the .txt
+                //          (see tagDiImport), so "Save changes" writes the trigger where it is missing.
+                const { tags: orderedTags, originalTags } = tagDiImport(globalTriggers, textMap.get(folderKeyOf(imgFiles[i])) || []);
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
@@ -1836,21 +1781,10 @@ export default function App() {
                         entry = backupMap[imgFiles[i].name];
                     }
                 }
-                if (entry) {
-                    if (Array.isArray(entry.tags)) {
-                        const backupTags = (entry.tags as unknown[])
-                            .filter((x): x is string => typeof x === 'string')
-                            .map(x => x.slice(0, TXT_TAG_MAX_CHARS))
-                            .slice(0, 500);
-                        const differs = JSON.stringify([...backupTags].sort()) !== JSON.stringify([...orderedTags].sort());
-                        if (differs && backupTags.length > 0) {
-                            finalTags = [
-                                ...globalTriggers.filter(t => backupTags.includes(t)),
-                                ...backupTags.filter(t => !globalTriggers.includes(t))
-                            ];
-                            restoredCount++;
-                        }
-                    }
+                const ripristinati = tagDaRipristinare(entry, orderedTags, originalTags, globalTriggers, txtMtime.get(folderKeyOf(imgFiles[i])), backup ? backup.ts : null);
+                if (ripristinati) {
+                    finalTags = ripristinati;
+                    restoredCount++;
                 }
                 newImages.push({
                     id: nuovoIdFoto(),
@@ -1859,10 +1793,14 @@ export default function App() {
                     width: thumbData?.width || 0,
                     height: thumbData?.height || 0,
                     tags: finalTags,
-                    originalTags: [...orderedTags],
-                    // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash.
-                    // ENGLISH: the key under which this photo is stored in the crash backup.
+                    originalTags: [...originalTags],
+                    // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash, e il
+                    //           lotto di import con la sua cartella (un'impronta per cartella).
+                    // ENGLISH: the key under which this photo is stored in the crash backup, and the
+                    //          import batch with its folder (one fingerprint per folder).
                     backupKey: chiaveBackup,
+                    lottoImport,
+                    cartellaImport: importFolder,
                     // ITALIANO: percorso VERO del file sul disco, quello che serve a Windows per
                     //           mandarlo nel Cestino. Vuoto quando non si conosce: cartella di rete
                     //           (dove il Cestino di Windows non esiste), oppure fuori da Electron.
@@ -1891,7 +1829,14 @@ export default function App() {
             });
             soundManager.chime();
             const extras = `${restoredCount > 0 ? ` · ↻ ${restoredCount}` : ''}${skippedTxtCount > 0 ? ` · ⊘ ${skippedTxtCount} .txt` : ''}`;
-            showNotification(`${t.successImport.replace('{n}', String(newImages.length))}${extras}`, "success");
+            // ITALIANO: un .txt accorciato perche' fuori misura va detto: al primo salvataggio la parte
+            //           tagliata sparirebbe dal disco. L'avviso prende il posto del messaggio di import
+            //           (a schermo ne resta uno solo): le foto caricate si vedono comunque.
+            // ENGLISH: a .txt shortened for being over the caps must be reported: the first save would
+            //          drop the cut part from disk. The warning takes the import message's place (only
+            //          one stays on screen): the loaded photos show anyway.
+            if (shortenedTxtCount > 0) showNotification(t.importTxtShortened.replace('{n}', String(shortenedTxtCount)), 'error');
+            else showNotification(`${t.successImport.replace('{n}', String(newImages.length))}${extras}`, "success");
         } catch (error: any) {
             console.error('[Import] Failed', error);
             showNotification(`${t.aiError || 'Error'}: ${String(error?.message || error || '').slice(0, 150)}`, 'error');
@@ -1943,59 +1888,34 @@ export default function App() {
             //          path and never sends one.
             const api = (window as any).electronAPI;
             try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
+            // ITALIANO: diventa vero appena il selettore ha dato la cartella: da li' in poi un errore
+            //           e' della LETTURA, non del selettore, e il ripiego (il campo nascosto, cioe' un
+            //           secondo selettore) non c'entra: si dice all'utente che la cartella non si legge.
+            // ENGLISH: becomes true as soon as the picker has returned the folder: from then on an
+            //          error belongs to the READ, not to the picker, and the fallback (the hidden input,
+            //          i.e. a second picker) does not apply: the user is told the folder cannot be read.
+            let cartellaScelta = false;
             try {
                 // ITALIANO: l'id fa ricordare al sistema l'ULTIMA cartella usata: la volta dopo
                 //           il selettore si riapre lì. startIn come riserva al primo utilizzo.
                 // ENGLISH: the id makes the system remember the LAST used folder: next time the
                 //          picker reopens there. startIn as a fallback on first use.
                 const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-project', startIn: 'pictures' });
+                cartellaScelta = true;
 
-                const imgFiles: any[] = [];
-                const txtFiles: any[] = [];
-                // ITALIANO: Ogni immagine ricorda la SOTTOCARTELLA in cui si trova, cosi' il suo
-                //           .txt viene riscritto li' dentro e non nella cartella principale.
-                //           I dataset LoRA sono spesso divisi in sottocartelle (es. "10_soggetto").
-                // ENGLISH: Each image remembers the SUBFOLDER it lives in, so its .txt is written
-                //          back there and not into the top folder. LoRA datasets are often split
-                //          into subfolders (e.g. "10_subject").
-                const folderOf = new Map<any, any>();
-                // ITALIANO: percorso RELATIVO completo di ogni file (es. "anna_bea/char_anna/10_face").
-                //           L'handle di una cartella conosce solo il proprio nome, non da dove viene:
-                //           il percorso lo devo costruire io mentre scendo, ed e' cio' che rende
-                //           univoca la chiave del backup anti-crash fra sottocartelle omonime.
-                // ENGLISH: each file's full RELATIVE path (e.g. "anna_bea/char_anna/10_face"). A
-                //          directory handle only knows its own name, not where it came from: the path
-                //          must be built while descending, and it is what makes the crash-backup key
-                //          unique across same-named subfolders.
-                const relPathOf = new Map<any, string>();
-
-                const MAX_DEPTH = 8;
-                const scan = async (dir: any, depth: number, prefix: string) => {
-                    for await (const entry of dir.values()) {
-                        if (entry.kind === 'file') {
-                            const file = await entry.getFile();
-                            if (file.type.startsWith('image/')) {
-                                imgFiles.push(file);
-                                folderOf.set(file, dir);
-                                relPathOf.set(file, prefix);
-                            } else if (file.name.toLowerCase().endsWith('.txt')) {
-                                txtFiles.push(file);
-                                // ITALIANO: registro la cartella anche per il .txt, cosi' viene
-                                //           abbinato SOLO all'immagine della stessa sottocartella.
-                                // ENGLISH: record the folder for the .txt too, so it pairs ONLY with
-                                //          the image in the same subfolder.
-                                folderOf.set(file, dir);
-                                relPathOf.set(file, prefix);
-                            }
-                        } else if (entry.kind === 'directory' && depth < MAX_DEPTH) {
-                            await scan(entry, depth + 1, prefix ? prefix + '/' + entry.name : entry.name);
-                        }
-                    }
-                };
-                await scan(handle, 0, String(handle.name || ''));
+                // ITALIANO: immagini e .txt con la sottocartella di ciascuno; le voci illeggibili si
+                //           saltano e si contano (vedi scanDirectoryHandle).
+                // ENGLISH: images and .txt files with the subfolder of each; unreadable entries are
+                //          skipped and counted (see scanDirectoryHandle).
+                const { imgFiles, txtFiles, folderOf, relPathOf, skipped } = await scanDirectoryHandle(handle);
 
                 if (imgFiles.length === 0) {
-                    return showNotification(t.noImagesTitle, "info");
+                    // ITALIANO: se nessuna immagine e' arrivata e qualcosa non si e' letto, si dice anche
+                    //           quello: le immagini potevano stare proprio nelle voci saltate.
+                    // ENGLISH: if no image arrived and something could not be read, that is said too:
+                    //          the images may have been in the very entries that were skipped.
+                    const saltate = skipped > 0 ? ' ' + t.folderEntriesSkipped.replace('{n}', String(skipped)) : '';
+                    return showNotification(t.noImagesTitle + saltate, "info");
                 }
 
                 // ITALIANO: il percorso della cartella si ritira DOPO la scansione, non prima:
@@ -2049,6 +1969,7 @@ export default function App() {
                 }
 
                 calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf);
+                if (skipped > 0) showNotification(t.folderEntriesSkipped.replace('{n}', String(skipped)), 'info');
 
             } catch (err: any) {
                 // ITALIANO: scelta annullata o fallita: chiudo comunque la finestra di registrazione
@@ -2058,7 +1979,10 @@ export default function App() {
                 //          (empty list = ask for nothing, just reset), otherwise it would stay open
                 //          collecting folders for the rest of the session.
                 try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
-                if (err.name !== 'AbortError') {
+                if (cartellaScelta) {
+                    console.error('[Import] Cartella scelta non leggibile / picked folder unreadable:', err);
+                    showNotification(t.folderReadError, 'error');
+                } else if (err.name !== 'AbortError') {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
                     if (folderInputRef.current) folderInputRef.current.click();
                 }
@@ -2072,7 +1996,15 @@ export default function App() {
         const files = Array.from(e.target.files as FileList);
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
-        if (imgFiles.length === 0) return;
+        // ITALIANO: una cartella senza immagini va detta, come nelle altre strade, e il campo va
+        //           liberato: altrimenti riscegliendo la stessa cartella il browser non avvisa piu'.
+        // ENGLISH: a folder with no images must be reported, as on the other roads, and the input
+        //          freed: otherwise picking the same folder again no longer fires at all.
+        if (imgFiles.length === 0) {
+            showNotification(t.noImagesTitle, 'info');
+            if (folderInputRef.current) folderInputRef.current.value = '';
+            return;
+        }
 
         // ITALIANO: Anche nel fallback (input webkitdirectory) ricostruisco la sottocartella di
         //           ogni file dal suo percorso relativo, cosi' due foto con lo stesso nome in
@@ -2121,25 +2053,25 @@ export default function App() {
             //           percorso reale. Serve SOLO per abbinare testo e immagine giusti: due foto
             //           con lo stesso nome in cartelle diverse restano separate. Non e' un handle,
             //           quindi non diventa mai destinazione di salvataggio (asDirHandle la scarta).
+            //           Foto e .txt passano per la stessa regola (cartellaImmagine / cartellaTesto):
+            //           alla radice di un'unita' le due forme erano diverse ("E:" contro "E:\").
             // ENGLISH: each file's folder (image or .txt) is a STRING, taken from the real path.
             //          Used ONLY to pair the right text with the right image: two same-named photos
             //          in different folders stay separate. It is not a handle, so it never becomes a
             //          save target (asDirHandle rejects it).
-            const dirOfPath = (p: string): string => {
-                const cut = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
-                return cut > 0 ? p.slice(0, cut) : '';
-            };
+            //          Photo and .txt go through the same rule (cartellaImmagine / cartellaTesto): at
+            //          a drive root the two forms used to differ ("E:" against "E:\").
             const folderOf = new Map<any, any>();
             const paths: string[] = [];
             for (const f of imgFiles) {
                 const p = api.getPathForFile(f);
-                if (p) { paths.push(p); folderOf.set(f, dirOfPath(p)); }
+                if (p) { paths.push(p); folderOf.set(f, cartellaImmagine(p)); }
             }
             if (paths.length === 0) return vuoto;
             const sidecars = await api.readSidecarTags(paths);
             const txtFiles = (sidecars || []).map((s: any) => {
                 const file = new File([s.content], s.name, { type: 'text/plain' });
-                folderOf.set(file, typeof s.dir === 'string' ? s.dir : '');
+                folderOf.set(file, typeof s.dir === 'string' ? cartellaTesto(s.dir) : '');
                 return file;
             });
             return { txtFiles, folderOf };
@@ -2410,6 +2342,7 @@ export default function App() {
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
             try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+            fotoChiuseRef.current.clear();
             releaseThumbnails(images);
             // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
             //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
@@ -2926,6 +2859,7 @@ export default function App() {
         setAiCancelRequested(true);
         aiAbortControllerRef.current?.abort();
         try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+        fotoChiuseRef.current.clear();
         // ITALIANO: libera le anteprime, altrimenti restano in memoria per tutta la sessione
         //           (con 2000 foto sono centinaia di MB che non tornano piu' indietro).
         // ENGLISH: free the thumbnails, otherwise they stay in memory for the whole session
