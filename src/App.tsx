@@ -12,7 +12,6 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
-import JSZip from 'jszip';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti } from './services/geminiService';
@@ -35,9 +34,11 @@ import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog, UpdateDialog, ExportChoiceDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
-import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
+import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, parseSidecarText, tagDiImport } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, costruisciBackup, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { avvisoImport } from './utils/importNotice';
+import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
@@ -1311,8 +1312,14 @@ export default function App() {
         const folder = img.dirHandle;
         if (!folder || typeof folder.removeEntry !== 'function') return false;
         try {
-            await folder.removeEntry(sanitizeFileName(img.file.name));
-            try { await folder.removeEntry(buildTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
+            // ITALIANO: il nome VERO della foto, com'e' nella cartella, e il .txt che l'import le
+            //           abbina (sidecarTagFileName). Col nome "ripulito", "photo..v2.png" diventava
+            //           "photo.v2.png": un'ALTRA foto, se c'era, cancellata per sempre al suo posto.
+            // ENGLISH: the photo's REAL name, as it is in the folder, and the .txt the import pairs
+            //          with it (sidecarTagFileName). With the "cleaned" name, "photo..v2.png" became
+            //          "photo.v2.png": ANOTHER photo, if there was one, deleted for good in its place.
+            await folder.removeEntry(img.file.name);
+            try { await folder.removeEntry(sidecarTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
             return true;
         } catch (err) {
             console.error('[Cestino] Cancellazione definitiva non riuscita:', img.file.name, err);
@@ -1828,15 +1835,16 @@ export default function App() {
                 return combined.sort((a, b) => a.file.name.localeCompare(b.file.name));
             });
             soundManager.chime();
-            const extras = `${restoredCount > 0 ? ` · ↻ ${restoredCount}` : ''}${skippedTxtCount > 0 ? ` · ⊘ ${skippedTxtCount} .txt` : ''}`;
             // ITALIANO: un .txt accorciato perche' fuori misura va detto: al primo salvataggio la parte
             //           tagliata sparirebbe dal disco. L'avviso prende il posto del messaggio di import
-            //           (a schermo ne resta uno solo): le foto caricate si vedono comunque.
+            //           (a schermo ne resta uno solo): le foto caricate si vedono comunque. Le foto
+            //           recuperate dal backup e i .txt saltati si dicono con frasi intere (avvisoImport).
             // ENGLISH: a .txt shortened for being over the caps must be reported: the first save would
             //          drop the cut part from disk. The warning takes the import message's place (only
-            //          one stays on screen): the loaded photos show anyway.
-            if (shortenedTxtCount > 0) showNotification(t.importTxtShortened.replace('{n}', String(shortenedTxtCount)), 'error');
-            else showNotification(`${t.successImport.replace('{n}', String(newImages.length))}${extras}`, "success");
+            //          one stays on screen): the loaded photos show anyway. Photos recovered from the
+            //          backup and skipped .txt files are told in whole sentences (avvisoImport).
+            const avviso = avvisoImport(t, { caricate: newImages.length, ripristinate: restoredCount, saltati: skippedTxtCount, accorciati: shortenedTxtCount });
+            showNotification(avviso.testo, avviso.tipo);
         } catch (error: any) {
             console.error('[Import] Failed', error);
             showNotification(`${t.aiError || 'Error'}: ${String(error?.message || error || '').slice(0, 150)}`, 'error');
@@ -2279,7 +2287,12 @@ export default function App() {
                 soundManager.chime();
                 showNotification(t.projectTagsExported, 'success');
             } catch (err: any) {
-                if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.importTagsError, 'error'); }
+                // ITALIANO: qui si SCRIVE: "impossibile salvare il file", non la frase dell'import
+                //           ("impossibile leggere il file dei tag"), che mandava a cercare il guasto
+                //           dalla parte sbagliata.
+                // ENGLISH: this WRITES: "could not save the file", not the import's sentence ("could
+                //          not read the tags file"), which sent the user looking on the wrong side.
+                if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.tagEditorSaveError, 'error'); }
             }
             return;
         }
@@ -2416,7 +2429,9 @@ export default function App() {
                 for (const img of withFolder) {
                     try {
                         const tagString = getOrderedTagString(img.tags);
-                        const fileName = buildTagFileName(img.file.name);
+                        // ITALIANO: lo stesso .txt che l'import rilegge e Kohya usa (vedi sidecarTagFileName).
+                        // ENGLISH: the same .txt the import reads back and Kohya uses (see sidecarTagFileName).
+                        const fileName = sidecarTagFileName(img.file.name);
                         const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
                         const writable = await fileHandle.createWritable();
                         await writable.write(tagString);
@@ -2558,15 +2573,40 @@ export default function App() {
         setIsSaving(true); setImportProgress(0);
         try {
             showNotification(t.zipProcessing, "info");
-            const zip = new JSZip();
+            // ITALIANO: l'elenco delle voci dell'archivio, in ordine. Qui non si legge niente: ogni
+            //           foto si legge solo quando tocca a lei, a pezzi, mentre si scrive (scriviZip).
+            // ENGLISH: the list of the archive's entries, in order. Nothing is read here: each photo
+            //          is read only when its turn comes, in chunks, while writing (scriviZip).
+            const voci: VoceZip[] = [];
+            // ITALIANO: la foto si rilegge dalla SUA cartella quando tocca a lei. Il file preso
+            //           all'import e' un'istantanea: se nel frattempo la foto e' stata ritoccata in un
+            //           altro programma, Chromium rifiuta di leggerlo (NotReadableError) e tutta
+            //           l'esportazione finiva con un generico "Errore durante la creazione dello ZIP".
+            //           Riletta cosi', nell'archivio va la versione di adesso. Senza cartella ("Carica
+            //           immagini") o se la foto non c'e' piu', resta l'istantanea: se non si legge,
+            //           l'avviso dice quale foto (zipPhotoUnreadable).
+            // ENGLISH: the photo is re-read from ITS folder when its turn comes. The file taken at
+            //          import is a snapshot: if meanwhile the photo was retouched in another program,
+            //          Chromium refuses to read it (NotReadableError) and the whole export ended with a
+            //          generic "Error creating ZIP". Re-read this way, the archive gets today's version.
+            //          With no folder ("Load images") or if the photo is gone, the snapshot stays: if it
+            //          cannot be read, the notice says which photo (zipPhotoUnreadable).
+            const fotoAggiornata = (img: any) => async (): Promise<Blob> => {
+                const dir = img.dirHandle;
+                if (dir && typeof dir.getFileHandle === 'function') {
+                    try { return await (await dir.getFileHandle(img.file.name)).getFile(); }
+                    catch (_) { /* spostata o cancellata: si prova l'istantanea / moved or deleted: try the snapshot */ }
+                }
+                return img.file;
+            };
             // ITALIANO: due foto con lo STESSO nome in sottocartelle diverse (tipico dei dataset LoRA:
-            //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e JSZip
-            //           SOVRASCRIVE l'omonimo: uno dei due .txt spariva in silenzio. Ora, se il nome e'
+            //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e
+            //           l'omonimo SOVRASCRIVEVA l'altro: uno dei due .txt spariva in silenzio. Ora, se il nome e'
             //           gia' occupato, distinguo il file con la sua sottocartella (es. "10_viso/img.txt")
             //           o, se serve, con un suffisso numerico; nessun .txt viene piu' perso, e avviso.
             // ENGLISH: two photos with the SAME name in different subfolders (typical LoRA layout:
             //          10_face\img.png and 20_body\img.png) produced the same archive entry name, and
-            //          JSZip OVERWRITES a same-named entry: one of the two .txt vanished silently. Now,
+            //          the namesake OVERWROTE the other: one of the two .txt vanished silently. Now,
             //          if the name is already taken, I disambiguate the file with its subfolder (e.g.
             //          "10_face/img.txt") or, if needed, a numeric suffix; no .txt is lost, and I warn.
             const usedNames = new Set<string>();
@@ -2582,16 +2622,29 @@ export default function App() {
             const cifre = Math.max(4, String(imagesToExport.length).length);
             let progressivo = 0;
             imagesToExport.forEach((img) => {
+                // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
+                //           vuoto fa fermare l'addestramento di Kohya ("caption file is empty"), uno
+                //           che manca no. Il suo nome resta comunque occupato, come per le altre.
+                // ENGLISH: an untagged photo (only with "Tags and images") goes in WITHOUT a .txt: an
+                //          empty .txt stops Kohya's training ("caption file is empty"), a missing one
+                //          does not. Its name stays taken all the same, as for the others.
+                const conTag = Array.isArray(img.tags) && img.tags.length > 0;
                 if (rinomina) {
                     progressivo++;
                     const numero = String(progressivo).padStart(cifre, '0');
                     const nf = String(img.file.name || '');
                     const pt = nf.lastIndexOf('.');
-                    zip.file(numero + '.txt', getOrderedTagString(img.tags));
-                    zip.file(numero + (pt > 0 ? nf.slice(pt) : ''), img.file);
+                    if (conTag) voci.push({ nome: numero + '.txt', dati: getOrderedTagString(img.tags) });
+                    voci.push({ nome: numero + (pt > 0 ? nf.slice(pt) : ''), dati: fotoAggiornata(img), etichetta: nf });
                     return;
                 }
-                const baseName = buildTagFileName(img.file.name);
+                // ITALIANO: il .txt dell'archivio si chiama come quello che l'import abbina alla foto
+                //           (sidecarTagFileName): estratto accanto a "photo..v2.png" deve essere
+                //           "photo..v2.txt", non il nome ripulito "photo.v2.txt", che non si abbinava.
+                // ENGLISH: the archive's .txt is named like the one the import pairs with the photo
+                //          (sidecarTagFileName): extracted next to "photo..v2.png" it must be
+                //          "photo..v2.txt", not the cleaned "photo.v2.txt", which did not pair.
+                const baseName = sidecarTagFileName(img.file.name);
                 let name = baseName;
                 if (usedNames.has(name)) {
                     collisionCount++;
@@ -2608,7 +2661,7 @@ export default function App() {
                     }
                 }
                 usedNames.add(name);
-                zip.file(name, getOrderedTagString(img.tags));
+                if (conTag) voci.push({ nome: name, dati: getOrderedTagString(img.tags) });
                 if (conImmagini) {
                     // ITALIANO: la foto prende lo STESSO nome del suo .txt, estensione a parte. Cosi'
                     //           la coppia resta abbinata anche nei casi risolti qui sopra, dove il
@@ -2621,27 +2674,40 @@ export default function App() {
                     const nomeFoto = String(img.file.name || '');
                     const punto = nomeFoto.lastIndexOf('.');
                     const estensione = punto > 0 ? nomeFoto.slice(punto) : '';
-                    zip.file(name.slice(0, -4) + estensione, img.file);
+                    voci.push({ nome: name.slice(0, -4) + estensione, dati: fotoAggiornata(img), etichetta: nomeFoto });
                 }
             });
-            // ITALIANO: SCRITTURA A PEZZI, DIRETTAMENTE SUL DISCO. Prima l'archivio veniva
-            //           costruito tutto in memoria e poi scaricato: con i soli .txt sono pochi KB,
-            //           ma con le foto un dataset da qualche migliaio di immagini fa dieci e passa
-            //           GB, e la finestra muore. Con generateInternalStream i pezzi escono man mano
-            //           e finiscono subito sul file scelto; la pausa a ogni pezzo e' quella che tiene
-            //           bassa la memoria: si riprende solo quando il pezzo precedente e' sul disco,
-            //           altrimenti si accumulerebbe in coda esattamente quello che si voleva evitare.
+            // ITALIANO: SCRITTURA A PEZZI, DIRETTAMENTE SUL DISCO. Con le foto un dataset da qualche
+            //           migliaio di immagini fa dieci e passa GB: non deve passare dalla memoria.
+            //           Prima c'era JSZip, che la promessa non la manteneva: leggeva SUBITO ogni foto
+            //           per intero (mentre la finestra di salvataggio era ancora aperta) e le teneva
+            //           tutte fino alla fine; la pausa sul flusso frenava solo l'uscita, e la finestra
+            //           moriva lo stesso. Ora scriviZip legge ogni foto solo quando tocca a lei, un
+            //           pezzo per volta, e aspetta che il pezzo sia sul disco prima di leggere il
+            //           successivo; oltre i 4 GB scrive lo ZIP64, che JSZip non sapeva fare.
             //           Nessuna compressione: JPEG e PNG sono gia' compressi, comprimerli costa
             //           minuti e guadagna quasi zero (ed e' quello che il codice faceva gia' prima).
-            // ENGLISH: CHUNKED WRITE, STRAIGHT TO DISK. The archive used to be built whole in memory
-            //          and then downloaded: a few KB with .txt alone, but with photos a few thousand
-            //          images make ten-plus GB and the window dies. generateInternalStream emits
-            //          chunks as they are produced and each lands on the chosen file at once; the
-            //          pause on every chunk is what keeps memory low — it resumes only once the
-            //          previous chunk is on disk, otherwise the queue would grow into exactly the
-            //          thing this avoids. No compression: JPEG and PNG are already compressed, so
-            //          compressing them costs minutes for almost nothing (as the code already did).
+            // ENGLISH: CHUNKED WRITE, STRAIGHT TO DISK. With photos, a dataset of a few thousand images
+            //          makes ten-plus GB: it must not go through memory. JSZip used to be here, and it
+            //          did not keep that promise: it read every photo WHOLE right away (while the save
+            //          dialog was still open) and kept them all to the end; the pause on the stream
+            //          only slowed the output, and the window died anyway. Now scriviZip reads each
+            //          photo only when its turn comes, one chunk at a time, and waits for the chunk to
+            //          be on disk before reading the next; past 4 GB it writes ZIP64, which JSZip could
+            //          not do. No compression: JPEG and PNG are already compressed, so compressing
+            //          them costs minutes for almost nothing (as the code already did).
             const nomeSuggerito = conImmagini ? 'dataset.zip' : 'tags_all.zip';
+            // ITALIANO: avanzamento sui byte: quelli dei .txt e delle foto, noti in anticipo.
+            // ENGLISH: progress over bytes: those of the .txt and of the photos, known in advance.
+            const totale = voci.reduce((n, v) => n + (typeof v.dati === 'string' ? v.dati.length : 0), 0)
+                + (conImmagini ? imagesToExport.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0) : 0);
+            let fatto = 0;
+            let ultimo = -1;
+            const avanzamento = (n: number) => {
+                fatto += n;
+                const percento = Math.min(100, Math.round((fatto / Math.max(1, totale)) * 100));
+                if (percento !== ultimo) { ultimo = percento; setImportProgress(percento); }
+            };
             const salvaSuDisco = 'showSaveFilePicker' in window;
             if (salvaSuDisco) {
                 const handle = await (window as any).showSaveFilePicker({
@@ -2651,19 +2717,7 @@ export default function App() {
                 });
                 const writable = await handle.createWritable();
                 try {
-                    await new Promise<void>((risolvi, rifiuta) => {
-                        const flusso = zip.generateInternalStream({ type: 'uint8array', streamFiles: true });
-                        flusso.on('data', (pezzo: any, stato: any) => {
-                            flusso.pause();
-                            writable.write(pezzo).then(() => {
-                                setImportProgress(Math.round(stato.percent));
-                                flusso.resume();
-                            }, rifiuta);
-                        });
-                        flusso.on('error', rifiuta);
-                        flusso.on('end', () => risolvi());
-                        flusso.resume();
-                    });
+                    await scriviZip(voci, { write: (pezzo) => writable.write(pezzo) }, { onAvanzamento: avanzamento });
                 } catch (errScrittura) {
                     // ITALIANO: si butta via, NON si chiude: close() SALVEREBBE il pezzo scritto
                     //           fin qui, e resterebbe sul disco un dataset.zip troncato che
@@ -2676,11 +2730,13 @@ export default function App() {
                 }
                 await writable.close();
             } else {
-                // ITALIANO: riserva per il browser di prova, che non ha la finestra di salvataggio.
-                // ENGLISH: fallback for the preview browser, which has no save picker.
-                const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
-                    setImportProgress(Math.round(metadata.percent));
-                });
+                // ITALIANO: riserva per i browser senza finestra di salvataggio: l'archivio si
+                //           raccoglie in memoria e si scarica (qui non c'e' un file su cui scrivere).
+                // ENGLISH: fallback for browsers with no save picker: the archive is gathered in
+                //          memory and downloaded (there is no file to write into here).
+                const pezzi: Uint8Array[] = [];
+                await scriviZip(voci, { write: async (pezzo) => { pezzi.push(pezzo); } }, { onAvanzamento: avanzamento });
+                const blob = new Blob(pezzi as BlobPart[], { type: 'application/zip' });
                 const url = URL.createObjectURL(blob);
                 try {
                     const a = document.createElement('a');
@@ -2707,7 +2763,10 @@ export default function App() {
             // ENGLISH: dismissing the save dialog is not an error: stay quiet.
             if (err && err.name === 'AbortError') return false;
             console.error(err);
-            showNotification(t.zipError, "error");
+            // ITALIANO: una foto che non si legge si nomina, con cosa fare; il resto resta generico.
+            // ENGLISH: a photo that cannot be read is named, with what to do; the rest stays generic.
+            if (err && err.name === ERRORE_LETTURA_ZIP) showNotification(t.zipPhotoUnreadable.replace('{name}', String(err.voce || '')), "error");
+            else showNotification(t.zipError, "error");
             return false;
         } finally {
             setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
@@ -2724,9 +2783,20 @@ export default function App() {
         // ENGLISH: `!img.isTrashed` — photos in the trash were DISCARDED from the dataset: their
         //          .txt must not land in the exported archive. This guard was missing here, the one
         //          spot that did not filter the trash (save, gallery and stats all do).
-        const imagesWithTags = images.filter(img => !img.isTrashed && img.tags && img.tags.length > 0);
+        // ITALIANO: due elenchi. "Solo i tag" prende le foto CON tag (una foto senza tag non ha un
+        //           .txt da mettere); "Tag e immagini" prende TUTTE le foto attive. Prima anche lui
+        //           prendeva solo quelle con tag: le foto ancora senza tag sparivano dal dataset
+        //           esportato, con "archivio creato" come unico messaggio, e se nessuna aveva tag
+        //           l'esportazione si rifiutava del tutto.
+        // ENGLISH: two lists. "Tags only" takes the photos WITH tags (an untagged photo has no .txt
+        //          to put in); "Tags and images" takes ALL active photos. It used to take only the
+        //          tagged ones too: the still-untagged photos vanished from the exported dataset,
+        //          with "archive created" as the only message, and if none had tags the export
+        //          refused altogether.
+        const attive = images.filter(img => !img.isTrashed);
+        const imagesWithTags = attive.filter(img => img.tags && img.tags.length > 0);
 
-        if (imagesWithTags.length === 0) {
+        if (attive.length === 0) {
             return showNotification(t.errorNoTagsToExport, "info");
         }
 
@@ -2735,14 +2805,28 @@ export default function App() {
         // ENGLISH: ask FIRST what goes in, with the file count and size of both roads already
         //          worked out: the gap between them is KB against GB.
         const pesoTag = imagesWithTags.reduce((n, img) => n + new Blob([getOrderedTagString(img.tags)]).size, 0);
-        const pesoFoto = imagesWithTags.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0);
+        const pesoFoto = attive.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0);
         setExportChoice({
             imgs: imagesWithTags,
+            tutte: attive,
             riepilogo: {
                 soloTag: { file: imagesWithTags.length, peso: formatoPeso(pesoTag) },
-                conImmagini: { file: imagesWithTags.length * 2, peso: formatoPeso(pesoTag + pesoFoto) },
+                conImmagini: { file: imagesWithTags.length + attive.length, peso: formatoPeso(pesoTag + pesoFoto) },
             },
         });
+    };
+
+    // ITALIANO: "Esporta" nella finestra di scelta: ogni strada col suo elenco (vedi handleExportAll).
+    //           "Solo i tag" senza nessuna foto con tag non ha niente da mettere: lo si dice.
+    // ENGLISH: "Export" in the choice dialog: each road with its own list (see handleExportAll).
+    //          "Tags only" with no tagged photo has nothing to put in: say so.
+    const avviaExport = (conImmagini: boolean, rinomina: boolean) => {
+        const scelta = exportChoice;
+        setExportChoice(null);
+        if (!scelta) return undefined;
+        const lista = conImmagini ? scelta.tutte : scelta.imgs;
+        if (!lista || lista.length === 0) { showNotification(t.errorNoTagsToExport, "info"); return undefined; }
+        return exportAllAsZip(lista, conImmagini, rinomina);
     };
 
     // ITALIANO: useCallback (dip. solo dalle trigger word): identita' stabile mentre si modificano i
@@ -2895,7 +2979,13 @@ export default function App() {
 
     const handleCloseProject = () => {
         if (images.length === 0) return;
-        const hasUnsaved = images.some(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        // ITALIANO: stessa regola di handleSaveChanges: le foto nel cestino non si salvano, quindi
+        //           non contano. Prima contavano qui e non li': "ci sono modifiche non salvate",
+        //           poi "Salva e chiudi" rispondeva "Nessuna modifica da salvare."
+        // ENGLISH: same rule as handleSaveChanges: trashed photos are never saved, so they do not
+        //          count. They used to count here and not there: "there are unsaved changes",
+        //          then "Save and close" answered "No changes to save."
+        const hasUnsaved = images.some(img => !img.isTrashed && JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
 
         // ITALIANO: Con modifiche non salvate si sceglie fra TRE strade: salvare e chiudere,
         //           chiudere buttando via le modifiche, oppure annullare.
@@ -3515,11 +3605,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
                 onCancel={() => setExportChoice(null)}
-                onConfirm={(conImmagini: boolean, rinomina: boolean) => {
-                    const scelta = exportChoice;
-                    setExportChoice(null);
-                    if (scelta) exportAllAsZip(scelta.imgs, conImmagini, rinomina);
-                }}
+                onConfirm={avviaExport}
             />
             <UpdateDialog
                 isOpen={updateAskOpen}

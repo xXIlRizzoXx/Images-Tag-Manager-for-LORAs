@@ -96,7 +96,7 @@ console.log('\n--- quello che NON deve cambiare ---');
     dice('stessa cartella, stesse foto: si ritrova', true, ha(ritrova(salvato, 'dataset', ABCD), 'dataset' + SEP + 'a.png'));
     dice('un ALTRO dataset con lo stesso nome ma altre foto: scartato', null, ritrova(salvato, 'dataset', ['a.png', 'b.png', 'c.png', 'd.png', 'e.png', 'f.png']));
     dice('una cartella con un altro nome: scartato', null, ritrova(salvato, 'altro', ABCD));
-    dice('senza cartella ("Carica immagini"): mai ripristinato', null, ritrova(salvato, '', ABCD));
+    dice('le stesse foto aperte senza cartella ("Carica immagini"): il backup della cartella non si applica', null, ritrova(salvato, '', ABCD));
 
     const nelCestino = images.map(i => i.id === 'L1/d.png' ? { ...i, isTrashed: true } : i);
     dice('una foto nel cestino e\' ancora su disco: conta', true, ha(ritrova(scrivi(nelCestino, [], 'dataset'), 'dataset', ABCD), 'dataset' + SEP + 'a.png'));

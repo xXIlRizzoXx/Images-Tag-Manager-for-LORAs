@@ -21,7 +21,7 @@ import { AppleToggle } from './ui';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
-import { buildTagFileName } from '../utils/pathUtils';
+import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
@@ -172,7 +172,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
 
         try {
             if (dirHandle) {
-                const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+                // ITALIANO: accanto alla foto va il .txt che l'import rilegge e Kohya usa, col nome
+                //           non ripulito (vedi sidecarTagFileName); `fileName` resta per il download.
+                // ENGLISH: next to the photo goes the .txt the import reads back and Kohya uses, with
+                //          the name uncleaned (see sidecarTagFileName); `fileName` stays for the download.
+                const fileHandle = await dirHandle.getFileHandle(sidecarTagFileName(image.file.name), { create: true });
                 const writable = await fileHandle.createWritable();
                 await writable.write(tagString);
                 await writable.close();

@@ -112,7 +112,12 @@ export const Toast = ({ message, type, onClose }: any) => {
     return (
         <div className={`fixed bottom-8 right-8 flex items-center gap-3 px-6 py-3 rounded-full shadow-2xl text-white ${infoColor} animate-in slide-in-from-bottom-10 fade-in z-[9999] w-max max-w-[90vw]`}>
             {type === 'error' ? <TriangleAlert size={18} /> : type === 'info' ? <Info size={18} /> : <Check size={18} />}
-            <span className="font-medium text-sm whitespace-nowrap">{message}</span>
+            {/* ITALIANO: va a capo solo quando supera il 90% della finestra (w-max lo tiene su una riga
+                altrimenti): un avviso fatto di frasi intere puo' essere lungo, e con nowrap usciva
+                dallo schermo. ENGLISH: wraps only past 90% of the window (w-max keeps it on one line
+                otherwise): a notice made of whole sentences can be long, and with nowrap it ran off
+                the screen. */}
+            <span className="font-medium text-sm">{message}</span>
             <button onClick={onClose} className="ml-2 hover:bg-black/20 rounded-full p-1 transition-colors"><X size={14} /></button>
         </div>
     );

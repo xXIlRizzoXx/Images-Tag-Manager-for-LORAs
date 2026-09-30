@@ -77,7 +77,12 @@ type VoceBackup = { tags: string[]; base: string };
 //      modifiche non salvate andavano perse in silenzio. L'impronta conta le foto ancora su disco,
 //      come le trovera' l'import: quelle in memoria (anche nel cestino, che restano su disco finche'
 //      non si svuota) piu' quelle chiuse. Le foto senza cartella ("Carica immagini",
-//      trascinamento) non si possono riconoscere alla riapertura: restano fuori, come prima.
+//      trascinamento, ripiego del browser) fanno un lotto come gli altri, col nome di cartella
+//      vuoto: prima restavano fuori e dopo un crash le loro modifiche andavano perse, mentre il
+//      README promette il recupero per tutte. Le riconosce la stessa impronta (numero, prima e
+//      ultima foto); in Electron la chiave di ogni foto porta anche il suo percorso vero, e ogni
+//      voce l'impronta dei tag su disco (`base`), quindi non possono finire su un'altra serie.
+//      Vanno riaperte allo stesso modo e tutte insieme, come erano state caricate.
 //   3) Due lotti con la STESSA impronta (la stessa cartella aperta due volte, o due copie identiche
 //      nei nomi) non si possono distinguere alla riapertura: si lasciano fuori entrambi, perche'
 //      i tag dell'uno potrebbero finire sull'altro. E' il lato sicuro, ed e' quello che succedeva
@@ -94,8 +99,12 @@ type VoceBackup = { tags: string[]; base: string };
 //      for the backup to match no folder at all: after a crash the unsaved edits were lost
 //      silently. The fingerprint counts the photos still on disk, the way the import will find
 //      them: those in memory (trashed ones too, they stay on disk until the trash is emptied) plus
-//      the closed ones. Photos with no folder ("Load images", drag and drop) cannot be recognised
-//      on reopening: they stay out, as before.
+//      the closed ones. Photos with no folder ("Load images", drag and drop, the browser fallback)
+//      make a batch like any other, with an empty folder name: they used to stay out and after a
+//      crash their edits were lost, while the README promises recovery for all of them. The same
+//      fingerprint recognises them (count, first and last photo); in Electron each photo's key also
+//      carries its real path, and each entry the fingerprint of the tags on disk (`base`), so they
+//      cannot land on another set. They must be reopened the same way and all together, as loaded.
 //   3) Two batches with the SAME fingerprint (the same folder opened twice, or two copies with the
 //      same names) cannot be told apart on reopening: both are left out, since one's tags could
 //      land on the other. That is the safe side, and it is what already happened before with two
@@ -130,7 +139,6 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     const firme = new Map<string, number>();
     const conFirma: { firma: string; data: Record<string, VoceBackup>; voci: number }[] = [];
     for (const l of lotti.values()) {
-        if (l.cartella === '') continue;
         const firma = folderSignature(l.cartella, l.nomi);
         firme.set(firma, (firme.get(firma) || 0) + 1);
         conFirma.push({ firma, data: l.data, voci: l.voci });
@@ -146,15 +154,19 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
 //   si chiamano quasi tutti uguale ("dataset", "img"), i tag di un progetto potevano essere
 //   ripristinati su un altro e poi scritti su disco. Legge anche il formato della versione
 //   precedente (una sola impronta, `signature` + `data`); i backup ancora piu' vecchi, senza
-//   impronta, non si applicano, che e' il lato sicuro.
+//   impronta, non si applicano, che e' il lato sicuro. Un import senza cartella ("Carica
+//   immagini", trascinamento) ha il nome vuoto nell'impronta: combacia solo con un altro import
+//   senza cartella delle stesse foto, mai con una cartella scelta, e viceversa.
 // ENGLISH: The backup entries belonging to the folder being imported, or null.
 //   Applied ONLY when the FINGERPRINT matches: with the folder name alone, since LoRA datasets are
 //   nearly all named the same ("dataset", "img"), one project's tags could be restored onto another
 //   and then written to disk. It also reads the previous version's format (a single fingerprint,
 //   `signature` + `data`); even older backups, with no fingerprint, are not applied, which is the
-//   safe side.
+//   safe side. An import with no folder ("Load images", drag and drop) has an empty name in its
+//   fingerprint: it only matches another folder-less import of the same photos, never a picked
+//   folder, and the other way round.
 export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string): { voci: Record<string, any>; ts: number | null } | null => {
-    if (!grezzo || importFolder === '') return null;
+    if (!grezzo) return null;
     let parsed: any = null;
     try { parsed = JSON.parse(grezzo); } catch (_) { return null; }
     if (!parsed || typeof parsed !== 'object') return null;
