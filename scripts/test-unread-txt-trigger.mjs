@@ -60,7 +60,7 @@ const NOMI = ['globalTriggers', 'globalTriggersRef', 'images', 'setImages', 'set
     'setImportSummary', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'nuovoIdFoto', 'backupDellImport',
     'localStorage', 'makeFolderKeyer', 'makeBackupKeyer', 'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport',
     'tagDaRipristinare', 'asDirHandle', 'anteprimeProgettoRef', 'soundManager', 'avvisoImport', 't', 'showNotification',
-    'folderInputRef', 'console', 'performSave', 'fotoDaSalvare', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'importAttiviRef'];
+    'folderInputRef', 'console', 'performSave', 'fotoDaSalvare', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'importAttiviRef', 'txtNonLettoInVigore'];
 const fabbrica = new Function(...NOMI,
     (await ritaglia('    const processImportData = async (')) + '\n' + (await ritaglia('    const handleGlobalTagsChange = (')) + '\n' +
     (await ritaglia('    const handleSaveChanges = async ')) + '\n' + (await ritaglia('    const handleCloseProject = () => {')) +
@@ -90,7 +90,7 @@ const creaApp = async (prima, txtB = bloccato('b.txt')) => {
             B.tagDaRipristinare, () => null, { current: new Set() }, { chime() { } }, N.avvisoImport, t,
             (m) => stato.notifiche.push(m), { current: null }, { log() { }, warn() { }, error() { } },
             async (lista) => { stato.scritte = lista.map(i => i.file.name); return true; }, G.fotoDaSalvare,
-            (d) => { if (d && d.isOpen) stato.finestra = 'tre scelte'; }, (d) => { if (d && d.isOpen) stato.finestra = 'conferma semplice'; }, () => { }, { current: 0 });
+            (d) => { if (d && d.isOpen) stato.finestra = 'tre scelte'; }, (d) => { if (d && d.isOpen) stato.finestra = 'conferma semplice'; }, () => { }, { current: 0 }, S.txtNonLettoInVigore);
     };
     await render().processImportData([{ name: 'b.png' }, { name: 'c.png' }], [txtB, leggibile('c.txt', 'blue sky,')]);
     const app = {
@@ -156,7 +156,11 @@ console.log('\n--- quello che NON deve cambiare ---');
     const app = await creaApp([]);
     app.trigger(['ohwx']);
     app.modifica('b.png', ['ohwx', 'cat']);
-    dice('un tag messo apposta sulla foto la fa salvare, come prima', ['b.png', 'c.png'], await app.salva());
+    // ITALIANO: la foto risulta da salvare, ma "Salva" non scrive sopra il .txt mai letto (vedi
+    //           test-unread-txt-bulk.mjs): per sostituirlo apposta c'e' il visualizzatore.
+    // ENGLISH: the photo counts as unsaved, but "Save" does not write over the .txt never read (see
+    //          test-unread-txt-bulk.mjs): the viewer is there to replace it on purpose.
+    dice('un tag messo apposta: Salva scrive solo il .txt letto', ['c.png'], await app.salva());
     dice('...e "Chiudi progetto" lo dice', 'tre scelte', app.chiudiProgetto());
 }
 {

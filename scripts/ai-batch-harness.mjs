@@ -55,6 +55,7 @@ const carica = async (rel, plugins = []) => {
 };
 const S = await carica('src/services/geminiService.ts', [finto]);
 export const tagCase = await carica('src/utils/tagCase.ts');
+const sidecar = await carica('src/utils/sidecarTags.ts');
 export const lingue = (await carica('src/constants.ts')).translations;
 export const t = lingue.en;
 
@@ -90,7 +91,7 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
-    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console'];
+    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -135,6 +136,7 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         Date: { now: () => orologio },
         setTimeout: (f, ms) => { orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
         console: { log() { }, warn() { }, error() { } },
+        txtNonLettoInVigore: sidecar.txtNonLettoInVigore,
     };
     const pezzi = () => fabbrica(...DIPENDENZE.map(n => dip[n]));
     app.tutte = () => pezzi().handleAITagAll();

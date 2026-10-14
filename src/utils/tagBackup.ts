@@ -64,6 +64,25 @@ export type FotoChiusa = { id: string; name: string; lotto: string; cartella: st
 
 type VoceBackup = { tags: string[]; base: string };
 
+// ITALIANO: una sorgente del backup = le voci di una cartella. `visto` = l'ultima volta che l'hanno
+//   scritta le foto in memoria (la data generale `ts` non serve: ogni scrittura la rinnova); `lotto`
+//   = l'import che l'ha scritta (lottoImport). Tutti e due mancano nei backup scritti prima.
+// ENGLISH: a backup source = one folder's entries. `visto` = the last time the photos in memory
+//   wrote it (the top-level `ts` cannot be used: every write refreshes it); `lotto` = the import that
+//   wrote it (lottoImport). Both are missing in backups written earlier.
+type SorgenteBackup = { signature: string; data: Record<string, VoceBackup>; visto?: number; lotto?: string };
+
+// ITALIANO: quanto vive la sorgente di una cartella non riaperta: 14 giorni dall'ultima volta che e'
+//   stata scritta. Prima non scadeva mai: settimane dopo un crash un'altra cartella con lo stesso
+//   nome, gli stessi nomi di file e nessun tag (le chiavi e la `base` sono le stesse) riceveva la
+//   vecchia modifica come "recuperata", e "Salva" la scriveva nel suo .txt.
+// ENGLISH: how long the source of a folder not reopened lives: 14 days from the last time it was
+//   written. It used to never expire: weeks after a crash another folder with the same name, the
+//   same file names and no tags (same keys and same `base`) received the old edit as "recovered",
+//   and "Save" wrote it into its .txt.
+export const DURATA_SORGENTE_MS = 14 * 24 * 60 * 60 * 1000;
+const scaduta = (s: any, ora: number): boolean => typeof s.visto === 'number' && ora - s.visto > DURATA_SORGENTE_MS;
+
 // ITALIANO: Cosa scrivere nel backup. Null = niente da tenere: il backup va cancellato.
 //   1) Dentro ci sono SOLO le foto con modifiche non salvate (tag diversi da originalTags, la
 //      stessa prova di "Salva modifiche"). Prima c'erano TUTTE, e il backup restava anche dopo una
@@ -100,7 +119,8 @@ type VoceBackup = { tags: string[]; base: string };
 //      aprendo per prima una cartella senza modifiche si cancellava tutto. Una sorgente di una
 //      cartella aperta lascia il posto a quella in memoria (salvata, modificata o gemella). Chiudi
 //      progetto toglie solo quelle delle cartelle in memoria (vedi backupDopoChiusura in
-//      closeGuard.ts); le toglie tutte solo Reset.
+//      closeGuard.ts); le toglie tutte solo Reset. Una sorgente non riaperta scade dopo
+//      DURATA_SORGENTE_MS.
 // ENGLISH: What to write into the backup. Null = nothing to keep: the backup must be removed.
 //   1) It holds ONLY the photos with unsaved edits (tags different from originalTags, the same test
 //      "Save changes" uses). It used to hold ALL of them, and it survived a normal quit with
@@ -133,7 +153,8 @@ type VoceBackup = { tags: string[]; base: string };
 //      rewrite the backup with that one alone and the others lost their edits; opening a folder with
 //      no edits first deleted everything. A source of an open folder gives way to the one in memory
 //      (saved, edited or twin). Close project removes only those of the folders in memory (see
-//      backupDopoChiusura in closeGuard.ts); only Reset removes them all.
+//      backupDopoChiusura in closeGuard.ts); only Reset removes them all. A source not reopened
+//      expires after DURATA_SORGENTE_MS.
 // ITALIANO: `triggers` = le trigger word attive, per la regola di fotoDaSalvare: una foto col .txt non
 //   letto all'import non entra per una sola trigger. Le trigger non restano da una sessione all'altra:
 //   ripresa dal backup, quella trigger diventava un tag suo e "Salva" la scriveva sopra il file vero.
@@ -141,7 +162,8 @@ type VoceBackup = { tags: string[]; base: string };
 //   read at import does not enter for a trigger alone. Triggers do not last from one session to the
 //   next: taken back from the backup, that trigger became a tag of its own and "Save" wrote it over the
 //   real file.
-export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = []): { folder: string; sources: { signature: string; data: Record<string, VoceBackup> }[] } | null => {
+export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = []): { folder: string; sources: SorgenteBackup[] } | null => {
+    const ora = Date.now();
     const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number }>();
     const lottoDi = (lotto: string, cartella: string) => {
         let l = lotti.get(lotto);
@@ -150,10 +172,8 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         return l;
     };
     const presenti = new Set<string>();
-    const chiaviAperte = new Set<string>();
     for (const img of images) {
         presenti.add(img.id);
-        chiaviAperte.add(img.backupKey || (BACKUP_KEY_SEP + img.file.name));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
         l.vivi++;
@@ -182,45 +202,57 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     }
     const firme = new Map<string, number>();
     const aperte = new Set<string>();
-    const conFirma: { firma: string; data: Record<string, VoceBackup>; voci: number }[] = [];
-    for (const l of lotti.values()) {
+    const conFirma: { firma: string; lotto: string; data: Record<string, VoceBackup>; voci: number }[] = [];
+    for (const [lotto, l] of lotti) {
         const firma = folderSignature(l.cartella, l.nomi);
         aperte.add(firma);
         if (l.vivi > 0) firme.set(firma, (firme.get(firma) || 0) + 1);
-        conFirma.push({ firma, data: l.data, voci: l.voci });
+        conFirma.push({ firma, lotto, data: l.data, voci: l.voci });
     }
-    const sources = conFirma
+    const sources: SorgenteBackup[] = conFirma
         .filter(l => l.voci > 0 && firme.get(l.firma) === 1)
-        .map(l => ({ signature: l.firma, data: l.data }));
-    sources.unshift(...sorgentiDaTenere(precedente, aperte, chiaviAperte));
+        .map(l => ({ signature: l.firma, data: l.data, visto: ora, ...(l.lotto ? { lotto: l.lotto } : {}) }));
+    sources.unshift(...sorgentiDaTenere(precedente, aperte, new Set([...lotti.keys()].filter(Boolean)), ora));
     return sources.length > 0 ? { folder: cartellaCorrente, sources } : null;
 };
 
 // ITALIANO: le sorgenti del backup salvato che appartengono a cartelle non aperte in memoria (vedi
 //   il punto 4 qui sopra). Si tengono solo le voci scritte da questa versione (con `base`, che
 //   alla riapertura protegge da un .txt cambiato nel frattempo); il formato precedente, a impronta
-//   unica, non si porta avanti, come gia' prima. Cade anche una voce la cui chiave appartiene a una
-//   foto in memoria: ora la scrive quella foto (per esempio una cartella la cui impronta e'
-//   cambiata perche' si e' svuotato il cestino).
+//   unica, non si porta avanti, come gia' prima. Cade anche una sorgente scritta da un import
+//   ancora in memoria (`lotto`): ora la scrivono le sue foto (per esempio una cartella la cui
+//   impronta e' cambiata perche' si e' svuotato il cestino). Prima cadeva ogni voce la cui CHIAVE
+//   era di una foto in memoria: con "Carica cartella" la chiave e' solo nome della cartella + nome
+//   del file, e due cartelle chiamate "img" con i soliti 0001.png... si cancellavano a vicenda le
+//   modifiche da recuperare. Cade anche una sorgente scaduta (DURATA_SORGENTE_MS); una senza
+//   `visto` (scritta prima di questa regola) comincia a contare da adesso.
 // ENGLISH: the stored backup's sources that belong to folders not open in memory (see point 4
 //   above). Only entries written by this version are kept (with `base`, which on reopening guards
 //   against a .txt changed meanwhile); the previous single-fingerprint format is not carried
-//   forward, as before. An entry whose key belongs to a photo in memory is dropped too: that photo
-//   writes it now (for example a folder whose fingerprint changed because the trash was emptied).
-const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, chiaviAperte: Set<string>): { signature: string; data: Record<string, VoceBackup> }[] => {
+//   forward, as before. A source written by an import still in memory (`lotto`) is dropped too: its
+//   photos write it now (for example a folder whose fingerprint changed because the trash was
+//   emptied). Every entry whose KEY belonged to a photo in memory used to be dropped: with "Load
+//   folder" the key is only the folder name + the file name, and two folders called "img" with the
+//   usual 0001.png... deleted each other's edits to recover. An expired source is dropped too
+//   (DURATA_SORGENTE_MS); one with no `visto` (written before this rule) starts counting now.
+const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiAperti: Set<string>, ora: number): SorgenteBackup[] => {
     if (!precedente) return [];
     let parsed: any = null;
     try { parsed = JSON.parse(precedente); } catch (_) { return []; }
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.sources)) return [];
-    const tenute: { signature: string; data: Record<string, VoceBackup> }[] = [];
+    const tenute: SorgenteBackup[] = [];
     for (const s of parsed.sources) {
         if (!s || typeof s.signature !== 'string' || aperte.has(s.signature) || !s.data || typeof s.data !== 'object') continue;
+        if (typeof s.lotto === 'string' && lottiAperti.has(s.lotto)) continue;
+        if (scaduta(s, ora)) continue;
         const data: Record<string, VoceBackup> = {};
         for (const [chiave, v] of Object.entries(s.data as Record<string, any>)) {
-            if (chiaviAperte.has(chiave) || chiave.startsWith(BACKUP_KEY_SEP)) continue;
+            if (chiave.startsWith(BACKUP_KEY_SEP)) continue;
             if (v && Array.isArray(v.tags) && typeof v.base === 'string') data[chiave] = { tags: v.tags, base: v.base };
         }
-        if (Object.keys(data).length > 0) tenute.push({ signature: s.signature, data });
+        if (Object.keys(data).length > 0) {
+            tenute.push({ signature: s.signature, data, visto: typeof s.visto === 'number' ? s.visto : ora, ...(typeof s.lotto === 'string' && s.lotto ? { lotto: s.lotto } : {}) });
+        }
     }
     return tenute;
 };
@@ -248,7 +280,12 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
     if (!parsed || typeof parsed !== 'object') return null;
     const ts = typeof parsed.ts === 'number' ? parsed.ts : null;
     if (Array.isArray(parsed.sources)) {
-        const uguali = parsed.sources.filter((s: any) => s && typeof s.signature === 'string' && s.signature === importSignature && s.data && typeof s.data === 'object');
+        // ITALIANO: una sorgente scaduta (vedi DURATA_SORGENTE_MS) non si applica, anche se il backup
+        //           non e' stato riscritto da allora.
+        // ENGLISH: an expired source (see DURATA_SORGENTE_MS) is not applied, even if the backup has
+        //          not been rewritten since.
+        const ora = Date.now();
+        const uguali = parsed.sources.filter((s: any) => s && typeof s.signature === 'string' && s.signature === importSignature && s.data && typeof s.data === 'object' && !scaduta(s, ora));
         if (uguali.length !== 1) return null;
         // ITALIANO: le voci con la chiave senza cartella (scritte prima che restassero fuori, vedi
         //           costruisciBackup) non si applicano: potrebbero essere di un'altra serie.

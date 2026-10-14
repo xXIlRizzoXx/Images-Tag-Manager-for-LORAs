@@ -37,7 +37,7 @@ const carica = async (rel) => {
 const P = await carica('src/utils/pathUtils.ts');
 const lingue = (await carica('src/constants.ts')).translations;
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-const inizio = sorgente.indexOf('    const performSave = async (imagesToSave: any[]): Promise<boolean> => {');
+const inizio = sorgente.indexOf('    const performSave = async (imagesToSave: any[]');
 const chiusura = /\r?\n    \};\r?\n/g;
 chiusura.lastIndex = Math.max(inizio, 0);
 const fine = inizio < 0 ? null : chiusura.exec(sorgente);

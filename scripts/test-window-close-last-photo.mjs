@@ -110,7 +110,9 @@ console.log('\n--- quello che NON deve cambiare ---');
     const a = app({ immagini: [], conFoto: false, archivio: crash });
     dice('avvio del programma, nessuna foto ancora entrata: il backup di un crash resta com\'era', [false, salvato], [a.chiudi(), crash.get('tagBackup') || null]);
     const altra = foto('0002.png', ['smile', 'altra cartella'], ['smile']);
-    altra.cartellaImport = 'char2'; altra.backupKey = 'E:\\char2' + SEP + '0002.png';
+    // ITALIANO: l'import della sessione del crash: un lotto diverso da quelli di adesso (nell'app e' un UUID).
+    // ENGLISH: the import of the crashed session: a batch other than today's (a UUID in the app).
+    altra.cartellaImport = 'char2'; altra.backupKey = 'E:\\char2' + SEP + '0002.png'; altra.lottoImport = 'l-crash';
     const archivio = backupDi([altra]);
     const tenuto = archivio.get('tagBackup');
     const chiusa = foto('0009.png', ['x', 'y'], ['x']);

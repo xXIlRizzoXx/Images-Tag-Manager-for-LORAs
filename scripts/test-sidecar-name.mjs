@@ -56,7 +56,7 @@ const ritaglia = async (file, intestazione) => {
     }
     return (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'tsx' })).code;
 };
-const jsSalva = await ritaglia('src/App.tsx', '    const performSave = async (imagesToSave: any[]): Promise<boolean> => {');
+const jsSalva = await ritaglia('src/App.tsx', '    const performSave = async (imagesToSave: any[]');
 const jsCancella = await ritaglia('src/App.tsx', '    const deleteImageFilesForGood = async (img: any): Promise<boolean> => {');
 const jsLightbox = await ritaglia('src/components/Lightbox.tsx', '    const handleSaveSingleTxt = async () => {');
 // ITALIANO: i nomi che i tre testi possono usare, presi dai moduli veri.

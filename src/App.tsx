@@ -35,7 +35,7 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
-import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto } from './utils/sidecarTags';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut } from './utils/shortcuts';
@@ -3305,7 +3305,11 @@ export default function App() {
     // ENGLISH: Returns TRUE when the save succeeded, FALSE when it failed or was aborted.
     //          Needed by "Save and close": if saving fails the project must NOT be closed,
     //          otherwise the tags would be lost.
-    const performSave = async (imagesToSave: any[]): Promise<boolean> => {
+    // ITALIANO: `fraseNonScritte` = la frase sulle foto lasciate fuori da handleSaveChanges perche' il
+    //           loro .txt non si e' potuto leggere (vedi txtNonLettoInVigore): va nello stesso avviso.
+    // ENGLISH: `fraseNonScritte` = the sentence on the photos handleSaveChanges left out because their
+    //          .txt could not be read (see txtNonLettoInVigore): it goes into the same notice.
+    const performSave = async (imagesToSave: any[], fraseNonScritte = ''): Promise<boolean> => {
         // ITALIANO: Ogni immagine viene riscritta nella SUA cartella (img.dirHandle), non in una
         //           cartella globale: con due cartelle aperte insieme i tag finivano nel posto
         //           sbagliato. Le immagini senza cartella (caricate come file singoli) proseguono
@@ -3542,9 +3546,10 @@ export default function App() {
         // ITALIANO: un .txt svuotato ferma Kohya: lo si dice, senza bloccare niente.
         // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
         if (svuotate > 0) frasi.push(svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate)));
-        const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0;
+        if (fraseNonScritte) frasi.push(fraseNonScritte);
+        const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0 && !fraseNonScritte;
         if (riuscito) soundManager.chime();
-        showNotification(frasi.join(' '), (failedNames.length > 0 || doppie.length > 0) ? "error" : (scaricate > 0 || svuotate > 0) ? "info" : "success");
+        showNotification(frasi.join(' '), (failedNames.length > 0 || doppie.length > 0) ? "error" : (scaricate > 0 || svuotate > 0 || fraseNonScritte) ? "info" : "success");
         return riuscito;
     };
 
@@ -3563,7 +3568,22 @@ export default function App() {
         //          purpose, not for a trigger (see fotoDaSalvare).
         const modifiedImages = images.filter(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
         if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
-        return performSave(modifiedImages);
+        // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import non si scrive: cosa contiene
+        //           non si sa, e un tag aggiunto a tutte, un Incolla o l'AI lo sostituivano coi soli tag
+        //           nuovi (vedi txtNonLettoInVigore). Resta da salvare, l'avviso la nomina, e si torna
+        //           FALSE: "Salva e chiudi" non chiude. Per sostituirlo apposta: il visualizzatore.
+        // ENGLISH: a photo whose .txt could not be read at import is not written: its content is
+        //          unknown, and a tag added to all photos, a Paste or the AI replaced it with the new
+        //          tags alone (see txtNonLettoInVigore). It stays unsaved, the notice names it, and
+        //          FALSE is returned: "Save and close" does not close. To replace it on purpose: the viewer.
+        const nonScritte = modifiedImages.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
+        const daScrivere = modifiedImages.filter(img => !txtNonLettoInVigore(img));
+        const primi = nonScritte.slice(0, 3).join(', ') + (nonScritte.length > 3 ? '…' : '');
+        const fraseNonScritte = nonScritte.length === 0 ? ''
+            : nonScritte.length === 1 ? t.saveUnreadTxtOne.replace('{names}', primi)
+            : t.saveUnreadTxtMany.replace('{n}', String(nonScritte.length)).replace('{names}', primi);
+        if (daScrivere.length === 0) { showNotification(fraseNonScritte, "info"); return false; }
+        return performSave(daScrivere, fraseNonScritte);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
@@ -4294,7 +4314,11 @@ export default function App() {
                 // ENGLISH: Skip if requested and the image already has at least one tag (live state).
                 //          Trigger words do not count (see hasTagsBeyondTriggers): with a trigger set
                 //          every photo looked tagged and none was sent.
-                if (aiSkipTagged && Array.isArray(current.tags) && hasTagsBeyondTriggers(current.tags, globalTriggersRef.current)) {
+                // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import ha dei tag su disco,
+                //           anche se qui sembra senza (vedi txtNonLettoInVigore): si salta anche lei.
+                // ENGLISH: a photo whose .txt could not be read at import has tags on disk, even if it
+                //          looks untagged here (see txtNonLettoInVigore): it is skipped too.
+                if (aiSkipTagged && ((Array.isArray(current.tags) && hasTagsBeyondTriggers(current.tags, globalTriggersRef.current)) || txtNonLettoInVigore(current))) {
                     skippedCount++;
                     console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
                     setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });

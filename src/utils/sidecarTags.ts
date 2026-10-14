@@ -199,11 +199,13 @@ export const pulisciTagProgetto = (voci: unknown[]): { tags: string[]; truncated
 // ITALIANO: `txtNonLetto` = il .txt c'e' ma non si e' potuto leggere (oltre 1 MB, bloccato, un file
 //   di OneDrive solo in rete): cosa contiene non si sa, quindi originalTags = tags e la foto non
 //   risulta modificata. Contata come "senza .txt", il primo "Salva modifiche" scriveva la sola
-//   trigger SOPRA il file vero. Solo una modifica fatta apposta la fa salvare, come prima.
+//   trigger SOPRA il file vero. Solo una modifica fatta apposta la fa risultare da salvare, e
+//   "Salva modifiche" non ci scrive comunque sopra (vedi txtNonLettoInVigore).
 // ENGLISH: `txtNonLetto` = the .txt exists but could not be read (over 1 MB, locked, a OneDrive
 //   online-only file): its content is unknown, so originalTags = tags and the photo does not count
 //   as modified. Counted as "no .txt", the first "Save changes" wrote the trigger alone OVER the real
-//   file. Only an edit made on purpose gets it saved, as before.
+//   file. Only an edit made on purpose makes it count as unsaved, and "Save changes" still does not
+//   write over it (see txtNonLettoInVigore).
 // ITALIANO: in `tags` due grafie dello stesso tag ("ohwx" del .txt e la trigger "OHWX", o "smile,
 //   Smile" nel .txt) diventano una sola, con la grafia della trigger o la prima (vedi tagCase):
 //   prima entravano tutte e due e Salva scriveva "OHWX, ohwx, smile,". `originalTags` resta il
@@ -243,10 +245,24 @@ export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txt
 //          applies again, after a Ctrl+Z too (see withLiveOriginalTags).
 export const fotoDaSalvare = (img: any, triggers: string[] = []): boolean => {
     if (JSON.stringify(img.tags) === JSON.stringify(img.originalTags)) return false;
-    const base = img.baseTxtNonLetto;
-    if (!Array.isArray(base) || JSON.stringify(img.originalTags) !== JSON.stringify(base)) return true;
-    return hasTagsBeyondTriggers(Array.isArray(img.tags) ? img.tags : [], [...(Array.isArray(triggers) ? triggers : []), ...base]);
+    if (!txtNonLettoInVigore(img)) return true;
+    return hasTagsBeyondTriggers(Array.isArray(img.tags) ? img.tags : [], [...(Array.isArray(triggers) ? triggers : []), ...img.baseTxtNonLetto]);
 };
+
+// ITALIANO: il .txt di questa foto c'e' ma all'import non si e' potuto leggere, e da allora non e'
+//           stato scritto (il ricordo del disco e' ancora quello dell'import, vedi fotoDaSalvare):
+//           cosa contiene non si sa. "Salva modifiche" non ci scrive sopra (lo dice, con i nomi) e
+//           "Salta foto gia' taggate" la conta fra quelle con dei tag. Prima bastava un tag aggiunto
+//           a tutte, un Incolla o l'AI (che non la saltava, perche' sembrava senza tag) e "Salva"
+//           sostituiva il .txt vero, mai letto, con i soli tag nuovi.
+// ENGLISH: this photo's .txt exists but could not be read at import, and has not been written since
+//          (the disk record is still the import's, see fotoDaSalvare): its content is unknown. "Save
+//          changes" does not write over it (it says so, with the names) and "Skip already-tagged
+//          photos" counts it among those with tags. A tag added to all photos, a Paste or the AI
+//          (which did not skip it, as it looked untagged) used to be enough for "Save" to replace
+//          the real .txt, never read, with the new tags alone.
+export const txtNonLettoInVigore = (img: any): boolean =>
+    !!img && Array.isArray(img.baseTxtNonLetto) && JSON.stringify(img.originalTags) === JSON.stringify(img.baseTxtNonLetto);
 
 // ITALIANO: I tag di una foto dopo che l'editor dei file di tag ha salvato il suo .txt. L'editor
 //   mostra solo il file su disco, quindi non ha mai visto una trigger word ancora da salvare (sulla
