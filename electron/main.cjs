@@ -102,8 +102,8 @@ let splashWindow = null;
 // ENGLISH: IPC handler for the app version
 ipcMain.handle('app:get-version', () => appVersion);
 
-// ITALIANO: Storage cifrato per la API key Gemini, basato sul keychain del SO
-// ENGLISH: Encrypted storage for the Gemini API key, backed by the OS keychain
+// ITALIANO: Storage cifrato per la API key Gemini: safeStorage (su Windows la protezione dati DPAPI dell'account) in userData/secrets.json
+// ENGLISH: Encrypted storage for the Gemini API key: safeStorage (on Windows the account's DPAPI data protection) in userData/secrets.json
 const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json');
 
 const readSecrets = () => {

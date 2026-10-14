@@ -110,7 +110,7 @@ const SCHEDE = [
         file: '07-ai-settings.png', nome: '12-ai',
         occhiello: 'Optional AI',
         titolo: 'Let Gemini write<br>the first draft', badge: 'BETA',
-        testo: 'Turn it on only if you want to. Your key stays encrypted in the Windows keychain.',
+        testo: 'Turn it on only if you want to. Your key stays encrypted with Windows data protection.',
         punti: ['Off by default: nothing leaves your PC', 'Bring your own Google Gemini key', 'Skips the images you already tagged'],
     },
     {
