@@ -354,7 +354,7 @@ stanno per finire su foto nascoste dalla ricerca, il ricarico automatico che spo
 annulla/ripeti e poteva partire due volte, "Seleziona tutte" che cancellava le selezioni nascoste,
 e la foto aperta che spariva togliendole il tag cercato. In più la **barra degli strumenti** della
 galleria non si accavalla più restringendo la finestra. Novità
-1.0.7 (traguardo 77): **12 richieste** di Matteo — trascinamento immagini (con .txt
+1.0.7 (traguardo 77): **12 richieste** dell'autore — trascinamento immagini (con .txt
 automatico), ricerca per tag nella pagina principale + "inverti selezione", editor tag potenziato
 (tasto "aggiungi tag del progetto", aggiunta multipla con virgole, tag importati che entrano nella
 palette, finestra "scarta" a tema), pannello selezione più largo/responsive con ricerca e legenda

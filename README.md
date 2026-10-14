@@ -72,18 +72,20 @@ Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to 
 
 ## 🤖 About the AI
 
-The AI is **optional and off by default** — with it off, nothing ever leaves your computer.
+The AI is **optional and off by default** — with it off, none of your images or tags ever leave your computer.
 
-If you want it, get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into Settings. The app checks the key works before saving it, then keeps it **encrypted in the Windows keychain**. Only the images you actually ask it to tag are sent, one model is used (**Gemini 3.6 Flash**), the pace stays inside Google's free tier, and you can stop a batch halfway.
+If you want it, get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into Settings. The app checks the key works before saving it, then keeps it **encrypted in the Windows keychain**. Only the images you actually ask it to tag are sent, and you can stop a batch halfway.
+
+The model is picked for you: on **Automatic** the app uses the newest model of Google's free line, tries it before switching and tells you when it changes. To do that, with the AI on it checks Google's list of models at startup, once a day. Prefer one model? Choose it in Settings and it stays fixed. The default pace (14 requests a minute) stays inside Google's free tier; the Speed slider can go faster if your key allows more.
 
 ---
 
 ## 🔒 Privacy
 
-*   **No telemetry, no accounts, no auto-update.** The app never phones home.
-*   **Google is the only address it can reach**, and only with the AI switched on. Every other connection is blocked at the source.
+*   **No telemetry, no accounts, no auto-update.** The app can tell you when a new version is out, but only if you want it to: it asks you once, the check stays off unless you say yes, and then at startup it reads only the latest version number from GitHub.
+*   **Only two addresses are ever contacted**: Google, and only with the AI switched on; GitHub, and only if you said yes to the version check. The app's window can reach nothing but Google, and the version check is the only other connection the program makes.
 *   **Your API key is never stored in clear text** and is not inside the download.
-*   **Your files stay yours**: images and `.txt` are read where they are and rewritten only when you save. Deleting sends them to the Windows Recycle Bin, never straight to nothing.
+*   **Your files stay yours**: images and `.txt` are read where they are and rewritten only when you save. Deleting sends them to the Windows Recycle Bin. Network folders have no Recycle Bin, and sometimes the app cannot tell where a file sits on disk: then it asks a second time, says the removal is final, and only deletes if you confirm.
 
 ---
 

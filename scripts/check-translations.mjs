@@ -54,8 +54,19 @@ if (codici.length === 0) { console.error('ERRORE: nessun blocco lingua riconosci
 // ENGLISH: when a string NAMES a command, it must name it with that command's real label, in
 //   the same language. This has come back three times already and the eye does not catch it:
 //   the two lines sit forty lines apart. Each pair is [quoting key, quoted key].
+// ITALIANO: il terzo elemento, se c'e', da' per una lingua la forma esatta da cercare al posto
+//   dell'etichetta: il russo declina i nomi ("в Настройках" e' l'etichetta "Настройки" al caso
+//   giusto), e una regola larga per tutti nasconderebbe proprio gli errori che qui si cercano.
+// ENGLISH: the third element, when present, gives for one language the exact form to look for
+//   instead of the label: Russian inflects nouns ("в Настройках" is the label "Настройки" in the
+//   right case), and a loose rule for everyone would hide the very mistakes looked for here.
 const CITAZIONI = [
     ['aiSkipTaggedHint', 'aiAutoTagAll'],
+    ['trashInfo', 'restore'],
+    ['trashInfo', 'emptyTrash'],
+    ['aiKeyGuideStep5Desc', 'aiKeyLabel'],
+    ['updateAskMsg', 'settings', { ru: 'настройках' }],
+    ['langPickerHint', 'settings', { ru: 'Настройках' }],
 ];
 
 const rif = 'en';
@@ -84,12 +95,13 @@ for (const codice of codici) {
         }
     }
 
-    for (const [chiaveCita, chiaveCitata] of CITAZIONI) {
+    for (const [chiaveCita, chiaveCitata, forme] of CITAZIONI) {
         const cita = mappa.get(chiaveCita);
         const citata = mappa.get(chiaveCitata);
         if (!cita || !citata || !citata.testo.trim()) continue;
-        if (!cita.testo.includes(citata.testo)) {
-            segnala(`"${chiaveCita}" (riga ${cita.riga}) nomina un comando che non si chiama cosi': il bottone "${chiaveCitata}" (riga ${citata.riga}) dice "${citata.testo}"`);
+        const cercata = (forme && forme[codice]) || citata.testo;
+        if (!cita.testo.includes(cercata)) {
+            segnala(`"${chiaveCita}" (riga ${cita.riga}) nomina un comando che non si chiama cosi': il bottone "${chiaveCitata}" (riga ${citata.riga}) dice "${cercata}"`);
         }
     }
 
