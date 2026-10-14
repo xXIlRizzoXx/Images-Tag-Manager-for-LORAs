@@ -3331,6 +3331,11 @@ export default function App() {
             //          cannot happen this way.
             const cifre = Math.max(4, String(imagesToExport.length).length);
             let progressivo = 0;
+            // ITALIANO: quante foto entrano senza .txt perche' non hanno tag: l'avviso finale lo dice,
+            //           altrimenti si addestrerebbero senza descrizione senza che nessuno lo sappia.
+            // ENGLISH: how many photos go in without a .txt because they have no tags: the final
+            //          notice says so, otherwise they would train without a caption unnoticed.
+            let senzaTag = 0;
             imagesToExport.forEach((img) => {
                 // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
                 //           vuoto fa fermare l'addestramento di Kohya ("caption file is empty"), uno
@@ -3339,6 +3344,7 @@ export default function App() {
                 //          empty .txt stops Kohya's training ("caption file is empty"), a missing one
                 //          does not. Its name stays taken all the same, as for the others.
                 const conTag = Array.isArray(img.tags) && img.tags.length > 0;
+                if (conImmagini && !conTag) senzaTag++;
                 if (rinomina) {
                     progressivo++;
                     const numero = String(progressivo).padStart(cifre, '0');
@@ -3476,8 +3482,14 @@ export default function App() {
             //           cosi' l'utente sa perche' alcuni .txt hanno un nome diverso dalla loro foto.
             // ENGLISH: if there were duplicate names I say so: all files ARE in the archive (renamed),
             //          so the user knows why some .txt have a different name than their photo.
+            // ITALIANO: e le foto senza tag, con una frase intera giusta anche per 1.
+            // ENGLISH: and the untagged photos, in a whole sentence that is right for 1 too.
+            const avvisoSenzaTag = senzaTag === 0 ? ''
+                : ' ' + (senzaTag === 1 ? t.zipUntaggedOne : t.zipUntaggedMany.replace('{n}', String(senzaTag)));
             if (collisionCount > 0) {
-                showNotification(`${t.zipSuccess} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
+                showNotification(`${t.zipSuccess}${avvisoSenzaTag} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
+            } else if (senzaTag > 0) {
+                showNotification(t.zipSuccess + avvisoSenzaTag, "info");
             } else {
                 showNotification(t.zipSuccess, "success");
             }

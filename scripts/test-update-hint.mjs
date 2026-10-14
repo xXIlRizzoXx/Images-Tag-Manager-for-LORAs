@@ -5,6 +5,9 @@
    Google l'elenco dei modelli e puo' provarne uno, senza che nessuno tocchi niente: la promessa
    era falsa per chiunque usi l'AI. La regola: finche' quel controllo automatico esiste, la frase
    deve nominare Google, l'unico indirizzo che il programma raggiunge da solo oltre a GitHub.
+   E deve dire "oltre a questo controllo": senza, con l'interruttore acceso, "si collega da solo
+   soltanto a Google" era falso. Il controllo dei modelli e' "al massimo una volta al giorno", non
+   solo all'avvio: parte anche quando si accende l'AI o si salva la chiave.
    Si legge il codice VERO: l'effetto d'avvio di src/App.tsx e le nove frasi di src/constants.ts.
    Uso:  node scripts/test-update-hint.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -15,6 +18,9 @@
    nobody touching anything: the promise was false for anyone using the AI. The rule: while that
    automatic check exists, the sentence must name Google, the only address the app reaches on its
    own besides GitHub.
+   And it must say "apart from this check": without it, with the switch on, "connects on its own
+   only to Google" was false. The model check is "at most once a day", not only at startup: it also
+   runs when the AI is switched on or the key is saved.
    The REAL code is read: the startup effect of src/App.tsx and the nine sentences of
    src/constants.ts.
    Usage:  node scripts/test-update-hint.mjs      (exits with code 1 if anything is off) */
@@ -47,10 +53,39 @@ for (const riga of costanti.split(/\r?\n/)) {
     if (voce) frasi.set(lingua, voce[1]);
 }
 
+// ITALIANO: la frase su Google diceva "da solo il programma si collega soltanto a Google", senza
+//           condizioni: falso proprio con l'interruttore acceso, quando all'avvio si collega anche a
+//           GitHub. Deve escludere questo controllo ("oltre a questo controllo"). E il controllo dei
+//           modelli non parte solo all'avvio: anche quando si accende l'AI o si salva la chiave, al
+//           massimo una volta al giorno. Le parole di ogni lingua:
+// ENGLISH: the Google sentence said "on its own the app connects only to Google", with no
+//          condition: false precisely with the switch on, when at startup it also connects to
+//          GitHub. It must exclude this check ("apart from this check"). And the model check does
+//          not start only at startup: also when the AI is switched on or the key is saved, at most
+//          once a day. The words of every language:
+const ESCLUSIONE = {
+    it: ['Oltre a questo controllo', 'al massimo una volta al giorno'],
+    en: ['Apart from this check', 'at most once a day'],
+    fr: ['En dehors de cette vérification', 'au plus une fois par jour'],
+    es: ['Aparte de esta comprobación', 'como mucho una vez al día'],
+    de: ['Abgesehen von dieser Prüfung', 'höchstens einmal am Tag'],
+    zh: ['除了这项检查', '每天最多一次'],
+    ja: ['この確認のほかに', '1日に最大1回'],
+    pt: ['Além desta verificação', 'no máximo uma vez por dia'],
+    ru: ['Кроме этой проверки', 'не чаще раза в день'],
+};
+const aggiornamentiDaSoli = /if \(updateCheckChoice !== 'on'\) return\b[^;]*;[\s\S]{0,400}?checkForUpdate\(/.test(app);
+console.log(aggiornamentiDaSoli
+    ? 'Con l\'interruttore acceso il programma si collega da solo anche a GitHub: la frase su Google deve escluderlo.'
+    : 'Nessun controllo automatico degli aggiornamenti trovato.');
+
 dice('la frase c\'e\' in tutte e nove le lingue', 9, frasi.size);
 if (controlloDaSolo) {
     for (const [codice, frase] of frasi) {
         dice(`[${codice}] la frase nomina Google`, true, frase.includes('Google'));
+        const [esclusione, unaVolta] = ESCLUSIONE[codice] || [];
+        if (aggiornamentiDaSoli) dice(`[${codice}] la frase su Google esclude il controllo di GitHub ("${esclusione}")`, true, !!esclusione && frase.includes(esclusione));
+        dice(`[${codice}] il controllo dei modelli e' "${unaVolta}", non "all'avvio"`, true, !!unaVolta && frase.includes(unaVolta));
     }
 }
 

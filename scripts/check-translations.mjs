@@ -46,6 +46,25 @@ righe.forEach((riga, i) => {
 const codici = [...lingue.keys()];
 console.log(`lingue trovate: ${codici.join(', ')}`);
 if (codici.length === 0) { console.error('ERRORE: nessun blocco lingua riconosciuto'); process.exit(1); }
+// ITALIANO: le lingue trovate devono essere esattamente le nove attese. Un blocco con la riga
+//   d'apertura scritta un po' diversa (un commento in fondo, le virgolette) spariva in silenzio dal
+//   controllo, con tutte le sue chiavi, e il controllo passava con otto lingue. E una lingua chiesta
+//   sulla riga di comando che non esiste ("pt-BR") non controllava niente e passava lo stesso.
+// ENGLISH: the languages found must be exactly the nine expected. A block whose opening line was
+//   written a little differently (a trailing comment, quotes) silently dropped out of the check,
+//   with all its keys, and the check passed with eight languages. And a language requested on the
+//   command line that does not exist ("pt-BR") checked nothing and passed all the same.
+const ATTESE = ['it', 'en', 'fr', 'es', 'de', 'zh', 'ja', 'pt', 'ru'];
+const nonTrovate = ATTESE.filter(c => !lingue.has(c));
+const inattese = codici.filter(c => !ATTESE.includes(c));
+if (nonTrovate.length || inattese.length) {
+    console.error(`ERRORE: lingue attese ${ATTESE.join(', ')}; non trovate: ${nonTrovate.join(', ') || '-'}; inattese: ${inattese.join(', ') || '-'}`);
+    process.exit(1);
+}
+if (soloLingua && !ATTESE.includes(soloLingua)) {
+    console.error(`ERRORE: lingua sconosciuta "${soloLingua}"; quelle valide sono ${ATTESE.join(', ')}`);
+    process.exit(1);
+}
 
 // ITALIANO: quando una scritta NOMINA un comando, deve nominarlo con l'etichetta vera di
 //   quel comando, nella stessa lingua. E' un difetto che qui e' gia' tornato tre volte, e a
@@ -65,9 +84,10 @@ const CITAZIONI = [
     ['trashInfo', 'restore'],
     ['trashInfo', 'emptyTrash'],
     ['aiKeyGuideStep5Desc', 'aiKeyLabel'],
-    ['updateAskMsg', 'settings', { ru: 'настройках' }],
+    ['updateAskMsg', 'settings', { ru: 'Настройках' }],
     ['langPickerHint', 'settings', { ru: 'Настройках' }],
     ['deleteNoRecycleBin', 'loadFolder'],
+    ['zipPhotoUnreadable', 'closeImageTitle'],
 ];
 
 const rif = 'en';

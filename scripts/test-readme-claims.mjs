@@ -7,6 +7,8 @@
    - "il ritmo resta nel piano gratuito", ma il cursore della velocita' arriva oltre quel limite;
    - "cancellare manda nel Cestino di Windows, mai direttamente nel nulla", ma per le cartelle di
      rete (che il Cestino non ce l'hanno) la seconda conferma cancella per sempre.
+   - "scegli un modello e resta fisso", ma se Google lo ritira o lo toglie dal piano gratuito il
+     programma lo sostituisce e torna su Automatico.
    La regola: finche' il codice fa una di queste cose, la frase vecchia non deve tornare e quella
    nuova deve nominare l'eccezione. Si legge il codice VERO, non una copia.
    Uso:  node scripts/test-readme-claims.mjs      (esce con codice 1 se qualcosa non torna)
@@ -20,6 +22,8 @@
    - "the pace stays inside Google's free tier", but the speed slider goes past that limit;
    - "deleting sends them to the Windows Recycle Bin, never straight to nothing", but for network
      folders (which have no Recycle Bin) the second confirmation deletes for good.
+   - "choose a model and it stays fixed", but if Google retires it or takes it off the free tier
+     the app replaces it and goes back to Automatic.
    The rule: while the code does one of these things, the old sentence must not come back and the
    new one must name the exception. The REAL code is read, not a copy.
    Usage:  node scripts/test-readme-claims.mjs      (exits with code 1 if anything is off) */
@@ -55,6 +59,28 @@ if (/export\s+(const|let|(async\s+)?function)\s+aggiornaModelloAutomatico\b/.tes
     console.log('Il programma sceglie il modello da solo.');
     dice('niente piu\' "one model is used"', false, readme.includes('one model is used'));
     dice('niente piu\' un modello fisso "Gemini 3.6 Flash"', false, readme.includes('Gemini 3.6 Flash'));
+}
+
+// ITALIANO: "scegli un modello nelle Impostazioni e resta fisso": ma se Google lo ritira o lo toglie
+//           dal piano gratuito, il programma lo sostituisce, toglie il blocco e lo dice. Finche' il
+//           codice lo fa, la promessa del README e quella delle Impostazioni (aiModelAutoHint, nelle
+//           nove lingue) devono nominare l'eccezione.
+// ENGLISH: "choose a model in Settings and it stays fixed": but if Google retires it or takes it off
+//          the free tier, the app replaces it, drops the lock and says so. While the code does that,
+//          the README promise and the Settings one (aiModelAutoHint, in the nine languages) must
+//          name the exception.
+if (/if \(fissato && !rotto\)/.test(app) && /setAiModelloFissato\(false\);\s*const testo = esito\.esito === 'riparato'/.test(app)) {
+    console.log('Un modello bloccato che Google ritira viene sostituito.');
+    const frase = (readme.match(/[^.]*stays fixed[^.]*\./) || [''])[0];
+    dice('premessa: il README dice che il modello scelto "stays fixed"', true, frase.length > 0);
+    dice('il README nomina l\'eccezione (unless Google retires it)', true, /unless Google retires it/.test(frase));
+    const costanti = leggi('src/constants.ts');
+    const ECCEZIONE = { it: 'a meno che Google', en: 'unless Google', fr: 'sauf si Google', es: 'salvo que Google', de: 'es sei denn, Google', zh: '除非 Google', ja: 'Google が', pt: 'a menos que o Google', ru: 'если только Google' };
+    for (const [codice, parole] of Object.entries(ECCEZIONE)) {
+        const blocco = (costanti.match(new RegExp(`\\n    ${codice}: \\{[\\s\\S]*?\\n    \\}`)) || [''])[0];
+        const suggerimento = (blocco.match(/\n\s+aiModelAutoHint: "([^"]+)"/) || [])[1] || '';
+        dice(`[${codice}] il suggerimento delle Impostazioni nomina l'eccezione ("${parole}")`, true, suggerimento.includes(parole));
+    }
 }
 
 const cursore = app.match(/value=\{aiRpm\}/) && app.match(/min=\{\d+\} max=\{(\d+)\}[^\n]*\n[^\n]*value=\{aiRpm\}/);

@@ -76,7 +76,7 @@ The AI is **optional and off by default** — with it off, none of your images o
 
 If you want it, get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into Settings. The app checks the key works before saving it, then keeps it **encrypted in the Windows keychain**. Only the images you actually ask it to tag are sent, and you can stop a batch halfway.
 
-The model is picked for you: on **Automatic** the app uses the newest model of Google's free line, tries it before switching and tells you when it changes. To do that, with the AI on it checks Google's list of models at startup, once a day. Prefer one model? Choose it in Settings and it stays fixed. The default pace (14 requests a minute) stays inside Google's free tier; the Speed slider can go faster if your key allows more.
+The model is picked for you: on **Automatic** the app uses the newest model of Google's free line, tries it before switching and tells you when it changes. To do that, with the AI on it checks Google's list of models at most once a day. Prefer one model? Choose it in Settings and it stays fixed, unless Google retires it or takes it off the free tier: then the app switches to the newest free model that works, tells you, and goes back to Automatic. The default pace (14 requests a minute) stays inside Google's free tier; the Speed slider can go faster if your key allows more.
 
 ---
 
