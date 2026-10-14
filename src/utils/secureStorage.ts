@@ -99,14 +99,25 @@ export const setSecret = async (key: string, value: string): Promise<boolean> =>
     return !value;
 };
 
-export const deleteSecret = async (key: string): Promise<void> => {
+// ITALIANO: risponde true solo se la chiave e' stata cancellata davvero. Prima non rispondeva
+//           niente: se il file cifrato non si poteva riscrivere (sola lettura, bloccato da un
+//           antivirus) l'app diceva "API key rimossa" e al riavvio la chiave tornava. Fuori da
+//           Electron non c'e' un archivio cifrato, quindi non c'e' niente da cancellare: true.
+// ENGLISH: answers true only if the key was really deleted. It used to answer nothing: if the
+//          encrypted file could not be rewritten (read-only, locked by an antivirus) the app said
+//          "API key removed" and on restart the key came back. Outside Electron there is no
+//          encrypted store, so there is nothing to delete: true.
+export const deleteSecret = async (key: string): Promise<boolean> => {
     const api = getElectronAPI();
+    let cancellata = true;
     if (api && api.secureStorage) {
+        cancellata = false;
         try {
-            await api.secureStorage.delete(key);
+            cancellata = (await api.secureStorage.delete(key)) === true;
         } catch (e) {
             console.error('secureStorage.delete failed', e);
         }
     }
     localStorage.removeItem(key);
+    return cancellata;
 };

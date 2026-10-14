@@ -81,13 +81,23 @@ const prepara = async () => {
     return { app, cartella };
 };
 
-console.log('\n--- "Salva modifiche", poi Ctrl+Z fino a togliere "b" ---');
+// ITALIANO: il salvataggio NON e' un passo della cronologia: segnare i file come salvati cambia
+//           solo originalTags, che Ctrl+Z non tocca (vedi withLiveOriginalTags). Prima lo era, e
+//           il primo Ctrl+Z dopo "Salva" diceva "Azione annullata" senza cambiare niente.
+// ENGLISH: saving is NOT a history step: marking the files as saved only changes originalTags,
+//          which Ctrl+Z does not touch (see withLiveOriginalTags). It used to be one, and the first
+//          Ctrl+Z after "Save" said "Action undone" without changing anything.
+const passi = (app) => [app.stato.history.length, app.stato.historyIndex];
+
+console.log('\n--- "Salva modifiche", poi UN Ctrl+Z toglie "b" ---');
 {
     const { app, cartella } = await prepara();
+    const prima = passi(app);
     const primo = await salvaEChiudi(app, cartella);
     dice('il salvataggio scrive "a, b," nel .txt', ['P.txt=a, b,'], primo.nuovi);
-    await ctrlZ(app, 2);
-    dice('dopo due Ctrl+Z la card mostra "a"', ['a'], app.fotoCon('P').tags);
+    dice('il salvataggio non aggiunge un passo alla cronologia', prima, passi(app));
+    await ctrlZ(app, 1);
+    dice('dopo UN Ctrl+Z la card mostra "a"', ['a'], app.fotoCon('P').tags);
     dice('"Chiudi progetto" avvisa che ci sono modifiche non salvate (il .txt dice ancora "a, b,")', true, await avvisaChiudendo(app));
     const secondo = await salvaEChiudi(app, cartella);
     dice('"Salva modifiche" NON risponde "Nessuna modifica da salvare."', false, secondo.nessunaModifica);
@@ -98,9 +108,9 @@ console.log('\n--- Ctrl+Shift+Z dopo il salvataggio: si torna a una foto uguale 
 {
     const { app, cartella } = await prepara();
     await salvaEChiudi(app, cartella);
-    await ctrlZ(app, 2);
-    await ctrlShiftZ(app, 2);
-    dice('dopo due Ctrl+Shift+Z la card mostra di nuovo "a, b"', ['a', 'b'], app.fotoCon('P').tags);
+    await ctrlZ(app, 1);
+    await ctrlShiftZ(app, 1);
+    dice('dopo un Ctrl+Z e un Ctrl+Shift+Z la card mostra di nuovo "a, b"', ['a', 'b'], app.fotoCon('P').tags);
     dice('e non risulta niente da salvare: il .txt dice gia\' "a, b,"', false, await avvisaChiudendo(app));
     const r = await salvaEChiudi(app, cartella);
     dice('"Salva modifiche" non scrive niente', [], r.nuovi);
@@ -114,8 +124,8 @@ console.log('\n--- salvataggio, Ctrl+Z oltre l\'import, poi Ctrl+Shift+Z ---');
 {
     const { app, cartella } = await prepara();
     await salvaEChiudi(app, cartella);
-    await ctrlZ(app, 3);
-    dice('dopo tre Ctrl+Z la galleria e\' vuota', [], app.stato.images.map(i => i.id));
+    await ctrlZ(app, 2);
+    dice('dopo due Ctrl+Z la galleria e\' vuota (il salvataggio non e\' un passo)', [], app.stato.images.map(i => i.id));
     await ctrlShiftZ(app);
     dice('un Ctrl+Shift+Z riporta P con "a", ricordando che sul disco c\'e\' "a, b"', [['a'], ['a', 'b']],
         [app.fotoCon('P').tags, app.fotoCon('P').originalTags]);
@@ -126,9 +136,9 @@ console.log('\n--- salvataggio, Ctrl+Z oltre l\'import, poi Ctrl+Shift+Z ---');
 {
     const { app, cartella } = await prepara();
     await salvaEChiudi(app, cartella);
-    await ctrlZ(app, 3);
-    await ctrlShiftZ(app, 3);
-    dice('tre Ctrl+Z e tre Ctrl+Shift+Z: P mostra "a, b"', ['a', 'b'], app.fotoCon('P').tags);
+    await ctrlZ(app, 2);
+    await ctrlShiftZ(app, 2);
+    dice('due Ctrl+Z e due Ctrl+Shift+Z: P mostra "a, b"', ['a', 'b'], app.fotoCon('P').tags);
     dice('e non risulta niente da salvare: il .txt dice gia\' "a, b,"', false, await avvisaChiudendo(app));
 }
 
@@ -136,7 +146,7 @@ console.log('\n--- salvataggio, Ctrl+Z, P chiusa con la X, poi Ctrl+Z la riporta
 {
     const { app, cartella } = await prepara();
     await salvaEChiudi(app, cartella);
-    await ctrlZ(app, 2);
+    await ctrlZ(app, 1);
     // ITALIANO: la X sulla card: la foto esce dall'elenco (lo stesso setImages di handleCloseImage).
     // ENGLISH: the X on the card: the photo leaves the list (the same setImages as handleCloseImage).
     app.modifica(prev => prev.filter(i => i.id !== 'P'));
@@ -155,15 +165,35 @@ console.log('\n--- "Salva file .txt" del visualizzatore, poi Ctrl+Z ---');
     // ITALIANO: il visualizzatore scrive il file da se' e poi chiama updateOriginalTags.
     // ENGLISH: the viewer writes the file on its own and then calls updateOriginalTags.
     cartella.scritti.set('P.txt', 'a, b,');
+    const prima = passi(app);
     app.render().updateOriginalTags('P', ['a', 'b']);
     await app.attendi();
-    await ctrlZ(app, 2);
-    dice('dopo Ctrl+Z la card mostra "a"', ['a'], app.fotoCon('P').tags);
+    dice('il "Salva file .txt" del visualizzatore non aggiunge un passo alla cronologia', prima, passi(app));
+    await ctrlZ(app, 1);
+    dice('dopo UN Ctrl+Z la card mostra "a"', ['a'], app.fotoCon('P').tags);
     dice('"Chiudi progetto" avvisa', true, await avvisaChiudendo(app));
     const r = await salvaEChiudi(app, cartella);
     dice('"Salva modifiche" riscrive il .txt con "a,"', ['P.txt=a,'], r.nuovi);
 }
 
+// ITALIANO: un salvataggio fatto dopo un Ctrl+Z tagliava via i passi da rifare (Ctrl+Shift+Z).
+// ENGLISH: a save made after a Ctrl+Z cut away the steps to redo (Ctrl+Shift+Z).
+console.log('\n--- "b", poi "c", Ctrl+Z, "Salva modifiche", poi Ctrl+Shift+Z ---');
+{
+    const { app, cartella } = await prepara();
+    app.modifica(prev => prev.map(i => (i.id === 'P' ? { ...i, tags: ['a', 'b', 'c'] } : i)));
+    await app.attendi();
+    await ctrlZ(app, 1);
+    dice('premessa: Ctrl+Z toglie "c"', ['a', 'b'], app.fotoCon('P').tags);
+    const r = await salvaEChiudi(app, cartella);
+    dice('il salvataggio scrive "a, b,"', ['P.txt=a, b,'], r.nuovi);
+    await ctrlShiftZ(app, 1);
+    dice('Ctrl+Shift+Z riporta ancora "c"', ['a', 'b', 'c'], app.fotoCon('P').tags);
+    dice('e la foto risulta da salvare (il .txt dice "a, b,")', true, await avvisaChiudendo(app));
+}
+
+// ITALIANO: l'editor di tag puo' cambiare i tag della foto: quello resta un passo vero.
+// ENGLISH: the tag editor can change the photo's tags: that stays a real step.
 console.log('\n--- l\'editor di tag salva il .txt della foto, poi Ctrl+Z ---');
 {
     const { app, cartella } = await prepara();

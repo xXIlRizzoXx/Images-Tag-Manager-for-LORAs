@@ -1,5 +1,5 @@
 /* ITALIANO: BANCO DI PROVA DEL CESTINO DELL'APP (Svuota cestino, la X su una foto, Annulla lo
-   svuotamento, Ctrl+Z)
+   svuotamento, Ctrl+Z, Chiudi progetto e Reset)
    Ritaglia da src/App.tsx i testi VERI delle funzioni del cestino, dell'effetto che registra la
    cronologia e di handleUndo, li compila con esbuild e li esegue con i testi veri di
    src/constants.ts. Al posto di React c'e' un piccolo stato che si comporta come lui nelle cose
@@ -14,7 +14,7 @@
    Non e' una prova: run-tests.mjs lancia solo i file test-*.mjs.
 
    ENGLISH: TEST BENCH FOR THE APP'S TRASH (Empty trash, the X on a photo, Undo the emptying,
-   Ctrl+Z)
+   Ctrl+Z, Close project and Reset)
    Cuts the REAL text of the trash functions, of the effect that records the history and of
    handleUndo out of src/App.tsx, compiles it with esbuild and runs it with the real strings of
    src/constants.ts. Instead of React there is a small state that behaves like it in what matters
@@ -63,7 +63,8 @@ const ritaglia = (intestazione, chiusura = /\r?\n    \};\r?\n/g) => {
     return fine ? sorgente.slice(inizio, fine.index + fine[0].length) : '';
 };
 const FUNZIONI = ['handleRestore', 'percorsiSuDisco', 'deleteImageFiles', 'deleteImageFilesForGood', 'releaseThumbnails',
-    'handleDeletePermanently', 'annullaSvuotamento', 'handleEmptyTrash', 'chiediEliminazioneDefinitiva', 'eliminaPerSempre', 'handleRestoreAll'];
+    'handleDeletePermanently', 'annullaSvuotamento', 'handleEmptyTrash', 'chiediEliminazioneDefinitiva', 'eliminaPerSempre', 'handleRestoreAll',
+    'closeProjectNow', 'handleResetProject'];
 // ITALIANO: funzioni che il codice di prima non aveva: se mancano si va avanti senza.
 // ENGLISH: functions the previous code did not have: when missing, carry on without them.
 const FACOLTATIVE = ['fraseCestinoWindows'];
@@ -98,6 +99,10 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'setSelectedForBulk', 'setConfirmDialog', 'setIsTrashOpen', 'setToast', 'showNotification',
     'imagesRef', 'isUndoRedoAction', 'fotoChiuseRef', 'ripristinoInCorsoRef', 't', 'soundManager', 'sidecarTagFileName', 'purgeIdsFromHistory',
     'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'globalTriggers', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef',
+    // ITALIANO: quello che serve a Chiudi progetto e a Reset (closeProjectNow, handleResetProject).
+    // ENGLISH: what Close project and Reset need (closeProjectNow, handleResetProject).
+    'progettoGenRef', 'aiCancelRequestedRef', 'setAiCancelRequested', 'aiAbortControllerRef', 'localStorage', 'liberaAnteprimeProgetto',
+    'setStagedBulkTags', 'setCustomProjectTags', 'setDirHandle', 'setSelectedImageId', 'setCopiedTags',
     'useCallback', 'window', 'URL', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
@@ -168,7 +173,10 @@ export const creaApp = (immagini, { api = null } = {}) => {
     };
     const r = { stato, notifiche: [], revocati: [], avvisi: [] };
     const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false }, discoNotoRef: { current: new Map() },
-        globalTriggersRef: { current: [] }, triggerHistoryRef: { current: [] } };
+        globalTriggersRef: { current: [] }, triggerHistoryRef: { current: [] }, progettoGenRef: { current: 0 },
+        aiCancelRequestedRef: { current: false }, aiAbortControllerRef: { current: null } };
+    const nulla = () => { };
+    const memoria = { getItem: () => null, setItem: nulla, removeItem: nulla };
     const coda = [];
     let programmato = false;
     const finestra = api ? { electronAPI: api } : {};
@@ -200,6 +208,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         refs.imagesRef, refs.isUndoRedoAction, refs.fotoChiuseRef, refs.ripristinoInCorsoRef, t, { pop() { }, chime() { } }, P.sidecarTagFileName, H.purgeIdsFromHistory,
         H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, stato.globalTriggers, imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef,
+        refs.progettoGenRef, refs.aiCancelRequestedRef, nulla, refs.aiAbortControllerRef, memoria, nulla,
+        nulla, nulla, nulla, nulla, nulla,
         (f) => f, finestra, url, quieto);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.

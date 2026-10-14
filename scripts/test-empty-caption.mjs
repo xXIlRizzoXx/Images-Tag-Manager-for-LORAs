@@ -78,10 +78,10 @@ const cartella = (presenti = {}) => {
 const salva = async (foto) => {
     const r = { notifiche: [], salvate: [] };
     const f = new Function('setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
-        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName',
+        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction',
         jsSalva + '\nreturn performSave;')(() => { }, () => { }, (m, tipo) => r.notifiche.push([m, tipo]), t, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         {}, (fn) => { r.salvate = fn(foto).filter((img, i) => img !== foto[i]).map(i => i.id); }, { chime() { } }, muto,
-        P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName);
+        P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false });
     r.ok = await f(foto);
     r.ultimo = r.notifiche[r.notifiche.length - 1] || null;
     return r;

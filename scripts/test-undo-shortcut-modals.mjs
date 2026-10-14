@@ -40,6 +40,15 @@ chiusura.lastIndex = Math.max(inizio, 0);
 const fine = inizio < 0 ? null : chiusura.exec(sorgente);
 if (!fine) { console.log('NO  gestore dei tasti di Ctrl+Z non trovato in src/App.tsx'); process.exit(1); }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
+// ITALIANO: la regola dei tasti (src/utils/shortcuts.ts); il codice di prima non l'aveva.
+// ENGLISH: the key rule (src/utils/shortcuts.ts); the previous code did not have it.
+let R = {};
+const modulo = path.join(radice, 'src/utils/shortcuts.ts');
+if (fs.existsSync(modulo)) {
+    const uscita = await esbuild.build({ entryPoints: [modulo], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' });
+    R = await import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'));
+}
+const REGOLE = Object.keys(R);
 
 // ITALIANO: ogni stato di finestra che il gestore puo' leggere, tutto chiuso.
 // ENGLISH: every dialog state the handler may read, all closed.
@@ -51,9 +60,10 @@ const chiuse = () => ({
 const NOMI = Object.keys(chiuse());
 const premi = (stato, { fuoco = 'BODY', maiuscolo = false } = {}) => {
     const chiamate = [];
-    const f = new Function('document', 'handleUndo', 'handleRedo', ...NOMI, js + '\nreturn handleKeyDown;')(
-        { activeElement: { tagName: fuoco } }, () => chiamate.push('annulla'), () => chiamate.push('ripeti'), ...NOMI.map(n => stato[n]));
-    f({ ctrlKey: true, shiftKey: maiuscolo, key: maiuscolo ? 'Z' : 'z', preventDefault() { } });
+    const f = new Function('document', 'handleUndo', 'handleRedo', ...NOMI, ...REGOLE, js + '\nreturn handleKeyDown;')(
+        { activeElement: { tagName: fuoco } }, () => chiamate.push('annulla'), () => chiamate.push('ripeti'), ...NOMI.map(n => stato[n]),
+        ...REGOLE.map(n => R[n]));
+    f({ ctrlKey: true, shiftKey: maiuscolo, key: maiuscolo ? 'Z' : 'z', code: 'KeyZ', preventDefault() { } });
     return chiamate;
 };
 const con = (cambi) => ({ ...chiuse(), ...cambi });

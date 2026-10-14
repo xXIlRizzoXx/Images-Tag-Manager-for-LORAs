@@ -38,6 +38,8 @@ import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
+import { isLetterShortcut } from './utils/shortcuts';
+import { qualityWarningText } from './utils/imageQuality';
 import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers } from './utils/tagCase';
@@ -203,7 +205,10 @@ const applySort = (list: any[], order: string): any[] => {
 //          from the grid (see the container's style), not as a prop: passing it as a prop would
 //          re-render EVERY memoised card while dragging the zoom slider, which today is pure CSS.
 const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
-    const lowQuality = img.width * img.height < 1048576;
+    // ITALIANO: foto piccola, o che il programma non sa mostrare (0x0): vedi qualityWarningText.
+    // ENGLISH: a small photo, or one the program cannot display (0x0): see qualityWarningText.
+    const qualityWarning = qualityWarningText(t, img.width, img.height);
+    const lowQuality = qualityWarning !== null;
     return (
         <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto var(--card-h, 320px)' }}>
             <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
@@ -215,7 +220,7 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
                             <AlertTriangle size={16} strokeWidth={2.5} />
                         </div>
                         <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                            {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                            {qualityWarning}
                         </div>
                     </div>
                 )}
@@ -343,6 +348,17 @@ export default function App() {
     // ENGLISH: the same signal, always current, for handleEmptyTrash: the confirm dialog keeps the
     //          version from the moment it opened, which would not see it.
     const ripristinoInCorsoRef = useRef(false);
+    // ITALIANO: il numero del progetto aperto: sale a ogni Chiudi progetto e Reset. "Svuota cestino"
+    //           e "Annulla lo svuotamento" durano a lungo e intanto il progetto si puo' chiudere (la
+    //           X del cestino resta libera): finito il lavoro, se il numero e' cambiato non toccano
+    //           niente del progetto di adesso. Prima il tasto "Annulla lo svuotamento" compariva nel
+    //           progetto successivo e ci infilava le foto di quello chiuso, con le anteprime rotte.
+    // ENGLISH: the number of the open project: it goes up on every Close project and Reset. "Empty
+    //          trash" and "Undo the emptying" take long and meanwhile the project can be closed (the
+    //          trash's X stays free): when the job ends, if the number changed it touches nothing of
+    //          the current project. The "Undo the emptying" button used to appear in the next project
+    //          and push the closed project's photos into it, with broken thumbnails.
+    const progettoGenRef = useRef(0);
     const [updateFound, setUpdateFound] = useState<{ versione: string; pagina: string } | null>(null);
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
         try { return localStorage.getItem('isDarkMode') !== 'false'; } catch (_) { return true; }
@@ -541,11 +557,19 @@ export default function App() {
             aiCancelRequestedRef.current = true;
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
-            await deleteSecret('geminiApiKey');
+            const cancellata = await deleteSecret('geminiApiKey');
             setGeminiApiKey('');
             setIsAIBusy(false);
             setIsGlobalAITagging(false);
             setGlobalAIProgress({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
+            // ITALIANO: la sessione smette comunque di usarla, ma "rimossa" si dice solo se e' vero:
+            //           altrimenti al prossimo avvio la chiave torna, e l'utente lo deve sapere.
+            // ENGLISH: the session stops using it either way, but "removed" is said only when true:
+            //          otherwise the key comes back at the next start, and the user must know.
+            if (!cancellata) {
+                showNotification(t.aiKeyNotRemoved, 'error');
+                return;
+            }
             soundManager.chime();
             showNotification(t.aiKeyCleared || 'API Key removed', 'success');
         } catch (e: any) {
@@ -705,16 +729,25 @@ export default function App() {
     //           Contiene SOLO le foto con modifiche non salvate, con un'impronta per ogni cartella
     //           aperta (le regole e il perche' stanno in costruisciBackup). Quando non resta niente
     //           da salvare si cancella da solo; lo cancellano anche Reset e Chiudi progetto. Con la
-    //           lista vuota (avvio del programma) non si tocca: e' proprio li' che serve il
-    //           recupero dopo un crash.
+    //           lista vuota all'avvio del programma (nessuna foto ancora entrata) non si tocca: e'
+    //           proprio li' che serve il recupero dopo un crash. Dopo, una lista vuota vuol dire
+    //           che l'utente ha chiuso tutte le foto, e il backup si ricalcola come sempre: prima
+    //           restava, e chiudendo l'ultima foto con la X ("le modifiche andranno perse") le
+    //           modifiche buttate via tornavano al caricamento successivo come "recuperate".
     // ENGLISH: Debounced (1s) automatic backup of the tags to localStorage — crash safety net:
     //          re-importing the folder restores unsaved edits.
     //          It holds ONLY the photos with unsaved edits, with one fingerprint per open folder
     //          (the rules and the why live in costruisciBackup). When nothing is left unsaved it
-    //          removes itself; Reset and Close project remove it too. With an empty list (program
-    //          start) it is left alone: that is exactly when crash recovery is needed.
+    //          removes itself; Reset and Close project remove it too. With an empty list at program
+    //          start (no photo loaded yet) it is left alone: that is exactly when crash recovery is
+    //          needed. Afterwards an empty list means the user closed every photo, and the backup is
+    //          recomputed as always: it used to stay, and closing the last photo with the X ("the
+    //          changes will be lost") brought the discarded edits back on the next load as
+    //          "recovered".
+    const backupConFotoRef = useRef(false);
     useEffect(() => {
-        if (images.length === 0) return undefined;
+        if (images.length > 0) backupConFotoRef.current = true;
+        else if (!backupConFotoRef.current) return undefined;
         const handle = setTimeout(() => {
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
             scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder);
@@ -843,10 +876,12 @@ export default function App() {
                 || isApiKeyDialogOpen || isStatsOpen || !!exportChoice || updateAskOpen || !!updateFound) {
                 return;
             }
-            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') {
+            // ITALIANO: anche con una tastiera non latina (russa: "я"), vedi isLetterShortcut.
+            // ENGLISH: also with a non-Latin keyboard (Russian: "я"), see isLetterShortcut.
+            if (e.ctrlKey && e.shiftKey && isLetterShortcut(e, 'z')) {
                 e.preventDefault();
                 handleRedo();
-            } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+            } else if (e.ctrlKey && isLetterShortcut(e, 'z')) {
                 e.preventDefault();
                 handleUndo();
             }
@@ -1767,6 +1802,7 @@ export default function App() {
         if (!apiLocale || typeof apiLocale.restoreTrashed !== 'function') return;
         setRipristinoInCorso(true);
         ripristinoInCorsoRef.current = true;
+        const progetto = progettoGenRef.current;
         try {
             const voci: any[] = ultimoSvuotamento.voci || [];
             // ITALIANO: PRIMA le sole immagini, e i .txt solo dopo, solo per le foto tornate
@@ -1809,6 +1845,17 @@ export default function App() {
                         if (r && r.esito !== 'ok') console.warn('[Cestino] Il file di testo non e\' tornato:', r.percorso, r.esito);
                     });
                 }
+            }
+
+            // ITALIANO: il progetto e' stato chiuso o azzerato mentre si aspettava il Cestino di
+            //           Windows: i file sono tornati nella loro cartella (immagine e .txt insieme), ma
+            //           le foto non entrano nel progetto di adesso, ne' il suo tasto di annullamento.
+            // ENGLISH: the project was closed or reset while waiting for the Windows Recycle Bin: the
+            //          files are back in their folder (image and .txt together), but the photos do not
+            //          enter the current project, nor does its undo button.
+            if (progetto !== progettoGenRef.current) {
+                console.warn('[Cestino] Annullamento finito dopo la chiusura del progetto: file rimessi su disco, progetto attuale non toccato.');
+                return;
             }
 
             if (tornate.length > 0) {
@@ -1876,8 +1923,10 @@ export default function App() {
         } catch (err) {
             console.error('[Cestino] Annullamento dello svuotamento non riuscito:', err);
             // ITALIANO: un errore del canale non dice niente del Cestino: i file sono ancora li'.
+            //           Non lo si dice in un progetto aperto dopo: non e' il suo.
             // ENGLISH: a channel error says nothing about the Recycle Bin: the files are still there.
-            showNotification(t.undoEmptyFailed, 'error');
+            //          It is not said in a project opened afterwards: it is not that project's.
+            if (progetto === progettoGenRef.current) showNotification(t.undoEmptyFailed, 'error');
         } finally {
             setRipristinoInCorso(false);
             ripristinoInCorsoRef.current = false;
@@ -1918,6 +1967,7 @@ export default function App() {
         // ENGLISH: the "Restore" and the X of every single photo are disabled too; they used to
         //          stay live during the emptying.
         setIsEmptyingTrash(true);
+        const progetto = progettoGenRef.current;
         const removedIds = new Set<string>();
         const ripescabili: any[] = [];
         const senzaPercorso: any[] = [];
@@ -1967,6 +2017,16 @@ export default function App() {
             }
         }
         setIsEmptyingTrash(false);
+        // ITALIANO: il progetto e' stato chiuso o azzerato durante lo svuotamento: da li' il ciclo
+        //           non ha piu' spostato niente, e cio' che era gia' nel Cestino di Windows ci resta.
+        //           Niente annullamento, messaggi o seconda finestra nel progetto di adesso.
+        // ENGLISH: the project was closed or reset during the emptying: from then on the loop moved
+        //          nothing more, and what already reached the Windows Recycle Bin stays there. No
+        //          undo, messages or second dialog in the current project.
+        if (progetto !== progettoGenRef.current) {
+            console.warn('[Cestino] Svuotamento interrotto dalla chiusura del progetto: file gia\' spostati nel Cestino di Windows:', removedIds.size);
+            return;
+        }
         // ITALIANO: nel cestino non era rimasto niente da svuotare (tutto ripristinato nel
         //           frattempo): nessun messaggio di file spostati che non si sono mossi.
         // ENGLISH: nothing was left in the trash to empty (all restored meanwhile): no message
@@ -2931,6 +2991,9 @@ export default function App() {
 
     const handleResetProject = () => {
         setConfirmDialog({ isOpen: true, title: t.confirmResetTitle, message: t.confirmResetMsg, onConfirm: () => {
+            // ITALIANO: un progetto nuovo: i lavori del cestino ancora in corso non lo toccano (vedi progettoGenRef).
+            // ENGLISH: a new project: trash jobs still running do not touch it (see progettoGenRef).
+            progettoGenRef.current++;
             // ITALIANO: Ferma un eventuale batch AI in corso e svuota il backup automatico dei tag
             // ENGLISH: Stop any running AI batch and clear the automatic tag backup
             aiCancelRequestedRef.current = true;
@@ -3130,6 +3193,16 @@ export default function App() {
         // ENGLISH: mark as saved ONLY the files really written, with the SNAPSHOT tags (not the live
         //          ones): a tag added while saving is not counted as already saved.
         if (savedIds.size > 0) {
+            // ITALIANO: segnare i file come salvati non e' un'azione dell'utente: non diventa un
+            //           passo della cronologia (Ctrl+Z non tocca originalTags, vedi
+            //           withLiveOriginalTags). Prima lo era: il primo Ctrl+Z dopo "Salva" diceva
+            //           "Azione annullata" senza cambiare niente, e un salvataggio dopo un Ctrl+Z
+            //           cancellava i passi da rifare.
+            // ENGLISH: marking the files as saved is not a user action: it does not become a history
+            //          step (Ctrl+Z does not touch originalTags, see withLiveOriginalTags). It used to
+            //          be one: the first Ctrl+Z after "Save" said "Action undone" without changing
+            //          anything, and a save after a Ctrl+Z wiped the steps to redo.
+            isUndoRedoAction.current = true;
             setImages(prev => prev.map(img => {
                 if (!savedIds.has(img.id)) return img;
                 const snap = imagesToSave.find(s => s.id === img.id);
@@ -3517,7 +3590,9 @@ export default function App() {
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     }, [globalTriggers]);
-    const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
+    // ITALIANO: il visualizzatore ha scritto il .txt: come in performSave, non e' un passo della cronologia.
+    // ENGLISH: the viewer wrote the .txt: as in performSave, it is not a history step.
+    const updateOriginalTags = (id: string, newTags: string[]) => { isUndoRedoAction.current = true; setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img)); };
     const toggleImageSelection = useCallback((id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]), []);
 
     // ITALIANO: clic su una miniatura: se c'e' gia' una selezione multipla la aggiunge/toglie,
@@ -3603,6 +3678,9 @@ export default function App() {
     // ENGLISH: The actual close. Split out because both paths use it: the simple
     //          confirmation (nothing to save) and the three-choice dialog.
     const closeProjectNow = () => {
+        // ITALIANO: un progetto nuovo: i lavori del cestino ancora in corso non lo toccano (vedi progettoGenRef).
+        // ENGLISH: a new project: trash jobs still running do not touch it (see progettoGenRef).
+        progettoGenRef.current++;
         // ITALIANO: ferma un eventuale batch AI in corso, poi azzera TUTTO
         // ENGLISH: stop any running AI batch, then clear EVERYTHING
         aiCancelRequestedRef.current = true;
@@ -4608,13 +4686,13 @@ export default function App() {
                                                 <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}}>
                                                     <img src={img.thumb} alt="Trash preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} opacity-70`} />
                                                     
-                                                    {img.width * img.height < 1048576 && (
+                                                    {qualityWarningText(t, img.width, img.height) !== null && (
                                                         <div className="absolute top-2 right-2 z-30 group/alert">
                                                             <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
                                                                 <AlertTriangle size={16} strokeWidth={2.5} />
                                                             </div>
                                                             <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                                                {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                                                                {qualityWarningText(t, img.width, img.height)}
                                                             </div>
                                                         </div>
                                                     )}
@@ -4631,7 +4709,7 @@ export default function App() {
                                                             },
                                                             onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                         });
-                                                    }} disabled={isEmptyingTrash} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 disabled:cursor-not-allowed`} title={t.deletePermanently}><X size={14} /></button>
+                                                    }} disabled={isEmptyingTrash} className={`absolute top-2 ${qualityWarningText(t, img.width, img.height) !== null ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 disabled:cursor-not-allowed`} title={t.deletePermanently}><X size={14} /></button>
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
