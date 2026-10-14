@@ -172,13 +172,13 @@ console.log('\n--- src/App.tsx: dove i tag di una foto vengono scritti ---');
     ].join('\n');
     const js = (await esbuild.transform(testo, { loader: 'ts' })).code;
     const fabbrica = new Function('globalTriggers', 'images', 'selectedForBulk', 'stagedBulkTags', 'setImages', 'setGlobalTriggers',
-        'setStagedBulkTags', 'setSelectedForBulk', 'soundManager', 'showNotification', 't', 'useCallback', 'uniqueTagsIgnoringCase', 'globalTriggersRef',
+        'setStagedBulkTags', 'setSelectedForBulk', 'soundManager', 'showNotification', 't', 'useCallback', 'uniqueTagsIgnoringCase', 'globalTriggersRef', 'countNewTagsIgnoringCase',
         js + '\nreturn { updateImageTags, applyBulkTags, handleGlobalTagsChange };');
     const app = (immagini, { trigger = [], selezione = [], inPreparazione = [] } = {}) => {
         const s = { immagini, trigger };
         const f = fabbrica(trigger, immagini, selezione, inPreparazione, (fn) => { s.immagini = fn(s.immagini); }, (v) => { s.trigger = v; },
             () => { }, () => { }, { chime() { }, pop() { } }, () => { }, { bulkTagsAdded: '' }, (x) => x,
-            regola ? regola.uniqueTagsIgnoringCase : undefined, { current: trigger });
+            regola ? regola.uniqueTagsIgnoringCase : undefined, { current: trigger }, regola ? regola.countNewTagsIgnoringCase : undefined);
         return { s, f };
     };
     {

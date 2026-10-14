@@ -142,5 +142,8 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     app.interruttore = (v) => pezzi().interruttoreAI(v);
     app.chiamate = () => globalThis.__GOOGLE__.chiamate;
     app.annullamentoChiesto = () => dip.aiCancelRequestedRef.current;
+    // ITALIANO: l'elenco vivo delle foto (imagesRef): una prova puo' togliere una foto a meta' richiesta.
+    // ENGLISH: the live photo list (imagesRef): a test can remove a photo halfway through a request.
+    app.imagesRef = dip.imagesRef;
     return app;
 };

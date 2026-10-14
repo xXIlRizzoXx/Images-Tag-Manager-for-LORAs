@@ -299,8 +299,16 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
  */
 export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: any) => {
     if (!isOpen) return null;
+    // ITALIANO: z-[500], sopra l'editor dei file di tag (320/340), la finestra della API key (400) e
+    //           le altre finestre: la X della finestra puo' arrivare con una di loro aperta, e la
+    //           domanda restava nascosta sotto (la X sembrava morta). Sopra restano solo la schermata
+    //           di avvio, la scelta della lingua e i messaggi a comparsa.
+    // ENGLISH: z-[500], above the Tag file editor (320/340), the API key dialog (400) and the other
+    //          dialogs: the window X can arrive with one of them open, and the question stayed hidden
+    //          underneath (the X looked dead). Only the splash, the language picker and the toasts
+    //          stay above.
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+        <div className="fixed inset-0 z-[500]flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-3 text-amber-500 dark:text-amber-400">

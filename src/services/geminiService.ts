@@ -44,6 +44,20 @@ const sanitizeCustomPrompt = (input?: string): string => {
     return stripControlChars(input).replace(/\s+/g, ' ').trim().slice(0, CUSTOM_PROMPT_MAX_LENGTH);
 };
 
+// ITALIANO: un problema della FOTO, trovato qui prima di chiamare Google (vuota, troppo grande, in un
+//           formato che non si riesce a leggere). Il segno `geminiKind = 'photo'` non cambia il tipo
+//           dell'errore (resta 'unknown'), ma permette all'app di dire che e' la foto e non la rete,
+//           e alla taggatura in blocco di non contarlo come "Google non raggiungibile".
+// ENGLISH: a problem of the PHOTO, found here before calling Google (empty, too large, in a format
+//          that cannot be read). The `geminiKind = 'photo'` mark does not change the error kind (it
+//          stays 'unknown'), but lets the app say it is the photo and not the network, and lets bulk
+//          tagging not count it as "Google unreachable".
+const fotoNonUsabile = (motivo: string): Error => {
+    const e = new Error(motivo);
+    (e as Error & { geminiKind?: string }).geminiKind = 'photo';
+    return e;
+};
+
 // ITALIANO: una foto in un formato che non si sa pulire byte per byte (GIF, BMP, AVIF, ICO...) si
 //           ridisegna e parte come PNG: restano i pixel, sparisce tutto il resto. Se non si puo'
 //           ridisegnare (TIFF, SVG, file rovinato) non parte niente: mai il file originale.
@@ -51,7 +65,7 @@ const sanitizeCustomPrompt = (input?: string): string => {
 //          redrawn and sent as PNG: the pixels stay, everything else goes. If it cannot be redrawn
 //          (TIFF, SVG, damaged file) nothing is sent: never the original file.
 const redrawAsPng = async (file: File): Promise<Blob> => {
-    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') throw new Error('Unsupported file type');
+    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') throw fotoNonUsabile('Unsupported file type');
     let bitmap: ImageBitmap | undefined;
     try {
         bitmap = await createImageBitmap(file);
@@ -63,7 +77,7 @@ const redrawAsPng = async (file: File): Promise<Blob> => {
         if (png.type !== 'image/png') throw new Error('not a png');
         return png;
     } catch {
-        throw new Error('Unsupported file type');
+        throw fotoNonUsabile('Unsupported file type');
     } finally {
         bitmap?.close();
     }
@@ -76,14 +90,14 @@ const redrawAsPng = async (file: File): Promise<Blob> => {
 //          (GPS position, camera serial number, author, editing history). The type sent is the
 //          real one of the bytes, not the one the file name declares.
 const imageForGemini = async (file: File): Promise<{ data: string; mimeType: string }> => {
-    if (!file || file.size === 0) throw new Error('Invalid or empty file');
-    if (file.size > MAX_FILE_SIZE_BYTES) throw new Error('Image too large (> 20 MB)');
-    if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw new Error('Unsupported file type');
+    if (!file || file.size === 0) throw fotoNonUsabile('Invalid or empty file');
+    if (file.size > MAX_FILE_SIZE_BYTES) throw fotoNonUsabile('Image too large (> 20 MB)');
+    if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw fotoNonUsabile('Unsupported file type');
     const pulita = stripImageMetadata(new Uint8Array(await file.arrayBuffer()));
     const blob = pulita
         ? new Blob([pulita.bytes as Uint8Array<ArrayBuffer>], { type: pulita.mimeType })
         : await redrawAsPng(file);
-    if (blob.size > MAX_FILE_SIZE_BYTES) throw new Error('Image too large (> 20 MB)');
+    if (blob.size > MAX_FILE_SIZE_BYTES) throw fotoNonUsabile('Image too large (> 20 MB)');
     return { data: await blobToBase64(blob), mimeType: blob.type };
 };
 

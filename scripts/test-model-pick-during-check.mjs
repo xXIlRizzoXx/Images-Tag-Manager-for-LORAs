@@ -86,9 +86,9 @@ const testoEffetto = app.slice(k0 + '    useEffect('.length, k1 + '    }'.length
 
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
-            elencaModelliRemoti, aggiornaModelloAutomatico, localStorage } = env;
+            elencaModelliRemoti, aggiornaModelloAutomatico, confrontaVersioni, versioneDi, localStorage } = env;
     const aiModel = snap.aiModel;
     const aiModelloFissato = snap.aiModelloFissato;
 ${testoControlla}
@@ -135,13 +135,13 @@ const scenario = (iniziale, { elencoAperto = false } = {}) => {
     const env = {
         t, geminiApiKey: 'AIza' + 'x'.repeat(35),
         controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
-        aiModelloFissatoRef: { current: iniziale.aiModelloFissato },
+        aiModelloFissatoRef: { current: iniziale.aiModelloFissato }, aiEnabledRef: { current: true },
         setControlloModelloInCorso: (v) => { stato.inCorso = v; },
         setModelloControllatoIl: () => { }, setModelliDisponibili: () => { },
         showNotification: (m, tipo) => notifiche.push([m, tipo]),
         setAiModel: (v) => { stato.aiModel = v; },
         setAiModelloFissato: (v) => { stato.aiModelloFissato = v; disegna().effettoFissato(); },
-        elencaModelliRemoti: S.elencaModelliRemoti, aggiornaModelloAutomatico: S.aggiornaModelloAutomatico,
+        elencaModelliRemoti: S.elencaModelliRemoti, aggiornaModelloAutomatico: S.aggiornaModelloAutomatico, confrontaVersioni: S.confrontaVersioni, versioneDi: S.versioneDi,
         localStorage: { getItem: (k) => (salvato.has(k) ? salvato.get(k) : null), setItem: (k, v) => salvato.set(k, String(v)) },
     };
     const disegna = () => render(env, { aiModel: stato.aiModel, aiModelloFissato: stato.aiModelloFissato });

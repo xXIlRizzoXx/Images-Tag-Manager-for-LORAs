@@ -4,8 +4,8 @@
    '{"error":{"code":400,"message":"API key not valid...'. Premendo Invio con una chiave troppo
    corta (il tasto e' spento, Invio no) compariva l'inglese fisso "API key looks invalid (too
    short)". La traduzione giusta c'era gia' (aiKeyInvalid) ma non veniva mai raggiunta. La regola:
-   una chiave sbagliata si dice con la frase tradotta; il testo grezzo resta solo per gli errori
-   che non si sanno riconoscere.
+   una chiave sbagliata si dice con la frase tradotta; anche gli errori che non si sanno riconoscere
+   hanno una frase tradotta (vedi test-ai-unknown-error-text.mjs).
    Si eseguono il testo VERO di handleVerifyApiKey preso da src/App.tsx e il servizio vero di
    src/services/geminiService.ts, con un Google finto (nessuna rete, nessuna chiave).
    Uso:  node scripts/test-key-dialog-message.mjs      (esce con codice 1 se qualcosa non torna)
@@ -16,7 +16,8 @@
    '{"error":{"code":400,"message":"API key not valid...'. Pressing Enter with a key too short (the
    button is off, Enter is not) showed the fixed English "API key looks invalid (too short)". The
    right translation already existed (aiKeyInvalid) but was never reached. The rule: a wrong key is
-   told with the translated sentence; the raw text stays only for errors nobody can recognise.
+   told with the translated sentence; errors nobody can recognise get a translated sentence too (see
+   test-ai-unknown-error-text.mjs).
    The REAL text of handleVerifyApiKey taken from src/App.tsx and the real service of
    src/services/geminiService.ts are run, with a fake Google (no network, no key).
    Usage:  node scripts/test-key-dialog-message.mjs      (exits with code 1 if anything is off) */
@@ -108,7 +109,7 @@ console.log('\n--- quello che NON deve cambiare ---');
 {
     const t = lingue.it;
     const rete = await verifica(t, LUNGA, async () => { throw new Error('fetch failed: ECONNRESET'); });
-    dice('errore sconosciuto (rete): il testo resta quello vero, utile per capire', 'fetch failed: ECONNRESET', rete.mostrato);
+    dice('errore sconosciuto (rete): una frase tradotta, non il testo grezzo', t.aiRequestFailed, rete.mostrato);
     const buona = await verifica(t, LUNGA, async () => ({ async *[Symbol.asyncIterator]() { } }));
     dice('chiave buona: si salva, nessun errore', [LUNGA, undefined], [buona.salvata, buona.mostrato]);
 }

@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -684,7 +684,13 @@ export default function App() {
         triggerPassi.push(globalTriggers);
         if (triggerPassi.length > 50) triggerPassi.shift();
         triggerHistoryRef.current = triggerPassi;
-        setHistoryIndex(prev => Math.min(prev + 1, 49));
+        // ITALIANO: l'indice dallo stesso historyIndex dei tagli qui sopra, non da `prev + 1`: React
+        //           in StrictMode (anteprima di sviluppo) ripete l'effetto all'avvio, e con `prev + 1`
+        //           l'indice finiva un passo oltre l'ultimo (il primo Ctrl+Z non faceva niente).
+        // ENGLISH: the index from the same historyIndex as the cuts above, not from `prev + 1`: React
+        //          in StrictMode (development preview) repeats the effect on mount, and with
+        //          `prev + 1` the index ended one step past the last (the first Ctrl+Z did nothing).
+        setHistoryIndex(Math.min(historyIndex + 1, 49));
     }, [images]);
 
     useEffect(() => { imagesRef.current = images; }, [images]);
@@ -1176,6 +1182,14 @@ export default function App() {
     });
     const controlloModelloRef = useRef(false);
     const [riparaModello, setRiparaModello] = useState(0);
+    // ITALIANO: l'interruttore AI com'e' adesso, letto dal controllo dei modelli prima di partire e
+    //           dopo ogni attesa: con l'AI spenta non si parla con Google (README), e la riparazione
+    //           chiesta da una foto o il controllo di avvio non devono cambiare modello dopo.
+    // ENGLISH: the AI switch as it is now, read by the model check before it starts and after every
+    //          wait: with the AI off Google is not contacted (README), and a repair asked by a photo
+    //          or the startup check must not switch the model afterwards.
+    const aiEnabledRef = useRef(aiEnabled);
+    aiEnabledRef.current = aiEnabled;
 
     // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
     //           ("scegliendo un modello preciso, resta fisso quello") e prima non era vero: nel
@@ -1218,6 +1232,7 @@ export default function App() {
         // ENGLISH: the ref, not the state: two checks in parallel would waste calls and could
         //          overwrite each other's chosen model.
         if (controlloModelloRef.current) return;
+        if (!aiEnabledRef.current) return;
         if (!geminiApiKey) { if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error'); return; }
         controlloModelloRef.current = true;
         setControlloModelloInCorso(true);
@@ -1252,6 +1267,9 @@ export default function App() {
             //          dead model is not respecting a choice.
             if (fissato && !rotto) {
                 const elenco = await elencaModelliRemoti(geminiApiKey);
+                // ITALIANO: l'AI e' stata spenta mentre Google rispondeva: niente avvisi, niente cambi.
+                // ENGLISH: the AI was switched off while Google answered: no notices, no changes.
+                if (!aiEnabledRef.current) return;
                 // ITALIANO: mentre Google rispondeva l'utente e' passato ad Automatico: il controllo
                 //           chiesto da quel clic si e' perso (questo era in corso), quindi lo fa
                 //           questo, proseguendo come Automatico. Prima diceva "ce n'e' uno piu'
@@ -1269,7 +1287,15 @@ export default function App() {
                     tieniElenco(elenco);
                     segnaControllo();
                     if (dilloComunque) {
-                        if (elenco[0].id !== aiModel) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
+                        // ITALIANO: "piu' recente" solo se la VERSIONE e' piu' alta. A parita' di
+                        //           versione il flash pieno viene prima del lite nell'elenco: con
+                        //           gemini-3.6-flash-lite bloccato si annunciava gemini-3.6-flash
+                        //           come "piu' recente", ed e' la stessa 3.6.
+                        // ENGLISH: "newer" only if the VERSION is higher. At equal version the full
+                        //          flash comes before the lite in the list: with gemini-3.6-flash-lite
+                        //          locked, gemini-3.6-flash was announced as "newer", and it is the
+                        //          same 3.6.
+                        if (confrontaVersioni(versioneDi(elenco[0].id), versioneDi(aiModel)) > 0) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
                         else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
                     }
                     return;
@@ -1278,6 +1304,7 @@ export default function App() {
             }
 
             const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
+            if (!aiEnabledRef.current) return;
             tieniElenco(esito.disponibili);
             if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'occupato') segnaControllo();
 
@@ -1354,7 +1381,7 @@ export default function App() {
             //           revocata non e' "Google non raggiungibile", come nel giro automatico.
             // ENGLISH: with the model locked the list is asked from here: an expired or revoked
             //          key is not "Google unreachable", as in the automatic round.
-            if (dilloComunque) showNotification(classifyGeminiError(err).kind === 'invalid_key' ? t.aiModelCheckKeyInvalid : t.aiModelCheckFailed, 'error');
+            if (dilloComunque && aiEnabledRef.current) showNotification(classifyGeminiError(err).kind === 'invalid_key' ? t.aiModelCheckKeyInvalid : t.aiModelCheckFailed, 'error');
         } finally {
             controlloModelloRef.current = false;
             setControlloModelloInCorso(false);
@@ -4171,7 +4198,17 @@ export default function App() {
                 ? t.aiServerBusy
                 : kind === 'blocked'
                 ? t.aiResponseBlocked
-                : String(e?.message || e || '').slice(0, 200);
+                // ITALIANO: tutto il resto (rete assente, attesa scaduta, una richiesta che Google non
+                //           accetta) mostrava il testo grezzo, in inglese in tutte le lingue: ora una
+                //           frase tradotta. Una foto che non si puo' mandare (vuota, oltre 20 MB, in un
+                //           formato illeggibile) lo dice. Il testo vero resta nella console (sopra).
+                // ENGLISH: everything else (no network, timeout, a request Google does not accept)
+                //          showed the raw text, in English in every language: now a translated
+                //          sentence. A photo that cannot be sent (empty, over 20 MB, in an unreadable
+                //          format) says so. The real text stays in the console (above).
+                : e?.geminiKind === 'photo'
+                ? t.aiPhotoNotSupported
+                : t.aiRequestFailed;
             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
             // ITALIANO: il modello non esiste piu': invece di lasciare l'AI rotta finche'
             //           qualcuno non va a cambiarla a mano, si cerca subito il sostituto.
@@ -4232,6 +4269,9 @@ export default function App() {
         let skippedCount = 0;
         let fatalAbort = false;
         let cancelled = false;
+        // ITALIANO: foto di fila che non sono riuscite a raggiungere Google (vedi sotto).
+        // ENGLISH: photos in a row that could not reach Google (see below).
+        let reteConsecutivi = 0;
         try {
             for (let i = 0; i < images.length; i++) {
                 if (aiCancelRequestedRef.current) { cancelled = true; break; }
@@ -4263,6 +4303,12 @@ export default function App() {
 
                 const requestStart = Date.now();
                 let success = false;
+                // ITALIANO: la foto e' stata chiusa mentre la sua richiesta era in volo: si conta fra
+                //           le saltate, come quella chiusa prima. Prima si contava fra le "taggate".
+                // ENGLISH: the photo was closed while its request was in flight: it counts as skipped,
+                //          like one closed before. It used to count as "tagged".
+                let removedMidRequest = false;
+                let erroreRete = false;
                 // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
                 // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
                 for (let attempt = 0; attempt < 3; attempt++) {
@@ -4284,7 +4330,7 @@ export default function App() {
                             // ITALIANO: Rimossa durante la richiesta: ignora il risultato
                             // ENGLISH: Removed during the request: discard the result
                             console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: removed mid-batch, result discarded`);
-                            success = true;
+                            removedMidRequest = true;
                             break;
                         }
                         const baseTags: string[] = Array.isArray(liveNow.tags) ? liveNow.tags : [];
@@ -4350,16 +4396,38 @@ export default function App() {
                             if (aiCancelRequestedRef.current) { cancelled = true; break; }
                             continue;
                         }
-                        // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui
-                        // ENGLISH: Non-fatal error or last attempt failed → record error and continue
+                        // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui.
+                        //           Un errore senza nome e senza stato HTTP (rete assente, attesa
+                        //           scaduta) vuol dire che Google non si e' raggiunto: non una foto
+                        //           che non si puo' mandare, ne' una risposta di Google.
+                        // ENGLISH: Non-fatal error or last attempt failed → record error and continue.
+                        //          An unnamed error with no HTTP status (no network, timeout) means
+                        //          Google was not reached: not a photo that cannot be sent, nor an
+                        //          answer from Google.
+                        if (kind === 'unknown' && typeof err?.status !== 'number' && err?.geminiKind !== 'photo') erroreRete = true;
                         break;
                     }
                 }
 
                 if (fatalAbort || cancelled) break;
-                if (success) okCount++;
+                if (removedMidRequest) skippedCount++;
+                else if (success) okCount++;
                 else errorCount++;
                 setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                // ITALIANO: senza rete ogni foto falliva lo stesso, una dopo l'altra (con una
+                //           connessione bloccata 90 secondi l'una, per ore), e alla fine il riepilogo
+                //           diceva solo "Non riuscite: 300". Dopo tre foto di fila che non raggiungono
+                //           Google ci si ferma e lo si dice. Le foto gia' taggate restano.
+                // ENGLISH: with no network every photo failed anyway, one after the other (on a
+                //          stalled connection 90 seconds each, for hours), and in the end the summary
+                //          only said "Failed: 300". After three photos in a row that do not reach
+                //          Google the run stops and says so. The photos already tagged stay.
+                reteConsecutivi = erroreRete && !success && !removedMidRequest ? reteConsecutivi + 1 : 0;
+                if (reteConsecutivi >= 3) {
+                    showNotification(`${t.aiError || 'AI Error'}: ${t.aiNetworkStopped}`, 'error');
+                    fatalAbort = true;
+                    break;
+                }
 
                 // ITALIANO: Throttle adattivo — aspetta solo se la richiesta è stata più veloce del minimo
                 // ENGLISH: Adaptive throttle — only wait if the request was faster than the minimum
@@ -4418,11 +4486,15 @@ export default function App() {
                 // ITALIANO: la chiave sbagliata e' il primo caso, con la sua frase tradotta. Prima
                 //           cadeva sul testo grezzo del servizio: i primi 200 caratteri della risposta
                 //           JSON di Google, o l'inglese fisso "too short" premendo Invio con una
-                //           chiave corta. Il testo grezzo resta solo per gli errori sconosciuti.
+                //           chiave corta. Anche gli errori sconosciuti (rete assente, attesa scaduta,
+                //           una richiesta che Google non accetta) hanno una frase tradotta: il loro
+                //           testo grezzo va solo nella console.
                 // ENGLISH: a wrong key is the first case, with its translated sentence. It used to
                 //          fall to the service's raw text: the first 200 characters of Google's JSON
                 //          answer, or the fixed English "too short" when pressing Enter with a short
-                //          key. The raw text stays only for unknown errors.
+                //          key. Unknown errors (no network, timeout, a request Google does not accept)
+                //          get a translated sentence too: their raw text goes to the console only.
+                if (result.errorKind === 'unknown') console.warn('[AI] Verifica della chiave non riuscita:', result.error);
                 const friendly = result.errorKind === 'invalid_key'
                     ? (t.aiKeyInvalid || 'API Key invalid')
                     : result.errorKind === 'billing_required'
@@ -4433,11 +4505,12 @@ export default function App() {
                     ? t.aiServerBusy
                     : result.errorKind === 'model_unavailable'
                     ? (t.aiModelUnavailable || 'Model unavailable for your account.')
-                    : (result.error || (t.aiKeyInvalid || 'API Key invalid'));
+                    : t.aiRequestFailed;
                 setApiKeyError(friendly);
             }
         } catch (e: any) {
-            setApiKeyError(e?.message || (t.aiKeyInvalid || 'API Key invalid'));
+            console.warn('[AI] Verifica della chiave non riuscita:', e);
+            setApiKeyError(t.aiRequestFailed);
         } finally {
             setIsVerifyingApiKey(false);
         }
@@ -4450,9 +4523,35 @@ export default function App() {
         // ENGLISH: apply tags ONLY to selected and NON-trashed photos. The !isTrashed guard is a
         //          safety net: even if a trashed id lingered in the selection, no tags are written
         //          to it (so none reach its .txt).
-        const quante = images.filter(img => selectedForBulk.includes(img.id) && !img.isTrashed).length;
+        // ITALIANO: si contano solo i tag che almeno una foto riceve davvero e le foto che cambiano
+        //           davvero (a parte le maiuscole, come countNewTagsIgnoringCase). Prima si contavano
+        //           i tag messi nel pannello e tutte le foto selezionate: 5 foto che avevano gia'
+        //           "1girl" davano "Tag aggiunti: 1. Foto interessate: 5." senza che cambiasse niente.
+        // ENGLISH: only the tags at least one photo really gets and the photos that really change
+        //          are counted (apart from case, as countNewTagsIgnoringCase). The staged tags and all
+        //          the selected photos used to be counted: 5 photos already holding "1girl" gave "Tags
+        //          added: 1. Photos affected: 5." with nothing changed.
+        const daCambiare = new Set<string>();
+        const tagNuovi = new Set<string>();
+        for (const img of images) {
+            if (!selectedForBulk.includes(img.id) || img.isTrashed) continue;
+            const mancanti = stagedBulkTags.filter(tag => countNewTagsIgnoringCase(img.tags, [tag]) > 0);
+            if (mancanti.length === 0) continue;
+            daCambiare.add(img.id);
+            for (const tag of mancanti) tagNuovi.add(tag.toLowerCase());
+        }
+        if (daCambiare.size === 0) {
+            // ITALIANO: niente da aggiungere: nessun passo vuoto nella cronologia, nessun suono di
+            //           successo, e il pannello si chiude come sempre.
+            // ENGLISH: nothing to add: no empty step in the history, no success chime, and the panel
+            //          closes as always.
+            showNotification(t.bulkTagsNothingNew, 'info');
+            setStagedBulkTags([]);
+            setSelectedForBulk([]);
+            return;
+        }
         setImages(prev => prev.map(img => {
-            if (selectedForBulk.includes(img.id) && !img.isTrashed) {
+            if (daCambiare.has(img.id) && !img.isTrashed) {
                 const combinedTags = uniqueTagsIgnoringCase([...img.tags, ...stagedBulkTags], globalTriggers);
                 // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
                 // ENGLISH: same order as everywhere else: triggers first, then alphabetical
@@ -4465,7 +4564,7 @@ export default function App() {
             return img;
         }));
         soundManager.chime();
-        showNotification(t.bulkTagsAdded.replace('{tags}', String(stagedBulkTags.length)).replace('{images}', String(quante)), "success");
+        showNotification(t.bulkTagsAdded.replace('{tags}', String(tagNuovi.size)).replace('{images}', String(daCambiare.size)), "success");
         setStagedBulkTags([]);
         // ITALIANO: finito il lavoro si deselezionano le immagini, e cosi' il pannello si chiude
         //           da solo (compare solo quando c'e' almeno un'immagine selezionata). Prima

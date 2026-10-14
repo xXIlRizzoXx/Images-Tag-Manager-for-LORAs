@@ -66,9 +66,9 @@ const testoControlla = app.slice(i0, f0.index + f0[0].length);
 
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
-            elencaModelliRemoti, aggiornaModelloAutomatico, classifyGeminiError, localStorage } = env;
+            elencaModelliRemoti, aggiornaModelloAutomatico, classifyGeminiError, confrontaVersioni, versioneDi, localStorage } = env;
     const aiModel = snap.aiModel;
     const aiModelloFissato = snap.aiModelloFissato;
 ${testoControlla}
@@ -105,12 +105,12 @@ const prova = async ({ fissato, rotto = false, dilloComunque = true, list, gener
     const env = {
         t, geminiApiKey: 'AIza' + 'x'.repeat(35),
         controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
-        aiModelloFissatoRef: { current: fissato },
+        aiModelloFissatoRef: { current: fissato }, aiEnabledRef: { current: true },
         setControlloModelloInCorso: () => { }, setModelloControllatoIl: () => { }, setModelliDisponibili: () => { },
         showNotification: (m, tipo) => notifiche.push([m, tipo]),
         setAiModel: (v) => { stato.aiModel = v; }, setAiModelloFissato: (v) => { stato.aiModelloFissato = v; },
         elencaModelliRemoti: S.elencaModelliRemoti, aggiornaModelloAutomatico: S.aggiornaModelloAutomatico,
-        classifyGeminiError: S.classifyGeminiError,
+        classifyGeminiError: S.classifyGeminiError, confrontaVersioni: S.confrontaVersioni, versioneDi: S.versioneDi,
         localStorage: { getItem: (k) => (salvato.has(k) ? salvato.get(k) : null), setItem: (k, v) => salvato.set(k, String(v)) },
     };
     await render(env, stato).controllaModello(rotto, dilloComunque, fissato);
