@@ -308,7 +308,7 @@ export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave
     //          underneath (the X looked dead). Only the splash, the language picker and the toasts
     //          stay above.
     return (
-        <div className="fixed inset-0 z-[500]flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-3 text-amber-500 dark:text-amber-400">
