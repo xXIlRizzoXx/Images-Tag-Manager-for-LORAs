@@ -182,14 +182,14 @@ export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc'
     };
     const nomi = ['images', 't', 'showNotification', 'setIsSaving', 'setImportProgress', 'getOrderedTagString', 'soundManager', 'window', 'document', 'URL', 'console',
         'setExportChoice', 'exportChoice', 'JSZip', 'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'scriviZip', 'ERRORE_LETTURA_ZIP',
-        'applySort', 'sortOrder'];
+        'applySort', 'sortOrder', 'isSaving'];
     const costruisci = (exportChoice) => new Function(...nomi,
         pezzi.formatoPeso + '\n' + pezzi.exportAllAsZip + '\n' + pezzi.handleExportAll + '\n' + pezzi.avviaExport +
         '\nreturn { exportAllAsZip, handleExportAll, avviaExport: typeof avviaExport === "function" ? avviaExport : null };')(
         images, t, (m, tipo) => r.notifiche.push([m, tipo]), () => { }, () => { }, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         { chime() { }, pop() { } }, finestra, documento, url, { log() { }, warn() { }, error() { } },
         (v) => { r.scelta = v; }, exportChoice, JSZip, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, Z.scriviZip, Z.ERRORE_LETTURA_ZIP,
-        applySort, ordine);
+        applySort, ordine, false);
     r.apri = () => { costruisci(null).handleExportAll(); return r; };
     r.conferma = async (conImmagini, rinomina = false) => {
         const f = costruisci(r.scelta);

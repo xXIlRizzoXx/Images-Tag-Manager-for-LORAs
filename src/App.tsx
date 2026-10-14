@@ -35,7 +35,7 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
-import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor } from './utils/sidecarTags';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
 import { avvisoImport } from './utils/importNotice';
@@ -2009,10 +2009,29 @@ export default function App() {
         setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
         let failed = 0;
-        for (const img of imgs) {
+        for (const scelta of imgs) {
+            // ITALIANO: come in "Svuota cestino": l'elenco e' quello della finestra, la foto si
+            //           guarda com'e' ADESSO. Una foto tornata in galleria nel frattempo (Ctrl+Z
+            //           mentre le altre si cancellano) non si tocca: prima veniva cancellata per
+            //           sempre lo stesso, e spariva dalla galleria.
+            // ENGLISH: as in "Empty trash": the list is the dialog's, the photo is looked at as it
+            //          is NOW. A photo that went back to the gallery meanwhile (Ctrl+Z while the
+            //          others are being deleted) is not touched: it used to be deleted for good
+            //          anyway, and vanished from the gallery.
+            const img = imagesRef.current.find(i => i.id === scelta.id);
+            if (!img || !img.isTrashed) continue;
             if (await deleteImageFilesForGood(img)) removedIds.add(img.id); else failed++;
         }
         setIsEmptyingTrash(false);
+        // ITALIANO: non e' stata cancellata nessuna foto (tutte tornate in galleria): niente
+        //           "eliminate per sempre: 0", si dice solo com'e' andata la prima parte, se c'e'.
+        // ENGLISH: no photo was deleted (all back in the gallery): no "deleted for good: 0", only
+        //          how the first part went is said, if there was one.
+        if (removedIds.size === 0 && failed === 0) {
+            const frase = fraseCestinoWindows(prima);
+            if (frase) showNotification(frase, prima.failed > 0 ? 'error' : 'success');
+            return;
+        }
 
         if (removedIds.size > 0) {
             removedIds.forEach(id => fotoChiuseRef.current.delete(id));
@@ -2060,7 +2079,7 @@ export default function App() {
     //          The caps on tag count and length live with the reading, in sidecarTags.
     const TXT_MAX_BYTES = 1024 * 1024;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -2271,6 +2290,13 @@ export default function App() {
                     //          the first folder's tags into the second one (and emptying the trash
                     //          deleted the wrong files).
                     dirHandle: asDirHandle(folderOf && folderOf.get(imgFiles[i])) || handle || null,
+                    // ITALIANO: la sottocartella della foto rispetto alla cartella scelta con "Carica
+                    //           cartella" (es. "10_face"; "" alla radice o senza cartella). Solo in
+                    //           memoria: serve all'esportazione per rimettere le cartelle Kohya.
+                    // ENGLISH: the photo's subfolder relative to the folder picked with "Load folder"
+                    //          (e.g. "10_face"; "" at the root or with no folder). In memory only: the
+                    //          export uses it to put the Kohya folders back.
+                    cartellaRel: (cartellaRelOf && cartellaRelOf.get(imgFiles[i])) || '',
                 });
             }
 
@@ -2305,7 +2331,7 @@ export default function App() {
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null) => {
         // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
         //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
         // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
@@ -2331,7 +2357,7 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf }
+            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf }
         });
     };
 
@@ -2425,7 +2451,13 @@ export default function App() {
                     }
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf);
+                // ITALIANO: la sottocartella di ogni foto senza il nome della radice ("" alla radice):
+                //           l'esportazione la rimette nell'archivio (vedi exportAllAsZip).
+                // ENGLISH: each photo's subfolder without the root's name ("" at the root): the
+                //          export puts it back in the archive (see exportAllAsZip).
+                const cartellaRelOf = new Map<any, string>();
+                for (const f of imgFiles) cartellaRelOf.set(f, (relPathOf.get(f) || '').split('/').slice(1).join('/'));
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf);
                 if (skipped > 0) showNotification(t.folderEntriesSkipped.replace('{n}', String(skipped)), 'info');
 
             } catch (err: any) {
@@ -2478,8 +2510,12 @@ export default function App() {
         };
         const folderOf = new Map<any, any>();
         [...imgFiles, ...txtFiles].forEach(f => folderOf.set(f, dirOfRelPath(f)));
+        // ITALIANO: come in "Carica cartella": la sottocartella senza il nome della radice.
+        // ENGLISH: as in "Load folder": the subfolder without the root's name.
+        const cartellaRelOf = new Map<any, string>();
+        imgFiles.forEach(f => cartellaRelOf.set(f, dirOfRelPath(f).split(/[\\/]/).slice(1).join('/')));
 
-        calculateImportSummary(imgFiles, txtFiles, null, folderOf);
+        calculateImportSummary(imgFiles, txtFiles, null, folderOf, null, null, cartellaRelOf);
     };
 
     // ITALIANO: Carica SINGOLE immagini (una o piu'), non l'intera cartella. Nel selettore si
@@ -2777,10 +2813,10 @@ export default function App() {
         try {
             // ITALIANO: stessi limiti di prudenza dei sidecar: un file legittimo di tag pesa pochi KB.
             //           Oltre 1 MB e' sospetto (JSON gigante/ostile) e potrebbe bloccare l'app: lo
-            //           rifiuto. Poi limito lunghezza e numero dei tag, come nell'import delle foto.
+            //           rifiuto. Poi limito lunghezza e numero dei tag (vedi pulisciTagProgetto).
             // ENGLISH: same safety caps as the sidecars: a legit tag file weighs a few KB. Over 1 MB is
             //          suspicious (huge/hostile JSON) and could freeze the app: reject it. Then clamp
-            //          each tag's length and the total count, like the photo import does.
+            //          each tag's length and the total count (see pulisciTagProgetto).
             if (file.size > 1024 * 1024) { showNotification(t.importTagsError, 'error'); return; }
             const text = (await file.text()).trim();
             let tags: string[] = [];
@@ -2795,19 +2831,19 @@ export default function App() {
                 tags = text.split(/[\r\n,]+/);
             }
             // ITALIANO: i trigger del file entrano comunque nella palette del progetto. Ogni tag e'
-            //           ripulito dai caratteri di controllo, tagliato a 100 caratteri, e in tutto se
-            //           ne tengono al massimo 5000.
+            //           ripulito dai caratteri di controllo e tagliato al limite dei .txt (4000
+            //           caratteri: prima 100, e una didascalia in frase tornava monca); in tutto se ne
+            //           tengono al massimo 5000. Se qualcosa si accorcia o resta fuori, lo si dice.
             // ENGLISH: the file's triggers also go into the project palette. Each tag is stripped of
-            //          control chars, clamped to 100 chars, and at most 5000 are kept in total.
-            const clean = [...new Set(
-                [...tags, ...triggers]
-                    .map((s: any) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, 100))
-                    .filter(Boolean)
-            )].slice(0, 5000);
+            //          control chars and clamped to the .txt cap (4000 chars: it used to be 100, and a
+            //          sentence caption came back cut); at most 5000 are kept in total. If anything is
+            //          shortened or left out, it is said.
+            const { tags: clean, truncated } = pulisciTagProgetto([...tags, ...triggers]);
             if (clean.length === 0) { showNotification(t.importTagsError, 'error'); return; }
             setCustomProjectTags(prev => [...new Set([...prev, ...clean])]);
             soundManager.chime();
-            showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
+            if (truncated) showNotification(t.projectTagsImportShortened.replace('{n}', String(clean.length)), 'info');
+            else showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
         } catch (err) {
             showNotification(t.importTagsError, 'error');
         } finally {
@@ -2881,6 +2917,18 @@ export default function App() {
         const withoutFolder = imagesToSave.filter(img => !img.dirHandle);
         const savedIds = new Set<string>();
         const failedNames: string[] = [];
+        // ITALIANO: le foto offerte come download (anteprima del browser): non sono errori, ma
+        //           nemmeno salvate. E quante hanno ora un .txt vuoto, che ferma Kohya.
+        // ENGLISH: the photos offered as downloads (browser preview): not errors, but not saved
+        //          either. And how many now have an empty .txt, which stops Kohya.
+        let scaricate = 0;
+        let svuotate = 0;
+        // ITALIANO: il .txt che c'e' gia', o null se manca: serve a non CREARE un .txt vuoto.
+        // ENGLISH: the .txt already there, or null if missing: used to never CREATE an empty .txt.
+        const txtEsistente = async (dir: any, nome: string) => {
+            try { return await dir.getFileHandle(nome); }
+            catch (e: any) { if (e && e.name === 'NotFoundError') return null; throw e; }
+        };
         const total = imagesToSave.length;
         let done = 0;
         const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, Math.round((done / total) * 100))); };
@@ -2903,10 +2951,21 @@ export default function App() {
                         // ITALIANO: lo stesso .txt che l'import rilegge e Kohya usa (vedi sidecarTagFileName).
                         // ENGLISH: the same .txt the import reads back and Kohya uses (see sidecarTagFileName).
                         const fileName = sidecarTagFileName(img.file.name);
-                        const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
-                        const writable = await fileHandle.createWritable();
-                        await writable.write(tagString);
-                        await writable.close();
+                        // ITALIANO: una foto senza tag non riceve un .txt NUOVO e vuoto: Kohya si
+                        //           ferma su un .txt vuoto ("caption file is empty"), non su uno che
+                        //           manca (come nell'esportazione). Quello che c'era si svuota davvero.
+                        // ENGLISH: a photo with no tags does not get a NEW empty .txt: Kohya stops on
+                        //          an empty .txt ("caption file is empty"), not on a missing one (as
+                        //          in the export). One that was there is really emptied.
+                        const fileHandle = tagString === ''
+                            ? await txtEsistente(img.dirHandle, fileName)
+                            : await img.dirHandle.getFileHandle(fileName, { create: true });
+                        if (fileHandle) {
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(tagString);
+                            await writable.close();
+                            if (tagString === '') svuotate++;
+                        }
                         savedIds.add(img.id);
                     } catch (err) {
                         console.error('[Salvataggio] impossibile scrivere', img.file.name, err);
@@ -2937,6 +2996,11 @@ export default function App() {
                     const res = await api.writeSidecarTags(items);
                     const flags: boolean[] = Array.isArray(res && res.results) ? res.results : [];
                     remaining.forEach((img, i) => { if (flags[i]) savedIds.add(img.id); else failedNames.push(img.file.name); });
+                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo: si e' svuotato
+                    //           solo quello di una foto che sul disco aveva dei tag.
+                    // ENGLISH: the main process does not create a new empty .txt: only the one of a
+                    //          photo that had tags on disk was emptied.
+                    svuotate += remaining.filter((img, i) => flags[i] && img.tags.length === 0 && (img.originalTags || []).length > 0).length;
                 } catch (err) {
                     console.error('[Salvataggio] scrittura sidecar fallita', err);
                     remaining.forEach(img => failedNames.push(img.file.name));
@@ -2974,7 +3038,9 @@ export default function App() {
                     // ENGLISH: breathing room between downloads, the browser rejects rapid-fire ones
                     await new Promise(r => setTimeout(r, 300));
                 }
-                remaining.forEach(img => failedNames.push(img.file.name));
+                // ITALIANO: contate a parte: offerte come download, non fallite (vedi il messaggio).
+                // ENGLISH: counted apart: offered as downloads, not failed (see the message).
+                scaricate += remaining.length;
                 remaining = [];
             }
         } finally {
@@ -2993,18 +3059,33 @@ export default function App() {
             }));
         }
 
-        if (failedNames.length === 0) {
-            soundManager.chime();
-            showNotification(t.successSaveChanges, "success");
-            return true;
-        }
-        // ITALIANO: qualcosa non e' stato salvato: dico quante si e quante no (coi primi nomi) e torno
+        // ITALIANO: qualcosa non e' stato salvato (o e' stato solo offerto come download): si torna
         //           FALSE, cosi' "Salva e chiudi" NON chiude e NON cancella il backup anti-crash.
-        // ENGLISH: something was not saved: report how many did and did not (with the first names) and
-        //          return FALSE, so "Save and close" does NOT close nor clear the crash backup.
+        //           Il messaggio e' fatto di frasi intere: niente salvato, salvate N su M (coi primi
+        //           nomi), offerte come download. Prima erano pezzi incollati ("Salvataggio
+        //           parziale: 0/5 — non salvate: ..."), "parziale" anche con niente salvato, e i
+        //           download dell'anteprima risultavano un errore.
+        // ENGLISH: something was not saved (or was only offered as a download): return FALSE, so
+        //          "Save and close" does NOT close nor clear the crash backup. The message is made of
+        //          whole sentences: nothing saved, N of M saved (with the first names), offered as
+        //          downloads. It used to be glued pieces ("Partial save: 0/5 — failed: ..."),
+        //          "partial" even with nothing saved, and the preview's downloads showed as an error.
         const primi = failedNames.slice(0, 3).join(', ') + (failedNames.length > 3 ? '…' : '');
-        showNotification(`${t.savePartial} ${savedIds.size}/${total} — ${t.saveFailedList}: ${primi}`, "error");
-        return false;
+        const frasi: string[] = [];
+        if (failedNames.length > 0) {
+            frasi.push(savedIds.size === 0
+                ? t.saveNoneSaved.replace('{names}', primi)
+                : t.saveSomeFailed.replace('{saved}', String(savedIds.size)).replace('{total}', String(total)).replace('{names}', primi));
+        }
+        if (scaricate > 0) frasi.push(scaricate === 1 ? t.saveDownloadedOne : t.saveDownloadedMany.replace('{n}', String(scaricate)));
+        if (frasi.length === 0) frasi.push(t.successSaveChanges);
+        // ITALIANO: un .txt svuotato ferma Kohya: lo si dice, senza bloccare niente.
+        // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
+        if (svuotate > 0) frasi.push(svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate)));
+        const riuscito = failedNames.length === 0 && scaricate === 0;
+        if (riuscito) soundManager.chime();
+        showNotification(frasi.join(' '), failedNames.length > 0 ? "error" : (scaricate > 0 || svuotate > 0) ? "info" : "success");
+        return riuscito;
     };
 
     // ITALIANO: Salva solo le immagini che hanno subito modifiche
@@ -3080,7 +3161,14 @@ export default function App() {
             //          the namesake OVERWROTE the other: one of the two .txt vanished silently. Now,
             //          if the name is already taken, I disambiguate the file with its subfolder (e.g.
             //          "10_face/img.txt") or, if needed, a numeric suffix; no .txt is lost, and I warn.
+            // ITALIANO: i nomi si confrontano senza badare alle maiuscole: per Windows A.txt e a.txt
+            //           sono lo stesso file, ed estraendo uno prendeva il posto dell'altro (e Kohya
+            //           abbinava la foto ai tag sbagliati). Il nome nell'archivio resta com'e'.
+            // ENGLISH: names are compared ignoring capitals: to Windows A.txt and a.txt are the same
+            //          file, and on extraction one replaced the other (and Kohya paired the photo with
+            //          the wrong tags). The name in the archive stays as it is.
             const usedNames = new Set<string>();
+            const occupato = (n: string) => usedNames.has(n.toLowerCase());
             let collisionCount = 0;
             // ITALIANO: rinominando, il nome e' il posto in fila: 0001, 0002... Le cifre sono
             //           almeno quattro (e' la convenzione dei dataset LoRA) e diventano di piu'
@@ -3115,23 +3203,37 @@ export default function App() {
                 // ENGLISH: the archive's .txt is named like the one the import pairs with the photo
                 //          (sidecarTagFileName): extracted next to "photo..v2.png" it must be
                 //          "photo..v2.txt", not the cleaned "photo.v2.txt", which did not pair.
-                const baseName = sidecarTagFileName(img.file.name);
+                // ITALIANO: la foto torna nella sua sottocartella (cartellaRel, da "Carica cartella"):
+                //           10_face/a.txt, 20_body/b.txt. Prima finiva tutto alla radice tranne gli
+                //           omonimi, e sd-scripts (train_data_dir) legge solo le cartelle N_nome: le
+                //           foto alla radice restavano fuori e i numeri di ripetizioni sparivano. Ogni
+                //           pezzo si ripulisce; "", "." e ".." si saltano, cosi' niente esce dall'archivio.
+                // ENGLISH: the photo goes back into its subfolder (cartellaRel, from "Load folder"):
+                //          10_face/a.txt, 20_body/b.txt. Everything used to land at the root except the
+                //          namesakes, and sd-scripts (train_data_dir) only reads N_name folders: the
+                //          root photos were left out and the repeat counts vanished. Every part is
+                //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
+                const sotto = String(img.cartellaRel || '').split(/[\\/]/)
+                    .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
+                const baseName = (sotto ? sotto + '/' : '') + sidecarTagFileName(img.file.name);
                 let name = baseName;
-                if (usedNames.has(name)) {
+                if (occupato(name)) {
                     collisionCount++;
-                    const dir = (img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
-                    if (dir && !usedNames.has(`${dir}/${baseName}`)) {
+                    // ITALIANO: con la sottocartella gia' nel nome resta il suffisso numerico.
+                    // ENGLISH: with the subfolder already in the name, the numeric suffix remains.
+                    const dir = (!sotto && img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
+                    if (dir && !occupato(`${dir}/${baseName}`)) {
                         name = `${dir}/${baseName}`;
                     } else {
                         const dot = baseName.lastIndexOf('.');
                         const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
                         const ext = dot > 0 ? baseName.slice(dot) : '';
                         let n = 2;
-                        while (usedNames.has(`${stem} (${n})${ext}`)) n++;
+                        while (occupato(`${stem} (${n})${ext}`)) n++;
                         name = `${stem} (${n})${ext}`;
                     }
                 }
-                usedNames.add(name);
+                usedNames.add(name.toLowerCase());
                 if (conTag) voci.push({ nome: name, dati: getOrderedTagString(img.tags) });
                 if (conImmagini) {
                     // ITALIANO: la foto prende lo STESSO nome del suo .txt, estensione a parte. Cosi'
@@ -3270,6 +3372,11 @@ export default function App() {
         // ENGLISH: lined up as in the gallery ("Sort by"): the order "Rename in sequence" promises
         //          for 0001, 0002... It used to stay the in-memory one (A-Z from the import, with the
         //          photos brought back by undoing the trash emptying at the end).
+        // ITALIANO: un salvataggio o un'esportazione sta gia' scrivendo: la barra di avanzamento e'
+        //           sua, e una seconda operazione la nasconderebbe a meta' (il tasto e' disattivato).
+        // ENGLISH: a save or an export is already writing: the progress bar belongs to it, and a
+        //          second operation would hide it halfway (the button is disabled).
+        if (isSaving) return;
         const attive = applySort(images.filter(img => !img.isTrashed), sortOrder);
         const imagesWithTags = attive.filter(img => img.tags && img.tags.length > 0);
 
@@ -4229,7 +4336,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf, importSummary.pendingData.cartellaRelOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -4959,7 +5066,7 @@ export default function App() {
                                          four small buttons all share the SAME width. The "ZIP" caption below is
                                          gone: the format is now written on the button itself. */}
                             <div className="flex gap-2">
-                                <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                <button onClick={handleSaveChanges} disabled={images.length === 0 || isSaving} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                     <Save size={16} />
                                     <span className="hidden sm:inline">{t.saveChanges}</span>
                                     <span className="sm:hidden">{t.saveShort}</span>
@@ -4972,7 +5079,7 @@ export default function App() {
                                     files: people expected the whole dataset, images included, and had to open the
                                     zip to find out it was captions only. The name now says what comes out, and
                                     the tooltip says what does not. */}
-                                <button onClick={handleExportAll} title={t.exportAllTip} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                <button onClick={handleExportAll} title={t.exportAllTip} disabled={images.length === 0 || isSaving} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                     <SaveAll size={16} />
                                     <span className="hidden sm:inline">{t.exportAllTxt}</span>
                                     <span className="sm:hidden">{t.exportShort}</span>

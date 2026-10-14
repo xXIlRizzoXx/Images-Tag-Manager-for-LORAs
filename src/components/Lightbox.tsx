@@ -177,6 +177,18 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         const orderedTags = orderTags(currentTags);
         const tagString = orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
         const fileName = buildTagFileName(image.file.name);
+        // ITALIANO: senza tag il .txt e' vuoto, e Kohya si ferma su un .txt vuoto ("caption file is
+        //           empty"), non su uno che manca: un .txt vuoto NUOVO non si crea, quello che c'era
+        //           si svuota (come chiesto) e il messaggio lo dice.
+        // ENGLISH: with no tags the .txt is empty, and Kohya stops on an empty .txt ("caption file
+        //          is empty"), not on a missing one: a NEW empty .txt is not created, one that was
+        //          there is emptied (as asked) and the message says so.
+        const vuoto = tagString === '';
+        const salvato = (svuotato: boolean) => {
+            updateOriginalTags(image.id, currentTags);
+            soundManager.chime();
+            if (showNotification) showNotification(svuotato ? t.successSaveSingle + ' ' + t.saveEmptyCaptionOne : t.successSaveSingle, svuotato ? "info" : "success");
+        };
 
         try {
             if (dirHandle) {
@@ -184,14 +196,20 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 //           non ripulito (vedi sidecarTagFileName); `fileName` resta per il download.
                 // ENGLISH: next to the photo goes the .txt the import reads back and Kohya uses, with
                 //          the name uncleaned (see sidecarTagFileName); `fileName` stays for the download.
-                const fileHandle = await dirHandle.getFileHandle(sidecarTagFileName(image.file.name), { create: true });
-                const writable = await fileHandle.createWritable();
-                await writable.write(tagString);
-                await writable.close();
-
-                updateOriginalTags(image.id, currentTags);
-                soundManager.chime();
-                if (showNotification) showNotification(t.successSaveSingle, "success");
+                const nomeTxt = sidecarTagFileName(image.file.name);
+                let fileHandle: any = null;
+                if (vuoto) {
+                    try { fileHandle = await dirHandle.getFileHandle(nomeTxt); }
+                    catch (e: any) { if (!e || e.name !== 'NotFoundError') throw e; }
+                } else {
+                    fileHandle = await dirHandle.getFileHandle(nomeTxt, { create: true });
+                }
+                if (fileHandle) {
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(tagString);
+                    await writable.close();
+                }
+                salvato(vuoto && !!fileHandle);
                 return;
             }
             // ITALIANO: foto senza cartella (caricata con "Carica immagini"): in Electron scrivo il
@@ -209,9 +227,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 const imagePath = api.getPathForFile(image.file) || '';
                 const res = await api.writeSidecarTags([{ imagePath, content: tagString }]);
                 if (res && Array.isArray(res.results) && res.results[0]) {
-                    updateOriginalTags(image.id, currentTags);
-                    soundManager.chime();
-                    if (showNotification) showNotification(t.successSaveSingle, "success");
+                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo: si e' svuotato
+                    //           solo se sul disco la foto aveva dei tag.
+                    // ENGLISH: the main process does not create a new empty .txt: it was emptied
+                    //          only if the photo had tags on disk.
+                    salvato(vuoto && (image.originalTags || []).length > 0);
                 } else if (showNotification) {
                     showNotification(t.errorSaveGen || t.dirError, 'error');
                 }
@@ -231,7 +251,9 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
             } finally { URL.revokeObjectURL(url); }
             soundManager.chime();
-            if (showNotification) showNotification(t.infoSaveFallback, "info");
+            // ITALIANO: un solo file: la frase al singolare (prima "Download multiplo avviato").
+            // ENGLISH: a single file: the singular sentence (it used to say "Multiple download started").
+            if (showNotification) showNotification(t.saveDownloadedOne, "info");
         } catch (err) {
             // ITALIANO: prima qui non veniva mostrato NULLA: se la cartella era stata spostata,
             //           il disco era pieno o il file era bloccato, il salvataggio falliva in

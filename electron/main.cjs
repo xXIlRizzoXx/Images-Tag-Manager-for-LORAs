@@ -353,6 +353,13 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
             const base = path.basename(imagePath, path.extname(imagePath));
             const txtPath = path.join(path.dirname(imagePath), base + '.txt');
             if (path.extname(txtPath).toLowerCase() !== '.txt') { failed++; results.push(false); continue; }
+            // ITALIANO: una foto senza tag e senza .txt resta senza: un .txt vuoto NUOVO farebbe
+            //           fermare Kohya ("caption file is empty"), uno che manca no. La foto risulta
+            //           salvata (il disco e' gia' com'e' lei). Un .txt che c'era si svuota davvero.
+            // ENGLISH: a photo with no tags and no .txt stays without one: a NEW empty .txt would
+            //          stop Kohya ("caption file is empty"), a missing one does not. The photo counts
+            //          as saved (the disk already matches it). A .txt that was there is really emptied.
+            if (content === '' && !fs.existsSync(txtPath)) { results.push(true); continue; }
             fs.writeFileSync(txtPath, content, 'utf8');
             written++;
             results.push(true);

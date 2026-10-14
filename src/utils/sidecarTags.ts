@@ -152,6 +152,34 @@ export const parseSidecarText = (text: string): { tags: string[]; truncated: boo
     return { tags: tags.slice(0, TXT_MAX_TAGS_PER_FILE), truncated };
 };
 
+// ITALIANO: Quanti tag al massimo entrano da un file di tag del progetto (JSON o TXT).
+// ENGLISH: How many tags at most come in from a project tags file (JSON or TXT).
+export const PROJECT_TAGS_MAX = 5000;
+
+// ITALIANO: Ripulisce i tag letti da un file di tag del progetto: caratteri di controllo tolti,
+//   niente vuoti ne' doppioni, ogni tag al massimo TXT_TAG_MAX_CHARS come nei .txt, al massimo
+//   PROJECT_TAGS_MAX in tutto. Prima ogni tag si tagliava a 100 caratteri: una didascalia in frase
+//   esportata intera tornava monca, a meta' parola, senza un avviso. `truncated` dice se qualcosa
+//   e' stato accorciato o lasciato fuori, cosi' lo si puo' dire.
+// ENGLISH: Cleans the tags read from a project tags file: control characters removed, no empties
+//   or duplicates, each tag at most TXT_TAG_MAX_CHARS as in the .txt files, at most
+//   PROJECT_TAGS_MAX in all. Each tag used to be cut at 100 characters: a sentence caption
+//   exported whole came back cut, mid-word, with no notice. `truncated` says whether anything was
+//   shortened or left out, so it can be said.
+export const pulisciTagProgetto = (voci: unknown[]): { tags: string[]; truncated: boolean } => {
+    let truncated = false;
+    const tags = [...new Set(voci
+        .map((s: unknown) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim())
+        .filter((tag: string) => tag.length > 0)
+        .map((tag: string) => {
+            if (tag.length <= TXT_TAG_MAX_CHARS) return tag;
+            truncated = true;
+            return tag.slice(0, TXT_TAG_MAX_CHARS);
+        }))];
+    if (tags.length > PROJECT_TAGS_MAX) truncated = true;
+    return { tags: tags.slice(0, PROJECT_TAGS_MAX), truncated };
+};
+
 // ITALIANO: I tag di una foto appena importata. `tags` = le trigger word attive davanti, poi quelli
 //   del .txt. `originalTags` = SOLO cio' che c'e' DAVVERO nel .txt, nel suo ordine: un .txt che ha
 //   gia' le trigger davanti, nell'ordine del riquadro, non risulta modificato; uno che le ha in
