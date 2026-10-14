@@ -39,8 +39,8 @@ import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseS
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
 import { avvisoImport } from './utils/importNotice';
-import { purgeIdsFromHistory, withLiveOriginalTags } from './utils/historyUtils';
-import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from './utils/tagCase';
+import { purgeIdsFromHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
@@ -629,6 +629,25 @@ export default function App() {
 
     useEffect(() => { imagesRef.current = images; }, [images]);
 
+    // ITALIANO: cosa c'e' su disco per ogni foto (id -> l'ultimo originalTags visto), tenuto FUORI
+    //           dalla cronologia. Ctrl+Z e Ctrl+Shift+Z lo rimettono sulle foto che riportano a
+    //           schermo (vedi withLiveOriginalTags), anche su quelle che in quel momento non erano
+    //           in galleria (Ctrl+Z oltre l'import, foto chiusa con la X): prima tornavano con il
+    //           valore dell'import e risultavano "uguali al disco" dopo un salvataggio. Ogni
+    //           scrittura di originalTags (import, Salva, il visualizzatore, l'editor di tag) passa
+    //           da setImages, quindi da qui. Si svuota con la cronologia (Reset, Chiudi progetto).
+    // ENGLISH: what is on disk for each photo (id -> the last originalTags seen), kept OUTSIDE the
+    //          history. Ctrl+Z and Ctrl+Shift+Z put it on the photos they bring back on screen (see
+    //          withLiveOriginalTags), also on those that were not in the gallery at that moment
+    //          (Ctrl+Z past the import, a photo closed with the X): they used to come back with the
+    //          import's value and count as "same as disk" after a save. Every write of originalTags
+    //          (import, Save, the viewer, the tag editor) goes through setImages, hence through
+    //          here. It is cleared together with the history (Reset, Close project).
+    const discoNotoRef = useRef<Map<string, unknown>>(new Map());
+    useEffect(() => {
+        images.forEach((foto: any) => discoNotoRef.current.set(foto.id, foto.originalTags));
+    }, [images]);
+
     // ITALIANO: PRESTAZIONI — copia "sempre aggiornata" della selezione, per far leggere lo stato ai
     //           gestori della galleria SENZA doverli ricreare ad ogni cambio di selezione (cosi' le
     //           card memorizzate non si ridisegnano tutte). Vedi GalleryCard piu' in basso.
@@ -731,27 +750,35 @@ export default function App() {
     };
 
     // ITALIANO: Ctrl+Z e Ctrl+Shift+Z rimettono i tag del passo, ma non il ricordo di cosa c'e' su
-    //           disco: quello resta quello di adesso (vedi withLiveOriginalTags). Prima, dopo un
-    //           salvataggio, annullare riportava indietro anche lui e l'app diceva "niente da
-    //           salvare" mentre il .txt conteneva ancora i tag appena tolti.
+    //           disco: quello resta l'ultimo noto (discoNotoRef, vedi withLiveOriginalTags).
+    //           Prima, dopo un salvataggio, annullare riportava indietro anche lui e l'app diceva
+    //           "niente da salvare" mentre il .txt conteneva ancora i tag appena tolti.
     // ENGLISH: Ctrl+Z and Ctrl+Shift+Z put back the step's tags, but not the record of what is on
-    //          disk: that stays the current one (see withLiveOriginalTags). After a save, undoing
-    //          used to roll it back too, and the app said "nothing to save" while the .txt still
-    //          held the tags just removed.
+    //          disk: that stays the last known one (discoNotoRef, see withLiveOriginalTags). After
+    //          a save, undoing used to roll it back too, and the app said "nothing to save" while
+    //          the .txt still held the tags just removed.
+    // ITALIANO: si salta al passo piu' vicino DIVERSO da quello attuale (vedi nearestDifferentStep):
+    //           le foto uscite dal disco lasciano passi identici, e un Ctrl+Z li' diceva "Azione
+    //           annullata" senza cambiare niente. Se non c'e' un passo diverso, niente e nessun avviso.
+    // ENGLISH: jump to the nearest step DIFFERENT from the current one (see nearestDifferentStep):
+    //          photos that left the disk leave identical steps, and a Ctrl+Z there said "Action
+    //          undone" without changing anything. With no different step: nothing, and no notice.
     const handleUndo = useCallback(() => {
-        if (historyIndex > 0) {
+        const passo = nearestDifferentStep(history, historyIndex, -1);
+        if (passo >= 0) {
             isUndoRedoAction.current = true;
-            setHistoryIndex(prev => prev - 1);
-            setImages(withLiveOriginalTags(history[historyIndex - 1], imagesRef.current));
+            setHistoryIndex(passo);
+            setImages(withLiveOriginalTags(history[passo], discoNotoRef.current));
             setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
 
     const handleRedo = useCallback(() => {
-        if (historyIndex < history.length - 1) {
+        const passo = nearestDifferentStep(history, historyIndex, 1);
+        if (passo >= 0) {
             isUndoRedoAction.current = true;
-            setHistoryIndex(prev => prev + 1);
-            setImages(withLiveOriginalTags(history[historyIndex + 1], imagesRef.current));
+            setHistoryIndex(passo);
+            setImages(withLiveOriginalTags(history[passo], discoNotoRef.current));
             setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
@@ -1007,6 +1034,11 @@ export default function App() {
     //          hand in the dropdown.
     const aiModelloFissatoRef = useRef(aiModelloFissato);
     const sceltaManualeRef = useRef(0);
+    // ITALIANO: l'ultimo modello scelto a mano nella tendina: dopo le attese il controllo ha in mano
+    //           il modello di quando e' partito, non quello in uso adesso.
+    // ENGLISH: the last model picked by hand in the dropdown: after its awaits the check holds the
+    //          model from when it started, not the one in use now.
+    const ultimaSceltaRef = useRef('');
     useEffect(() => {
         aiModelloFissatoRef.current = aiModelloFissato;
         try { localStorage.setItem('aiModelloFissato', aiModelloFissato ? 'true' : 'false'); } catch (_) { }
@@ -1088,6 +1120,33 @@ export default function App() {
             //          lock dropped and the notice said "Before:" with the model from before the
             //          pick. If they went back to Automatic instead, the result stands.
             if (sceltaManualeRef.current !== scelteAllInizio && aiModelloFissatoRef.current) return;
+
+            // ITALIANO: ...e se e' tornato su Automatico, il modello in uso e' quello scelto a mano
+            //           (ultimaSceltaRef), non quello da cui il controllo e' partito. Prima si
+            //           applicava solo un risultato "cambiato" rispetto alla partenza: partendo gia'
+            //           dal piu' recente la risposta era "invariato", e Automatico restava sul modello
+            //           vecchio scelto a mano fino al controllo del giorno dopo (il "torna su
+            //           Automatico" della tendina, arrivato a controllo in corso, era stato scartato).
+            //           Quando Google ha indicato un modello, si confronta con quello in uso e il
+            //           cambio si annuncia nominando quello davvero sostituito.
+            // ENGLISH: ...and if they went back to Automatic, the model in use is the hand-picked one
+            //          (ultimaSceltaRef), not the one the check started from. Only a result "changed"
+            //          against the start used to be applied: starting from the newest already, the
+            //          answer was "unchanged", and Automatic stayed on the old hand-picked model until
+            //          the next day's check (the dropdown's "back to Automatic", arriving while the
+            //          check was running, had been dropped). When Google named a model, it is compared
+            //          with the one in use and the switch is announced naming the one really replaced.
+            if (sceltaManualeRef.current !== scelteAllInizio
+                && (esito.esito === 'invariato' || esito.esito === 'aggiornato' || esito.esito === 'riparato')) {
+                if (esito.modello !== ultimaSceltaRef.current) {
+                    setAiModel(esito.modello);
+                    setAiModelloFissato(false);
+                    showNotification(t.aiModelSwitched.replace('{da}', ultimaSceltaRef.current).replace('{a}', esito.modello), 'info');
+                } else if (dilloComunque) {
+                    showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
+                }
+                return;
+            }
 
             if (esito.cambiato) {
                 // ITALIANO: il cambio si annuncia SEMPRE. Un modello nuovo puo' taggare in modo
@@ -2753,7 +2812,7 @@ export default function App() {
             if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
             setUltimoSvuotamento(null);
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
-            setHistory([]); setHistoryIndex(-1);
+            setHistory([]); setHistoryIndex(-1); discoNotoRef.current.clear();
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
@@ -3375,6 +3434,7 @@ export default function App() {
         //          touched the original files.
         setHistory([]);
         setHistoryIndex(-1);
+        discoNotoRef.current.clear();
         soundManager.chime();
         showNotification(t.closeAllDone, 'success');
     };
@@ -3478,7 +3538,9 @@ export default function App() {
             const live = imagesRef.current.find(i => i.id === imageId);
             const baseTags: string[] = live ? live.tags : img.tags;
             const merged = [...new Set([...baseTags, ...tags])];
-            const added = merged.length - baseTags.length;
+            // ITALIANO: si contano solo i tag che la foto riceve davvero (vedi countNewTagsIgnoringCase).
+            // ENGLISH: only the tags the photo really gets are counted (see countNewTagsIgnoringCase).
+            const added = countNewTagsIgnoringCase(baseTags, tags);
             updateImageTags(imageId, merged);
             soundManager.chime();
             showNotification(t.aiTagsGenerated.replace('{n}', String(added)), 'success');
@@ -3625,7 +3687,7 @@ export default function App() {
                         }
                         const baseTags: string[] = Array.isArray(liveNow.tags) ? liveNow.tags : [];
                         const merged = [...new Set([...baseTags, ...tags])];
-                        totalTagsAdded += merged.length - baseTags.length;
+                        totalTagsAdded += countNewTagsIgnoringCase(baseTags, tags);
                         updateImageTags(current.id, merged);
                         success = true;
                         console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: ${tags.length} tags`);
@@ -4236,7 +4298,7 @@ export default function App() {
                                     <>
                                         <button
                                             onClick={handleRestoreAll}
-                                            disabled={isEmptyingTrash}
+                                            disabled={isEmptyingTrash || ripristinoInCorso}
                                             className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed`}
                                         >
                                             <RefreshCw size={18} />
@@ -4578,6 +4640,7 @@ export default function App() {
                                                                     if (geminiApiKey) controllaModello(false, true, false);
                                                                 } else {
                                                                     sceltaManualeRef.current += 1;
+                                                                    ultimaSceltaRef.current = scelto;
                                                                     setAiModel(scelto);
                                                                     setAiModelloFissato(true);
                                                                 }

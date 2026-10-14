@@ -25,27 +25,49 @@
 export const purgeIdsFromHistory = <T extends { id: string }>(history: T[][], ids: Set<string>): T[][] =>
     history.map(passo => passo.filter(foto => !ids.has(foto.id)));
 
+// ITALIANO: Il passo dove porta Ctrl+Z (verso -1) o Ctrl+Shift+Z (verso +1): il piu' vicino che sia
+//   DIVERSO da quello attuale, -1 se non ce n'e'. Due passi sono uguali quando hanno le stesse foto,
+//   lo stesso oggetto nello stesso posto. Serve dopo purgeIdsFromHistory: il passo "A nel cestino",
+//   tolta A, diventa identico a quello di prima, e un Ctrl+Z ci si fermava mostrando "Azione
+//   annullata" senza cambiare niente (uno per ogni foto cestinata e poi svuotata).
+// ENGLISH: The step Ctrl+Z (direction -1) or Ctrl+Shift+Z (direction +1) leads to: the nearest one
+//   that is DIFFERENT from the current one, -1 if there is none. Two steps are equal when they hold
+//   the same photos, the same object in the same place. Needed after purgeIdsFromHistory: the step
+//   "A in the trash", once A is removed, becomes identical to the one before, and a Ctrl+Z stopped
+//   there showing "Action undone" without changing anything (one per photo trashed then emptied).
+export const nearestDifferentStep = <T>(history: T[][], index: number, direction: 1 | -1): number => {
+    const attuale = history[index] || [];
+    const uguale = (passo: T[]) => passo.length === attuale.length && passo.every((foto, k) => foto === attuale[k]);
+    for (let j = index + direction; j >= 0 && j < history.length; j += direction) {
+        if (!uguale(history[j])) return j;
+    }
+    return -1;
+};
+
 // ITALIANO: Il passo della cronologia da rimettere a schermo con Ctrl+Z / Ctrl+Shift+Z, ma con il
-//   ricordo di cosa c'e' su disco (originalTags) preso dalle foto di ADESSO. originalTags non e' una
+//   ricordo di cosa c'e' su disco (originalTags) preso da `suDisco`: id -> l'ultimo originalTags
+//   noto, tenuto da App.tsx FUORI dalla cronologia (discoNotoRef). originalTags non e' una
 //   modifica dell'utente: e' il contenuto del .txt, e un Ctrl+Z non disfa un file gia' scritto.
 //   Prima tornava anche lui indietro: dopo "Salva" e due Ctrl+Z la foto mostrava i tag vecchi ma
 //   risultava "uguale al disco", quindi Salva rispondeva "Nessuna modifica da salvare." e Chiudi
-//   progetto non avvisava, mentre il .txt conteneva ancora i tag annullati. Una foto che adesso non
-//   c'e' (chiusa con la X e riportata da Ctrl+Z) tiene il valore del suo passo, che e' giusto
-//   perche' dopo la chiusura non si puo' salvare. Le foto che non cambiano restano lo STESSO
-//   oggetto, cosi' le card della galleria non si ridisegnano per niente.
+//   progetto non avvisava, mentre il .txt conteneva ancora i tag annullati. Il ricordo veniva
+//   dalle sole foto in galleria, quindi una foto che in quel momento non c'era (Ctrl+Z oltre
+//   l'import e poi Ctrl+Shift+Z, o chiusa con la X e riportata da Ctrl+Z) tornava con il valore
+//   del suo passo, fermo all'import: lo stesso errore. Una foto che `suDisco` non conosce tiene il
+//   valore del suo passo. Le foto che non cambiano restano lo STESSO oggetto, cosi' le card della
+//   galleria non si ridisegnano per niente.
 // ENGLISH: The history step to put back on screen with Ctrl+Z / Ctrl+Shift+Z, but with the record
-//   of what is on disk (originalTags) taken from the photos as they are NOW. originalTags is not a
-//   user edit: it is the content of the .txt, and a Ctrl+Z does not undo a file already written.
-//   It used to roll back too: after "Save" and two Ctrl+Z the photo showed the old tags yet counted
-//   as "same as disk", so Save answered "No changes to save." and Close project gave no warning,
-//   while the .txt still held the undone tags. A photo that is not there now (closed with the X and
-//   brought back by Ctrl+Z) keeps the value of its step, which is right because a closed photo
-//   cannot be saved. Photos that do not change stay the SAME object, so the gallery cards are not
-//   redrawn for nothing.
-export const withLiveOriginalTags = <T extends { id: string; originalTags?: unknown }>(step: T[], live: T[]): T[] => {
-    const suDisco = new Map(live.map(foto => [foto.id, foto.originalTags]));
-    return step.map(foto => (suDisco.has(foto.id) && suDisco.get(foto.id) !== foto.originalTags
+//   of what is on disk (originalTags) taken from `suDisco`: id -> the last known originalTags, kept
+//   by App.tsx OUTSIDE the history (discoNotoRef). originalTags is not a user edit: it is the
+//   content of the .txt, and a Ctrl+Z does not undo a file already written. It used to roll back
+//   too: after "Save" and two Ctrl+Z the photo showed the old tags yet counted as "same as disk",
+//   so Save answered "No changes to save." and Close project gave no warning, while the .txt still
+//   held the undone tags. The record came from the gallery's photos only, so a photo that was not
+//   there at that moment (Ctrl+Z past the import then Ctrl+Shift+Z, or closed with the X and
+//   brought back by Ctrl+Z) came back with its step's value, stuck at the import: the same fault.
+//   A photo `suDisco` does not know keeps its step's value. Photos that do not change stay the
+//   SAME object, so the gallery cards are not redrawn for nothing.
+export const withLiveOriginalTags = <T extends { id: string; originalTags?: unknown }>(step: T[], suDisco: Map<string, unknown>): T[] =>
+    step.map(foto => (suDisco.has(foto.id) && suDisco.get(foto.id) !== foto.originalTags
         ? { ...foto, originalTags: suDisco.get(foto.id) }
         : foto));
-};

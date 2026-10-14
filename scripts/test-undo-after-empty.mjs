@@ -53,9 +53,7 @@ console.log('\n--- Svuota cestino, poi Ctrl+Z ---');
     app.render().handleUndo();
     await app.attendi();
     dice('Ctrl+Z NON rimette A nel cestino dell\'app (il suo file e\' nel Cestino di Windows)', ['B'], app.vista());
-    app.render().handleUndo();
-    await app.attendi();
-    dice('Ctrl+Z continua ad annullare le modifiche vere: i tag di B tornano quelli di prima', ['tag B'], app.stato.images.find(i => i.id === 'B').tags);
+    dice('lo stesso Ctrl+Z annulla la modifica vera: i tag di B tornano quelli di prima', ['tag B'], app.stato.images.find(i => i.id === 'B').tags);
 
     // ITALIANO: "Annulla lo svuotamento" rimette A una volta sola, nel cestino dell'app.
     // ENGLISH: "Undo the emptying" puts A back once, in the app's trash.

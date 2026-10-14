@@ -48,3 +48,16 @@ export const uniqueTagsIgnoringCase = (tags: string[], preferred: string[] = [])
     }
     return fuori;
 };
+
+// ITALIANO: quanti tag di `incoming` mancano davvero in `base`, a parte le maiuscole: e' il numero
+//   che la foto riceve, perche' updateImageTags scarta i doppioni con la regola qui sopra. Prima
+//   l'AI (che scrive tutto in minuscolo) contava "smile" come nuovo su una foto con "Smile", e
+//   "Tag generati" diceva un numero piu' alto dei tag comparsi. Non va mai sotto zero, anche se
+//   `base` ha gia' dei doppioni (un .txt importato con "smile, Smile").
+// ENGLISH: how many tags of `incoming` are really missing from `base`, apart from case: it is the
+//   number the photo gets, because updateImageTags drops duplicates with the rule above. The AI
+//   (which writes everything lowercase) used to count "smile" as new on a photo with "Smile", and
+//   "Tags generated" said a higher number than the tags that appeared. It never goes below zero,
+//   even if `base` already holds duplicates (an imported .txt with "smile, Smile").
+export const countNewTagsIgnoringCase = (base: string[], incoming: string[]): number =>
+    uniqueTagsIgnoringCase(incoming).filter(tag => !hasTagIgnoringCase(base, tag)).length;

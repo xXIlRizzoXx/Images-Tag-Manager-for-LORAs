@@ -74,6 +74,14 @@ for (const nome of [...FUNZIONI, ...FACOLTATIVE]) {
     if (testo) testi.push(testo);
 }
 const undo = ritaglia('    const handleUndo = useCallback(', /\r?\n    \}, \[history, historyIndex, t\]\);\r?\n/g);
+// ITALIANO: handleRedo e l'effetto che ricorda cosa c'e' su disco (discoNotoRef): il codice di
+//           prima non aveva il secondo, e se manca si va avanti senza.
+// ENGLISH: handleRedo and the effect that remembers what is on disk (discoNotoRef): the previous
+//          code did not have the latter, and when missing it carries on without it.
+const redo = ritaglia('    const handleRedo = useCallback(', /\r?\n    \}, \[history, historyIndex, t\]\);\r?\n/g);
+const iDisco = sorgente.indexOf('discoNotoRef.current.set(');
+const testoDisco = iDisco < 0 ? '' : sorgente.slice(sorgente.lastIndexOf('    useEffect(() => {', iDisco) + '    useEffect('.length,
+    sorgente.indexOf('    }, [images]);', iDisco) + '    }'.length);
 // ITALIANO: l'effetto della cronologia e' anonimo: lo si trova dalla sua prima riga.
 // ENGLISH: the history effect is anonymous: it is found from its first line.
 const iPrima = sorgente.indexOf('        if (isUndoRedoAction.current) {');
@@ -81,15 +89,17 @@ const iUso = sorgente.lastIndexOf('    useEffect(() => {', iPrima);
 const iFine = sorgente.indexOf('    }, [images]);', iPrima);
 if (!undo || iPrima < 0 || iUso < 0 || iFine < 0) { console.log('NO  handleUndo o l\'effetto della cronologia non trovati in src/App.tsx'); process.exit(1); }
 testi.push(undo, 'const effettoCronologia = ' + sorgente.slice(iUso + '    useEffect('.length, iFine + '    }'.length) + ';');
+if (redo) testi.push(redo);
+testi.push('const effettoDisco = ' + (testoDisco || '() => { }') + ';');
 
 const nomiFacoltativi = FACOLTATIVE.filter(n => testi.some(x => x.startsWith(`    const ${n} = `)));
 const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuotamento', 'ripristinoInCorso',
     'setImages', 'setHistory', 'setHistoryIndex', 'setUltimoSvuotamento', 'setRipristinoInCorso', 'setIsEmptyingTrash',
     'setSelectedForBulk', 'setConfirmDialog', 'setIsTrashOpen', 'setToast', 'showNotification',
     'imagesRef', 'isUndoRedoAction', 'fotoChiuseRef', 'ripristinoInCorsoRef', 't', 'soundManager', 'sidecarTagFileName', 'purgeIdsFromHistory',
-    'withLiveOriginalTags', 'useCallback', 'window', 'URL', 'console'];
+    'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'useCallback', 'window', 'URL', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
-const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', 'effettoCronologia'].join(', ') + ' };');
+const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
 /* ITALIANO: una foto finta. `cestinata` = sta nel cestino dell'app; `cartella` = la cartella aperta
    (serve alla cancellazione definitiva); il percorso su disco lo da' il finto getPathForFile.
@@ -156,7 +166,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
         isEmptyingTrash: false, selectedForBulk: [], confirmDialog: { isOpen: false }, isTrashOpen: true,
     };
     const r = { stato, notifiche: [], revocati: [], avvisi: [] };
-    const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false } };
+    const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false }, discoNotoRef: { current: new Map() } };
     const coda = [];
     let programmato = false;
     const finestra = api ? { electronAPI: api } : {};
@@ -172,6 +182,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
                 // ENGLISH: the effects on [images], in App.tsx order: history, then imagesRef.
                 render().effettoCronologia();
                 refs.imagesRef.current = stato.images;
+                render().effettoDisco();
             }
         }
     };
@@ -186,10 +197,11 @@ export const creaApp = (immagini, { api = null } = {}) => {
         (x) => r.notifiche.push([x.message, x.type]),
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         refs.imagesRef, refs.isUndoRedoAction, refs.fotoChiuseRef, refs.ripristinoInCorsoRef, t, { pop() { }, chime() { } }, P.sidecarTagFileName, H.purgeIdsFromHistory,
-        H.withLiveOriginalTags, (f) => f, finestra, url, quieto);
+        H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, (f) => f, finestra, url, quieto);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();
+    render().effettoDisco();
     scarica();
     r.render = render;
     r.attendi = async (giri = 5) => { for (let i = 0; i < giri; i++) await new Promise(ok => setTimeout(ok, 0)); };

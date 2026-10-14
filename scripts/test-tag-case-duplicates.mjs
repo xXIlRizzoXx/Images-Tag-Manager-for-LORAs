@@ -5,7 +5,8 @@
    stessa foto non entrano due tag che differiscono solo per maiuscole; resta la grafia che c'era
    gia' (quella della trigger word, se e' una trigger). Niente viene messo in minuscolo: un tag
    scritto "Eiffel Tower" o una trigger "OHWX" restano come sono.
-   Si provano: la regola pura di src/utils/tagCase.ts; il TagInput VERO di src/components/ui.tsx e
+   Si provano: la regola pura di src/utils/tagCase.ts; l'import di un .txt (tagDiImport di
+   src/utils/sidecarTags.ts, anche con una trigger attiva scritta diversa); il TagInput VERO di src/components/ui.tsx e
    il Lightbox VERO di src/components/Lightbox.tsx (con un React finto, senza DOM); i testi VERI di
    updateImageTags, applyBulkTags e handleGlobalTagsChange presi da src/App.tsx.
    Uso:  node scripts/test-tag-case-duplicates.mjs      (esce con codice 1 se qualcosa non torna)
@@ -16,7 +17,8 @@
    (the CLIP tokenizer lowercases). The rule: two tags that differ only in case never land on the
    same photo; the spelling already there is kept (the trigger word's, if it is a trigger). Nothing
    is lowercased: a tag written "Eiffel Tower" or a trigger "OHWX" stays as it is.
-   Tested: the pure rule of src/utils/tagCase.ts; the REAL TagInput of src/components/ui.tsx and the
+   Tested: the pure rule of src/utils/tagCase.ts; the import of a .txt (tagDiImport of
+   src/utils/sidecarTags.ts, also with an active trigger spelled differently); the REAL TagInput of src/components/ui.tsx and the
    REAL Lightbox of src/components/Lightbox.tsx (with a fake React, no DOM); the REAL text of
    updateImageTags, applyBulkTags and handleGlobalTagsChange taken from src/App.tsx.
    Usage:  node scripts/test-tag-case-duplicates.mjs      (exits with code 1 if anything is off) */
@@ -92,6 +94,25 @@ if (regola) {
     dice('tiene la prima grafia di ogni tag', ['smile', 'OHWX', 'Blue Sky'], regola.uniqueTagsIgnoringCase(['smile', 'Smile', 'OHWX', 'ohwx', 'Blue Sky', 'SMILE']));
     dice('una grafia "preferita" (la trigger) vince sulle altre', ['OHWX', 'smile'], regola.uniqueTagsIgnoringCase(['ohwx', 'smile', 'OHWX'], ['OHWX']));
     dice('niente viene messo in minuscolo', ['Eiffel Tower', 'TOK'], regola.uniqueTagsIgnoringCase(['Eiffel Tower', 'TOK']));
+}
+
+// ITALIANO: aprendo una cartella con la trigger "OHWX" gia' attiva, un .txt con "ohwx" dava alla
+//           foto sia "OHWX" sia "ohwx", e Salva scriveva "OHWX, ohwx, smile,".
+// ENGLISH: opening a folder with the trigger "OHWX" already active, a .txt with "ohwx" gave the
+//          photo both "OHWX" and "ohwx", and Save wrote "OHWX, ohwx, smile,".
+console.log('\n--- import di un .txt (src/utils/sidecarTags.ts) ---');
+{
+    const I = await carica('src/utils/sidecarTags.ts');
+    const daTxt = (testo) => I.parseSidecarText(testo).tags;
+    const a = I.tagDiImport(['OHWX'], daTxt('ohwx, smile'));
+    dice('trigger "OHWX" + .txt "ohwx, smile": un solo tag, con la grafia della trigger', ['OHWX', 'smile'], a.tags);
+    dice('il ricordo del disco resta quello vero, quindi Salva riscrive il .txt pulito', ['ohwx', 'smile'], a.originalTags);
+    const b = I.tagDiImport([], daTxt('smile, Smile, outdoors'));
+    dice('un .txt con "smile, Smile" entra con un solo "smile"', ['smile', 'outdoors'], b.tags);
+    dice('...e il ricordo del disco resta quello vero', ['smile', 'Smile', 'outdoors'], b.originalTags);
+    const c = I.tagDiImport(['OHWX'], daTxt('OHWX, smile'));
+    dice('stessa grafia: niente cambia e la foto non risulta modificata', [['OHWX', 'smile'], true], [c.tags, JSON.stringify(c.tags) === JSON.stringify(c.originalTags)]);
+    dice('due trigger e un tag che ne ripete una: davanti le trigger, una volta sola', ['a', 'b', 'x'], I.tagDiImport(['a', 'b'], ['x', 'B']).tags);
 }
 
 console.log('\n--- TagInput (card della galleria e riquadro delle trigger) ---');

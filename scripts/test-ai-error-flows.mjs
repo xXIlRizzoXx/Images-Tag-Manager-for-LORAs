@@ -6,7 +6,10 @@
      "taggate", con il suono e il messaggio verde, anche se non aveva ricevuto niente;
    - Google SOVRACCARICO (503) o con un guasto interno (500): nessun nuovo tentativo in blocco, e
      per una foto sola il messaggio era il JSON grezzo di Google, in inglese in tutte le lingue.
-   E una chiave che Google ha spento perche' trapelata veniva detta "serve la fatturazione".
+   E una chiave che Google ha spento perche' trapelata veniva detta "serve la fatturazione"; una
+   chiave SCADUTA (400 INVALID_ARGUMENT, motivo API_KEY_EXPIRED) mostrava nella finestra della
+   chiave il JSON grezzo di Google. Su una foto che aveva gia' "Smile", "Tag generati" contava lo
+   "smile" dell'AI come aggiunto, anche se la foto non lo riceve due volte.
    Si eseguono i testi VERI di handleAITagSingle, handleAITagAll e handleVerifyApiKey presi da
    src/App.tsx, con il servizio vero di src/services/geminiService.ts, un Google finto (nessuna
    rete, nessuna chiave) e un orologio finto (le attese di 15 e 45 s passano subito).
@@ -20,7 +23,10 @@
      chime and the green message, although it got nothing;
    - Google OVERLOADED (503) or with an internal fault (500): no retry in bulk, and for a single
      photo the message was Google's raw JSON, in English in every language.
-   And a key Google switched off because it leaked was called "billing required".
+   And a key Google switched off because it leaked was called "billing required"; an EXPIRED key
+   (400 INVALID_ARGUMENT, reason API_KEY_EXPIRED) showed Google's raw JSON in the key dialog. With
+   a photo that already had "Smile", "Tags generated" counted the AI's "smile" as added, although
+   the photo does not get it twice.
    The REAL text of handleAITagSingle, handleAITagAll and handleVerifyApiKey taken from
    src/App.tsx is run, with the real service of src/services/geminiService.ts, a fake Google (no
    network, no key) and a fake clock (the 15 and 45 s waits pass at once).
@@ -68,6 +74,7 @@ const carica = async (rel, plugins = []) => {
     return import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'));
 };
 const S = await carica('src/services/geminiService.ts', [finto]);
+const C = await carica('src/utils/tagCase.ts');
 const lingue = (await carica('src/constants.ts')).translations;
 
 // ITALIANO: Node ha File ma non FileReader: basta un finto che dia un data URL qualunque.
@@ -97,7 +104,7 @@ const codiceChiave = await prendi('    const handleVerifyApiKey = useCallback(',
 const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomPrompt', 'aiRpm', 'aiSkipTagged', 'images',
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy', 'aiCancelRequestedRef', 'setAiCancelRequested',
-    'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'useCallback', 'Date', 'setTimeout', 'console'];
+    'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'useCallback', 'Date', 'setTimeout', 'console'];
 const fabbricaUna = new Function(...DIPENDENZE, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaTutte = new Function(...DIPENDENZE, codiceTutte + '\nreturn handleAITagAll;');
 const fabbricaChiave = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
@@ -116,6 +123,8 @@ const ERRORI = {
     minuto: () => quota429('GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 10),
     sovraccarico: () => apiErrore(503, { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded. Please try again later.' }),
     trapelata: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED', message: 'Your API key was reported as leaked. Please use another API key.' }),
+    scaduta: () => apiErrore(400, { code: 400, status: 'INVALID_ARGUMENT', message: 'API key expired. Please renew the API key.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_EXPIRED', domain: 'googleapis.com', metadata: { service: 'generativelanguage.googleapis.com' } }] }),
 };
 const BLOCCATA = { text: undefined, promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } };
 const BUONA = { text: '["cat", "sofa"]' };
@@ -139,6 +148,7 @@ const nuovaApp = (t, quante, generate) => {
         setIsApiKeyDialogOpen: (v) => { app.finestraChiave = v; },
         setIsAIBusy: () => { }, aiCancelRequestedRef: { current: false }, setAiCancelRequested: () => { },
         aiAbortControllerRef: { current: null }, setIsGlobalAITagging: () => { }, setGlobalAIProgress: () => { },
+        countNewTagsIgnoringCase: C.countNewTagsIgnoringCase,
         useCallback: (f) => f,
         // ITALIANO: orologio finto: ogni attesa fa avanzare il tempo e finisce subito.
         // ENGLISH: fake clock: every wait moves time forward and ends at once.
@@ -215,6 +225,41 @@ for (const l of ['en', 'it']) {
     };
     dice('chiave trapelata: "chiave non valida", NON "serve la fatturazione"', t.aiKeyInvalid, await verifica(async () => { throw ERRORI.trapelata(); }));
     dice('Google sovraccarico: la frase tradotta, non il JSON', t.aiServerBusy, await verifica(async () => { throw ERRORI.sovraccarico(); }));
+    dice('chiave scaduta: "chiave non valida", non il JSON grezzo di Google', t.aiKeyInvalid, await verifica(async () => { throw ERRORI.scaduta(); }));
+    {
+        const app = nuovaApp(t, 1, async () => { throw ERRORI.scaduta(); });
+        await app.una('f0');
+        dice('una foto con la chiave scaduta: frase tradotta e finestra della chiave aperta', [[[`${t.aiError}: ${t.aiKeyInvalid}`, 'error']], true],
+            [app.notifiche, app.finestraChiave]);
+    }
+    {
+        const app = nuovaApp(t, 3, async () => { throw ERRORI.scaduta(); });
+        await app.tutte();
+        dice('in blocco con la chiave scaduta: si ferma alla prima foto e apre la finestra della chiave', [1, true], [app.chiamate(), app.finestraChiave]);
+    }
+
+    console.log(`\n--- ${l}: il numero dei tag aggiunti dall'AI non conta le grafie diverse dello stesso tag ---`);
+    const MAIUSCOLE = { text: '["smile", "eiffel tower", "outdoors"]' };
+    {
+        const app = nuovaApp(t, 1, async () => MAIUSCOLE);
+        app.foto[0].tags = ['Smile', 'Eiffel Tower'];
+        const aggiunti = await app.una('f0');
+        dice('una foto con "Smile" ed "Eiffel Tower": "Tag generati: 1" (solo "outdoors" e\' nuovo)', [1, [[t.aiTagsGenerated.replace('{n}', '1'), 'success']]], [aggiunti, app.notifiche]);
+    }
+    {
+        const app = nuovaApp(t, 1, async () => MAIUSCOLE);
+        app.foto[0].tags = ['Smile', 'Eiffel Tower'];
+        await app.tutte();
+        dice('in blocco: il riepilogo dice "Tag aggiunti: 1"', [[riepilogo(t, { ok: 1, err: 0, tag: 1 }), 'success']], app.notifiche);
+    }
+    {
+        // ITALIANO: un .txt importato puo' avere gia' "smile, Smile": il conto non va sotto zero.
+        // ENGLISH: an imported .txt may already hold "smile, Smile": the count does not go below zero.
+        const app = nuovaApp(t, 1, async () => ({ text: '["smile"]' }));
+        app.foto[0].tags = ['smile', 'Smile'];
+        const aggiunti = await app.una('f0');
+        dice('una foto che ha gia\' "smile, Smile" e riceve "smile": "Tag generati: 0"', [0, [[t.aiTagsGenerated.replace('{n}', '0'), 'success']]], [aggiunti, app.notifiche]);
+    }
 }
 
 process.exit(esito());

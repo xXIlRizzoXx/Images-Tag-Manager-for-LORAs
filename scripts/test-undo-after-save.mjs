@@ -5,7 +5,9 @@
    "Salva modifiche" rispondeva "Nessuna modifica da salvare." e "Chiudi progetto" non avvisava,
    mentre il .txt conteneva ancora "a, b,". Lo stesso dopo il "Salva file .txt" del visualizzatore
    e dopo un salvataggio dall'editor di tag. La regola: Ctrl+Z e Ctrl+Shift+Z cambiano i tag, non
-   quello che c'e' su disco; una foto diversa dal suo .txt risulta sempre da salvare.
+   quello che c'e' su disco; una foto diversa dal suo .txt risulta sempre da salvare, anche se
+   in quel momento non era in galleria (Ctrl+Z oltre l'import e poi Ctrl+Shift+Z, oppure chiusa
+   con la X e riportata da Ctrl+Z).
    Si eseguono i testi VERI presi da src/App.tsx (vedi undo-harness.mjs).
    Uso:  node scripts/test-undo-after-save.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -16,7 +18,8 @@
    changes to save." and "Close project" gave no warning, while the .txt still held "a, b,". The
    same after the viewer's "Save .txt file" and after a save from the tag editor. The rule: Ctrl+Z
    and Ctrl+Shift+Z change the tags, not what is on disk; a photo that differs from its .txt always
-   counts as unsaved.
+   counts as unsaved, even if it was not in the gallery at that moment (Ctrl+Z past the import then
+   Ctrl+Shift+Z, or closed with the X and brought back by Ctrl+Z).
    The REAL code taken from src/App.tsx is run (see undo-harness.mjs).
    Usage:  node scripts/test-undo-after-save.mjs      (exits with code 1 if anything is off) */
 
@@ -32,10 +35,12 @@ console.log('\n--- la regola pura (src/utils/historyUtils.ts) ---');
     if (typeof withLiveOriginalTags === 'function') {
         const uguale = { id: 'U', tags: ['x'], originalTags: ['x'] };
         const passo = [uguale, { id: 'P', tags: ['a'], originalTags: ['a'] }, { id: 'C', tags: ['z'], originalTags: ['z'] }];
-        const adesso = [uguale, { id: 'P', tags: ['a', 'b'], originalTags: ['a', 'b'] }];
-        const fuori = withLiveOriginalTags(passo, adesso);
-        dice('i tag vengono dal passo, il ricordo del disco dalle foto di adesso', [['a'], ['a', 'b']], [fuori[1].tags, fuori[1].originalTags]);
-        dice('una foto che adesso non c\'e\' tiene il valore del suo passo', ['z'], fuori[2].originalTags);
+        // ITALIANO: il ricordo del disco che App.tsx tiene fuori dalla cronologia (discoNotoRef).
+        // ENGLISH: the record of the disk App.tsx keeps outside the history (discoNotoRef).
+        const suDisco = new Map([['U', uguale.originalTags], ['P', ['a', 'b']]]);
+        const fuori = withLiveOriginalTags(passo, suDisco);
+        dice('i tag vengono dal passo, il ricordo del disco da quello tenuto fuori dalla cronologia', [['a'], ['a', 'b']], [fuori[1].tags, fuori[1].originalTags]);
+        dice('una foto che il ricordo non conosce tiene il valore del suo passo', ['z'], fuori[2].originalTags);
         dice('una foto che non cambia resta lo stesso oggetto (la card non si ridisegna)', true, fuori[0] === uguale);
         dice('il passo salvato nella cronologia non viene toccato', ['a'], passo[1].originalTags);
     }
@@ -99,6 +104,49 @@ console.log('\n--- Ctrl+Shift+Z dopo il salvataggio: si torna a una foto uguale 
     dice('e non risulta niente da salvare: il .txt dice gia\' "a, b,"', false, await avvisaChiudendo(app));
     const r = await salvaEChiudi(app, cartella);
     dice('"Salva modifiche" non scrive niente', [], r.nuovi);
+}
+
+// ITALIANO: una foto che in quel momento NON e' in galleria non ha "foto di adesso" da cui prendere
+//           il ricordo del disco: prima teneva quello del suo passo, cioe' quello dell'import.
+// ENGLISH: a photo that is NOT in the gallery at that moment has no "photo of now" to take the
+//          record of the disk from: it used to keep its step's one, i.e. the import's.
+console.log('\n--- salvataggio, Ctrl+Z oltre l\'import, poi Ctrl+Shift+Z ---');
+{
+    const { app, cartella } = await prepara();
+    await salvaEChiudi(app, cartella);
+    await ctrlZ(app, 3);
+    dice('dopo tre Ctrl+Z la galleria e\' vuota', [], app.stato.images.map(i => i.id));
+    await ctrlShiftZ(app);
+    dice('un Ctrl+Shift+Z riporta P con "a", ricordando che sul disco c\'e\' "a, b"', [['a'], ['a', 'b']],
+        [app.fotoCon('P').tags, app.fotoCon('P').originalTags]);
+    dice('"Chiudi progetto" avvisa (il .txt dice "a, b,")', true, await avvisaChiudendo(app));
+    const r = await salvaEChiudi(app, cartella);
+    dice('"Salva modifiche" NON risponde "Nessuna modifica da salvare." e riscrive il .txt con "a,"', [false, ['P.txt=a,']], [r.nessunaModifica, r.nuovi]);
+}
+{
+    const { app, cartella } = await prepara();
+    await salvaEChiudi(app, cartella);
+    await ctrlZ(app, 3);
+    await ctrlShiftZ(app, 3);
+    dice('tre Ctrl+Z e tre Ctrl+Shift+Z: P mostra "a, b"', ['a', 'b'], app.fotoCon('P').tags);
+    dice('e non risulta niente da salvare: il .txt dice gia\' "a, b,"', false, await avvisaChiudendo(app));
+}
+
+console.log('\n--- salvataggio, Ctrl+Z, P chiusa con la X, poi Ctrl+Z la riporta ---');
+{
+    const { app, cartella } = await prepara();
+    await salvaEChiudi(app, cartella);
+    await ctrlZ(app, 2);
+    // ITALIANO: la X sulla card: la foto esce dall'elenco (lo stesso setImages di handleCloseImage).
+    // ENGLISH: the X on the card: the photo leaves the list (the same setImages as handleCloseImage).
+    app.modifica(prev => prev.filter(i => i.id !== 'P'));
+    await app.attendi();
+    await ctrlZ(app);
+    dice('Ctrl+Z riporta P con "a", ricordando che sul disco c\'e\' "a, b"', [['a'], ['a', 'b']],
+        [app.fotoCon('P') && app.fotoCon('P').tags, app.fotoCon('P') && app.fotoCon('P').originalTags]);
+    dice('"Chiudi progetto" avvisa', true, await avvisaChiudendo(app));
+    const r = await salvaEChiudi(app, cartella);
+    dice('"Salva modifiche" riscrive il .txt con "a,"', ['P.txt=a,'], r.nuovi);
 }
 
 console.log('\n--- "Salva file .txt" del visualizzatore, poi Ctrl+Z ---');

@@ -97,11 +97,12 @@ console.log('\n--- l\'annullamento finisce con la conferma ancora aperta, poi "S
     dice('il nuovo svuotamento (A) si puo\' annullare', ['A'], ricordo(app));
 }
 
-// ITALIANO: il tasto "Svuota cestino" e' spento durante l'annullamento, come "Annulla lo
-//           svuotamento" e' spento durante lo svuotamento. E' un attributo dell'interfaccia: lo si
-//           controlla sul sorgente.
-// ENGLISH: the "Empty trash" button is off during the undo, just as "Undo the emptying" is off
-//          during the emptying. It is an attribute of the interface: it is checked on the source.
+// ITALIANO: i tasti "Svuota cestino" e "Ripristina tutte" sono spenti durante l'annullamento, come
+//           "Annulla lo svuotamento" e' spento durante lo svuotamento. E' un attributo
+//           dell'interfaccia: lo si controlla sul sorgente.
+// ENGLISH: the "Empty trash" and "Restore all" buttons are off during the undo, just as "Undo the
+//          emptying" is off during the emptying. It is an attribute of the interface: it is
+//          checked on the source.
 console.log('\n--- src/App.tsx, i tasti in cima al cestino ---');
 {
     const bottone = (dentro) => {
@@ -115,6 +116,12 @@ console.log('\n--- src/App.tsx, i tasti in cima al cestino ---');
     dice('"Svuota cestino" spento durante l\'annullamento dello svuotamento', true, disabilitato(bottone('onConfirm: handleEmptyTrash,')).includes('ripristinoInCorso'));
     dice('"Svuota cestino" resta spento durante lo svuotamento', true, disabilitato(bottone('onConfirm: handleEmptyTrash,')).includes('isEmptyingTrash'));
     dice('"Annulla lo svuotamento" resta spento durante lo svuotamento', true, disabilitato(bottone('onClick={annullaSvuotamento}')).includes('isEmptyingTrash'));
+    // ITALIANO: "Ripristina tutte" durante l'annullamento chiudeva il cestino dicendo "Tutte le foto
+    //           sono state ripristinate", e un attimo dopo X ricompariva nel cestino dell'app.
+    // ENGLISH: "Restore all" during the undo closed the trash saying "All photos have been
+    //          restored", and a moment later X showed up again in the app's trash.
+    dice('"Ripristina tutte" spento durante l\'annullamento dello svuotamento', true, disabilitato(bottone('onClick={handleRestoreAll}')).includes('ripristinoInCorso'));
+    dice('"Ripristina tutte" resta spento durante lo svuotamento', true, disabilitato(bottone('onClick={handleRestoreAll}')).includes('isEmptyingTrash'));
 }
 
 process.exit(esito());

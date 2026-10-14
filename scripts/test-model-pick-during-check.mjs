@@ -86,7 +86,7 @@ const testoEffetto = app.slice(k0 + '    useEffect('.length, k1 + '    }'.length
 
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, aiModelloFissatoRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
             elencaModelliRemoti, aggiornaModelloAutomatico, localStorage } = env;
     const aiModel = snap.aiModel;
@@ -105,11 +105,13 @@ const attendi = (cond) => new Promise(ok => { const g = () => (cond() ? ok() : s
 
 // ITALIANO: l'app finta. Google elenca 3.7, 3.6 e 3.5 flash; la prova resta aperta finche' la
 //           prova stessa non chiama sblocca(). Il setter del blocco fa girare l'effetto vero che
-//           lo salva, come fa React dopo il render.
+//           lo salva, come fa React dopo il render. Con `elencoAperto` resta aperto l'elenco invece
+//           della prova: serve quando il modello di partenza e' gia' il piu' recente (nessuna prova).
 // ENGLISH: the fake app. Google lists 3.7, 3.6 and 3.5 flash; the probe stays open until the test
 //          calls sblocca(). The lock setter runs the real effect that saves it, as React does after
-//          the render.
-const scenario = (iniziale) => {
+//          the render. With `elencoAperto` the list stays open instead of the probe: needed when
+//          the starting model is already the newest one (no probe).
+const scenario = (iniziale, { elencoAperto = false } = {}) => {
     const stato = { ...iniziale, inCorso: false };
     const notifiche = [];
     const salvato = new Map();
@@ -117,12 +119,19 @@ const scenario = (iniziale) => {
     let provaPartita;
     const provaInCorso = new Promise(ok => { provaPartita = ok; });
     globalThis.__GOOGLE__ = {
-        list: async () => pagine([M('gemini-3.7-flash'), M('gemini-3.6-flash'), M('gemini-3.5-flash')]),
-        generate: async () => { provaPartita(); await new Promise(ok => { sblocca = ok; }); return { text: '["ok"]' }; },
+        list: async () => {
+            if (elencoAperto) { provaPartita(); await new Promise(ok => { sblocca = ok; }); }
+            return pagine([M('gemini-3.7-flash'), M('gemini-3.6-flash'), M('gemini-3.5-flash')]);
+        },
+        generate: async () => {
+            if (!elencoAperto) { provaPartita(); await new Promise(ok => { sblocca = ok; }); }
+            return { text: '["ok"]' };
+        },
     };
     const env = {
         t, geminiApiKey: 'AIza' + 'x'.repeat(35),
-        controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, aiModelloFissatoRef: { current: iniziale.aiModelloFissato },
+        controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
+        aiModelloFissatoRef: { current: iniziale.aiModelloFissato },
         setControlloModelloInCorso: (v) => { stato.inCorso = v; },
         setModelloControllatoIl: () => { }, setModelliDisponibili: () => { },
         showNotification: (m, tipo) => notifiche.push([m, tipo]),
@@ -194,6 +203,7 @@ console.log('\n--- quello che NON deve cambiare ---');
     scegli(a, '__auto__');
     a.sblocca(); await a.finito();
     dice('scelto un modello e poi di nuovo Automatico durante il controllo: vale Automatico', ['gemini-3.7-flash', false], quadro(a));
+    dice('...e l\'avviso dice "Prima:" col modello scelto a mano, quello in uso', [[t.aiModelSwitched.replace('{da}', 'gemini-3.5-flash').replace('{a}', 'gemini-3.7-flash'), 'info']], a.notifiche);
 
     const d = scenario({ aiModel: 'gemini-3.6-flash', aiModelloFissato: false });
     d.disegna().controllaModello(false, false);
@@ -201,6 +211,31 @@ console.log('\n--- quello che NON deve cambiare ---');
     d.sblocca(); await d.finito();
     scegli(d, 'gemini-3.6-flash');
     dice('scelta fatta DOPO il controllo: resta, bloccata', ['gemini-3.6-flash', true], quadro(d));
+}
+
+console.log('\n--- gia\' sul piu\' recente: scelto un modello durante il controllo e poi di nuovo Automatico ---');
+{
+    // ITALIANO: il modello di partenza (3.7) e' gia' il piu' recente: il controllo risponde
+    //           "invariato", e prima Automatico restava sul 3.5 scelto a mano fino al giorno dopo.
+    // ENGLISH: the starting model (3.7) is already the newest: the check answers "unchanged", and
+    //          Automatic used to stay on the hand-picked 3.5 until the next day.
+    const b = scenario({ aiModel: 'gemini-3.7-flash', aiModelloFissato: false }, { elencoAperto: true });
+    b.disegna().controllaModello(false, false);
+    await b.provaInCorso;
+    scegli(b, 'gemini-3.5-flash');
+    scegli(b, '__auto__');
+    b.sblocca(); await b.finito();
+    dice('gia\' sul piu\' recente, scelto un modello e poi di nuovo Automatico: si torna al piu\' recente e lo si dice',
+        [['gemini-3.7-flash', false], [[t.aiModelSwitched.replace('{da}', 'gemini-3.5-flash').replace('{a}', 'gemini-3.7-flash'), 'info']]], [quadro(b), b.notifiche]);
+
+    const c = scenario({ aiModel: 'gemini-3.6-flash', aiModelloFissato: false });
+    c.disegna().controllaModello(false, false);
+    await c.provaInCorso;
+    scegli(c, 'gemini-3.7-flash');
+    scegli(c, '__auto__');
+    c.sblocca(); await c.finito();
+    dice('scelto a mano proprio il piu\' recente e poi Automatico: resta quello, senza un avviso di cambio che non c\'e\'',
+        [['gemini-3.7-flash', false], []], [quadro(c), c.notifiche]);
 }
 
 process.exit(esito());

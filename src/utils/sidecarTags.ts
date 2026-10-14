@@ -15,6 +15,8 @@
 *******************************************************************************
 *******************************************************************************/
 
+import { uniqueTagsIgnoringCase } from './tagCase';
+
 // ITALIANO: Nome-base di un file, senza estensione (foto.jpg -> foto). Stessa regola usata
 //           storicamente dall'import, estratta qui per usarla in un solo posto.
 // ENGLISH: A file's base name, without extension (photo.jpg -> photo). Same rule the import
@@ -168,8 +170,16 @@ export const parseSidecarText = (text: string): { tags: string[]; truncated: boo
 //   online-only file): its content is unknown, so originalTags = tags and the photo does not count
 //   as modified. Counted as "no .txt", the first "Save changes" wrote the trigger alone OVER the real
 //   file. Only an edit made on purpose gets it saved, as before.
+// ITALIANO: in `tags` due grafie dello stesso tag ("ohwx" del .txt e la trigger "OHWX", o "smile,
+//   Smile" nel .txt) diventano una sola, con la grafia della trigger o la prima (vedi tagCase):
+//   prima entravano tutte e due e Salva scriveva "OHWX, ohwx, smile,". `originalTags` resta il
+//   contenuto vero del .txt, quindi la foto risulta da salvare e il salvataggio scrive il .txt pulito.
+// ENGLISH: in `tags` two spellings of the same tag ("ohwx" from the .txt and the trigger "OHWX", or
+//   "smile, Smile" in the .txt) become one, with the trigger's spelling or the first one (see
+//   tagCase): both used to come in and Save wrote "OHWX, ohwx, smile,". `originalTags` stays the
+//   real content of the .txt, so the photo counts as unsaved and saving writes the .txt clean.
 export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txtNonLetto = false): { tags: string[]; originalTags: string[] } => {
-    const combinedTags = [...new Set([...globalTriggers, ...sidecarTags])];
+    const combinedTags = uniqueTagsIgnoringCase([...globalTriggers, ...sidecarTags], globalTriggers);
     const orderedTags = [
         ...globalTriggers.filter(t => combinedTags.includes(t)),
         ...combinedTags.filter(t => !globalTriggers.includes(t))

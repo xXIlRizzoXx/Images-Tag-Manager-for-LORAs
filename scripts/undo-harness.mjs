@@ -85,17 +85,24 @@ const testoCronologia = effetto('    }, [images]);', '        if (isUndoRedoActi
 if (!testoCronologia) { console.log('NO  l\'effetto della cronologia non trovato in src/App.tsx'); process.exit(1); }
 const visualizzatore = effetto('    }, [selectedImageId, images]);');
 export const haEffettoVisualizzatore = Boolean(visualizzatore);
+// ITALIANO: l'effetto che ricorda cosa c'e' su disco (discoNotoRef): il codice di prima non lo
+//           aveva, e allora non gira.
+// ENGLISH: the effect that remembers what is on disk (discoNotoRef): the previous code did not
+//          have it, and then it does not run.
+const RIGA_DISCO = '        images.forEach((foto: any) => discoNotoRef.current.set(';
+const disco = sorgente.includes(RIGA_DISCO) ? effetto('    }, [images]);', RIGA_DISCO) : '';
 
 const testi = [...Object.values(PEZZI), 'const effettoCronologia = ' + testoCronologia + ';'];
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
+testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
 const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedForBulk', 'stagedBulkTags', 'globalTriggers',
     'setImages', 'setHistory', 'setHistoryIndex', 'setToast', 'setSelectedImageId', 'setStagedBulkTags',
     'setSaveCloseDialog', 'setConfirmDialog', 'setIsSaving', 'setImportProgress',
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
-    'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags',
+    'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef',
     'useCallback', 'window', 'document', 'URL', 'Blob', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
-const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia',
+const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco',
     ...(visualizzatore ? ['effettoVisualizzatore'] : [])].join(', ') + ' };');
 
 /* ITALIANO: una cartella finta: `scritti` = nome del file -> ultimo contenuto scritto.
@@ -128,7 +135,7 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false },
     };
     const r = { stato, notifiche: [], tagSuFotoAperta: [] };
-    const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false } };
+    const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() } };
     const coda = [];
     let programmato = false;
     const quieto = { log() { }, warn() { }, error() { } };
@@ -144,6 +151,7 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
                 // ENGLISH: the effects on [images], in App.tsx order: history, then imagesRef.
                 render().effettoCronologia();
                 refs.imagesRef.current = stato.images;
+                render().effettoDisco();
             }
             if ((stato.images !== primaImmagini || stato.selectedImageId !== primaAperta) && haEffettoVisualizzatore) {
                 render().effettoVisualizzatore();
@@ -161,7 +169,7 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         (id, tags) => r.tagSuFotoAperta.push([id, tags]),
         () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
-        P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags,
+        P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef,
         (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto);
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
