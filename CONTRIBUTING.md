@@ -26,7 +26,7 @@ node scripts/run-tests.mjs            # offline tests, must end "ESITO PROVE: TU
 
 Three things to know before touching anything:
 
-*   **Losing someone's `.txt` tag files silently is the worst outcome this project has.** Any change to saving, importing or deleting deserves paranoia. Deletion goes to the Windows Recycle Bin; only where there is none (network folders, or a file whose place on disk is not certain) does a second confirmation, which says the removal is final, delete for good.
+*   **Losing someone's `.txt` tag files silently is the worst outcome this project has.** Any change to saving, importing or deleting deserves paranoia. Deletion goes to the Windows Recycle Bin; only where there is none (network folders, a disk with the Recycle Bin turned off, or a file whose place on disk is not certain) does a second confirmation, which says the removal is final, delete for good.
 *   **All interface strings live in `src/constants.ts`**, in one object with nine language keys, and every language must gain a new key at the same time. The type check catches a missing key only where `src/App.tsx` reads it: the components in `src/components/` receive `t` untyped, so there a key missing in one language just shows up blank. `node scripts/check-translations.mjs` is the check that catches it. Tag suggestions live in `src/constants/tagSuggestions.ts`.
 *   **App data belongs in `%APPDATA%\images-tag-manager`**, never next to the executable. The Gemini key is stored through Electron's `safeStorage`, never in plain text, and the Content-Security-Policy allows exactly one outbound host.
 
