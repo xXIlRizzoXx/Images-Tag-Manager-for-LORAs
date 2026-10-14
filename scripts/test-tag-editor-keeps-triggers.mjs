@@ -89,7 +89,11 @@ console.log('\n--- quello che NON deve cambiare ---');
     const gia = await salvaNellEditor(['ohwx', 'smile'], ['smile'], ['ohwx', 'smile', 'hat'], ['ohwx']);
     dice('il file salvato ha gia\' la trigger davanti: niente da salvare', [['ohwx', 'smile', 'hat'], false], [gia.tags, daSalvare(gia)]);
     const senza = await salvaNellEditor(['smile', 'blue eyes'], ['smile'], ['smile', 'hat'], []);
-    dice('nessuna trigger: la foto prende i tag del file, come prima', [['smile', 'hat'], ['smile', 'hat']], [senza.tags, senza.originalTags]);
+    // ITALIANO: l'aggiunta non salvata della card ("blue eyes") resta sopra il file (vedi
+    //           test-tag-editor-keeps-card-edits.mjs); prima spariva.
+    // ENGLISH: the card's unsaved addition ("blue eyes") stays on top of the file (see
+    //          test-tag-editor-keeps-card-edits.mjs); it used to vanish.
+    dice('nessuna trigger: il file salvato, piu\' l\'aggiunta non salvata della card', [['smile', 'hat', 'blue eyes'], ['smile', 'hat']], [senza.tags, senza.originalTags]);
     // ITALIANO: una trigger tolta a mano da questa sola foto non torna.
     // ENGLISH: a trigger removed by hand from this one photo does not come back.
     const tolta = await salvaNellEditor(['smile'], ['smile'], ['smile', 'hat'], ['ohwx']);

@@ -47,6 +47,7 @@ const P = await carica('src/utils/pathUtils.ts');
 const H = await carica('src/utils/historyUtils.ts');
 const S = await carica('src/utils/sidecarTags.ts');
 const C = await carica('src/utils/tagCase.ts');
+const G = await carica('src/utils/closeGuard.ts');
 export const cronologia = H;
 
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
@@ -114,7 +115,7 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
     'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
     'setSelectedForBulk', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef', 'uniqueTagsIgnoringCase',
-    'useCallback', 'window', 'document', 'URL', 'Blob', 'console'];
+    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione',
     ...(visualizzatore ? ['effettoVisualizzatore'] : [])].join(', ') + ' };');
@@ -189,7 +190,7 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
-        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto));
+        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();

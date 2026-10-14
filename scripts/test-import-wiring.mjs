@@ -107,7 +107,7 @@ dice('l\'import ripristina con tagDaRipristinare', true, /const ripristinati = t
 //             costruisciBackup; no fingerprint computed inside the effect.
 const effetto = tratto(app, 'const backupConFotoRef = useRef(false);', '}, [images, dirHandle]);');
 dice('premessa: trovato l\'effetto del backup anti-crash', true, effetto.length > 0);
-dice('l\'effetto chiama scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder)', true, /scriviBackupSubito\(localStorage, images, fotoChiuseRef\.current\.values\(\), folder\)/.test(effetto));
+dice('l\'effetto chiama scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current)', true, /scriviBackupSubito\(localStorage, images, fotoChiuseRef\.current\.values\(\), folder, globalTriggersRef\.current\)/.test(effetto));
 dice('l\'effetto NON calcola l\'impronta da solo (folderSignature)', false, /folderSignature\(/.test(effetto));
 dice('l\'effetto NON scrive tagBackup a mano', false, /localStorage\.setItem\(/.test(effetto));
 dice('scriviBackupSubito viene importato da utils/closeGuard', true, /import \{[^}]*\bscriviBackupSubito\b[^}]*\} from '\.\/utils\/closeGuard';/.test(app));

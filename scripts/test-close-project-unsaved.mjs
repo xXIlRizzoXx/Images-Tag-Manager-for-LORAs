@@ -30,6 +30,11 @@ const uscita = await esbuild.build({
     bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
 });
 const t = (await import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'))).translations.en;
+const uscitaG = await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/closeGuard.ts')],
+    bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+});
+const G = await import('data:text/javascript;base64,' + Buffer.from(uscitaG.outputFiles[0].text).toString('base64'));
 const { dice, esito } = creaControlli();
 
 // ITALIANO: una funzione vera, ritagliata dal sorgente fino alla sua riga di chiusura.
@@ -48,7 +53,7 @@ const ritaglia = async (intestazione) => {
 };
 const jsChiudi = await ritaglia('    const handleCloseProject = () => {');
 const jsSalva = await ritaglia('    const handleSaveChanges = async (): Promise<boolean> => {');
-const fabbrica = new Function('images', 't', 'showNotification', 'performSave', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow',
+const fabbrica = new Function('images', 't', 'showNotification', 'performSave', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'fotoDaSalvare', 'globalTriggers',
     jsChiudi + '\n' + jsSalva + '\nreturn { handleCloseProject, handleSaveChanges };');
 
 // ITALIANO: preme "Chiudi progetto" e poi, se compare la finestra a tre scelte, "Salva e chiudi".
@@ -60,7 +65,7 @@ const prova = async (images) => {
         async (lista) => { r.scritte.push(...lista.map(i => i.file.name)); return true; },
         (d) => { if (d && d.isOpen) r.finestra = 'tre scelte'; },
         (d) => { if (d && d.isOpen) r.finestra = 'conferma semplice'; },
-        () => { });
+        () => { }, G.fotoDaSalvare, []);
     f.handleCloseProject();
     if (r.finestra === 'tre scelte') await f.handleSaveChanges();
     return r;

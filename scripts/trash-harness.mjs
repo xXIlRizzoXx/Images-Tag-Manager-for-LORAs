@@ -48,6 +48,10 @@ const P = await carica('src/utils/pathUtils.ts');
 // ENGLISH: the history module may not exist yet (previous code): then it stays empty.
 let H = {};
 try { H = await carica('src/utils/historyUtils.ts'); } catch (_) { H = {}; }
+// ITALIANO: closeProjectNow riscrive il backup con backupDopoChiusura (il codice di prima non l'aveva).
+// ENGLISH: closeProjectNow rewrites the backup with backupDopoChiusura (the previous code did not have it).
+let G;
+try { G = await carica('src/utils/closeGuard.ts'); } catch (_) { G = {}; }
 export const cronologia = H;
 
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
@@ -103,7 +107,7 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     // ENGLISH: what Close project and Reset need (closeProjectNow, handleResetProject).
     'progettoGenRef', 'aiCancelRequestedRef', 'setAiCancelRequested', 'aiAbortControllerRef', 'localStorage', 'liberaAnteprimeProgetto',
     'setStagedBulkTags', 'setCustomProjectTags', 'setDirHandle', 'setSelectedImageId', 'setCopiedTags',
-    'useCallback', 'window', 'URL', 'console'];
+    'useCallback', 'window', 'URL', 'console', 'backupDopoChiusura'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -210,7 +214,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
         H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, stato.globalTriggers, imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef,
         refs.progettoGenRef, refs.aiCancelRequestedRef, nulla, refs.aiAbortControllerRef, memoria, nulla,
         nulla, nulla, nulla, nulla, nulla,
-        (f) => f, finestra, url, quieto);
+        (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();

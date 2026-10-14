@@ -59,7 +59,7 @@ const js = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const NOMI = ['images', 'ultimoSvuotamento', 'imagesRef', 'fotoChiuseRef', 'anteprimeProgettoRef', 'aiCancelRequestedRef', 'aiAbortControllerRef',
     'setImages', 'setUltimoSvuotamento', 'setGlobalTriggers', 'setSelectedForBulk', 'setStagedBulkTags', 'setCustomProjectTags', 'setDirHandle',
     'setSelectedImageId', 'setCopiedTags', 'setHistory', 'setHistoryIndex', 'setAiCancelRequested', 'setConfirmDialog',
-    'showNotification', 'soundManager', 't', 'useCallback', 'localStorage', 'URL', 'discoNotoRef', 'progettoGenRef'];
+    'showNotification', 'soundManager', 't', 'useCallback', 'localStorage', 'URL', 'discoNotoRef', 'progettoGenRef', 'backupDopoChiusura'];
 const fabbrica = new Function(...NOMI, js + '\nreturn { ' + [...PEZZI, ...facoltative].join(', ') + ' };');
 
 /* ITALIANO: un progetto finto con `n` foto importate. L'import vero annota ogni anteprima
@@ -83,7 +83,7 @@ const progetto = (n) => {
         (f) => { s.images = typeof f === 'function' ? f(s.images) : f; refs.imagesRef.current = s.images; },
         (v) => { s.ultimoSvuotamento = v; }, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla,
         (d) => { s.dialogo = d; }, nulla, { pop() { }, chime() { }, click() { } }, {}, (f) => f,
-        { removeItem() { } }, { revokeObjectURL: (u) => liberate.add(u) }, { current: new Map() }, { current: 0 });
+        { removeItem() { } }, { revokeObjectURL: (u) => liberate.add(u) }, { current: new Map() }, { current: 0 }, () => { });
     return { s, refs, render, nuova, vive: () => [...create].filter(u => !liberate.has(u)).length, liberate };
 };
 

@@ -37,7 +37,7 @@ import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
-import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
+import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
 import { avvisoImport } from './utils/importNotice';
@@ -728,7 +728,8 @@ export default function App() {
     //           re-import della cartella le modifiche non salvate vengono ripristinate.
     //           Contiene SOLO le foto con modifiche non salvate, con un'impronta per ogni cartella
     //           aperta (le regole e il perche' stanno in costruisciBackup). Quando non resta niente
-    //           da salvare si cancella da solo; lo cancellano anche Reset e Chiudi progetto. Con la
+    //           da salvare si cancella da solo; Reset lo cancella, Chiudi progetto ne toglie le
+    //           cartelle in memoria e tiene quelle mai riaperte dopo un crash. Con la
     //           lista vuota all'avvio del programma (nessuna foto ancora entrata) non si tocca: e'
     //           proprio li' che serve il recupero dopo un crash. Dopo, una lista vuota vuol dire
     //           che l'utente ha chiuso tutte le foto, e il backup si ricalcola come sempre: prima
@@ -738,7 +739,8 @@ export default function App() {
     //          re-importing the folder restores unsaved edits.
     //          It holds ONLY the photos with unsaved edits, with one fingerprint per open folder
     //          (the rules and the why live in costruisciBackup). When nothing is left unsaved it
-    //          removes itself; Reset and Close project remove it too. With an empty list at program
+    //          removes itself; Reset removes it, Close project drops the folders in memory from it
+    //          and keeps those never reopened after a crash. With an empty list at program
     //          start (no photo loaded yet) it is left alone: that is exactly when crash recovery is
     //          needed. Afterwards an empty list means the user closed every photo, and the backup is
     //          recomputed as always: it used to stay, and closing the last photo with the X ("the
@@ -750,7 +752,7 @@ export default function App() {
         else if (!backupConFotoRef.current) return undefined;
         const handle = setTimeout(() => {
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder);
+            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);
         }, 1000);
         return () => clearTimeout(handle);
     }, [images, dirHandle]);
@@ -777,6 +779,18 @@ export default function App() {
     //          that reloads stays free.
     const permettiChiusuraRef = useRef(false);
     const chiusuraFinestraRef = useRef(false);
+    // ITALIANO: l'editor dei file di tag ha modifiche non salvate (le segnala lui, onDirtyChange). La
+    //           sua X chiede prima di buttarle; la X della finestra e Alt+F4 invece chiudevano subito
+    //           e la bozza spariva, anche senza nessuna foto aperta. Ora, in Electron, la chiusura si
+    //           ferma, l'editor resta in vista e un avviso dice di salvare o scartare prima. La
+    //           finestra a tre scelte non va bene qui: il suo "Salva e chiudi" non salva l'editor.
+    // ENGLISH: the tag file editor has unsaved edits (it reports them itself, onDirtyChange). Its X
+    //          asks before throwing them away; the window's X and Alt+F4 instead closed at once and
+    //          the draft was gone, with no photo open too. Now, in Electron, the close stops, the
+    //          editor stays in view and a notice says to save or discard first. The three-choice
+    //          dialog does not fit here: its "Save and close" does not save the editor.
+    const tagEditorDirtyRef = useRef(false);
+    const segnaEditorSporco = useCallback((sporco: boolean) => { tagEditorDirtyRef.current = sporco; }, []);
     const saveCloseDialogRef = useRef(saveCloseDialog);
     saveCloseDialogRef.current = saveCloseDialog;
     useEffect(() => {
@@ -785,20 +799,34 @@ export default function App() {
             // ENGLISH: the user already decided (saved, or closed without saving): just close.
             if (permettiChiusuraRef.current) return;
             const lista = imagesRef.current;
-            if (lista.length === 0) return;
+            const editorSporco = tagEditorDirtyRef.current;
+            if (lista.length === 0 && !editorSporco) return;
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-            scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder);
-            if (!(window as any).electronAPI || !modificheNonSalvate(lista)) return;
+            if (lista.length > 0) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);
+            if (!(window as any).electronAPI) return;
+            // ITALIANO: prima la bozza dell'editor (vedi tagEditorDirtyRef); le foto si chiedono alla X dopo.
+            // ENGLISH: the editor's draft first (see tagEditorDirtyRef); the photos are asked at the next X.
+            if (editorSporco) {
+                e.preventDefault();
+                e.returnValue = false;
+                setTimeout(() => { setIsTagEditorOpen(true); showNotification(t.tagEditorUnsavedOnWindowClose, 'info'); }, 0);
+                return;
+            }
+            if (!modificheNonSalvate(lista, globalTriggersRef.current)) return;
             e.preventDefault();
             // ITALIANO: come chiede la guida di Electron: returnValue esplicito, non solo preventDefault.
             // ENGLISH: as Electron's guide asks: an explicit returnValue, not just preventDefault.
             e.returnValue = false;
             chiusuraFinestraRef.current = true;
-            if (!saveCloseDialogRef.current.isOpen) setTimeout(() => setSaveCloseDialog({ isOpen: true, isSaving: false }), 0);
+            // ITALIANO: l'editor (senza modifiche, a questo punto) si mette via: la finestra a tre
+            //           scelte sta sotto di lui e restava nascosta.
+            // ENGLISH: the editor (with no edits, at this point) is put away: the three-choice dialog
+            //          sits below it and stayed hidden.
+            if (!saveCloseDialogRef.current.isOpen) setTimeout(() => { setIsTagEditorOpen(false); setSaveCloseDialog({ isOpen: true, isSaving: false }); }, 0);
         };
         window.addEventListener('beforeunload', allaChiusura);
         return () => window.removeEventListener('beforeunload', allaChiusura);
-    }, [dirHandle]);
+    }, [dirHandle, t]);
 
     // ITALIANO: dopo "Chiudi senza salvare" o un "Salva e chiudi" riuscito: se la domanda era nata
     //           dalla X della finestra, la finestra si chiude davvero; se era nata da "Chiudi
@@ -2402,6 +2430,11 @@ export default function App() {
                     height: thumbData?.height || 0,
                     tags: finalTags,
                     originalTags: [...originalTags],
+                    // ITALIANO: il .txt c'e' ma non si e' potuto leggere: i tag di adesso, cosi' le
+                    //           trigger cambiate dopo non lo fanno scrivere (vedi fotoDaSalvare).
+                    // ENGLISH: the .txt exists but could not be read: the current tags, so triggers
+                    //          changed later do not get it written (see fotoDaSalvare).
+                    ...(txtNonLetti.has(folderKeyOf(imgFiles[i])) ? { baseTxtNonLetto: [...originalTags] } : {}),
                     // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash, e il
                     //           lotto di import con la sua cartella (un'impronta per cartella).
                     // ENGLISH: the key under which this photo is stored in the crash backup, and the
@@ -3248,7 +3281,11 @@ export default function App() {
         //           ha escluse dal dataset). Salvo solo le foto attive con modifiche.
         // ENGLISH: do NOT save trashed photos: their .txt must not be written to disk (the user
         //          excluded them from the dataset). Save only active photos with changes.
-        const modifiedImages = images.filter(img => !img.isTrashed && JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        // ITALIANO: una foto col .txt non letto all'import si salva solo per i tag messi apposta su
+        //           di lei, non per una trigger (vedi fotoDaSalvare).
+        // ENGLISH: a photo whose .txt was not read at import is saved only for the tags put on it on
+        //          purpose, not for a trigger (see fotoDaSalvare).
+        const modifiedImages = images.filter(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
         if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
         return performSave(modifiedImages);
     };
@@ -3698,7 +3735,11 @@ export default function App() {
         aiCancelRequestedRef.current = true;
         setAiCancelRequested(true);
         aiAbortControllerRef.current?.abort();
-        try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+        // ITALIANO: dal backup anti-crash escono le cartelle di questo progetto, non quelle mai
+        //           riaperte dopo un crash (vedi backupDopoChiusura). Prima si cancellava tutto.
+        // ENGLISH: this project's folders leave the crash backup, not those never reopened after a
+        //          crash (see backupDopoChiusura). Everything used to be removed.
+        backupDopoChiusura(localStorage, imagesRef.current, fotoChiuseRef.current.values());
         fotoChiuseRef.current.clear();
         // ITALIANO: libera le anteprime, altrimenti restano in memoria per tutta la sessione
         //           (con 2000 foto sono centinaia di MB che non tornano piu' indietro).
@@ -3747,7 +3788,7 @@ export default function App() {
         // ENGLISH: same rule as handleSaveChanges: trashed photos are never saved, so they do not
         //          count. They used to count here and not there: "there are unsaved changes",
         //          then "Save and close" answered "No changes to save."
-        const hasUnsaved = images.some(img => !img.isTrashed && JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        const hasUnsaved = images.some(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
 
         // ITALIANO: Con modifiche non salvate si sceglie fra TRE strade: salvare e chiudere,
         //           chiudere buttando via le modifiche, oppure annullare.
@@ -4487,6 +4528,7 @@ export default function App() {
                 lang={lang}
                 showNotification={showNotification}
                 onFileSaved={handleTagEditorSaved}
+                onDirtyChange={segnaEditorSporco}
                 projectTags={allUniqueTags}
                 onImportTagsToProject={(tagsFromEditor: string[]) => {
                     // ITALIANO: i tag aperti/importati nell'editor entrano anche nella palette del

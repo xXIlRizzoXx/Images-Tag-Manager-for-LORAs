@@ -83,7 +83,7 @@ export const serializeTagFile = (tags: string[], fileName: string, triggers: str
     return tags.length > 0 ? tags.join(', ') + ',' : '';
 };
 
-export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject }: any) => {
+export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject, onDirtyChange }: any) => {
     const [tags, setTags] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string>('');
     const [inputValue, setInputValue] = useState('');
@@ -120,6 +120,15 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const fallbackInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
+
+    // ITALIANO: dice ad App se ci sono modifiche non salvate: la X della finestra (e Alt+F4) le
+    //           chiudeva senza chiedere, mentre la X dell'editor chiede. Smontato = niente bozza.
+    // ENGLISH: tells App whether there are unsaved edits: the window's X (and Alt+F4) closed them
+    //          without asking, while the editor's X asks. Unmounted = no draft.
+    useEffect(() => {
+        if (onDirtyChange) onDirtyChange(dirty);
+        return () => { if (onDirtyChange) onDirtyChange(false); };
+    }, [dirty, onDirtyChange]);
 
     // ITALIANO: RIAPERTURA — il file aperto resta aperto anche dopo aver chiuso la finestra, ma nel
     //           frattempo quel .txt puo' essere cambiato sul disco (per esempio l'hai modificato dai

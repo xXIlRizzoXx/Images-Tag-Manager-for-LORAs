@@ -14,7 +14,7 @@
 *******************************************************************************
 *******************************************************************************/
 
-import { parseSidecarText, TXT_MAX_TAGS_PER_FILE, TXT_TAG_MAX_CHARS } from './sidecarTags';
+import { parseSidecarText, fotoDaSalvare, TXT_MAX_TAGS_PER_FILE, TXT_TAG_MAX_CHARS } from './sidecarTags';
 import { uniqueTagsIgnoringCase } from './tagCase';
 
 // ITALIANO: separatore fra cartella e nome nelle chiavi del backup (vedi makeBackupKeyer in App.tsx).
@@ -98,8 +98,9 @@ type VoceBackup = { tags: string[]; base: string };
 //      memoria restano: dopo un crash appartengono a cartelle non ancora riaperte. Prima, riaprendo
 //      la prima cartella, il backup si riscriveva con quella sola e le altre perdevano le modifiche;
 //      aprendo per prima una cartella senza modifiche si cancellava tutto. Una sorgente di una
-//      cartella aperta lascia il posto a quella in memoria (salvata, modificata o gemella). Le
-//      tolgono per davvero solo Chiudi progetto e Reset.
+//      cartella aperta lascia il posto a quella in memoria (salvata, modificata o gemella). Chiudi
+//      progetto toglie solo quelle delle cartelle in memoria (vedi backupDopoChiusura in
+//      closeGuard.ts); le toglie tutte solo Reset.
 // ENGLISH: What to write into the backup. Null = nothing to keep: the backup must be removed.
 //   1) It holds ONLY the photos with unsaved edits (tags different from originalTags, the same test
 //      "Save changes" uses). It used to hold ALL of them, and it survived a normal quit with
@@ -131,8 +132,16 @@ type VoceBackup = { tags: string[]; base: string };
 //      after a crash they belong to folders not reopened yet. Reopening the first folder used to
 //      rewrite the backup with that one alone and the others lost their edits; opening a folder with
 //      no edits first deleted everything. A source of an open folder gives way to the one in memory
-//      (saved, edited or twin). Only Close project and Reset really remove them.
-export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null): { folder: string; sources: { signature: string; data: Record<string, VoceBackup> }[] } | null => {
+//      (saved, edited or twin). Close project removes only those of the folders in memory (see
+//      backupDopoChiusura in closeGuard.ts); only Reset removes them all.
+// ITALIANO: `triggers` = le trigger word attive, per la regola di fotoDaSalvare: una foto col .txt non
+//   letto all'import non entra per una sola trigger. Le trigger non restano da una sessione all'altra:
+//   ripresa dal backup, quella trigger diventava un tag suo e "Salva" la scriveva sopra il file vero.
+// ENGLISH: `triggers` = the active trigger words, for fotoDaSalvare's rule: a photo whose .txt was not
+//   read at import does not enter for a trigger alone. Triggers do not last from one session to the
+//   next: taken back from the backup, that trigger became a tag of its own and "Save" wrote it over the
+//   real file.
+export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = []): { folder: string; sources: { signature: string; data: Record<string, VoceBackup> }[] } | null => {
     const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number }>();
     const lottoDi = (lotto: string, cartella: string) => {
         let l = lotti.get(lotto);
@@ -149,7 +158,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         l.nomi.push(img.file.name);
         l.vivi++;
         if (img.isTrashed) continue;
-        if (JSON.stringify(img.tags) === JSON.stringify(img.originalTags)) continue;
+        if (!fotoDaSalvare(img, triggers)) continue;
         // ITALIANO: chiave cartella+nome assegnata all'import (vedi makeBackupKeyer): due foto
         //           omonime in sottocartelle diverse restano separate.
         // ENGLISH: folder+name key assigned at import (see makeBackupKeyer): two same-named photos

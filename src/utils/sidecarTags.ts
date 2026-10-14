@@ -15,7 +15,7 @@
 *******************************************************************************
 *******************************************************************************/
 
-import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from './tagCase';
+import { hasTagIgnoringCase, hasTagsBeyondTriggers, uniqueTagsIgnoringCase } from './tagCase';
 
 // ITALIANO: Nome-base di un file, senza estensione (foto.jpg -> foto). Stessa regola usata
 //           storicamente dall'import, estratta qui per usarla in un solo posto.
@@ -222,22 +222,60 @@ export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txt
     return { tags: orderedTags, originalTags: [...new Set(sidecarTags)] };
 };
 
+// ITALIANO: questa foto ha modifiche che "Salva" deve scrivere? Di solito basta che i tag siano
+//           diversi da originalTags. Una foto il cui .txt c'e' ma all'import non si e' potuto
+//           leggere (oltre 1 MB, bloccato, un file di OneDrive solo in rete) porta
+//           `baseTxtNonLetto` = i tag che aveva all'import (solo le trigger di allora): finche' il
+//           suo ricordo del disco e' ancora quello, contano solo i tag messi apposta su di lei, non
+//           le trigger word. Prima una trigger scritta dopo l'import, o tolta dopo averla messa
+//           prima, la faceva risultare modificata, e "Salva" scriveva la sola trigger (o un file
+//           vuoto) SOPRA il .txt vero mai letto. Quando il suo .txt viene scritto (Salva, il
+//           visualizzatore, l'editor dei file di tag) originalTags cambia e la regola torna quella
+//           di sempre, anche dopo un Ctrl+Z (vedi withLiveOriginalTags).
+// ENGLISH: does this photo have edits "Save" must write? Usually it is enough that the tags differ
+//          from originalTags. A photo whose .txt exists but could not be read at import (over 1 MB,
+//          locked, a OneDrive online-only file) carries `baseTxtNonLetto` = the tags it had at import
+//          (only the triggers of that time): while its disk record is still that one, only the tags
+//          put on it on purpose count, not the trigger words. A trigger typed after the import, or
+//          removed after setting it before, used to make it count as modified, and "Save" wrote the
+//          trigger alone (or an empty file) OVER the real .txt that was never read. Once its .txt is
+//          written (Save, the viewer, the tag file editor) originalTags changes and the usual rule
+//          applies again, after a Ctrl+Z too (see withLiveOriginalTags).
+export const fotoDaSalvare = (img: any, triggers: string[] = []): boolean => {
+    if (JSON.stringify(img.tags) === JSON.stringify(img.originalTags)) return false;
+    const base = img.baseTxtNonLetto;
+    if (!Array.isArray(base) || JSON.stringify(img.originalTags) !== JSON.stringify(base)) return true;
+    return hasTagsBeyondTriggers(Array.isArray(img.tags) ? img.tags : [], [...(Array.isArray(triggers) ? triggers : []), ...base]);
+};
+
 // ITALIANO: I tag di una foto dopo che l'editor dei file di tag ha salvato il suo .txt. L'editor
 //   mostra solo il file su disco, quindi non ha mai visto una trigger word ancora da salvare (sulla
 //   card ma non nel .txt): quella resta davanti e fuori da `originalTags`, cosi' "Salva modifiche"
 //   la scrive, come dopo l'import. Prima la foto prendeva il file sia come tag sia come disco: la
 //   trigger spariva e il .txt restava senza, mentre il riquadro la mostrava attiva. Una trigger che
-//   il file aveva e che l'utente ha tolto nell'editor resta tolta; le altre modifiche non salvate
-//   della card lasciano il posto al file salvato, come prima. `originalTags` = il file scritto.
+//   il file aveva e che l'utente ha tolto nell'editor resta tolta. `originalTags` = il file scritto.
+//   Anche le altre modifiche non salvate della card (tag aggiunti o tolti rispetto a originalTags,
+//   senza badare alle maiuscole) si rimettono sopra il file salvato, e la foto resta da salvare.
+//   Prima lasciavano il posto al file: un tag aggiunto in galleria spariva, uno tolto tornava, e la
+//   foto risultava salvata senza nessun avviso.
 // ENGLISH: A photo's tags after the tag file editor saved its .txt. The editor only shows the file
 //   on disk, so it never saw a trigger word still to be saved (on the card but not in the .txt):
 //   that one stays first and out of `originalTags`, so "Save changes" writes it, as after the
 //   import. The photo used to take the file both as tags and as disk: the trigger vanished and the
 //   .txt stayed without it, while the box showed it active. A trigger the file had and the user
-//   removed in the editor stays removed; the card's other unsaved edits give way to the saved file,
-//   as before. `originalTags` = the file written.
+//   removed in the editor stays removed. `originalTags` = the file written.
+//   The card's other unsaved edits (tags added or removed against originalTags, regardless of
+//   case) are put back on top of the saved file too, and the photo stays to be saved. They used to
+//   give way to the file: a tag added in the gallery vanished, a removed one came back, and the
+//   photo counted as saved with no notice.
 export const tagDopoEditor = (tags: string[], originalTags: string[], savedTags: string[], globalTriggers: string[]): { tags: string[]; originalTags: string[] } => {
-    const daTenere = globalTriggers.filter(tg => hasTagIgnoringCase(savedTags, tg)
+    const aggiunti = tags.filter(tg => !hasTagIgnoringCase(originalTags, tg));
+    const tolti = originalTags.filter(tg => !hasTagIgnoringCase(tags, tg));
+    // ITALIANO: una trigger tolta a mano da questa card resta tolta anche se il file la contiene.
+    // ENGLISH: a trigger removed by hand from this card stays removed even if the file holds it.
+    const daTenere = globalTriggers.filter(tg => (hasTagIgnoringCase(savedTags, tg) && !hasTagIgnoringCase(tolti, tg))
         || (hasTagIgnoringCase(tags, tg) && !hasTagIgnoringCase(originalTags, tg)));
-    return tagDiImport(daTenere, savedTags);
+    const conCard = savedTags.filter(tg => !hasTagIgnoringCase(tolti, tg));
+    for (const tg of aggiunti) if (!hasTagIgnoringCase(conCard, tg)) conCard.push(tg);
+    return { tags: tagDiImport(daTenere, conCard).tags, originalTags: [...new Set(savedTags)] };
 };

@@ -202,7 +202,9 @@ console.log('\n--- l\'editor di tag salva il .txt della foto, poi Ctrl+Z ---');
     cartella.scritti.set('P.txt', 'a, c,');
     await app.render().handleTagEditorSaved('P.txt', ['a', 'c'], { isSameEntry: async (h) => h && h.nome === 'P.txt' });
     await app.attendi();
-    dice('la foto prende i tag del file salvato', ['a', 'c'], app.fotoCon('P').tags);
+    // ITALIANO: piu' "b", aggiunto sulla card e non ancora salvato (vedi test-tag-editor-keeps-card-edits.mjs).
+    // ENGLISH: plus "b", added on the card and not saved yet (see test-tag-editor-keeps-card-edits.mjs).
+    dice('la foto prende i tag del file salvato, piu\' l\'aggiunta non salvata della card', ['a', 'c', 'b'], app.fotoCon('P').tags);
     await ctrlZ(app, 2);
     dice('dopo due Ctrl+Z la card mostra "a"', ['a'], app.fotoCon('P').tags);
     dice('"Chiudi progetto" avvisa (il .txt dice "a, c,")', true, await avvisaChiudendo(app));
