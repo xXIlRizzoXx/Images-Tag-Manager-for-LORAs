@@ -128,12 +128,17 @@ const ERRORI = {
 };
 const BLOCCATA = { text: undefined, promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } };
 const BUONA = { text: '["cat", "sofa"]' };
+// ITALIANO: il PNG piu' piccolo (firma + IEND): il servizio legge i byte per togliere i dati nascosti
+//           e rifiuta un file che non e' un'immagine vera.
+// ENGLISH: the smallest PNG (signature + IEND): the service reads the bytes to remove the hidden data
+//          and refuses a file that is not a real image.
+const PNG_MINIMO = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 0xAE, 0x42, 0x60, 0x82]);
 
 // --- un'app finta intorno ai pezzi veri
 const nuovaApp = (t, quante, generate) => {
     globalThis.__GOOGLE__ = { chiamate: 0, generate, list: async () => ({ async *[Symbol.asyncIterator]() { } }) };
     const foto = Array.from({ length: quante }, (_, i) => ({
-        id: 'f' + i, isTrashed: false, tags: [], file: new File([new Uint8Array([1, 2, 3])], `f${i}.png`, { type: 'image/png' }),
+        id: 'f' + i, isTrashed: false, tags: [], file: new File([PNG_MINIMO], `f${i}.png`, { type: 'image/png' }),
     }));
     const app = { notifiche: [], suoni: 0, riparazioni: 0, finestraChiave: false, foto };
     let orologio = 1_000_000;

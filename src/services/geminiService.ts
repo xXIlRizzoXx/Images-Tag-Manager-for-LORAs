@@ -14,6 +14,7 @@
 *******************************************************************************
 *******************************************************************************/
 import { GoogleGenAI, Type } from '@google/genai';
+import { stripImageMetadata } from '../utils/imageMetadata';
 
 const CUSTOM_PROMPT_MAX_LENGTH = 500;
 const TAG_MAX_LENGTH = 60;
@@ -43,10 +44,50 @@ const sanitizeCustomPrompt = (input?: string): string => {
     return stripControlChars(input).replace(/\s+/g, ' ').trim().slice(0, CUSTOM_PROMPT_MAX_LENGTH);
 };
 
-const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-    if (!file || file.size === 0) { reject(new Error('Invalid or empty file')); return; }
-    if (file.size > MAX_FILE_SIZE_BYTES) { reject(new Error('Image too large (> 20 MB)')); return; }
-    if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) { reject(new Error('Unsupported file type')); return; }
+// ITALIANO: una foto in un formato che non si sa pulire byte per byte (GIF, BMP, AVIF, ICO...) si
+//           ridisegna e parte come PNG: restano i pixel, sparisce tutto il resto. Se non si puo'
+//           ridisegnare (TIFF, SVG, file rovinato) non parte niente: mai il file originale.
+// ENGLISH: a photo in a format that cannot be cleaned byte by byte (GIF, BMP, AVIF, ICO...) is
+//          redrawn and sent as PNG: the pixels stay, everything else goes. If it cannot be redrawn
+//          (TIFF, SVG, damaged file) nothing is sent: never the original file.
+const redrawAsPng = async (file: File): Promise<Blob> => {
+    if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') throw new Error('Unsupported file type');
+    let bitmap: ImageBitmap | undefined;
+    try {
+        bitmap = await createImageBitmap(file);
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no 2d context');
+        ctx.drawImage(bitmap, 0, 0);
+        const png = await canvas.convertToBlob({ type: 'image/png' });
+        if (png.type !== 'image/png') throw new Error('not a png');
+        return png;
+    } catch {
+        throw new Error('Unsupported file type');
+    } finally {
+        bitmap?.close();
+    }
+};
+
+// ITALIANO: prepara la foto da mandare a Google: solo l'immagine, senza i dati nascosti del file
+//           (posizione GPS, numero di serie della fotocamera, autore, storia delle modifiche).
+//           Il tipo mandato e' quello vero dei byte, non quello dichiarato dal nome del file.
+// ENGLISH: prepares the photo to send to Google: only the picture, without the file's hidden data
+//          (GPS position, camera serial number, author, editing history). The type sent is the
+//          real one of the bytes, not the one the file name declares.
+const imageForGemini = async (file: File): Promise<{ data: string; mimeType: string }> => {
+    if (!file || file.size === 0) throw new Error('Invalid or empty file');
+    if (file.size > MAX_FILE_SIZE_BYTES) throw new Error('Image too large (> 20 MB)');
+    if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw new Error('Unsupported file type');
+    const pulita = stripImageMetadata(new Uint8Array(await file.arrayBuffer()));
+    const blob = pulita
+        ? new Blob([pulita.bytes as Uint8Array<ArrayBuffer>], { type: pulita.mimeType })
+        : await redrawAsPng(file);
+    if (blob.size > MAX_FILE_SIZE_BYTES) throw new Error('Image too large (> 20 MB)');
+    return { data: await blobToBase64(blob), mimeType: blob.type };
+};
+
+const blobToBase64 = (file: Blob): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
         if (typeof reader.result === 'string') {
@@ -113,13 +154,13 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
         throw new Error('Missing API key');
     }
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
-    const base64Data = await fileToBase64(file);
+    const immagine = await imageForGemini(file);
 
     const response = await ai.models.generateContent({
         model: opts.modelName,
         contents: {
             parts: [
-                { inlineData: { data: base64Data, mimeType: file.type } },
+                { inlineData: { data: immagine.data, mimeType: immagine.mimeType } },
                 { text: buildTagPrompt(opts.maxTags, opts.customPrompt) },
             ],
         },

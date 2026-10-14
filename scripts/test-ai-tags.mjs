@@ -69,7 +69,12 @@ const dice = (cosa, atteso, avuto) => {
     console.log('  ' + (ok ? 'OK  ' : 'NO  ') + cosa + (ok ? '' : `\n        atteso: ${JSON.stringify(atteso)}\n        avuto:  ${JSON.stringify(avuto)}`));
 };
 
-const foto = new File([new Uint8Array([1, 2, 3])], 'foto.png', { type: 'image/png' });
+// ITALIANO: il PNG piu' piccolo (firma + IEND): il servizio legge i byte per togliere i dati nascosti
+//           e rifiuta un file che non e' un'immagine vera.
+// ENGLISH: the smallest PNG (signature + IEND): the service reads the bytes to remove the hidden data
+//          and refuses a file that is not a real image.
+const PNG_MINIMO = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 0xAE, 0x42, 0x60, 0x82]);
+const foto = new File([PNG_MINIMO], 'foto.png', { type: 'image/png' });
 const tagDa = async (risposta, maxTags = 30) => {
     globalThis.__RISPOSTA__ = risposta;
     return S.getGeminiTags(foto, { apiKey: 'AIza' + 'x'.repeat(35), modelName: 'gemini-3.6-flash', maxTags });

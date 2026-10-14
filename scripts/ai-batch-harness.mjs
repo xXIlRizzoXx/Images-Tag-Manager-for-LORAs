@@ -95,6 +95,12 @@ const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll
 
 export const BUONA = { text: '["cat", "sofa"]' };
 
+// ITALIANO: il PNG piu' piccolo (firma + IEND): il servizio legge i byte per togliere i dati nascosti
+//           e rifiuta un file che non e' un'immagine vera.
+// ENGLISH: the smallest PNG (signature + IEND): the service reads the bytes to remove the hidden data
+//          and refuses a file that is not a real image.
+const PNG_MINIMO = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 0xAE, 0x42, 0x60, 0x82]);
+
 /* ITALIANO: un'app finta con `fotoIniziali` (id e tag). `generate(n, richiesta)` risponde alla
    richiesta numero n. app.tutte() avvia "Tagga tutte con AI"; app.interruttore(v) e' il clic
    sull'interruttore AI; app.annulla() e' il pulsante Annulla.
@@ -104,7 +110,7 @@ export const BUONA = { text: '["cat", "sofa"]' };
 export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } = {}) => {
     globalThis.__GOOGLE__ = { chiamate: 0, generate };
     const foto = fotoIniziali.map(({ id, tags = [] }) => ({
-        id, isTrashed: false, tags: [...tags], file: new File([new Uint8Array([1, 2, 3])], `${id}.png`, { type: 'image/png' }),
+        id, isTrashed: false, tags: [...tags], file: new File([PNG_MINIMO], `${id}.png`, { type: 'image/png' }),
     }));
     const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto };
     let orologio = 1_000_000;
