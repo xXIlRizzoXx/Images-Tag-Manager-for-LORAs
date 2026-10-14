@@ -60,7 +60,7 @@ const NOMI = ['globalTriggers', 'globalTriggersRef', 'images', 'setImages', 'set
     'setImportSummary', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'nuovoIdFoto', 'backupDellImport',
     'localStorage', 'makeFolderKeyer', 'makeBackupKeyer', 'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport',
     'tagDaRipristinare', 'asDirHandle', 'anteprimeProgettoRef', 'soundManager', 'avvisoImport', 't', 'showNotification',
-    'folderInputRef', 'console', 'performSave', 'fotoDaSalvare', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow'];
+    'folderInputRef', 'console', 'performSave', 'fotoDaSalvare', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'importAttiviRef'];
 const fabbrica = new Function(...NOMI,
     (await ritaglia('    const processImportData = async (')) + '\n' + (await ritaglia('    const handleGlobalTagsChange = (')) + '\n' +
     (await ritaglia('    const handleSaveChanges = async ')) + '\n' + (await ritaglia('    const handleCloseProject = () => {')) +
@@ -90,7 +90,7 @@ const creaApp = async (prima, txtB = bloccato('b.txt')) => {
             B.tagDaRipristinare, () => null, { current: new Set() }, { chime() { } }, N.avvisoImport, t,
             (m) => stato.notifiche.push(m), { current: null }, { log() { }, warn() { }, error() { } },
             async (lista) => { stato.scritte = lista.map(i => i.file.name); return true; }, G.fotoDaSalvare,
-            (d) => { if (d && d.isOpen) stato.finestra = 'tre scelte'; }, (d) => { if (d && d.isOpen) stato.finestra = 'conferma semplice'; }, () => { });
+            (d) => { if (d && d.isOpen) stato.finestra = 'tre scelte'; }, (d) => { if (d && d.isOpen) stato.finestra = 'conferma semplice'; }, () => { }, { current: 0 });
     };
     await render().processImportData([{ name: 'b.png' }, { name: 'c.png' }], [txtB, leggibile('c.txt', 'blue sky,')]);
     const app = {

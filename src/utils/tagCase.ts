@@ -73,3 +73,16 @@ export const countNewTagsIgnoringCase = (base: string[], incoming: string[]): nu
 //   Compared regardless of case.
 export const hasTagsBeyondTriggers = (tags: string[], triggers: string[]): boolean =>
     tags.some(tag => !hasTagIgnoringCase(triggers, tag));
+
+// ITALIANO: il testo scritto o incollato in un campo che aggiunge tag, diviso su virgole e a capo,
+//   senza vuoti e senza doppioni (a parte le maiuscole). Un elenco "1girl, solo, smile" incollato
+//   nel visualizzatore o nel pannello in blocco diventava UN tag con le virgole dentro: il .txt usciva
+//   con dei doppioni ("smile, smile,") e al caricamento dopo tornavano tag diversi. Il campo delle
+//   card (TagInput) divideva gia' cosi'.
+// ENGLISH: the text typed or pasted into a field that adds tags, split on commas and line breaks,
+//   with no empties and no duplicates (apart from case). A list "1girl, solo, smile" pasted into the
+//   viewer or the bulk panel became ONE tag with the commas inside: the .txt came out with duplicates
+//   ("smile, smile,") and the next load brought back different tags. The cards' field (TagInput)
+//   already split this way.
+export const splitTagInput = (testo: string): string[] =>
+    uniqueTagsIgnoringCase(String(testo || '').split(/[,\n\r]+/).map(tag => tag.trim()).filter(tag => tag.length > 0));

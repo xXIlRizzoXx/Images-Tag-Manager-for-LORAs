@@ -55,6 +55,10 @@ console.log('\n--- src/App.tsx, processImportData ---');
 dice('processImportData trovato', true, corpo !== '');
 dice('nessun simbolo ↻ o ⊘ incollato all\'avviso', false, /[↻⊘]/.test(corpo));
 dice('l\'avviso passa da avvisoImport', true, /showNotification\(\s*avviso\.testo\s*,\s*avviso\.tipo\s*\)/.test(corpo) && /avvisoImport\(/.test(corpo));
+// ITALIANO: i nomi dei .txt saltati arrivano all'avviso: tutti e due i rami (oltre 1 MB, illeggibile).
+// ENGLISH: the names of the skipped .txt files reach the notice: both branches (over 1 MB, unreadable).
+dice('ogni .txt saltato mette il suo nome in nomiSaltati, e l\'avviso li riceve', [2, true],
+    [(corpo.match(/skippedTxtCount\+\+;\s*nomiSaltati\.push\(/g) || []).length, /avvisoImport\(t, \{[^}]*\bnomiSaltati\b[^}]*\}\)/.test(corpo)]);
 
 // ITALIANO: tre frasi intere sono piu' lunghe dei simboli (in tedesco ~165 caratteri): il messaggio
 //           a comparsa deve poter andare a capo, altrimenti esce dalla finestra da 1280 px.
@@ -73,10 +77,27 @@ if (N) {
         const t = lingue[l];
         const a = N.avvisoImport(t, { caricate: 120, ripristinate: 3, saltati: 2, accorciati: 0 });
         dice(`${l}: 120 caricate, 3 recuperate, 2 saltati -> tre frasi intere`,
-            { testo: [t.successImport.replace('{n}', '120'), t.importRestoredFromBackup.replace('{n}', '3'), t.importTxtSkipped.replace('{n}', '2')].join(' · '), tipo: 'success' }, a);
+            { testo: [t.successImport.replace('{n}', '120'), t.importRestoredFromBackup.replace('{n}', '3'), t.importTxtSkipped.replace('{n}', '2')].join(' · '), tipo: 'info' }, a);
         const uno = N.avvisoImport(t, { caricate: 1, ripristinate: 1, saltati: 1, accorciati: 0 });
         dice(`${l}: con 1 si legge "…: 1" in ogni frase`, true,
             uno.testo === [t.successImport, t.importRestoredFromBackup, t.importTxtSkipped].map(s => s.replace('{n}', '1')).join(' · '));
+    }
+    console.log('\n--- i .txt saltati: avviso blu (non verde di riuscita) e coi loro nomi ---');
+    for (const l of CODICI) {
+        const s = lingue[l] && lingue[l].importTxtSkippedNames;
+        dice(`${l}: importTxtSkippedNames presente, con {names} una sola volta`, true, typeof s === 'string' && s.split('{names}').length === 2);
+    }
+    {
+        const t = lingue.en;
+        const nomi = (x) => String(t.importTxtSkippedNames).replace('{names}', x);
+        dice('2 saltati coi nomi: tre frasi intere, tipo info', { testo: [t.successImport.replace('{n}', '300'), t.importTxtSkipped.replace('{n}', '2'), nomi('a.txt, b.txt')].join(' · '), tipo: 'info' },
+            N.avvisoImport(t, { caricate: 300, ripristinate: 0, saltati: 2, accorciati: 0, nomiSaltati: ['a.txt', 'b.txt'] }));
+        dice('1 saltato: il suo nome, letto giusto', { testo: [t.successImport.replace('{n}', '1'), t.importTxtSkipped.replace('{n}', '1'), nomi('a.txt')].join(' · '), tipo: 'info' },
+            N.avvisoImport(t, { caricate: 1, ripristinate: 0, saltati: 1, accorciati: 0, nomiSaltati: ['a.txt'] }));
+        dice('5 saltati: i primi tre nomi e i puntini', [t.successImport.replace('{n}', '9'), t.importTxtSkipped.replace('{n}', '5'), nomi('a.txt, b.txt, c.txt…')].join(' · '),
+            N.avvisoImport(t, { caricate: 9, ripristinate: 0, saltati: 5, accorciati: 0, nomiSaltati: ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt'] }).testo);
+        dice('saltati e accorciati insieme: resta l\'avviso d\'errore', 'error',
+            N.avvisoImport(t, { caricate: 9, ripristinate: 0, saltati: 1, accorciati: 1, nomiSaltati: ['a.txt'] }).tipo);
     }
     const t = lingue.en;
     console.log('\n--- quello che NON deve cambiare ---');

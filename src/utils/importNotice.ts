@@ -18,6 +18,7 @@ type TestiAvviso = {
     importTxtShortened: string;
     importRestoredFromBackup: string;
     importTxtSkipped: string;
+    importTxtSkippedNames: string;
 };
 
 // ITALIANO: Il messaggio e' fatto di FRASI INTERE, tradotte, unite da " · ". Prima alle foto
@@ -36,14 +37,22 @@ type TestiAvviso = {
 //   There is ONE message only: showNotification replaces the one on screen, it does not queue.
 //   If some .txt were shortened, the error warning takes the place of "Images loaded", as before,
 //   and the other sentences follow it.
+//   ITALIANO: con dei .txt saltati l'avviso non e' piu' verde di riuscita ma blu, e dice i primi tre
+//   nomi (`nomiSaltati`): prima diceva solo quanti, e quelle foto sembravano senza tag senza modo di
+//   sapere quali fossero.
+//   ENGLISH: with skipped .txt files the notice is no longer a green success but blue, and names the
+//   first three (`nomiSaltati`): it used to say only how many, and those photos looked untagged with
+//   no way to find out which they were.
 export const avvisoImport = (
     t: TestiAvviso,
-    n: { caricate: number; ripristinate: number; saltati: number; accorciati: number },
-): { testo: string; tipo: 'success' | 'error' } => {
+    n: { caricate: number; ripristinate: number; saltati: number; accorciati: number; nomiSaltati?: string[] },
+): { testo: string; tipo: 'success' | 'error' | 'info' } => {
     const parti = [n.accorciati > 0
         ? t.importTxtShortened.replace('{n}', String(n.accorciati))
         : t.successImport.replace('{n}', String(n.caricate))];
     if (n.ripristinate > 0) parti.push(t.importRestoredFromBackup.replace('{n}', String(n.ripristinate)));
     if (n.saltati > 0) parti.push(t.importTxtSkipped.replace('{n}', String(n.saltati)));
-    return { testo: parti.join(' · '), tipo: n.accorciati > 0 ? 'error' : 'success' };
+    const nomi = n.saltati > 0 && Array.isArray(n.nomiSaltati) ? n.nomiSaltati.filter(Boolean) : [];
+    if (nomi.length > 0) parti.push(t.importTxtSkippedNames.replace('{names}', nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
+    return { testo: parti.join(' · '), tipo: n.accorciati > 0 ? 'error' : n.saltati > 0 ? 'info' : 'success' };
 };

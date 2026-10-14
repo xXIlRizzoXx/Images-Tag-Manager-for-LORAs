@@ -22,7 +22,7 @@ import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../uti
 import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
-import { hasTagIgnoringCase } from '../utils/tagCase';
+import { hasTagIgnoringCase, splitTagInput } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
@@ -146,9 +146,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const handleSidebarKeyDown = (e: any) => {
         if (e.key === ',' || e.key === 'Enter') {
             e.preventDefault();
-            const newTag = filterText.trim().replace(/,$/, '');
-            if (newTag && !hasTagIgnoringCase(currentTags, newTag)) {
-                updateTags(image.id, [...currentTags, newTag]);
+            // ITALIANO: un elenco incollato ("1girl, solo, smile") diventa un tag per voce (vedi splitTagInput).
+            // ENGLISH: a pasted list ("1girl, solo, smile") becomes one tag per item (see splitTagInput).
+            const nuovi = splitTagInput(filterText).filter(tag => !hasTagIgnoringCase(currentTags, tag));
+            if (nuovi.length > 0) {
+                updateTags(image.id, [...currentTags, ...nuovi]);
                 setFilterText('');
                 soundManager.pop();
             }

@@ -112,7 +112,7 @@ console.log('\n--- processImportData mette la sottocartella sulla foto ---');
         'setImportSummary', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'nuovoIdFoto', 'backupDellImport',
         'localStorage', 'makeFolderKeyer', 'makeBackupKeyer', 'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport',
         'tagDaRipristinare', 'asDirHandle', 'anteprimeProgettoRef', 'soundManager', 'avvisoImport', 't', 'showNotification',
-        'folderInputRef', 'console'];
+        'folderInputRef', 'console', 'importAttiviRef'];
     const fabbrica = new Function(...NOMI, (await ritaglia('    const processImportData = async (')) + '\nreturn processImportData;');
     let immagini = [];
     let id = 0;
@@ -120,7 +120,7 @@ console.log('\n--- processImportData mette la sottocartella sulla foto ---');
         () => { }, () => { }, () => { }, () => { }, B.folderSignature, () => 'id' + (++id), B.backupDellImport,
         { getItem: () => null }, S.makeFolderKeyer, () => (f) => 'dataset\x1f' + f.name, 1024 * 1024, S.parseSidecarText,
         async () => ({ url: 'blob:finto', width: 1, height: 1 }), S.tagDiImport, B.tagDaRipristinare, () => null,
-        { current: new Set() }, { chime() { } }, N.avvisoImport, t, () => { }, { current: null }, { log() { }, warn() { }, error() { } });
+        { current: new Set() }, { chime() { } }, N.avvisoImport, t, () => { }, { current: null }, { log() { }, warn() { }, error() { } }, { current: 0 });
     const a = { name: 'a.png' }, r = { name: 'r.png' };
     await fn([a, r], [], { name: 'dataset' }, new Map(), null, null, new Map([[a, '10_face'], [r, '']]));
     dice('a.png ricorda "10_face", r.png (radice) ""', ['10_face', ''], immagini.map(i => (typeof i.cartellaRel === 'string' ? i.cartellaRel : null)));

@@ -42,7 +42,7 @@ import { isLetterShortcut } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
 import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
-import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers } from './utils/tagCase';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
@@ -393,6 +393,11 @@ export default function App() {
     //          stay on screen now that the window no longer closes right away.
     const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    // ITALIANO: quanti import sono in corso (processImportData). Un secondo import puo' partire
+    //           durante il primo: chi finisce prima non deve spegnere la striscia dell'altro.
+    // ENGLISH: how many imports are running (processImportData). A second import can start during
+    //          the first: whichever ends first must not switch off the other's strip.
+    const importAttiviRef = useRef(0);
     const [importProgress, setImportProgress] = useState(0);
     // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
     //           per la percentuale; isSaving decide se mostrarla e con quale etichetta.
@@ -793,6 +798,20 @@ export default function App() {
     const segnaEditorSporco = useCallback((sporco: boolean) => { tagEditorDirtyRef.current = sporco; }, []);
     const saveCloseDialogRef = useRef(saveCloseDialog);
     saveCloseDialogRef.current = saveCloseDialog;
+    // ITALIANO: un salvataggio o un'esportazione sta scrivendo (isSaving). La X della finestra
+    //           chiudeva anche a meta' archivio, senza chiedere niente se non c'erano modifiche, e
+    //           l'archivio a meta' andava perso. Ora la PRIMA X durante una scrittura si ferma e
+    //           avvisa; una seconda X chiude comunque (chiusuraInScritturaRef), cosi' un'esportazione
+    //           bloccata non tiene la finestra aperta per sempre. Finita la scrittura si riparte da capo.
+    // ENGLISH: a save or an export is writing (isSaving). The window's X closed even mid-archive,
+    //          asking nothing when there were no edits, and the half-written archive was lost. Now the
+    //          FIRST X during a write stops and warns; a second X closes anyway
+    //          (chiusuraInScritturaRef), so a stuck export does not keep the window open forever. Once
+    //          the write is over it starts again from scratch.
+    const isSavingRef = useRef(isSaving);
+    isSavingRef.current = isSaving;
+    const chiusuraInScritturaRef = useRef(false);
+    if (!isSaving) chiusuraInScritturaRef.current = false;
     useEffect(() => {
         const allaChiusura = (e: BeforeUnloadEvent) => {
             // ITALIANO: l'utente ha gia' deciso (salvato, o chiuso senza salvare): si chiude e basta.
@@ -800,10 +819,28 @@ export default function App() {
             if (permettiChiusuraRef.current) return;
             const lista = imagesRef.current;
             const editorSporco = tagEditorDirtyRef.current;
-            if (lista.length === 0 && !editorSporco) return;
+            // ITALIANO: con l'elenco vuoto il backup si riscrive lo stesso se nella sessione c'erano
+            //           foto (backupConFotoRef, come l'effetto col timer): chiusa l'ultima foto con la X
+            //           e la finestra entro un secondo, il timer moriva con la pagina e le modifiche
+            //           buttate via tornavano come "recuperate". All'avvio (nessuna foto) non si tocca.
+            // ENGLISH: with an empty list the backup is still rewritten when the session had photos
+            //          (backupConFotoRef, as the timer effect does): with the last photo closed with the
+            //          X and the window within a second, the timer died with the page and the discarded
+            //          edits came back as "recovered". At start-up (no photo) it is left alone.
+            const conFoto = lista.length > 0 || backupConFotoRef.current;
+            if (!conFoto && !editorSporco) return;
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-            if (lista.length > 0) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);
+            if (conFoto) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);
             if (!(window as any).electronAPI) return;
+            // ITALIANO: una scrittura in corso (vedi isSavingRef): la prima X si ferma e avvisa.
+            // ENGLISH: a write in progress (see isSavingRef): the first X stops and warns.
+            if (isSavingRef.current && !chiusuraInScritturaRef.current) {
+                e.preventDefault();
+                e.returnValue = false;
+                chiusuraInScritturaRef.current = true;
+                setTimeout(() => showNotification(t.closeWhileWriting, 'info'), 0);
+                return;
+            }
             // ITALIANO: prima la bozza dell'editor (vedi tagEditorDirtyRef); le foto si chiedono alla X dopo.
             // ENGLISH: the editor's draft first (see tagEditorDirtyRef); the photos are asked at the next X.
             if (editorSporco) {
@@ -1464,6 +1501,13 @@ export default function App() {
     //          sidecar not yet on disk) I touch NOTHING: better not to sync than to corrupt.
     const handleTagEditorSaved = async (savedName: string, savedTags: string[], savedHandle?: any) => {
         if (!savedHandle || typeof savedHandle.isSameEntry !== 'function') return;
+        // ITALIANO: solo un .txt e' il file di tag di una foto. Un img_001.json salvato accanto a
+        //           img_001.png la "allineava" lo stesso (stesso nome, e isSameEntry lo provava il
+        //           .json stesso): la foto risultava salvata mentre il suo .txt restava com'era.
+        // ENGLISH: only a .txt is a photo's tag file. An img_001.json saved next to img_001.png still
+        //          "synced" it (same name, and isSameEntry was proven by the .json itself): the photo
+        //          counted as saved while its .txt stayed as it was.
+        if (!savedName.toLowerCase().endsWith('.txt')) return;
         // ITALIANO: il nome si confronta SENZA maiuscole, come fa l'import (makeFolderKeyer):
         //           IMG_001.JPG e img_001.txt sono una coppia. L'identita' vera la prova isSameEntry.
         // ENGLISH: the name is compared WITHOUT case, as the import does (makeFolderKeyer):
@@ -1481,7 +1525,41 @@ export default function App() {
                 if (await savedHandle.isSameEntry(sidecar)) { matchId = img.id; break; }
             } catch { /* ITALIANO: sidecar assente o non confrontabile: salto, per prudenza */ }
         }
-        if (!matchId) return;
+        if (!matchId) {
+            // ITALIANO: foto SENZA cartella ("Carica immagini", trascinamento): nessun handle da
+            //           confrontare, e prima restavano coi tag vecchi, che il primo "Salva" dopo una
+            //           modifica riscriveva sopra il file dell'editor. In Electron si rilegge il .txt
+            //           di ognuna dal SUO percorso vero (lo stesso canale dell'import): solo se sul
+            //           disco c'e' altro rispetto a originalTags la foto si allinea, come sopra. Una
+            //           foto omonima di un'altra cartella, col suo .txt invariato, non cambia.
+            // ENGLISH: photos WITHOUT a folder ("Load images", drag and drop): no handle to compare,
+            //          and they used to keep the old tags, which the first "Save" after an edit wrote
+            //          over the editor's file. In Electron each one's .txt is read again from ITS real
+            //          path (the same channel as the import): only if the disk holds something other
+            //          than originalTags does the photo sync, as above. A same-named photo from another
+            //          folder, with its .txt unchanged, does not change.
+            const senzaCartella = images.filter(img => !img.dirHandle && img.file.name.split('.').slice(0, -1).join('.').toLowerCase() === base);
+            if (senzaCartella.length === 0) return;
+            const api = (window as any).electronAPI;
+            if (!api || typeof api.readSidecarTags !== 'function' || typeof api.getPathForFile !== 'function') return;
+            const dalDisco = new Map<string, string[]>();
+            for (const img of senzaCartella) {
+                const percorso = api.getPathForFile(img.file) || img.filePath || '';
+                if (!percorso) continue;
+                try {
+                    const letti = await api.readSidecarTags([percorso]);
+                    const s = Array.isArray(letti) ? letti[0] : null;
+                    if (!s || s.skipped || typeof s.content !== 'string' || String(s.name).toLowerCase() !== savedName.toLowerCase()) continue;
+                    const sulDisco = parseSidecarText(s.content).tags;
+                    if (JSON.stringify(sulDisco) !== JSON.stringify(img.originalTags || [])) dalDisco.set(img.id, sulDisco);
+                } catch { /* ITALIANO: .txt non rileggibile: la foto resta com'era / ENGLISH: .txt not readable: the photo stays as it was */ }
+            }
+            if (dalDisco.size === 0) return;
+            setImages(prev => prev.map(i =>
+                dalDisco.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], dalDisco.get(i.id) || [], globalTriggers) } : i
+            ));
+            return;
+        }
         // ITALIANO: una trigger word ancora da salvare resta sulla foto (vedi tagDopoEditor): l'editor
         //           non l'ha mai vista, e prima spariva insieme alla sua scrittura nel .txt.
         // ENGLISH: a trigger word still to be saved stays on the photo (see tagDopoEditor): the editor
@@ -2259,9 +2337,15 @@ export default function App() {
         //          We do NOT clear it when this import has none — "Load images" used to set it to
         //          null, silently degrading every later save into browser downloads.
         if (handle) setDirHandle(handle);
+        // ITALIANO: la barra riparte da zero solo se nessun altro import la sta usando (vedi importAttiviRef).
+        // ENGLISH: the bar restarts from zero only when no other import is using it (see importAttiviRef).
+        if (importAttiviRef.current === 0) setImportProgress(0);
+        importAttiviRef.current++;
         setIsImporting(true);
-        setImportProgress(0);
         let skippedTxtCount = 0;
+        // ITALIANO: i nomi dei .txt saltati: l'avviso di fine import dice i primi (vedi avvisoImport).
+        // ENGLISH: the names of the skipped .txt files: the end-of-import notice names the first ones (see avvisoImport).
+        const nomiSaltati: string[] = [];
         let shortenedTxtCount = 0;
         let restoredCount = 0;
         try {
@@ -2339,6 +2423,7 @@ export default function App() {
                         // ENGLISH: A legit sidecar weighs a few KB: over 1 MB is suspicious, skip it
                         console.warn(`[Import] Skipped oversized .txt (${txtFiles[i].size} bytes):`, txtFiles[i].name);
                         skippedTxtCount++;
+                        nomiSaltati.push(String(txtFiles[i].name || ''));
                         txtNonLetti.add(folderKeyOf(txtFiles[i]));
                     } else {
                         const text = await txtFiles[i].text();
@@ -2355,6 +2440,7 @@ export default function App() {
                     // ENGLISH: Unreadable file (locked/moved): skip it, the import must not get stuck
                     console.warn('[Import] Unreadable .txt skipped:', txtFiles[i]?.name, e);
                     skippedTxtCount++;
+                    nomiSaltati.push(String((txtFiles[i] && txtFiles[i].name) || ''));
                     if (txtFiles[i]) txtNonLetti.add(folderKeyOf(txtFiles[i]));
                 }
                 setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
@@ -2494,15 +2580,18 @@ export default function App() {
             //          drop the cut part from disk. The warning takes the import message's place (only
             //          one stays on screen): the loaded photos show anyway. Photos recovered from the
             //          backup and skipped .txt files are told in whole sentences (avvisoImport).
-            const avviso = avvisoImport(t, { caricate: newImages.length, ripristinate: restoredCount, saltati: skippedTxtCount, accorciati: shortenedTxtCount });
+            const avviso = avvisoImport(t, { caricate: newImages.length, ripristinate: restoredCount, saltati: skippedTxtCount, accorciati: shortenedTxtCount, nomiSaltati });
             showNotification(avviso.testo, avviso.tipo);
         } catch (error: any) {
             console.error('[Import] Failed', error);
             showNotification(`${t.aiError || 'Error'}: ${String(error?.message || error || '').slice(0, 150)}`, 'error');
         } finally {
             // ITALIANO: Comunque vada, l'UI di import non deve restare bloccata
+            //           (si spegne con l'ULTIMO import in corso, vedi importAttiviRef).
             // ENGLISH: No matter what, the import UI must never stay stuck
-            setIsImporting(false);
+            //          (it goes off with the LAST running import, see importAttiviRef).
+            importAttiviRef.current = Math.max(0, importAttiviRef.current - 1);
+            setIsImporting(importAttiviRef.current > 0);
             if (folderInputRef.current) folderInputRef.current.value = '';
         }
     };
@@ -3111,6 +3200,36 @@ export default function App() {
         const total = imagesToSave.length;
         let done = 0;
         const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, Math.round((done / total) * 100))); };
+        // ITALIANO: due copie della stessa foto (la stessa cartella aperta due volte) con tag DIVERSI
+        //           finirebbero nello stesso .txt: vinceva l'ultima scritta, e la card dell'altra
+        //           mostrava come salvata una modifica che sul disco non c'era piu'. Non si sceglie
+        //           in silenzio: nessuna delle due si scrive, restano da salvare e l'avviso dice di
+        //           chiuderne una. Due copie con gli stessi tag si salvano come sempre.
+        //           `chiave` dice dove finisce il .txt; `stessoPosto` confronta due chiavi uguali.
+        // ENGLISH: two copies of the same photo (the same folder opened twice) with DIFFERENT tags
+        //          would end in the same .txt: the last one written won, and the other one's card
+        //          showed as saved an edit that was no longer on disk. No silent pick: neither is
+        //          written, both stay to be saved and the notice says to close one. Two copies with
+        //          the same tags are saved as always.
+        //          `chiave` says where the .txt ends up; `stessoPosto` compares two equal keys.
+        const doppie: string[] = [];
+        const inConflitto = async (lista: any[], chiave: (img: any) => string, stessoPosto: (a: any, b: any) => Promise<boolean>) => {
+            const perChiave = new Map<string, any[][]>();
+            for (const img of lista) {
+                const k = chiave(img);
+                if (!k) continue;
+                const gruppi = perChiave.get(k) || [];
+                let gruppo: any[] | null = null;
+                for (const g of gruppi) if (await stessoPosto(g[0], img)) { gruppo = g; break; }
+                if (gruppo) gruppo.push(img); else gruppi.push([img]);
+                perChiave.set(k, gruppi);
+            }
+            const fuori = new Set<string>();
+            for (const gruppi of perChiave.values()) for (const g of gruppi) {
+                if (g.length > 1 && new Set(g.map(img => getOrderedTagString(img.tags))).size > 1) g.forEach(img => fuori.add(img.id));
+            }
+            return fuori;
+        };
 
         if (total > 0) { setIsSaving(true); setImportProgress(0); }
         try {
@@ -3124,7 +3243,14 @@ export default function App() {
             //          photos unmarked and the rest never attempted.
             if (withFolder.length > 0) {
                 showNotification(t.processingFiles, "info");
+                // ITALIANO: stessa cartella anche da due handle diversi (due "Carica cartella"): isSameEntry.
+                // ENGLISH: the same folder even from two different handles (two "Load folder"): isSameEntry.
+                const doppieCartella = await inConflitto(withFolder, img => sidecarTagFileName(img.file.name).toLowerCase(), async (a, b) => {
+                    if (a.dirHandle === b.dirHandle) return true;
+                    try { return typeof a.dirHandle.isSameEntry === 'function' && await a.dirHandle.isSameEntry(b.dirHandle); } catch { return false; }
+                });
                 for (const img of withFolder) {
+                    if (doppieCartella.has(img.id)) { doppie.push(img.file.name); bump(); continue; }
                     try {
                         const tagString = getOrderedTagString(img.tags);
                         // ITALIANO: lo stesso .txt che l'import rilegge e Kohya usa (vedi sidecarTagFileName).
@@ -3170,6 +3296,12 @@ export default function App() {
             let remaining = withoutFolder;
             if (remaining.length > 0 && api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
                 showNotification(t.processingFiles, "info");
+                // ITALIANO: la stessa foto caricata due volte ha lo stesso percorso (Windows non bada alle maiuscole).
+                // ENGLISH: the same photo loaded twice has the same path (Windows ignores case).
+                const doppiePercorso = await inConflitto(remaining, img => String(api.getPathForFile(img.file) || '').toLowerCase(), async () => true);
+                remaining.forEach(img => { if (doppiePercorso.has(img.id)) doppie.push(img.file.name); });
+                bump(doppiePercorso.size);
+                remaining = remaining.filter(img => !doppiePercorso.has(img.id));
                 const items = remaining.map(img => ({ imagePath: api.getPathForFile(img.file) || '', content: getOrderedTagString(img.tags) }));
                 try {
                     const res = await api.writeSidecarTags(items);
@@ -3266,14 +3398,20 @@ export default function App() {
                 ? t.saveNoneSaved.replace('{names}', primi)
                 : t.saveSomeFailed.replace('{saved}', String(savedIds.size)).replace('{total}', String(total)).replace('{names}', primi));
         }
+        // ITALIANO: le copie doppie non scritte (vedi inConflitto), un nome per foto.
+        // ENGLISH: the duplicate copies not written (see inConflitto), one name per photo.
+        if (doppie.length > 0) {
+            const nomi = [...new Set(doppie)];
+            frasi.push(t.saveSameFileTwice.replace('{names}', nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
+        }
         if (scaricate > 0) frasi.push(scaricate === 1 ? t.saveDownloadedOne : t.saveDownloadedMany.replace('{n}', String(scaricate)));
         if (frasi.length === 0) frasi.push(t.successSaveChanges);
         // ITALIANO: un .txt svuotato ferma Kohya: lo si dice, senza bloccare niente.
         // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
         if (svuotate > 0) frasi.push(svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate)));
-        const riuscito = failedNames.length === 0 && scaricate === 0;
+        const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0;
         if (riuscito) soundManager.chime();
-        showNotification(frasi.join(' '), failedNames.length > 0 ? "error" : (scaricate > 0 || svuotate > 0) ? "info" : "success");
+        showNotification(frasi.join(' '), (failedNames.length > 0 || doppie.length > 0) ? "error" : (scaricate > 0 || svuotate > 0) ? "info" : "success");
         return riuscito;
     };
 
@@ -3825,6 +3963,14 @@ export default function App() {
     //          reachable) the project is NOT closed and the dialog stays open, so no tags
     //          are lost: performSave already reports the error.
     const handleSaveAndCloseProject = async () => {
+        // ITALIANO: un'esportazione sta ancora scrivendo: un salvataggio adesso le spegnerebbe la
+        //           barra a meta' (vedi isSavingRef). La finestra resta aperta e si riprova dopo.
+        // ENGLISH: an export is still writing: a save now would switch its bar off halfway (see
+        //          isSavingRef). The dialog stays open and the user tries again later.
+        if (isSavingRef.current) {
+            showNotification(t.saveWaitForWrite, 'info');
+            return;
+        }
         setSaveCloseDialog({ isOpen: true, isSaving: true });
         let saved = false;
         try {
@@ -5171,7 +5317,11 @@ export default function App() {
                             </div>
                             {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta — arancione */}
                             {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app — orange */}
-                            <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
+                            {/* ITALIANO: spento anche mentre si scrive (isSaving), come Salva ed Esporta: "Salva e
+                                chiudi" spegneva a meta' la barra di un'esportazione in corso.
+                                ENGLISH: also off while writing (isSaving), like Save and Export: "Save and
+                                close" switched off the bar of a running export halfway. */}
+                            <button onClick={handleCloseProject} disabled={images.length === 0 || isSaving} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${(images.length === 0 || isSaving) ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
                                 <X size={16} />
                                 <span>{t.closeAllImages}</span>
                             </button>
@@ -5468,9 +5618,11 @@ export default function App() {
                                         onKeyDown={(e: any) => {
                                             if (e.key === 'Enter' || e.key === ',') {
                                                 e.preventDefault();
-                                                const newTag = e.target.value.trim().replace(/,$/, '');
-                                                if (newTag) {
-                                                    setStagedBulkTags(prev => hasTagIgnoringCase(prev, newTag) ? prev : [...prev, newTag]);
+                                                // ITALIANO: un elenco incollato diventa un tag per voce (vedi splitTagInput).
+                                                // ENGLISH: a pasted list becomes one tag per item (see splitTagInput).
+                                                const nuovi = splitTagInput(e.target.value);
+                                                if (nuovi.length > 0) {
+                                                    setStagedBulkTags(prev => [...prev, ...nuovi.filter(tag => !hasTagIgnoringCase(prev, tag))]);
                                                     e.target.value = '';
                                                     soundManager.pop();
                                                 }
@@ -5606,9 +5758,11 @@ export default function App() {
                                 onKeyDown={(e: any) => {
                                     if (e.key === 'Enter' || e.key === ',') {
                                         e.preventDefault();
-                                        const newTag = e.target.value.trim().replace(/,$/, '');
-                                        if (newTag && !hasTagIgnoringCase(allUniqueTags, newTag)) {
-                                            setCustomProjectTags(prev => [...prev, newTag]);
+                                        // ITALIANO: un elenco incollato diventa un tag per voce (vedi splitTagInput).
+                                        // ENGLISH: a pasted list becomes one tag per item (see splitTagInput).
+                                        const nuovi = splitTagInput(e.target.value).filter(tag => !hasTagIgnoringCase(allUniqueTags, tag));
+                                        if (nuovi.length > 0) {
+                                            setCustomProjectTags(prev => [...prev, ...nuovi.filter(tag => !hasTagIgnoringCase(prev, tag))]);
                                             e.target.value = '';
                                             soundManager.pop();
                                         }
