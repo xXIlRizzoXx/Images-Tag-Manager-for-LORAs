@@ -80,13 +80,25 @@ type VoceBackup = { tags: string[]; base: string };
 //      trascinamento, ripiego del browser) fanno un lotto come gli altri, col nome di cartella
 //      vuoto: prima restavano fuori e dopo un crash le loro modifiche andavano perse, mentre il
 //      README promette il recupero per tutte. Le riconosce la stessa impronta (numero, prima e
-//      ultima foto); in Electron la chiave di ogni foto porta anche il suo percorso vero, e ogni
-//      voce l'impronta dei tag su disco (`base`), quindi non possono finire su un'altra serie.
+//      ultima foto); in Electron la chiave di ogni foto porta anche il suo percorso vero (anche
+//      trascinandole senza nessun .txt accanto), e ogni voce l'impronta dei tag su disco (`base`),
+//      quindi non possono finire su un'altra serie. Una foto la cui chiave non ha la cartella (nel
+//      browser, dove il percorso non si conosce) resta fuori: la `base` di due serie senza tag e'
+//      la stessa, e i nomi da soli non le distinguono.
 //      Vanno riaperte allo stesso modo e tutte insieme, come erano state caricate.
 //   3) Due lotti con la STESSA impronta (la stessa cartella aperta due volte, o due copie identiche
 //      nei nomi) non si possono distinguere alla riapertura: si lasciano fuori entrambi, perche'
 //      i tag dell'uno potrebbero finire sull'altro. E' il lato sicuro, ed e' quello che succedeva
-//      gia' prima con due cartelle aperte.
+//      gia' prima con due cartelle aperte. Un lotto di sole foto chiuse con la "x" (nessuna
+//      foto in vista) non e' un gemello: non ha niente da scrivere, e la sua cartella riaperta e'
+//      l'unica copia in vista. Prima lo era, e da quel momento nessuna modifica entrava piu' nel
+//      backup.
+//   4) `precedente` = il backup gia' salvato. Le sue sorgenti di cartelle che NON sono aperte in
+//      memoria restano: dopo un crash appartengono a cartelle non ancora riaperte. Prima, riaprendo
+//      la prima cartella, il backup si riscriveva con quella sola e le altre perdevano le modifiche;
+//      aprendo per prima una cartella senza modifiche si cancellava tutto. Una sorgente di una
+//      cartella aperta lascia il posto a quella in memoria (salvata, modificata o gemella). Le
+//      tolgono per davvero solo Chiudi progetto e Reset.
 // ENGLISH: What to write into the backup. Null = nothing to keep: the backup must be removed.
 //   1) It holds ONLY the photos with unsaved edits (tags different from originalTags, the same test
 //      "Save changes" uses). It used to hold ALL of them, and it survived a normal quit with
@@ -103,32 +115,54 @@ type VoceBackup = { tags: string[]; base: string };
 //      make a batch like any other, with an empty folder name: they used to stay out and after a
 //      crash their edits were lost, while the README promises recovery for all of them. The same
 //      fingerprint recognises them (count, first and last photo); in Electron each photo's key also
-//      carries its real path, and each entry the fingerprint of the tags on disk (`base`), so they
-//      cannot land on another set. They must be reopened the same way and all together, as loaded.
+//      carries its real path (when dropped with no .txt beside them too), and each entry the
+//      fingerprint of the tags on disk (`base`), so they cannot land on another set. A photo whose
+//      key has no folder (in the browser, where the path is unknown) stays out: two untagged sets
+//      share the same `base`, and the names alone cannot tell them apart.
+//      They must be reopened the same way and all together, as loaded.
 //   3) Two batches with the SAME fingerprint (the same folder opened twice, or two copies with the
 //      same names) cannot be told apart on reopening: both are left out, since one's tags could
 //      land on the other. That is the safe side, and it is what already happened before with two
-//      folders open.
-export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string): { folder: string; sources: { signature: string; data: Record<string, VoceBackup> }[] } | null => {
-    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number }>();
+//      folders open. A batch made only of photos closed with the "x" (no photo in view) is not a
+//      twin: it has nothing to write, and its reopened folder is the only copy in view. It used to
+//      be one, and from then on no edit reached the backup any more.
+//   4) `precedente` = the backup already stored. Its sources for folders NOT open in memory stay:
+//      after a crash they belong to folders not reopened yet. Reopening the first folder used to
+//      rewrite the backup with that one alone and the others lost their edits; opening a folder with
+//      no edits first deleted everything. A source of an open folder gives way to the one in memory
+//      (saved, edited or twin). Only Close project and Reset really remove them.
+export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null): { folder: string; sources: { signature: string; data: Record<string, VoceBackup> }[] } | null => {
+    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number }>();
     const lottoDi = (lotto: string, cartella: string) => {
         let l = lotti.get(lotto);
-        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0 }; lotti.set(lotto, l); }
+        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0, vivi: 0 }; lotti.set(lotto, l); }
         if (cartella) l.cartella = cartella;
         return l;
     };
     const presenti = new Set<string>();
+    const chiaviAperte = new Set<string>();
     for (const img of images) {
         presenti.add(img.id);
+        chiaviAperte.add(img.backupKey || (BACKUP_KEY_SEP + img.file.name));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
+        l.vivi++;
         if (img.isTrashed) continue;
         if (JSON.stringify(img.tags) === JSON.stringify(img.originalTags)) continue;
         // ITALIANO: chiave cartella+nome assegnata all'import (vedi makeBackupKeyer): due foto
         //           omonime in sottocartelle diverse restano separate.
         // ENGLISH: folder+name key assigned at import (see makeBackupKeyer): two same-named photos
         //          in different subfolders stay separate.
-        l.data[img.backupKey || (BACKUP_KEY_SEP + img.file.name)] = { tags: img.tags, base: improntaTag(img.originalTags || []) };
+        // ITALIANO: una chiave senza cartella (solo il nome: nel browser, dove il percorso non si
+        //           conosce) non entra: due serie con gli stessi nomi e senza tag avrebbero la stessa
+        //           impronta, le stesse chiavi e la stessa `base`, e le modifiche dell'una finirebbero
+        //           sull'altra.
+        // ENGLISH: a key with no folder (the name alone: in the browser, where the path is unknown)
+        //          stays out: two untagged sets with the same names would have the same fingerprint,
+        //          the same keys and the same `base`, and one's edits would land on the other.
+        const chiave = img.backupKey || (BACKUP_KEY_SEP + img.file.name);
+        if (chiave.startsWith(BACKUP_KEY_SEP)) continue;
+        l.data[chiave] = { tags: img.tags, base: improntaTag(img.originalTags || []) };
         l.voci++;
     }
     // ITALIANO: una foto chiusa e poi riportata con Ctrl+Z e' di nuovo in `images`: si conta una volta.
@@ -137,16 +171,48 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         if (!presenti.has(c.id)) lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
     }
     const firme = new Map<string, number>();
+    const aperte = new Set<string>();
     const conFirma: { firma: string; data: Record<string, VoceBackup>; voci: number }[] = [];
     for (const l of lotti.values()) {
         const firma = folderSignature(l.cartella, l.nomi);
-        firme.set(firma, (firme.get(firma) || 0) + 1);
+        aperte.add(firma);
+        if (l.vivi > 0) firme.set(firma, (firme.get(firma) || 0) + 1);
         conFirma.push({ firma, data: l.data, voci: l.voci });
     }
     const sources = conFirma
         .filter(l => l.voci > 0 && firme.get(l.firma) === 1)
         .map(l => ({ signature: l.firma, data: l.data }));
+    sources.unshift(...sorgentiDaTenere(precedente, aperte, chiaviAperte));
     return sources.length > 0 ? { folder: cartellaCorrente, sources } : null;
+};
+
+// ITALIANO: le sorgenti del backup salvato che appartengono a cartelle non aperte in memoria (vedi
+//   il punto 4 qui sopra). Si tengono solo le voci scritte da questa versione (con `base`, che
+//   alla riapertura protegge da un .txt cambiato nel frattempo); il formato precedente, a impronta
+//   unica, non si porta avanti, come gia' prima. Cade anche una voce la cui chiave appartiene a una
+//   foto in memoria: ora la scrive quella foto (per esempio una cartella la cui impronta e'
+//   cambiata perche' si e' svuotato il cestino).
+// ENGLISH: the stored backup's sources that belong to folders not open in memory (see point 4
+//   above). Only entries written by this version are kept (with `base`, which on reopening guards
+//   against a .txt changed meanwhile); the previous single-fingerprint format is not carried
+//   forward, as before. An entry whose key belongs to a photo in memory is dropped too: that photo
+//   writes it now (for example a folder whose fingerprint changed because the trash was emptied).
+const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, chiaviAperte: Set<string>): { signature: string; data: Record<string, VoceBackup> }[] => {
+    if (!precedente) return [];
+    let parsed: any = null;
+    try { parsed = JSON.parse(precedente); } catch (_) { return []; }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.sources)) return [];
+    const tenute: { signature: string; data: Record<string, VoceBackup> }[] = [];
+    for (const s of parsed.sources) {
+        if (!s || typeof s.signature !== 'string' || aperte.has(s.signature) || !s.data || typeof s.data !== 'object') continue;
+        const data: Record<string, VoceBackup> = {};
+        for (const [chiave, v] of Object.entries(s.data as Record<string, any>)) {
+            if (chiaviAperte.has(chiave) || chiave.startsWith(BACKUP_KEY_SEP)) continue;
+            if (v && Array.isArray(v.tags) && typeof v.base === 'string') data[chiave] = { tags: v.tags, base: v.base };
+        }
+        if (Object.keys(data).length > 0) tenute.push({ signature: s.signature, data });
+    }
+    return tenute;
 };
 
 // ITALIANO: Le voci del backup che appartengono alla cartella che si sta importando, o null.
@@ -173,10 +239,21 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
     const ts = typeof parsed.ts === 'number' ? parsed.ts : null;
     if (Array.isArray(parsed.sources)) {
         const uguali = parsed.sources.filter((s: any) => s && typeof s.signature === 'string' && s.signature === importSignature && s.data && typeof s.data === 'object');
-        return uguali.length === 1 ? { voci: uguali[0].data, ts } : null;
+        if (uguali.length !== 1) return null;
+        // ITALIANO: le voci con la chiave senza cartella (scritte prima che restassero fuori, vedi
+        //           costruisciBackup) non si applicano: potrebbero essere di un'altra serie.
+        // ENGLISH: entries with a folder-less key (written before they were left out, see
+        //          costruisciBackup) are not applied: they could belong to another set.
+        const voci: Record<string, any> = {};
+        for (const [chiave, v] of Object.entries(uguali[0].data as Record<string, any>)) {
+            if (!chiave.startsWith(BACKUP_KEY_SEP)) voci[chiave] = v;
+        }
+        return { voci, ts };
     }
+    // ITALIANO: il formato precedente vale solo per una cartella scelta, come allora.
+    // ENGLISH: the previous format only applies to a picked folder, as back then.
     const firma = typeof parsed.signature === 'string' ? parsed.signature : '';
-    if (firma !== '' && firma === importSignature && parsed.data && typeof parsed.data === 'object') return { voci: parsed.data, ts };
+    if (importFolder !== '' && firma !== '' && firma === importSignature && parsed.data && typeof parsed.data === 'object') return { voci: parsed.data, ts };
     return null;
 };
 
@@ -192,15 +269,40 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
 //   version's entries lack it (and that backup held ALL photos, unedited ones too): for those the
 //   .txt's date decides, and if it was rewritten after the backup (2 seconds of slack for FAT and
 //   network drives) the .txt wins.
+// ITALIANO: La versione precedente leggeva al massimo 100 caratteri per tag e 200 tag per file, e il
+//   suo backup aveva i tag gia' tagliati. Una didascalia piu' lunga tornava tagliata, contata come
+//   modifica, e il primo "Salva modifiche" scriveva su disco la frase monca. Per le sue voci un tag
+//   di 100 caratteri che e' l'inizio di un tag piu' lungo del .txt si rimette INTERO: se era
+//   l'unica differenza la voce non si applica, se c'era una modifica vera torna con la frase intera.
+//   Con piu' di 200 tag nel .txt la versione precedente non li vedeva tutti: vince il .txt.
+// ENGLISH: The previous version read at most 100 characters per tag and 200 tags per file, and its
+//   backup held the tags already cut. A longer caption came back cut, counted as an edit, and the
+//   first "Save changes" wrote the truncated sentence to disk. For its entries a 100-character tag
+//   that is the start of a longer tag in the .txt is put back WHOLE: if that was the only difference
+//   the entry is not applied, if there was a real edit it comes back with the whole sentence. With
+//   more than 200 tags in the .txt the previous version did not see them all: the .txt wins.
+const VECCHIO_MAX_CARATTERI = 100;
+const VECCHIO_MAX_TAG = 200;
+
 export const tagDaRipristinare = (entry: any, orderedTags: string[], originalTags: string[], globalTriggers: string[], sidecarMtime?: number, backupTs?: number | null): string[] | null => {
     if (!entry || !Array.isArray(entry.tags)) return null;
-    if (typeof entry.base === 'string') {
+    const vecchiaVersione = typeof entry.base !== 'string';
+    if (!vecchiaVersione) {
         if (entry.base !== improntaTag(originalTags)) return null;
     } else if (typeof backupTs === 'number' && typeof sidecarMtime === 'number' && sidecarMtime > backupTs + 2000) {
         return null;
+    } else if (originalTags.length > VECCHIO_MAX_TAG) {
+        return null;
     }
-    const backupTags = (entry.tags as unknown[])
-        .filter((x): x is string => typeof x === 'string')
+    let letti = (entry.tags as unknown[]).filter((x): x is string => typeof x === 'string');
+    if (vecchiaVersione) {
+        letti = [...new Set(letti.flatMap(x => {
+            if (x.length !== VECCHIO_MAX_CARATTERI) return [x];
+            const interi = originalTags.filter(d => d.length > VECCHIO_MAX_CARATTERI && d.slice(0, VECCHIO_MAX_CARATTERI) === x);
+            return interi.length > 0 ? interi : [x];
+        }))];
+    }
+    const backupTags = letti
         .map(x => x.slice(0, TXT_TAG_MAX_CHARS))
         .slice(0, TXT_MAX_TAGS_PER_FILE);
     const differs = JSON.stringify([...backupTags].sort()) !== JSON.stringify([...orderedTags].sort());

@@ -160,12 +160,21 @@ export const parseSidecarText = (text: string): { tags: string[]; truncated: boo
 //   first, same order, so a .txt that already has them does not count as modified). It used to be
 //   the same list as `tags`: a photo added while a trigger word was active showed it, but "Save
 //   changes" answered "No changes" and its .txt stayed without it.
-export const tagDiImport = (globalTriggers: string[], sidecarTags: string[]): { tags: string[]; originalTags: string[] } => {
+// ITALIANO: `txtNonLetto` = il .txt c'e' ma non si e' potuto leggere (oltre 1 MB, bloccato, un file
+//   di OneDrive solo in rete): cosa contiene non si sa, quindi originalTags = tags e la foto non
+//   risulta modificata. Contata come "senza .txt", il primo "Salva modifiche" scriveva la sola
+//   trigger SOPRA il file vero. Solo una modifica fatta apposta la fa salvare, come prima.
+// ENGLISH: `txtNonLetto` = the .txt exists but could not be read (over 1 MB, locked, a OneDrive
+//   online-only file): its content is unknown, so originalTags = tags and the photo does not count
+//   as modified. Counted as "no .txt", the first "Save changes" wrote the trigger alone OVER the real
+//   file. Only an edit made on purpose gets it saved, as before.
+export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txtNonLetto = false): { tags: string[]; originalTags: string[] } => {
     const combinedTags = [...new Set([...globalTriggers, ...sidecarTags])];
     const orderedTags = [
         ...globalTriggers.filter(t => combinedTags.includes(t)),
         ...combinedTags.filter(t => !globalTriggers.includes(t))
     ];
+    if (txtNonLetto) return { tags: orderedTags, originalTags: [...orderedTags] };
     const suDisco = [
         ...globalTriggers.filter(t => sidecarTags.includes(t)),
         ...sidecarTags.filter(t => !globalTriggers.includes(t))

@@ -387,9 +387,10 @@ const TRASH_MAX_FILES = 5000;
 //   'errore'   il file c'e' ma non si e' riusciti a spostarlo (bloccato, permessi)
 //   Prima i tre casi erano indistinguibili: i primi due uscivano da un `continue` silenzioso e il
 //   gruppo tornava {ok:true, trashed:0}, cioe' "riuscito" senza aver spostato niente. 'rifiutato'
-//   NON e' un vicolo cieco: chi chiama lo tratta come "Cestino non raggiungibile" e offre la
-//   cancellazione definitiva con la seconda conferma, altrimenti una foto su una cartella di rete
-//   resterebbe per sempre nel cestino dell'app senza modo di toglierla.
+//   NON e' un vicolo cieco: chi chiama lo tratta come "Cestino non raggiungibile". Per una foto
+//   aperta con "Carica cartella" offre la cancellazione definitiva con la seconda conferma; per
+//   una foto caricata una per una o trascinata (nessuna cartella aperta) dice perche' non si puo'
+//   e cosa fare, invece di un "non rimossa" muto a ogni tentativo.
 // ENGLISH: the outcome now comes back FILE BY FILE in `results`, with three distinct values:
 //   'ok'        the file reached the Windows Recycle Bin, or was already gone (nothing to do)
 //   'rifiutato' this channel cannot touch it: a NETWORK path spelled \\server\..., an extension
@@ -398,9 +399,10 @@ const TRASH_MAX_FILES = 5000;
 //   'errore'    the file is there but could not be moved (locked, permissions)
 //   The three used to be indistinguishable: the first two left through a silent `continue` and the
 //   batch returned {ok:true, trashed:0} - "success" having moved nothing. 'rifiutato' is NOT a dead
-//   end: the caller reads it as "Recycle Bin out of reach" and offers the permanent delete behind
-//   the second confirmation, otherwise a photo on a network folder would sit in the app's trash
-//   forever with no way to remove it.
+//   end: the caller reads it as "Recycle Bin out of reach". For a photo opened with "Load Folder"
+//   it offers the permanent delete behind the second confirmation; for a photo loaded one by one
+//   or dropped in (no open folder) it says why that is not possible and what to do, instead of a
+//   silent "not removed" on every try.
 ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
     if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0, results: [] };
     let trashed = 0;
@@ -426,8 +428,9 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             // ITALIANO: il Cestino si prova SEMPRE prima: dove non c'e', Windows rifiuta lo
             //           spostamento e non cancella niente. Solo DOPO un rifiuto si guarda perche'.
             //           Se il file e' ancora li' e il Cestino su quell'unita' non esiste, si risponde
-            //           'rifiutato' (la pagina offre la seconda conferma), altrimenti la foto resterebbe
-            //           bloccata nel cestino dell'app a ogni tentativo. Due casi:
+            //           'rifiutato' (la pagina offre la seconda conferma se la cartella e' aperta, se no
+            //           spiega cosa fare), altrimenti la foto resterebbe bloccata nel cestino dell'app
+            //           a ogni tentativo. Due casi:
             //           - una lettera collegata a una condivisione di rete (Z:\ -> \\nas\dati): il
             //             percorso VERO lo dice Windows (per un'unita' di rete risponde \\server\...).
             //             Prima lo si guardava prima di provare, e chi ha il Cestino anche li' (una
@@ -439,8 +442,9 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             // ENGLISH: the Recycle Bin is ALWAYS tried first: where there is none, Windows refuses the
             //          move and deletes nothing. Only AFTER a refusal do we look at why. If the file is
             //          still there and that drive has no Recycle Bin, we answer 'rifiutato' (the page
-            //          offers the second confirmation), otherwise the photo would stay stuck in the
-            //          app's trash on every try. Two cases:
+            //          offers the second confirmation when the folder is open, otherwise it says what to
+            //          do), otherwise the photo would stay stuck in the app's trash on every try. Two
+            //          cases:
             //          - a drive letter mapped to a network share (Z:\ -> \\nas\data): Windows tells the
             //            REAL path (for a network drive it answers \\server\...). It used to be checked
             //            before trying, and whoever has a Recycle Bin there too (a user folder moved to

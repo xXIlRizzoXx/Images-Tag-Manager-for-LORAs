@@ -67,6 +67,7 @@ const CITAZIONI = [
     ['aiKeyGuideStep5Desc', 'aiKeyLabel'],
     ['updateAskMsg', 'settings', { ru: 'настройках' }],
     ['langPickerHint', 'settings', { ru: 'Настройках' }],
+    ['deleteNoRecycleBin', 'loadFolder'],
 ];
 
 const rif = 'en';

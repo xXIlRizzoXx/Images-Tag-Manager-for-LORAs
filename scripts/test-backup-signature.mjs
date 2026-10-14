@@ -122,4 +122,106 @@ console.log('\n--- due lotti con la stessa impronta (stessa cartella aperta due 
     dice('due sorgenti con la stessa impronta nel backup: scartato', null, ritrova(gemelle, 'dataset', ABCD));
 }
 
+// ITALIANO: DOPO UN CRASH il backup si riscrive appena si riapre la prima cartella. Prima si
+//           ricostruiva solo dalla lista in memoria: le sorgenti delle cartelle non ancora riaperte
+//           sparivano, e aprendo per prima una cartella qualsiasi senza modifiche il backup veniva
+//           cancellato del tutto. Si scrive con scriviBackupSubito, la stessa funzione dell'effetto.
+// ENGLISH: AFTER A CRASH the backup is rewritten as soon as the first folder is reopened. It used
+//          to be rebuilt from the in-memory list alone: the sources of folders not reopened yet
+//          vanished, and opening any folder with no edits first deleted the backup altogether. It
+//          is written with scriviBackupSubito, the same function the effect uses.
+const G = await carica('src/utils/closeGuard.ts');
+const archivio = () => {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+};
+const P = ['p1.png', 'p2.png', 'p3.png'];
+const Q = ['q1.png', 'q2.png'];
+// ITALIANO: la riapertura come la fa processImportData: un lotto nuovo, e le modifiche ritrovate rimesse.
+// ENGLISH: reopening as processImportData does it: a new batch, and the recovered edits put back.
+const riapri = (salvato, cartella, lotto, nomi) => {
+    const letto = B.backupDellImport(salvato, cartella, B.folderSignature(cartella, nomi));
+    return importa(cartella, lotto, nomi).map(i => {
+        const r = letto ? B.tagDaRipristinare(letto.voci[i.backupKey], i.originalTags, i.originalTags, [], undefined, letto.ts) : null;
+        return r ? { ...i, tags: r } : i;
+    });
+};
+const dopoIlCrash = () => {
+    const s = archivio();
+    const prima = modifica(modifica([...importa('char1', 'L1', P), ...importa('char2', 'L2', Q)], 'L1/p2.png'), 'L2/q1.png');
+    G.scriviBackupSubito(s, prima, [], 'char2');
+    return s;
+};
+
+console.log('\n--- crash con due cartelle: si riapre prima char1 ---');
+{
+    const s = dopoIlCrash();
+    const char1 = riapri(s.getItem('tagBackup'), 'char1', 'L3', P);
+    dice('premessa: char1 ritrova la sua modifica', ['x', 'nuovo'], char1.find(i => i.file.name === 'p2.png').tags);
+    G.scriviBackupSubito(s, char1, [], 'char1');
+    dice('dopo la riscrittura char2 ritrova ancora la sua', true, ha(ritrova(s.getItem('tagBackup'), 'char2', Q), 'char2' + SEP + 'q1.png'));
+    dice('e char1, ancora non salvata, resta nel backup', true, ha(ritrova(s.getItem('tagBackup'), 'char1', P), 'char1' + SEP + 'p2.png'));
+}
+
+console.log('\n--- crash, poi si apre per prima un\'altra cartella senza modifiche ---');
+{
+    const s = dopoIlCrash();
+    G.scriviBackupSubito(s, importa('altra', 'L3', ['z.png']), [], 'altra');
+    dice('il backup non viene cancellato: char1 e char2 ritrovano le loro modifiche', [true, true],
+        [ha(ritrova(s.getItem('tagBackup'), 'char1', P), 'char1' + SEP + 'p2.png'), ha(ritrova(s.getItem('tagBackup'), 'char2', Q), 'char2' + SEP + 'q1.png')]);
+}
+
+console.log('\n--- quello che NON deve cambiare: una cartella riaperta e salvata esce dal backup ---');
+{
+    const s = dopoIlCrash();
+    const salvata = riapri(s.getItem('tagBackup'), 'char1', 'L3', P).map(i => ({ ...i, originalTags: [...i.tags] }));
+    G.scriviBackupSubito(s, salvata, [], 'char1');
+    dice('char1 salvata: la sua sorgente non c\'e\' piu\'', null, ritrova(s.getItem('tagBackup'), 'char1', P));
+    dice('char2, non ancora riaperta, resta', true, ha(ritrova(s.getItem('tagBackup'), 'char2', Q), 'char2' + SEP + 'q1.png'));
+    // ITALIANO: e quando non resta nessuna sorgente il backup si cancella, come prima.
+    // ENGLISH: and when no source is left the backup is removed, as before.
+    const tutte = riapri(s.getItem('tagBackup'), 'char2', 'L4', Q).map(i => ({ ...i, originalTags: [...i.tags] }));
+    G.scriviBackupSubito(s, [...salvata, ...tutte], [], 'char2');
+    dice('anche char2 salvata: il backup non c\'e\' piu\'', null, s.getItem('tagBackup'));
+    // ITALIANO: svuotare il cestino cambia l'impronta della cartella aperta: la sua vecchia sorgente
+    //           non deve restare indietro, o una modifica poi salvata tornerebbe dal backup.
+    // ENGLISH: emptying the trash changes the open folder's fingerprint: its old source must not stay
+    //          behind, or an edit saved later would come back from the backup.
+    const t = archivio();
+    let images = modifica(importa('dataset', 'L1', ABCD), 'L1/a.png');
+    G.scriviBackupSubito(t, images, [], 'dataset');
+    images = images.filter(i => i.id !== 'L1/d.png');
+    G.scriviBackupSubito(t, images, [], 'dataset');
+    G.scriviBackupSubito(t, images.map(i => ({ ...i, originalTags: [...i.tags] })), [], 'dataset');
+    dice('cestino svuotato, poi tutto salvato: il backup non c\'e\' piu\'', null, t.getItem('tagBackup'));
+}
+
+// ITALIANO: foto chiuse con la "x" di un lotto che non ha piu' foto in vista ("fantasmi"): prima
+//           facevano da gemello al lotto riaperto della stessa cartella, e da quel momento nessuna
+//           modifica entrava piu' nel backup.
+// ENGLISH: photos closed with the "x" from a batch with no photo left in view ("ghosts"): they used
+//          to act as a twin of the reopened batch of the same folder, and from then on no edit
+//          reached the backup any more.
+console.log('\n--- la stessa cartella riaperta dopo averne chiuso tutte le foto ---');
+{
+    const L1 = importa('dataset', 'L1', ABCD);
+    const chiuse = L1.map(chiusa);
+    const images = modifica(importa('dataset', 'L2', ABCD), 'L2/b.png');
+    dice('tutte le foto di L1 chiuse, L2 modificata: la modifica entra nel backup', true, ha(ritrova(scrivi(images, chiuse, 'dataset'), 'dataset', ABCD), 'dataset' + SEP + 'b.png'));
+}
+
+console.log('\n--- una foto chiusa per sbaglio, cartella riaperta, poi chiuse le vecchie copie ---');
+{
+    const L1 = importa('dataset', 'L1', ABCD);
+    const chiuse = [chiusa(L1[1])];
+    const L2 = importa('dataset', 'L2', ABCD);
+    chiuse.push(chiusa(L1[0]), chiusa(L1[2]), chiusa(L1[3]));
+    const images = modifica(L2, 'L2/c.png');
+    dice('in vista solo L2: la modifica entra nel backup', true, ha(ritrova(scrivi(images, chiuse, 'dataset'), 'dataset', ABCD), 'dataset' + SEP + 'c.png'));
+    // ITALIANO: il lato sicuro resta: con ancora delle foto di L1 in vista, i due lotti sono gemelli.
+    // ENGLISH: the safe side stays: with some L1 photos still in view, the two batches are twins.
+    const gemelli = [...L1.filter(i => i.id !== 'L1/a.png'), ...modifica(L2, 'L2/c.png')];
+    dice('con delle foto di L1 ancora in vista: nessun ripristino (lato sicuro)', null, ritrova(scrivi(gemelli, [chiusa(L1[0])], 'dataset'), 'dataset', ABCD));
+}
+
 process.exit(esito());

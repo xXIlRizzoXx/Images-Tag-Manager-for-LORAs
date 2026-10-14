@@ -5,8 +5,10 @@
    salvate andavano perse. Il README promette un backup che sopravvive a un'interruzione di
    corrente, senza condizioni, e presenta le tre strade come equivalenti.
    Ora le riconosce l'impronta (nessuna cartella + quante foto + la prima e l'ultima), come per
-   le cartelle; in Electron la chiave di ogni foto porta anche il suo percorso completo, e ogni
-   voce l'impronta dei tag che aveva su disco, quindi i tag non possono finire su un'altra serie.
+   le cartelle; in Electron la chiave di ogni foto porta anche il suo percorso completo (anche
+   trascinandole senza .txt), e ogni voce l'impronta dei tag che aveva su disco, quindi i tag non
+   possono finire su un'altra serie. Nel browser, dove il percorso non si conosce, la chiave e' il
+   solo nome: due serie con gli stessi nomi non si distinguono, e quelle foto restano fuori.
    Si provano le regole VERE di src/utils/tagBackup.ts (compilato al volo con esbuild): si scrive
    il backup come fa l'effetto di App.tsx e lo si rilegge come fa l'import.
    Uso:  node scripts/test-backup-load-images.mjs      (esce con codice 1 se qualcosa non torna)
@@ -17,8 +19,10 @@
    because those photos have no picked folder, and the unsaved edits were lost. The README promises
    a backup that survives a power cut, with no conditions, and presents the three roads as equal.
    Now the fingerprint recognises them (no folder + photo count + first and last), as for folders;
-   in Electron every photo's key also carries its full path, and every entry the fingerprint of the
-   tags it had on disk, so the tags cannot land on another set.
+   in Electron every photo's key also carries its full path (when dropped with no .txt too), and
+   every entry the fingerprint of the tags it had on disk, so the tags cannot land on another set.
+   In the browser, where the path is unknown, the key is the bare name: two sets with the same names
+   cannot be told apart, and those photos stay out.
    The REAL rules of src/utils/tagBackup.ts are tested (compiled on the fly with esbuild): the backup
    is written as App.tsx's effect does and read back as the import does.
    Usage:  node scripts/test-backup-load-images.mjs      (exits with code 1 if anything is off) */
@@ -74,10 +78,11 @@ console.log('\n--- "Carica immagini" in Electron (percorso vero nella chiave) --
     dice('riaprendo le stesse foto la modifica torna', ['x', 'nuovo'], ripristina(voci, DIR + SEP + 'img_007.png'));
 }
 
-console.log('\n--- trascinamento, o "Carica immagini" nel browser (solo il nome nella chiave) ---');
+console.log('\n--- "Carica immagini" o trascinamento nel browser (solo il nome nella chiave) ---');
 {
-    const salvato = scrivi(modifica(importa('', '', 'L1', ['a.png', 'b.png', 'c.png']), 'L1/b.png'));
-    dice('riaprendo le stesse foto la modifica torna', ['x', 'nuovo'], ripristina(rilegge(salvato, '', ['a.png', 'b.png', 'c.png']), SEP + 'b.png'));
+    // ITALIANO: senza percorso due serie con gli stessi nomi non si distinguono: il backup non si scrive.
+    // ENGLISH: with no path two sets with the same names cannot be told apart: the backup is not written.
+    dice('il backup non si scrive', null, scrivi(modifica(importa('', '', 'L1', ['a.png', 'b.png', 'c.png']), 'L1/b.png')));
 }
 
 console.log('\n--- una cartella e delle foto sfuse aperte insieme ---');
@@ -105,14 +110,12 @@ console.log('\n--- quello che NON deve cambiare (il lato sicuro) ---');
     const gemelli = [...modifica(importa('', DIR, 'L1', NOMI), 'L1/img_007.png'), ...importa('', DIR, 'L2', NOMI)];
     dice('le stesse foto sfuse aperte due volte: non si sa quale sia quale, nessun ripristino', null, scrivi(gemelli));
 
-    // ITALIANO: un'ALTRA serie con gli stessi 30 nomi (0001..0030 e' comune), nel browser dove la
-    //           chiave e' il solo nome: i suoi .txt hanno altri tag, quindi la voce non si applica.
-    // ENGLISH: ANOTHER set with the same 30 names (0001..0030 is common), in the browser where the
-    //          key is the name alone: its .txt hold other tags, so the entry is not applied.
-    const browser = scrivi(modifica(importa('', '', 'L1', NOMI), 'L1/img_007.png'));
-    dice('premessa: con gli stessi tag su disco la voce si applicherebbe', ['x', 'nuovo'], ripristina(rilegge(browser, '', NOMI), SEP + 'img_007.png'));
-    dice('un\'altra serie con gli stessi nomi ma altri tag su disco: niente', null,
-        ripristina(rilegge(browser, '', NOMI), SEP + 'img_007.png', ['altro', 'soggetto']));
+    // ITALIANO: un'ALTRA serie con gli stessi 30 nomi (0001..0030 e' comune) in un'altra cartella:
+    //           in Electron la chiave porta il percorso, quindi le sue foto non ricevono niente.
+    // ENGLISH: ANOTHER set with the same 30 names (0001..0030 is common) in another folder: in
+    //          Electron the key carries the path, so its photos receive nothing.
+    const altra = rilegge(salvato, '', NOMI);
+    dice('un\'altra serie con gli stessi nomi in un\'altra cartella: niente', null, ripristina(altra, 'E:\\dataset\\serie_b' + SEP + 'img_007.png'));
 }
 
 process.exit(esito());

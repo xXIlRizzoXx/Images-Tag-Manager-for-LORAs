@@ -1265,12 +1265,16 @@ export default function App() {
     //          sidecar not yet on disk) I touch NOTHING: better not to sync than to corrupt.
     const handleTagEditorSaved = async (savedName: string, savedTags: string[], savedHandle?: any) => {
         if (!savedHandle || typeof savedHandle.isSameEntry !== 'function') return;
-        const base = savedName.split('.').slice(0, -1).join('.');
+        // ITALIANO: il nome si confronta SENZA maiuscole, come fa l'import (makeFolderKeyer):
+        //           IMG_001.JPG e img_001.txt sono una coppia. L'identita' vera la prova isSameEntry.
+        // ENGLISH: the name is compared WITHOUT case, as the import does (makeFolderKeyer):
+        //          IMG_001.JPG and img_001.txt are a pair. isSameEntry proves the real identity.
+        const base = savedName.split('.').slice(0, -1).join('.').toLowerCase();
         // ITALIANO: cerco la foto la cui cartella contiene ESATTAMENTE questo file salvato.
         // ENGLISH: find the photo whose folder contains EXACTLY this saved file.
         let matchId: string | null = null;
         for (const img of images) {
-            if (img.file.name.split('.').slice(0, -1).join('.') !== base) continue;
+            if (img.file.name.split('.').slice(0, -1).join('.').toLowerCase() !== base) continue;
             const dir = img.dirHandle;
             if (!dir || typeof dir.getFileHandle !== 'function') continue;
             try {
@@ -1420,7 +1424,7 @@ export default function App() {
         return { imgPath, txtPath: imgPath.replace(/\.[^.\\/]+$/, '') + '.txt' };
     };
 
-    const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed'> => {
+    const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
             return img.dirHandle ? 'nopath' : 'failed';
@@ -1455,22 +1459,26 @@ export default function App() {
             //          restore Save found nothing to rewrite. The pair stays together.
             const resImg = await api.trashFiles([imgPath]);
             // ITALIANO: 'rifiutato' vuol dire che il Cestino di Windows non e' applicabile a questo
-            //           file (cartella di rete, o estensione fuori elenco). Non e' un fallimento
-            //           definitivo: si torna 'nopath', cioe' la strada della seconda conferma, che
-            //           puo' comunque cancellare passando dalla cartella aperta. Senza questo, una
-            //           foto su NAS resterebbe per sempre nel cestino dell'app.
+            //           file (cartella di rete, chiavetta, scheda SD, o estensione fuori elenco).
+            //           Con la cartella aperta ("Carica cartella") si torna 'nopath', cioe' la strada
+            //           della seconda conferma, che cancella passando dalla cartella. Senza cartella
+            //           (foto caricate una per una o trascinate) il programma non ha modo di
+            //           cancellarle: si torna 'norecycle', e il messaggio dice perche' e cosa fare,
+            //           invece del solo "Non rimosse: 1" a ogni tentativo.
             // ENGLISH: 'rifiutato' means the Windows Recycle Bin does not apply to this file (network
-            //          folder, or an extension outside the list). That is not a dead end: we return
-            //          'nopath', the second-confirmation road, which can still delete through the
-            //          open folder. Without this, a photo on a NAS would sit in the app's trash
-            //          forever.
+            //          folder, USB stick, SD card, or an extension outside the list). With the folder
+            //          open ("Load Folder") we return 'nopath', the second-confirmation road, which
+            //          deletes through the folder. With no folder (photos loaded one by one or
+            //          dropped in) the program has no way to delete them: we return 'norecycle', and
+            //          the message says why and what to do, instead of a bare "Not removed: 1" on
+            //          every try.
             const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
             if (esitoImg === 'ok') {
                 const resTxt = await api.trashFiles([txtPath]);
                 if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
                 return 'trashed';
             }
-            if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'failed';
+            if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'norecycle';
             return 'failed';
         } catch (err) {
             console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
@@ -1542,11 +1550,17 @@ export default function App() {
         const img = imagesRef.current.find(i => i.id === id);
         if (!img || !img.isTrashed) return;
 
-        let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
+        let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
         try {
             esito = await deleteImageFiles(img);
         } catch (error) {
             console.error(error);
+        }
+        // ITALIANO: niente Cestino di Windows e niente cartella aperta: si dice perche' e cosa fare.
+        // ENGLISH: no Windows Recycle Bin and no open folder: say why and what to do.
+        if (esito === 'norecycle') {
+            showNotification(t.deleteNoRecycleBin, 'error');
+            return;
         }
         // ITALIANO: il Cestino di Windows non e' raggiungibile per questa foto: si puo' solo
         //           cancellarla per sempre, e non lo si fa senza chiederlo.
@@ -1760,6 +1774,9 @@ export default function App() {
         const ripescabili: any[] = [];
         const senzaPercorso: any[] = [];
         let failed = 0;
+        // ITALIANO: quante fra le non rimosse sono senza Cestino di Windows e senza cartella aperta.
+        // ENGLISH: how many of the ones not removed have no Windows Recycle Bin and no open folder.
+        let senzaCestino = 0;
         for (const scelta of trashedImages) {
             // ITALIANO: l'elenco e' quello del clic su "Svuota"; la foto si guarda com'e' ADESSO.
             //           Una foto tornata in galleria nel frattempo (Ctrl+Z con la conferma aperta,
@@ -1771,7 +1788,7 @@ export default function App() {
             //          the Windows Recycle Bin: it used to go anyway and vanish from the gallery too.
             const img = imagesRef.current.find(i => i.id === scelta.id);
             if (!img || !img.isTrashed) continue;
-            let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
+            let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
             // ITALIANO: i percorsi si prendono PRIMA di spostare il file: dopo, al suo posto non
             //           c'e' piu' niente da cui ricavarli.
             // ENGLISH: take the paths BEFORE moving the file: afterwards nothing is left in its
@@ -1787,7 +1804,10 @@ export default function App() {
                 if (percorsi.imgPath) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: percorsi.txtPath });
             }
             else if (esito === 'nopath') senzaPercorso.push(img);
-            else failed++;
+            else {
+                failed++;
+                if (esito === 'norecycle') senzaCestino++;
+            }
         }
         setIsEmptyingTrash(false);
         // ITALIANO: nel cestino non era rimasto niente da svuotare (tutto ripristinato nel
@@ -1856,11 +1876,11 @@ export default function App() {
         // ENGLISH: the count of this first part travels with them (moved to the Windows Recycle
         //          Bin, failed): it used to be lost here, and the final message said nothing of it.
         if (senzaPercorso.length > 0) {
-            chiediEliminazioneDefinitiva(senzaPercorso, { done: removedIds.size, failed });
+            chiediEliminazioneDefinitiva(senzaPercorso, { done: removedIds.size, failed, senzaCestino });
             return;
         }
         if (failed > 0) {
-            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            showNotification(fraseCestinoWindows({ done: removedIds.size, failed, senzaCestino }), 'error');
             return;
         }
         setIsTrashOpen(false);
@@ -1881,12 +1901,17 @@ export default function App() {
     // ENGLISH: `prima` = how the first part of the same emptying went, the Windows Recycle Bin
     //          one. It is always said, on confirm or on cancel: the moved photos used to vanish from
     //          the app's trash without a word, and the locked ones were never named.
-    const fraseCestinoWindows = (prima: { done: number; failed: number }): string => {
-        if (prima.failed > 0) return t.deletePartial.replace('{done}', String(prima.done)).replace('{failed}', String(prima.failed));
+    // ITALIANO: `senzaCestino` = quante fra le non rimosse non hanno ne' il Cestino di Windows ne'
+    //           la cartella aperta: per quelle si aggiunge la frase che dice perche' e cosa fare.
+    // ENGLISH: `senzaCestino` = how many of the ones not removed have neither the Windows Recycle
+    //          Bin nor an open folder: for those the sentence saying why and what to do is added.
+    const fraseCestinoWindows = (prima: { done: number; failed: number; senzaCestino?: number }): string => {
+        if (prima.failed > 0) return [t.deletePartial.replace('{done}', String(prima.done)).replace('{failed}', String(prima.failed)),
+            (prima.senzaCestino || 0) > 0 ? t.deleteNoRecycleBin : ''].filter(Boolean).join(' · ');
         return prima.done > 0 ? t.deleteSuccess : '';
     };
 
-    const chiediEliminazioneDefinitiva = (imgs: any[], prima: { done: number; failed: number } = { done: 0, failed: 0 }) => {
+    const chiediEliminazioneDefinitiva = (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog({
             isOpen: true,
             title: t.deleteForGood,
@@ -1900,7 +1925,7 @@ export default function App() {
         });
     };
 
-    const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number } = { done: 0, failed: 0 }) => {
+    const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsEmptyingTrash(true);
         const removedIds = new Set<string>();
@@ -2033,6 +2058,11 @@ export default function App() {
             // ENGLISH: each .txt's modification date: only needed by the previous version's backups
             //          (see tagDaRipristinare).
             const txtMtime = new Map<string, number>();
+            // ITALIANO: i .txt che ci sono ma non si sono potuti leggere: la loro foto non deve
+            //           risultare modificata, o "Salva" ci scriverebbe sopra (vedi tagDiImport).
+            // ENGLISH: the .txt files that exist but could not be read: their photo must not count
+            //          as modified, or "Save" would write over them (see tagDiImport).
+            const txtNonLetti = new Set<string>();
             for (let i = 0; i < txtFiles.length; i++) {
                 try {
                     if (txtFiles[i].size > TXT_MAX_BYTES) {
@@ -2040,6 +2070,7 @@ export default function App() {
                         // ENGLISH: A legit sidecar weighs a few KB: over 1 MB is suspicious, skip it
                         console.warn(`[Import] Skipped oversized .txt (${txtFiles[i].size} bytes):`, txtFiles[i].name);
                         skippedTxtCount++;
+                        txtNonLetti.add(folderKeyOf(txtFiles[i]));
                     } else {
                         const text = await txtFiles[i].text();
                         const letti = parseSidecarText(text);
@@ -2055,6 +2086,7 @@ export default function App() {
                     // ENGLISH: Unreadable file (locked/moved): skip it, the import must not get stuck
                     console.warn('[Import] Unreadable .txt skipped:', txtFiles[i]?.name, e);
                     skippedTxtCount++;
+                    if (txtFiles[i]) txtNonLetti.add(folderKeyOf(txtFiles[i]));
                 }
                 setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
             }
@@ -2092,7 +2124,7 @@ export default function App() {
                 //           (vedi tagDiImport), cosi' "Salva modifiche" scrive la trigger dove manca.
                 // ENGLISH: tags = active triggers + .txt; originalTags = only what is really in the .txt
                 //          (see tagDiImport), so "Save changes" writes the trigger where it is missing.
-                const { tags: orderedTags, originalTags } = tagDiImport(globalTriggers, textMap.get(folderKeyOf(imgFiles[i])) || []);
+                const { tags: orderedTags, originalTags } = tagDiImport(globalTriggers, textMap.get(folderKeyOf(imgFiles[i])) || [], txtNonLetti.has(folderKeyOf(imgFiles[i])));
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
@@ -2457,8 +2489,20 @@ export default function App() {
             calculateImportSummary(imgFiles, diskTxt, null, folderOf);
         } else {
             // ITALIANO: niente sidecar dal disco (browser o nessun .txt accanto): uso quelli trascinati.
+            //           I .txt trascinati si abbinano per nome (folderOf resta null), ma la chiave del
+            //           backup anti-crash porta comunque il percorso vero della foto quando Electron lo
+            //           conosce: col solo nome due serie senza tag con gli stessi nomi si scambiavano le
+            //           modifiche, e ritrascinando le stesse foto dopo un salvataggio le chiavi non
+            //           combaciavano piu'. E' la stessa chiave del ramo qui sopra.
             // ENGLISH: no disk sidecars (browser or no adjacent .txt): use the dropped ones.
-            calculateImportSummary(imgFiles, droppedTxt, null, null);
+            //          The dropped .txt files pair by name (folderOf stays null), but the crash-backup
+            //          key still carries the photo's real path when Electron knows it: with the bare
+            //          name two untagged sets with the same names swapped their edits, and dropping the
+            //          same photos again after a save no longer matched the keys. It is the same key as
+            //          in the branch above.
+            const chiavePercorso = new Map<any, string>();
+            if (folderOf) for (const f of imgFiles) { const d = folderOf.get(f); if (typeof d === 'string' && d) chiavePercorso.set(f, d); }
+            calculateImportSummary(imgFiles, droppedTxt, null, null, chiavePercorso.size > 0 ? chiavePercorso : null);
         }
     }, [t]);
     // ITALIANO: riferimento SEMPRE aggiornato al gestore, cosi' i listener globali (sotto) restano

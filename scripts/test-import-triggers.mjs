@@ -48,6 +48,26 @@ console.log('\n--- trigger attiva, foto senza .txt ---');
     dice('"Salva modifiche" crea il .txt con la trigger', true, daSalvare(r));
 }
 
+// ITALIANO: un .txt che c'e' ma non si e' potuto leggere (oltre 1 MB, bloccato, un file di OneDrive
+//           solo in rete): il suo contenuto non si conosce. Contarlo come "foto senza .txt" faceva
+//           scrivere al primo "Salva modifiche" la sola trigger SOPRA il file vero, cancellandolo.
+// ENGLISH: a .txt that exists but could not be read (over 1 MB, locked, a OneDrive online-only
+//          file): its content is unknown. Counting it as "photo with no .txt" made the first "Save
+//          changes" write the trigger alone OVER the real file, wiping it.
+console.log('\n--- trigger attiva, il .txt c\'e\' ma non si e\' potuto leggere ---');
+{
+    const r = S.tagDiImport(['mychar'], [], true);
+    dice('la foto mostra la trigger', ['mychar'], r.tags);
+    dice('"Salva modifiche" non la conta come modificata: il .txt non letto resta intatto', false, daSalvare(r));
+    // ITALIANO: App.tsx deve segnare i .txt saltati e passarlo all'import di ogni foto.
+    // ENGLISH: App.tsx must record the skipped .txt files and pass that on to each photo's import.
+    const app = (await import('node:fs')).readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
+    const segnati = (app.match(/txtNonLetti\.add\(folderKeyOf\(txtFiles\[i\]\)\)/g) || []).length;
+    dice('App.tsx: i .txt saltati (troppo grandi e illeggibili) vengono segnati', 2, segnati);
+    dice('App.tsx: l\'import di ogni foto sa se il suo .txt non e\' stato letto', true,
+        /tagDiImport\(globalTriggers, textMap\.get\(([^)]+\))\) \|\| \[\], txtNonLetti\.has\(\1\)\)/.test(app));
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const gia = S.tagDiImport(['mychar'], ['1girl', 'mychar', 'smile']);

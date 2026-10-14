@@ -72,7 +72,7 @@ const NOMI = ['window', 'localStorage', 'imagesRef', 'fotoChiuseRef', 'dirHandle
 const fabbrica = new Function(...NOMI, codice + '\nreturn { effettoChiusura, chiudiFinestraSeRichiesto, handleSaveAndCloseProject, handleDiscardAndClose, handleCancelClose, handleCloseProject };');
 
 const foto = (name, tags, originalTags, isTrashed = false) => ({
-    id: name, file: { name }, tags, originalTags, isTrashed, backupKey: '\x1f' + name, lottoImport: 'l1', cartellaImport: '',
+    id: name, file: { name }, tags, originalTags, isTrashed, backupKey: 'E:\\dataset\x1f' + name, lottoImport: 'l1', cartellaImport: '',
 });
 // ITALIANO: l'app finta: una finestra, uno storage, lo stato della finestra a tre scelte.
 // ENGLISH: the fake app: a window, a storage, the three-choice dialog's state.

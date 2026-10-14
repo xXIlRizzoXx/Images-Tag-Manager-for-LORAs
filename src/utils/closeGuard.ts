@@ -20,9 +20,13 @@ export const modificheNonSalvate = (images: any[]): boolean =>
 //          second after the last edit. Used when the window closes: that effect's timer dies with
 //          the page, and an edit made less than a second before closing reached neither the .txt
 //          nor the backup.
+// ITALIANO: il backup gia' salvato entra nel calcolo: le sorgenti delle cartelle non ancora
+//           riaperte dopo un crash restano (vedi costruisciBackup, punto 4).
+// ENGLISH: the backup already stored goes into the computation: the sources of folders not yet
+//          reopened after a crash stay (see costruisciBackup, point 4).
 export const scriviBackupSubito = (storage: Storage, images: any[], chiuse: Iterable<FotoChiusa>, cartella: string): void => {
     try {
-        const backup = costruisciBackup(images, chiuse, cartella);
+        const backup = costruisciBackup(images, chiuse, cartella, storage.getItem('tagBackup'));
         if (!backup) storage.removeItem('tagBackup');
         else storage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), ...backup }));
     } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }

@@ -122,4 +122,43 @@ console.log('\n--- backup scritto dalla versione precedente (tutte le foto, senz
     dice('entro 2 secondi (dischi FAT e di rete) conta come piu\' vecchio', ['cat', 'hat'], riapri(vecchio, nomi, 'b.png', ['cat'], T + 1_500));
 }
 
+// ITALIANO: la versione precedente tagliava ogni tag a 100 caratteri e teneva 200 tag per file, e
+//           il suo backup aveva TUTTE le foto, con i tag gia' tagliati. Chi aggiorna e riapre la
+//           stessa cartella non deve ritrovarsi la didascalia tagliata, contata come modifica e
+//           scritta su disco al primo "Salva modifiche".
+// ENGLISH: the previous version cut every tag at 100 characters and kept 200 tags per file, and its
+//          backup held ALL photos, with the tags already cut. Whoever upgrades and reopens the same
+//          folder must not get the cut caption back, counted as an edit and written to disk on the
+//          first "Save changes".
+console.log('\n--- backup della versione precedente con le didascalie tagliate a 100 caratteri ---');
+{
+    const lunga = 'a woman with long flowing hair standing in a sunlit meadow, wearing a white linen dress with soft folds, gentle smile';
+    const cento = lunga.slice(0, 100);
+    const molti = Array.from({ length: 230 }, (_, i) => 'tag_' + String(i).padStart(3, '0'));
+    const vecchio = JSON.stringify({
+        ts: T, folder: 'dataset', signature: B.folderSignature('dataset', nomi),
+        data: {
+            ['dataset' + SEP + 'a.png']: { tags: ['ohwx woman', cento, 'smile'] },
+            ['dataset' + SEP + 'b.png']: { tags: molti.slice(0, 200) },
+        },
+    });
+    const settimanaPrima = T - 7 * 86_400_000;
+    dice('premessa: la didascalia su disco e\' piu\' lunga di 100 caratteri', true, lunga.length > 100);
+    dice('foto mai modificata: resta la didascalia intera del .txt', null, riapri(vecchio, nomi, 'a.png', ['ohwx woman', lunga, 'smile'], settimanaPrima));
+    dice('foto con piu\' di 200 tag mai modificata: restano tutti quelli del .txt', null, riapri(vecchio, nomi, 'b.png', molti, settimanaPrima));
+    const modificata = JSON.stringify({
+        ts: T, folder: 'dataset', signature: B.folderSignature('dataset', nomi),
+        data: { ['dataset' + SEP + 'a.png']: { tags: ['ohwx woman', cento, 'smile', 'hat'] } },
+    });
+    dice('foto modificata nella versione precedente: torna la modifica, con la didascalia INTERA',
+        ['ohwx woman', lunga, 'smile', 'hat'], riapri(modificata, nomi, 'a.png', ['ohwx woman', lunga, 'smile'], settimanaPrima));
+    // ITALIANO: quello che NON deve cambiare: tag corti, recupero della modifica come prima.
+    // ENGLISH: what must NOT change: short tags, the edit is recovered as before.
+    const corti = JSON.stringify({
+        ts: T, folder: 'dataset', signature: B.folderSignature('dataset', nomi),
+        data: { ['dataset' + SEP + 'b.png']: { tags: ['cat', 'hat'] } },
+    });
+    dice('tag corti: il recupero della versione precedente funziona ancora', ['cat', 'hat'], riapri(corti, nomi, 'b.png', ['cat'], settimanaPrima));
+}
+
 process.exit(esito());
