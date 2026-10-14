@@ -35,8 +35,9 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
-import { makeFolderKeyer, cartellaImmagine, cartellaTesto, parseSidecarText, tagDiImport } from './utils/sidecarTags';
-import { BACKUP_KEY_SEP, folderSignature, costruisciBackup, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport } from './utils/sidecarTags';
+import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
 import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, withLiveOriginalTags } from './utils/historyUtils';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from './utils/tagCase';
@@ -665,15 +666,69 @@ export default function App() {
     useEffect(() => {
         if (images.length === 0) return undefined;
         const handle = setTimeout(() => {
-            try {
-                const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-                const backup = costruisciBackup(images, fotoChiuseRef.current.values(), folder);
-                if (!backup) localStorage.removeItem('tagBackup');
-                else localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), ...backup }));
-            } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
+            const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
+            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder);
         }, 1000);
         return () => clearTimeout(handle);
     }, [images, dirHandle]);
+
+    // ITALIANO: CHIUSURA DELLA FINESTRA (X, Alt+F4). "Chiudi progetto" con modifiche non salvate
+    //           chiede Salva e chiudi / Chiudi senza salvare / Annulla; la X invece chiudeva subito,
+    //           e una modifica fatta meno di un secondo prima non finiva nemmeno nel backup (il suo
+    //           timer moriva con la pagina). Ora alla chiusura il backup si scrive SUBITO e, in
+    //           Electron, con modifiche non salvate la chiusura si ferma e compare la STESSA finestra
+    //           a tre scelte: "Chiudi senza salvare" e un "Salva e chiudi" riuscito chiudono poi la
+    //           finestra davvero (chiudiFinestraSeRichiesto). Electron ferma la chiusura in silenzio
+    //           perche' il processo principale non ascolta 'will-prevent-unload'. Nell'anteprima del
+    //           browser non si ferma niente: si scrive solo il backup. Con l'app smontata (schermata
+    //           d'errore) l'ascolto non c'e' piu', e il pulsante che ricarica resta libero.
+    // ENGLISH: CLOSING THE WINDOW (X, Alt+F4). "Close project" with unsaved edits asks Save and
+    //          close / Close without saving / Cancel; the X instead closed at once, and an edit made
+    //          less than a second earlier did not even reach the backup (its timer died with the
+    //          page). Now on close the backup is written AT ONCE and, in Electron, with unsaved edits
+    //          the close stops and the SAME three-choice dialog shows: "Close without saving" and a
+    //          successful "Save and close" then really close the window (chiudiFinestraSeRichiesto).
+    //          Electron stops the close silently because the main process does not listen for
+    //          'will-prevent-unload'. In the browser preview nothing is stopped: only the backup is
+    //          written. With the app unmounted (error screen) the listener is gone, and the button
+    //          that reloads stays free.
+    const permettiChiusuraRef = useRef(false);
+    const chiusuraFinestraRef = useRef(false);
+    const saveCloseDialogRef = useRef(saveCloseDialog);
+    saveCloseDialogRef.current = saveCloseDialog;
+    useEffect(() => {
+        const allaChiusura = (e: BeforeUnloadEvent) => {
+            // ITALIANO: l'utente ha gia' deciso (salvato, o chiuso senza salvare): si chiude e basta.
+            // ENGLISH: the user already decided (saved, or closed without saving): just close.
+            if (permettiChiusuraRef.current) return;
+            const lista = imagesRef.current;
+            if (lista.length === 0) return;
+            const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
+            scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder);
+            if (!(window as any).electronAPI || !modificheNonSalvate(lista)) return;
+            e.preventDefault();
+            // ITALIANO: come chiede la guida di Electron: returnValue esplicito, non solo preventDefault.
+            // ENGLISH: as Electron's guide asks: an explicit returnValue, not just preventDefault.
+            e.returnValue = false;
+            chiusuraFinestraRef.current = true;
+            if (!saveCloseDialogRef.current.isOpen) setTimeout(() => setSaveCloseDialog({ isOpen: true, isSaving: false }), 0);
+        };
+        window.addEventListener('beforeunload', allaChiusura);
+        return () => window.removeEventListener('beforeunload', allaChiusura);
+    }, [dirHandle]);
+
+    // ITALIANO: dopo "Chiudi senza salvare" o un "Salva e chiudi" riuscito: se la domanda era nata
+    //           dalla X della finestra, la finestra si chiude davvero; se era nata da "Chiudi
+    //           progetto", resta aperta come sempre.
+    // ENGLISH: after "Close without saving" or a successful "Save and close": if the question came
+    //          from the window's X, the window really closes; if it came from "Close project", it
+    //          stays open as always.
+    const chiudiFinestraSeRichiesto = () => {
+        if (!chiusuraFinestraRef.current) return;
+        chiusuraFinestraRef.current = false;
+        permettiChiusuraRef.current = true;
+        window.close();
+    };
 
     // ITALIANO: Ctrl+Z e Ctrl+Shift+Z rimettono i tag del passo, ma non il ricordo di cosa c'e' su
     //           disco: quello resta quello di adesso (vedi withLiveOriginalTags). Prima, dopo un
@@ -1334,9 +1389,9 @@ export default function App() {
     //           andare nel Cestino di Windows (provato il 17 agosto 2026 sull'app vera: "Foto
     //           spostate nel Cestino di Windows: 0"). Ora il percorso lo cattura il processo
     //           principale al momento della scelta e arriva qui come `img.filePath`, quindi il caso
-    //           normale e' 'trashed'. Restano su 'nopath' due situazioni: le cartelle di RETE (per
-    //           le condivisioni di rete Windows non ha proprio un Cestino) e l'anteprima nel
-    //           browser, dove non c'e' il guscio Electron.
+    //           normale e' 'trashed'. Restano su 'nopath' due situazioni: le unita' senza Cestino
+    //           (cartelle di RETE, chiavette USB, schede SD: Windows rifiuta lo spostamento) e
+    //           l'anteprima nel browser, dove non c'e' il guscio Electron.
     // ENGLISH: 'trashed' = in the Windows Recycle Bin, recoverable · 'nopath' = the Recycle Bin is
     //          out of reach because this photo's path on disk is unknown, but its folder is open and
     //          a direct delete would work (PERMANENTLY) · 'failed' = nothing could be done.
@@ -1346,8 +1401,8 @@ export default function App() {
     //          Bin (verified 2026-08-17 on the real app: "Photos moved to the Windows Recycle Bin:
     //          0"). The path is now captured by the main process at pick time and arrives here as
     //          `img.filePath`, so the normal case is 'trashed'. Two situations stay on 'nopath':
-    //          NETWORK folders (Windows has no Recycle Bin at all for network shares) and the
-    //          browser preview, where there is no Electron shell.
+    //          drives with no Recycle Bin (NETWORK folders, USB sticks, SD cards: Windows refuses
+    //          the move) and the browser preview, where there is no Electron shell.
     // ITALIANO: I due percorsi su disco di una foto: l'immagine e il .txt con lo stesso nome.
     //           Sta qui, in un posto solo, perche' lo usano sia chi manda i file nel Cestino di
     //           Windows sia chi ce li ripesca. Se i due calcolassero il nome in modo anche solo
@@ -2356,7 +2411,11 @@ export default function App() {
             if (paths.length === 0) return vuoto;
             const sidecars = await api.readSidecarTags(paths);
             const txtFiles = (sidecars || []).map((s: any) => {
-                const file = new File([s.content], s.name, { type: 'text/plain' });
+                // ITALIANO: un .txt che il processo principale non ha letto diventa un file illeggibile:
+                //           l'import lo conta fra i saltati (vedi fileDaSidecar).
+                // ENGLISH: a .txt the main process did not read becomes an unreadable file: the import
+                //          counts it among the skipped ones (see fileDaSidecar).
+                const file = fileDaSidecar(s);
                 folderOf.set(file, typeof s.dir === 'string' ? cartellaTesto(s.dir) : '');
                 return file;
             });
@@ -3335,6 +3394,22 @@ export default function App() {
         }
         setSaveCloseDialog({ isOpen: false, isSaving: false });
         closeProjectNow();
+        chiudiFinestraSeRichiesto();
+    };
+
+    // ITALIANO: "Chiudi senza salvare" e Annulla della finestra a tre scelte. Annulla dimentica anche
+    //           che la domanda era nata dalla X: la finestra resta aperta.
+    // ENGLISH: "Close without saving" and Cancel of the three-choice dialog. Cancel also forgets that
+    //          the question came from the X: the window stays open.
+    const handleDiscardAndClose = () => {
+        setSaveCloseDialog({ isOpen: false, isSaving: false });
+        closeProjectNow();
+        chiudiFinestraSeRichiesto();
+    };
+
+    const handleCancelClose = () => {
+        chiusuraFinestraRef.current = false;
+        setSaveCloseDialog({ isOpen: false, isSaving: false });
     };
 
     // ITALIANO: Tagga la singola immagine via Gemini API
@@ -3990,8 +4065,8 @@ export default function App() {
                 title={t.closeAllTitle}
                 message={t.closeAllUnsavedMsg}
                 onSave={handleSaveAndCloseProject}
-                onDiscard={() => { setSaveCloseDialog({ isOpen: false, isSaving: false }); closeProjectNow(); }}
-                onCancel={() => setSaveCloseDialog({ isOpen: false, isSaving: false })}
+                onDiscard={handleDiscardAndClose}
+                onCancel={handleCancelClose}
                 t={t}
                 isDarkMode={isDarkMode}
             />

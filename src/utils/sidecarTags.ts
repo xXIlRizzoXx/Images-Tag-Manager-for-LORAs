@@ -94,6 +94,29 @@ export const cartellaImmagine = (p: string): string => {
 
 export const cartellaTesto = (dir: string): string => senzaSeparatoreFinale(dir);
 
+// ITALIANO: Un .txt mandato dal processo principale ("Carica immagini", trascinamento) diventa un
+//   file che l'import legge come quelli di "Carica cartella". Un .txt che c'e' ma il processo
+//   principale non ha letto (oltre 1 MB, bloccato, un file di OneDrive solo in rete) arriva
+//   segnato `skipped`, senza testo: diventa un file che non si lascia leggere, cosi' l'import lo
+//   conta fra i .txt saltati e lo dice con la frase che usa gia' per "Carica cartella". Prima la
+//   foto sembrava senza tag senza nessun avviso, e un file costruito dal testo mancante avrebbe
+//   dato il tag "undefined".
+// ENGLISH: A .txt sent by the main process ("Load images", drag and drop) becomes a file the
+//   import reads like the ones from "Load Folder". A .txt that exists but the main process did
+//   not read (over 1 MB, locked, a OneDrive online-only file) arrives marked `skipped`, with no
+//   text: it becomes a file that refuses to be read, so the import counts it among the skipped
+//   .txt files and says so with the sentence it already uses for "Load Folder". The photo used
+//   to look untagged with no notice, and a file built from the missing text would have given
+//   the tag "undefined".
+export const fileDaSidecar = (s: { name: string; content?: string; skipped?: boolean }): File => {
+    if (s.skipped) {
+        const saltato = new File([], s.name, { type: 'text/plain' });
+        Object.defineProperty(saltato, 'text', { value: () => Promise.reject(new Error('sidecar .txt not read: ' + s.name)) });
+        return saltato;
+    }
+    return new File([typeof s.content === 'string' ? s.content : ''], s.name, { type: 'text/plain' });
+};
+
 // ITALIANO: Limiti sui .txt letti all'import (un dataset scaricato e' input non fidato). Il limite
 //   vero di sicurezza e' la dimensione del file (1 MB, in App.tsx); questi due tengono solo a bada
 //   la galleria davanti a un file ostile. Prima erano 100 caratteri per tag e 200 tag per file:

@@ -49,7 +49,7 @@ export interface ElectronAPI {
     persistLang: (lang: string) => Promise<boolean>;
     secureStorage: ElectronSecureStorage;
     getPathForFile: (file: File) => string;
-    readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content: string; dir?: string }>>;
+    readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content?: string; dir?: string; skipped?: boolean }>>;
     writeSidecarTags: (items: Array<{ imagePath: string; content: string }>) => Promise<WriteSidecarResult>;
     trashFiles: (paths: string[]) => Promise<TrashResult>;
     restoreTrashed: (paths: string[]) => Promise<{ ok: boolean; restored: number; results: { percorso: string; esito: string }[] }>;

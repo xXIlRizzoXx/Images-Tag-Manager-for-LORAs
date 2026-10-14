@@ -31,16 +31,18 @@ const radice = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // ITALIANO: le due righe dello script che aprono il Cestino vero, e il Cestino finto che le
 //           sostituisce. Il finto legge le sue voci da ITM_CESTINO_FINTO (JSON): nome mostrato,
 //           percorso interno ($R...), cartella d'origine, file da rimettere a posto, giorni
-//           trascorsi dalla cancellazione (null = data non disponibile).
+//           trascorsi dalla cancellazione (null = data non disponibile) e, se serve, ritardoMs: quanto
+//           ci mette il ripristino di quella voce (per provare i tempi massimi).
 // ENGLISH: the two script lines that open the real Recycle Bin, and the fake bin replacing them.
 //          The fake reads its entries from ITM_CESTINO_FINTO (JSON): displayed name, internal path
-//          ($R...), original folder, file to put back, days since deletion (null = no date).
+//          ($R...), original folder, file to put back, days since deletion (null = no date) and, when
+//          needed, ritardoMs: how long restoring that entry takes (to test the time limits).
 const RIGHE_COM = ['$shell = New-Object -ComObject Shell.Application', '$bin = $shell.Namespace(0xA)'];
 const CESTINO_FINTO = [
     '$vociFinte = @()',
     'foreach ($f in (ConvertFrom-Json $env:ITM_CESTINO_FINTO)) {',
-    '  $v = [pscustomobject]@{ Name = [string]$f.nome; Path = [string]$f.interno; cartella = [string]$f.cartella; origine = [string]$f.origine; giorni = $f.giorni }',
-    "  $v | Add-Member -MemberType ScriptMethod -Name InvokeVerb -Value { param($verbo) if ($verbo -eq 'undelete') { Move-Item -LiteralPath $this.Path -Destination $this.origine } }",
+    '  $v = [pscustomobject]@{ Name = [string]$f.nome; Path = [string]$f.interno; cartella = [string]$f.cartella; origine = [string]$f.origine; giorni = $f.giorni; ritardoMs = $f.ritardoMs }',
+    "  $v | Add-Member -MemberType ScriptMethod -Name InvokeVerb -Value { param($verbo) if ($verbo -eq 'undelete') { if ($null -ne $this.ritardoMs) { Start-Sleep -Milliseconds ([int]$this.ritardoMs) }; Move-Item -LiteralPath $this.Path -Destination $this.origine } }",
     "  $v | Add-Member -MemberType ScriptMethod -Name ExtendedProperty -Value { param($nome) if ($nome -eq 'System.Recycle.DateDeleted' -and $null -ne $this.giorni) { return (Get-Date).AddDays(-[double]$this.giorni) }; return $null }",
     '  $vociFinte += $v',
     '}',
@@ -60,14 +62,17 @@ const sostituisciCestino = (script) => {
 };
 
 /* ITALIANO: carica electron/main.cjs una volta (un processo per file di prova, come fa run-tests).
-   Restituisce i gestori, l'elenco dei percorsi passati a shell.trashItem, le chiamate a spawn e
-   impostaCestino(voci) per decidere cosa contiene il Cestino finto alla prossima chiamata.
+   Restituisce i gestori, l'elenco dei percorsi passati a shell.trashItem, i percorsi che il
+   Cestino finto deve rifiutare (rifiutaCestino), le chiamate a spawn e impostaCestino(voci) per
+   decidere cosa contiene il Cestino finto alla prossima chiamata.
    ENGLISH: loads electron/main.cjs once (one process per test file, as run-tests does).
-   Returns the handlers, the list of paths handed to shell.trashItem, the spawn calls, and
-   impostaCestino(entries) to decide what the fake bin holds on the next call. */
+   Returns the handlers, the list of paths handed to shell.trashItem, the paths the fake Recycle
+   Bin must refuse (rifiutaCestino), the spawn calls, and impostaCestino(entries) to decide what
+   the fake bin holds on the next call. */
 export const caricaMain = () => {
     const handlers = new Map();
     const cestinati = [];
+    const rifiutaCestino = new Set();
     const lanci = [];
     let vociCestino = [];
     const vietato = (cosa) => () => { throw new Error(`main-harness: ${cosa} is not allowed in tests`); };
@@ -92,7 +97,11 @@ export const caricaMain = () => {
         session: { defaultSession: {} },
         Menu: { setApplicationMenu() {} },
         shell: {
-            trashItem: async (p) => { cestinati.push(p); },
+            // ITALIANO: per i percorsi messi in `rifiutaCestino` il finto fa come Windows quando il
+            //           Cestino non c'e' (unita' di rete, chiavetta): rifiuta e non sposta niente.
+            // ENGLISH: for the paths put in `rifiutaCestino` the fake does what Windows does when
+            //          there is no Recycle Bin (network drive, USB stick): it refuses and moves nothing.
+            trashItem: async (p) => { if (rifiutaCestino.has(p)) throw new Error('Operation was aborted'); cestinati.push(p); },
             openExternal: vietato('opening addresses'),
         },
     };
@@ -121,7 +130,7 @@ export const caricaMain = () => {
     } finally {
         Module._load = caricaOriginale;
     }
-    return { handlers, cestinati, lanci, impostaCestino: (voci) => { vociCestino = voci; } };
+    return { handlers, cestinati, rifiutaCestino, lanci, impostaCestino: (voci) => { vociCestino = voci; } };
 };
 
 // ITALIANO: piccolo contatore di controlli, uguale nello stile a quello di test-ai-models.mjs.
