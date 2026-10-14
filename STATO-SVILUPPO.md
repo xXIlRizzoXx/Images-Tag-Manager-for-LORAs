@@ -1,7 +1,20 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 24 settembre 2026
+**Ultimo aggiornamento:** 14 ottobre 2026
 **Versione attuale:** 1.3.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 1.3.0 (traguardo 106, 14 ottobre 2026): **chiuso il grande ciclo di controllo e riparazione.**
+Due giri completi su tutto il programma: agenti che cercano i difetti per area, tre verificatori
+indipendenti che provano a smontare ogni segnalazione, un correttore che ripara con una prova
+automatica per ogni riparazione, e un revisore che ricontrolla ogni salvataggio. Il primo giro ha
+confermato 55 difetti e ne ha riparati 54; il secondo ne ha confermati 78 e riparati 68. In tutto
+**122 difetti riparati in 19 salvataggi**, e le prove automatiche sono passate da 47 a 86 file,
+tutte verdi. I più seri riguardavano il backup anti-crash (che in certi casi rimetteva tag vecchi o
+perdeva quelli di una seconda cartella), il Ctrl+Z dopo il Cestino, "Annulla lo svuotamento" con
+un file omonimo, l'AI che continuava a lavorare dopo essere stata spenta, e le foto aperte da una
+cartella di rete (`\\server\...`), che ora si salvano. Restano aperte tre cose che non stanno nel
+codice ma nell'articolo pubblicato su Civitai (promesse non più vere su cestino, tag in minuscolo e
+tag in blocco), più 28 rifiniture segnalate dai revisori dell'ultimo giro: sono in elenco per il
+prossimo controllo. Le riparazioni non sono ancora state provate sul programma vero: serve una build.
 Novità 1.3.0 (traguardo 105, 24 settembre 2026): **la versione in lavorazione diventa 1.3.0.** Il
 lavoro nato come 1.2.1 (scelta automatica del modello AI, qui sotto) e il giro di controllo completo
 che lo accompagna cambiano abbastanza cose da meritare un salto della seconda cifra: il numero sale
@@ -267,8 +280,9 @@ Fatta la **copertina per Civitai**: là la scheda è verticale e ritaglia il cen
 logo e nome stanno esattamente al centro. Il programma salva anche l'anteprima già ritagliata, per
 vedere come verrà la scheda prima di caricarla.
 Novità (traguardo 88): il progetto è ora **pubblico** su GitHub. Prima di aprirlo ho controllato
-tutta la storia dei salvataggi: nessuna chiave, nessuna password, nessun percorso del tuo computer
-è mai finito dentro. La cartella `Release` e le note di lavoro restano fuori. Chiunque ora può
+tutta la storia dei salvataggi: nessuna chiave e nessuna password è mai finita dentro.
+(Correzione del 14 ottobre 2026: in questo registro era rimasto il percorso della cartella del
+progetto sul disco; ora è tolto, ma resta leggibile nelle versioni precedenti della storia.) La cartella `Release` e le note di lavoro restano fuori. Chiunque ora può
 vedere il programma, scaricare i due file e leggere anche questo registro.
 Novità (traguardo 87): **pubblicata la 1.1.0 su GitHub**. Nella pagina delle release adesso c'è
 **solo la 1.1.0**, con i due file pronti da scaricare (installer e portable) e una spiegazione di
@@ -477,9 +491,8 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 ## Vincoli sempre validi del progetto
 
-- **Consegna Windows:** i due file finali (portable + installer) vanno messi in
-  `D:\SOFTWARE PERSONALI IN SVILUPPO\000 SOFTWARE AI STUDIO PASSATI A CLAUDE\Images-Tag-Manager-for-LORAs\Release\`
-  (radice del progetto, non dentro la cartella di lavoro git).
+- **Consegna Windows:** i due file finali (portable + installer) vanno messi nella cartella
+  `Release\` della radice del progetto (non dentro la cartella di lavoro git).
 - **Dati dell'app:** sempre in `%APPDATA%\images-tag-manager` (mai accanto all'exe).
   È la cartella da cancellare per far ripartire l'app "da zero".
 - **Privacy:** nessuna telemetria, nessun tracciamento. Con l'AI cloud le foto vanno a Google
