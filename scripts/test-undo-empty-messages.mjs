@@ -6,6 +6,8 @@
    per i file che nel Cestino davvero non c'erano piu', ripetendo a ogni clic lo stesso giro. La
    regola: "non trovato" solo quando il Cestino e' stato letto e il file non c'e'; negli altri casi
    si dice che non si e' riusciti a riprenderlo; il tasto resta per cio' che si puo' riprovare.
+   Se non torna niente per motivi diversi (omonimo, sparita dal Cestino, non riuscita) si dice un
+   conto per motivo, invece di "dovrebbero essere ancora li'" anche per quelle sparite.
    Si eseguono i testi VERI presi da src/App.tsx (vedi trash-harness.mjs).
    Uso:  node scripts/test-undo-empty-messages.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -16,11 +18,13 @@
    were lost while they were still there. And the button stayed for the whole session even for
    files truly gone from the bin, repeating the same round at every click. The rule: "not found"
    only when the bin was read and the file is not there; otherwise it says the file could not be
-   taken back; the button stays for what can be retried.
+   taken back; the button stays for what can be retried. When nothing comes back for different
+   reasons (namesake, gone from the bin, not managed) a count per reason is given, instead of
+   "they should still be there" for the ones gone too.
    The REAL code taken from src/App.tsx is run (see trash-harness.mjs).
    Usage:  node scripts/test-undo-empty-messages.mjs      (exits with code 1 if anything is off) */
 
-import { creaApp, apiFinta, foto, percorsoImg, lingue, t } from './trash-harness.mjs';
+import { creaApp, apiFinta, foto, percorsoImg, percorsoTxt, lingue, t } from './trash-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
 
 const { dice, esito } = creaControlli();
@@ -48,7 +52,14 @@ const prova = async (esitoDi) => {
         revocati: app.revocati,
     };
 };
-const solo = (esitoA, esitoB) => (p) => (p === percorsoImg('A') ? esitoA : esitoB);
+// ITALIANO: A (immagine e .txt) risponde esitoA, B esitoB.
+// ENGLISH: A (image and .txt) answers esitoA, B esitoB.
+const solo = (esitoA, esitoB) => (p) => (p === percorsoImg('A') || p === percorsoTxt('A') ? esitoA : esitoB);
+// ITALIANO: la frase per "non e' tornato niente, per motivi diversi", con un conto per motivo.
+// ENGLISH: the sentence for "nothing came back, for different reasons", with a count per reason.
+const misti = (bloccate, sparite, fallite) => (typeof t.undoEmptyMixed === 'string'
+    ? t.undoEmptyMixed.replace('{blocked}', String(bloccate)).replace('{gone}', String(sparite)).replace('{failed}', String(fallite))
+    : '(manca undoEmptyMixed)');
 
 console.log('\n--- il ripescaggio fallisce: non e\' "non trovato" ---');
 {
@@ -60,20 +71,24 @@ console.log('\n--- il ripescaggio fallisce: non e\' "non trovato" ---');
     dice('il tasto resta', ['A', 'B'], e.restano);
     const rif = await prova(() => 'rifiutato');
     dice('tutti "rifiutato": stesso messaggio', [t.undoEmptyFailed, 'error'], rif.messaggio);
+    // ITALIANO: prima diceva "Dovrebbero essere ancora li'" anche per A, che nel Cestino non c'e' piu'.
+    // ENGLISH: it used to say "They should still be there" for A too, which is gone from the bin.
     const misto = await prova(solo('nonTrovato', 'fallito'));
-    dice('uno non trovato e uno fallito: si dice che non si e\' riusciti', [t.undoEmptyFailed, 'error'], misto.messaggio);
+    dice('uno non trovato e uno fallito: un motivo per ciascuna', [misti(0, 1, 1), 'error'], misto.messaggio);
     dice('il tasto resta solo per quello che si puo\' riprovare', ['B'], misto.restano);
 }
 
 console.log('\n--- un omonimo blocca A, B non torna per un altro motivo: B non sparisce dal messaggio ---');
 {
-    // ITALIANO: prima vinceva il messaggio dell'omonimo, con "Foto: 1" su due, e di B non si diceva niente.
-    // ENGLISH: the namesake message used to win, with "Photos: 1" out of two, and B was never mentioned.
+    // ITALIANO: prima vinceva il messaggio dell'omonimo, con "Foto: 1" su due, e di B non si diceva
+    //           niente; poi la frase generica, che taceva l'omonimo e diceva B "ancora li'".
+    // ENGLISH: the namesake message used to win, with "Photos: 1" out of two, and B was never
+    //          mentioned; then the generic sentence, which hid the namesake and called B "still there".
     const nonTrovata = await prova(solo('occupato', 'nonTrovato'));
-    dice('A bloccata, B non trovata: non solo "omonimo, Foto: 1"', [t.undoEmptyFailed, 'error'], nonTrovata.messaggio);
+    dice('A bloccata, B non trovata: si dicono tutti e due i motivi', [misti(1, 1, 0), 'error'], nonTrovata.messaggio);
     dice('il tasto resta solo per A', ['A'], nonTrovata.restano);
     const fallita = await prova(solo('occupato', 'fallito'));
-    dice('A bloccata, B fallita: si dice che non si e\' riusciti', [t.undoEmptyFailed, 'error'], fallita.messaggio);
+    dice('A bloccata, B fallita: si dicono tutti e due i motivi', [misti(1, 0, 1), 'error'], fallita.messaggio);
     dice('il tasto resta per tutte e due', ['A', 'B'], fallita.restano);
 }
 
@@ -99,6 +114,9 @@ console.log('\n--- la frase nuova nelle nove lingue ---');
 {
     const mancanti = Object.keys(lingue).filter(l => typeof lingue[l].undoEmptyFailed !== 'string' || !lingue[l].undoEmptyFailed.trim() || lingue[l].undoEmptyFailed === lingue[l].undoEmptyNone);
     dice('undoEmptyFailed c\'e\' in tutte e nove, diversa da undoEmptyNone', [], mancanti);
+    const senzaMisti = Object.keys(lingue).filter(l => typeof lingue[l].undoEmptyMixed !== 'string'
+        || !['{blocked}', '{gone}', '{failed}'].every(s => lingue[l].undoEmptyMixed.includes(s)));
+    dice('undoEmptyMixed c\'e\' in tutte e nove, con i tre conti', [], senzaMisti);
 }
 
 process.exit(esito());

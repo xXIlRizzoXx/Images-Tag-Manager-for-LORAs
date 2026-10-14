@@ -20,8 +20,12 @@
 //   key counts when it is a Latin letter: so on AZERTY and QWERTZ Z stays where the keyboard puts
 //   it. With a non-Latin keyboard (Russian: Ctrl+Z sends "я") the physical key (`code`, "KeyZ")
 //   counts: Undo and Redo used to do nothing, and they have no button.
-export const isLetterShortcut = (e: { key?: string; code?: string }, letter: string): boolean => {
+// ITALIANO: il tasto fisico vale solo senza Alt. Su Windows AltGr arriva come Ctrl+Alt, e AltGr sul
+//   tasto Z scrive un carattere (polacca "ż", ungherese ">"): prima diventava Annulla.
+// ENGLISH: the physical key counts only without Alt. On Windows AltGr arrives as Ctrl+Alt, and AltGr
+//   on the Z key types a character (Polish "ż", Hungarian ">"): it used to become Undo.
+export const isLetterShortcut = (e: { key?: string; code?: string; altKey?: boolean }, letter: string): boolean => {
     const tasto = String(e.key || '').toLowerCase();
     if (/^[a-z]$/.test(tasto)) return tasto === letter.toLowerCase();
-    return e.code === 'Key' + letter.toUpperCase();
+    return !e.altKey && e.code === 'Key' + letter.toUpperCase();
 };

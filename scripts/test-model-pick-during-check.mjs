@@ -118,9 +118,13 @@ const scenario = (iniziale, { elencoAperto = false } = {}) => {
     let sblocca = null;
     let provaPartita;
     const provaInCorso = new Promise(ok => { provaPartita = ok; });
+    // ITALIANO: solo il PRIMO elenco resta aperto; quelli dopo rispondono subito.
+    // ENGLISH: only the FIRST list stays open; the later ones answer at once.
+    let elenchi = 0;
     globalThis.__GOOGLE__ = {
         list: async () => {
-            if (elencoAperto) { provaPartita(); await new Promise(ok => { sblocca = ok; }); }
+            elenchi++;
+            if (elencoAperto && elenchi === 1) { provaPartita(); await new Promise(ok => { sblocca = ok; }); }
             return pagine([M('gemini-3.7-flash'), M('gemini-3.6-flash'), M('gemini-3.5-flash')]);
         },
         generate: async () => {
@@ -181,7 +185,36 @@ console.log('\n--- riparazione dopo "modello non disponibile", si sceglie un alt
     dice('nessun "Modello AI sostituito"', [], s.notifiche);
 }
 
+console.log('\n--- modello bloccato, "Controlla ora" in corso, si sceglie Automatico ---');
+{
+    // ITALIANO: il clic su Automatico chiede il suo controllo, che si perde perche' uno e' gia' in
+    //           corso; quello in corso era partito col modello bloccato e non guardava piu' il
+    //           blocco: diceva "c'e' un modello piu' recente" e Automatico restava sul 3.5 fino al
+    //           giorno dopo (il controllo risultava fatto).
+    // ENGLISH: the click on Automatic asks for its own check, which is lost because one is already
+    //          running; the running one had started with the model locked and never looked at the
+    //          lock again: it said "a newer model is available" and Automatic stayed on 3.5 until
+    //          the next day (the check counted as done).
+    const s = scenario({ aiModel: 'gemini-3.5-flash', aiModelloFissato: true }, { elencoAperto: true });
+    s.disegna().controllaModello(false, true);
+    await s.provaInCorso;
+    scegli(s, '__auto__');
+    s.sblocca(); await s.finito();
+    dice('Automatico passa davvero al piu\' recente', ['gemini-3.7-flash', false], quadro(s));
+    dice('e lo dice col cambio, non con "ce n\'e\' uno piu\' recente"',
+        [[t.aiModelSwitched.replace('{da}', 'gemini-3.5-flash').replace('{a}', 'gemini-3.7-flash'), 'info']], s.notifiche);
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
+{
+    const s = scenario({ aiModel: 'gemini-3.5-flash', aiModelloFissato: true }, { elencoAperto: true });
+    s.disegna().controllaModello(false, true);
+    await s.provaInCorso;
+    s.sblocca(); await s.finito();
+    dice('modello bloccato, "Controlla ora" senza toccare niente: resta bloccato sul suo', ['gemini-3.5-flash', true], quadro(s));
+    dice('e dice che ce n\'e\' uno piu\' recente', [[t.aiModelNewerAvailable.replace('{a}', 'gemini-3.7-flash'), 'info']], s.notifiche);
+    dice('e il controllo risulta fatto', true, s.salvato.has('aiModelloControllatoIl'));
+}
 {
     const s = scenario({ aiModel: 'gemini-3.6-flash', aiModelloFissato: false });
     s.disegna().controllaModello(false, false);

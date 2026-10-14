@@ -23,7 +23,7 @@
    The REAL code taken from src/App.tsx is run (see trash-harness.mjs).
    Usage:  node scripts/test-close-project-during-trash.mjs      (exits with code 1 if anything is off) */
 
-import { creaApp, foto, apiFinta, percorsoImg, percorsoTxt, t } from './trash-harness.mjs';
+import { creaApp, foto, apiFinta, cartellaFinta, percorsoImg, percorsoTxt, t } from './trash-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
 
 const { dice, esito } = creaControlli();
@@ -92,6 +92,41 @@ for (const [nome, chiudi] of [
         dice('le immagini E i loro .txt sono comunque tornati su disco insieme', [[percorsoImg('X'), percorsoImg('Y')], [percorsoTxt('X'), percorsoTxt('Y')]],
             api.ripristini.map(l => [...l].sort()));
         dice('la spia dell\'annullamento si spegne', false, app.stato.ripristinoInCorso);
+    }
+
+    console.log(`\n--- "Elimina per sempre" (seconda finestra) in corso, poi "${nome}" ---`);
+    {
+        // ITALIANO: una chiavetta USB: niente Cestino di Windows, si conferma la cancellazione
+        //           definitiva; mentre il primo file si cancella l'utente chiude il progetto e, nel
+        //           progetto nuovo, apre la finestra del cestino.
+        // ENGLISH: a USB stick: no Windows Recycle Bin, the permanent delete is confirmed; while the
+        //          first file is being deleted the user closes the project and, in the new project,
+        //          opens the trash window.
+        let app = null;
+        let chiuso = false;
+        let notifichePrima = -1;
+        const cartella = cartellaFinta();
+        const cancella = cartella.removeEntry;
+        cartella.removeEntry = async (n) => {
+            await cancella(n);
+            if (!chiuso) {
+                chiuso = true;
+                await chiudi(app);
+                await app.attendi(2);
+                app.stato.isTrashOpen = true;
+                notifichePrima = app.notifiche.length;
+            }
+        };
+        app = creaApp([foto('A', { cartella }), foto('B', { cartella })], { api: apiFinta({ esitoDi: () => 'rifiutato' }) });
+        await app.render().handleEmptyTrash();
+        await app.attendi();
+        dice('premessa: si apre la seconda finestra', true, Boolean(app.stato.confirmDialog && app.stato.confirmDialog.isOpen));
+        await app.stato.confirmDialog.onConfirm();
+        await app.attendi();
+        dice('nessun messaggio della cancellazione nel progetto nuovo', [], messaggi(app).slice(notifichePrima));
+        dice('la finestra del cestino aperta nel progetto nuovo resta aperta', true, app.stato.isTrashOpen);
+        dice('il progetto nuovo resta vuoto', [], app.vista());
+        dice('la spia dello svuotamento si spegne', false, app.stato.isEmptyingTrash);
     }
 }
 

@@ -5,7 +5,8 @@
    secondo (o il terzo, con due foto) annullava la modifica di B. Lo stesso con la X su una foto,
    con la cancellazione definitiva e, all'indietro, con Ctrl+Shift+Z. La regola: Ctrl+Z e
    Ctrl+Shift+Z saltano i passi identici a quello attuale; se non ne resta nessuno diverso non
-   fanno niente e non dicono niente.
+   fanno niente e non dicono niente. Vale anche dopo "Ripristina tutte" e dopo il ricarico di una
+   foto ritoccata fuori dal programma, che non devono copiare le foto che non cambiano.
    Si eseguono i testi VERI presi da src/App.tsx (vedi trash-harness.mjs) e la regola vera di
    src/utils/historyUtils.ts.
    Uso:  node scripts/test-undo-skips-empty-steps.mjs      (esce con codice 1 se qualcosa non torna)
@@ -17,11 +18,14 @@
    third, with two photos) undid B's edit. The same with the X on a photo, with the permanent
    delete and, backwards, with Ctrl+Shift+Z. The rule: Ctrl+Z and Ctrl+Shift+Z skip the steps
    identical to the current one; when no different one is left they do nothing and say nothing.
+   It holds after "Restore all" and after reloading a photo retouched outside the program too,
+   which must not copy the photos that do not change.
    The REAL code taken from src/App.tsx is run (see trash-harness.mjs), plus the real rule of
    src/utils/historyUtils.ts.
    Usage:  node scripts/test-undo-skips-empty-steps.mjs      (exits with code 1 if anything is off) */
 
-import { creaApp, apiFinta, foto, cartellaFinta, cronologia, t } from './trash-harness.mjs';
+import * as esbuild from 'esbuild';
+import { creaApp, apiFinta, foto, cartellaFinta, cronologia, sorgenteApp, t } from './trash-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
 
 const { dice, esito } = creaControlli();
@@ -91,6 +95,67 @@ console.log('\n--- cancellazione definitiva (anteprima nel browser), poi Ctrl+Z 
     await app.attendi();
     dice('A e C cancellate per sempre dalla cartella', ['A.png', 'C.png'], cartella.rimossi.filter(n => n.endsWith('.png')).sort());
     await controllaUndoRedo(app);
+}
+
+console.log('\n--- modifica B, cestina A, "Ripristina tutte", cestina di nuovo A, Svuota cestino, Ctrl+Z ---');
+{
+    // ITALIANO: "Ripristina tutte" copiava OGNI foto in un oggetto nuovo, anche B che non era nel
+    //           cestino: tolta A, i passi prima e dopo restavano "diversi" (oggetti diversi con lo
+    //           stesso contenuto) e il primo Ctrl+Z diceva "Azione annullata" senza cambiare niente.
+    // ENGLISH: "Restore all" copied EVERY photo into a new object, B too, which was not in the trash:
+    //          once A was removed, the steps before and after stayed "different" (different objects
+    //          with the same content) and the first Ctrl+Z said "Action undone" changing nothing.
+    const app = creaApp(['A', 'B'].map(id => foto(id, { cestinata: false })), { api: apiFinta() });
+    app.modifica(prev => prev.map(i => (i.id === 'B' ? { ...i, tags: ['modificato'] } : i)));
+    await app.attendi();
+    app.cestina('A');
+    await app.attendi();
+    app.render().handleRestoreAll();
+    await app.attendi();
+    dice('premessa: "Ripristina tutte" rimette A in galleria', ['A', 'B'], app.vista());
+    app.cestina('A');
+    await app.attendi();
+    await app.render().handleEmptyTrash();
+    await app.attendi();
+    const primo = await premi(app, 'handleUndo');
+    dice('UN Ctrl+Z riporta i tag di B a quelli di prima', ['tag B'], tagDi(app, 'B'));
+    dice('e dice "Azione annullata" una volta sola', [t.undoSuccess], primo);
+}
+
+console.log('\n--- ricarico di B dopo un ritocco esterno, poi A esce dal disco ---');
+{
+    // ITALIANO: il ricarico rifaceva B dentro OGNI passo con un oggetto suo: i passi che avevano lo
+    //           stesso B non lo avevano piu', e dopo l'uscita di A comparivano passi vuoti. Si
+    //           esegue il testo vero del ricarico (ricontrolla) preso da src/App.tsx.
+    // ENGLISH: the reload rebuilt B inside EVERY step with an object of its own: steps that shared
+    //          one B no longer did, and once A left empty steps appeared. The real text of the
+    //          reload (ricontrolla) taken from src/App.tsx is run.
+    const iR = sorgenteApp.indexOf('        const ricontrolla = async () => {');
+    const fineR = /\r?\n        \};\r?\n/g;
+    fineR.lastIndex = Math.max(iR, 0);
+    const fR = iR < 0 ? null : fineR.exec(sorgenteApp);
+    dice('il ricarico (ricontrolla) si trova in src/App.tsx', true, Boolean(fR));
+    if (fR) {
+        const js = (await esbuild.transform(sorgenteApp.slice(iR, fR.index + fR[0].length), { loader: 'ts' })).code;
+        const NOMI_R = ['selectedImageId', 'reloadingRef', 'imagesRef', 'generateThumbnail', 'anteprimeProgettoRef', 'isUndoRedoAction',
+            'setImages', 'setHistory', 'showNotification', 't'];
+        const cartella = { getFileHandle: async () => ({ getFile: async () => ({ name: 'B.png', lastModified: 2 }) }) };
+        const A0 = { id: 'A', tags: ['a'], isTrashed: false }, At = { ...A0, isTrashed: true };
+        const B0 = { id: 'B', tags: ['b'], file: { name: 'B.png', lastModified: 1 }, dirHandle: cartella, thumb: 'blob:vecchia' };
+        const B1 = { ...B0, tags: ['b', 'modificato'] };
+        let cronologiaR = [[A0, B0], [A0, B1], [At, B1]];
+        let immagini = [At, B1];
+        const ricontrolla = new Function(...NOMI_R, js + '\nreturn ricontrolla;')(
+            'B', { current: false }, { current: immagini }, async () => ({ url: 'blob:nuova', width: 10, height: 10 }), { current: new Set() },
+            { current: false }, (f) => { immagini = f(immagini); }, (f) => { cronologiaR = f(cronologiaR); }, () => { }, t);
+        await ricontrolla();
+        dice('premessa: B ricaricato in ogni passo', ['blob:nuova', 'blob:nuova', 'blob:nuova'], cronologiaR.map(p => p[1].thumb));
+        dice('i passi che avevano lo stesso B lo hanno ancora', true, cronologiaR[1][1] === cronologiaR[2][1]);
+        dice('e la galleria mostra lo stesso B del passo attuale', true, immagini[1] === cronologiaR[2][1]);
+        const N = cronologia.nearestDifferentStep;
+        const senzaA = cronologia.purgeIdsFromHistory(cronologiaR, new Set(['A']));
+        dice('tolta A, Ctrl+Z salta il passo identico e torna a prima della modifica di B', 0, N(senzaA, 2, -1));
+    }
 }
 
 console.log('\n--- nessuna modifica vera: cestina A, svuota, Ctrl+Z ---');

@@ -55,12 +55,12 @@ const chiuse = {
 };
 const NOMI = Object.keys(chiuse);
 const REGOLE = Object.keys(R);
-const premi = (key, code, shift = false) => {
+const premi = (key, code, shift = false, alt = false) => {
     const chiamate = [];
     const f = new Function('document', 'handleUndo', 'handleRedo', ...NOMI, ...REGOLE, js + '\nreturn handleKeyDown;')(
         { activeElement: { tagName: 'BODY' } }, () => chiamate.push('annulla'), () => chiamate.push('ripeti'),
         ...NOMI.map(n => chiuse[n]), ...REGOLE.map(n => R[n]));
-    f({ ctrlKey: true, shiftKey: shift, key, code, preventDefault() { } });
+    f({ ctrlKey: true, shiftKey: shift, altKey: alt, key, code, preventDefault() { } });
     return chiamate;
 };
 
@@ -68,6 +68,11 @@ console.log('\n--- tastiera russa: il tasto fisico Z ---');
 dice('Ctrl+Z ("я") annulla', ['annulla'], premi('я', 'KeyZ'));
 dice('Ctrl+Shift+Z ("Я") ripete', ['ripeti'], premi('Я', 'KeyZ', true));
 dice('Ctrl con un altro tasto russo ("ч", tasto X) non fa niente', [], premi('ч', 'KeyX'));
+
+console.log('\n--- AltGr (Windows: Ctrl+Alt) sul tasto fisico Z scrive un carattere, non e\' Annulla ---');
+dice('tastiera polacca: AltGr+Z ("ż") non annulla', [], premi('ż', 'KeyZ', false, true));
+dice('tastiera polacca: AltGr+Shift+Z ("Ż") non ripete', [], premi('Ż', 'KeyZ', true, true));
+dice('tastiera ungherese: AltGr sul tasto fisico Z (">") non annulla', [], premi('>', 'KeyZ', false, true));
 
 console.log('\n--- quello che NON deve cambiare ---');
 dice('tastiera italiana o inglese: Ctrl+Z annulla', ['annulla'], premi('z', 'KeyZ'));
@@ -78,5 +83,6 @@ dice('tastiera francese (AZERTY): il tasto con la W (fisico Z) non annulla', [],
 dice('tastiera tedesca (QWERTZ): il tasto con la Z (fisico Y) annulla', ['annulla'], premi('z', 'KeyY'));
 dice('tastiera tedesca (QWERTZ): il tasto con la Y (fisico Z) non annulla', [], premi('y', 'KeyZ'));
 dice('un evento senza il tasto fisico (code) con "z" annulla ancora', ['annulla'], premi('z', undefined));
+dice('Ctrl+Alt+Z su una tastiera latina annulla come prima', ['annulla'], premi('z', 'KeyZ', false, true));
 
 process.exit(esito());

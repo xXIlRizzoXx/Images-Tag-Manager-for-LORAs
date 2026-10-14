@@ -88,6 +88,7 @@ const CITAZIONI = [
     ['langPickerHint', 'settings', { ru: 'Настройках' }],
     ['deleteNoRecycleBin', 'loadFolder'],
     ['zipPhotoUnreadable', 'closeImageTitle'],
+    ['undoEmptyTxtNotBack', 'saveChanges'],
 ];
 
 const rif = 'en';

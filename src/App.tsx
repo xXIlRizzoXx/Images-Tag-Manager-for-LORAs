@@ -1252,17 +1252,29 @@ export default function App() {
             //          dead model is not respecting a choice.
             if (fissato && !rotto) {
                 const elenco = await elencaModelliRemoti(geminiApiKey);
-                if (elenco.length === 0) {
-                    if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error');
+                // ITALIANO: mentre Google rispondeva l'utente e' passato ad Automatico: il controllo
+                //           chiesto da quel clic si e' perso (questo era in corso), quindi lo fa
+                //           questo, proseguendo come Automatico. Prima diceva "ce n'e' uno piu'
+                //           recente", segnava il controllo come fatto, e Automatico restava sul
+                //           modello vecchio fino al giorno dopo.
+                // ENGLISH: while Google was answering the user switched to Automatic: the check that
+                //          click asked for was lost (this one was running), so this one does it,
+                //          going on as Automatic. It used to say "a newer one is available", mark
+                //          the check as done, and Automatic stayed on the old model until the next day.
+                if (aiModelloFissatoRef.current) {
+                    if (elenco.length === 0) {
+                        if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error');
+                        return;
+                    }
+                    tieniElenco(elenco);
+                    segnaControllo();
+                    if (dilloComunque) {
+                        if (elenco[0].id !== aiModel) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
+                        else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
+                    }
                     return;
                 }
                 tieniElenco(elenco);
-                segnaControllo();
-                if (dilloComunque) {
-                    if (elenco[0].id !== aiModel) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
-                    else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
-                }
-                return;
             }
 
             const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
@@ -1353,6 +1365,21 @@ export default function App() {
     useEffect(() => {
         if (!aiEnabled || !geminiApiKey) return;
         if (Date.now() - modelloControllatoIl < 24 * 60 * 60 * 1000) return;
+        // ITALIANO: "al massimo una volta al giorno" vale anche per i controlli non riusciti
+        //           (Google occupato, rete assente, chiave che non va), che "ultimo controllo" non
+        //           annota: prima ogni avvio, e ogni volta che si riaccendeva l'AI, si ricollegava.
+        //           Il tentativo si annota a parte, cosi' le Impostazioni dicono ancora l'ultimo
+        //           controllo riuscito. "Controlla ora" e la riparazione non passano da qui.
+        // ENGLISH: "at most once a day" holds for failed checks too (Google busy, no network, a key
+        //          that does not work), which "last check" does not record: every launch, and every
+        //          time the AI was switched back on, used to connect again. The attempt is recorded
+        //          apart, so Settings still shows the last successful check. "Check now" and the
+        //          repair do not go through here.
+        const adesso = Date.now();
+        let tentatoIl = 0;
+        try { tentatoIl = parseInt(localStorage.getItem('aiModelloTentatoIl') || '0', 10); } catch (_) { }
+        if (Number.isFinite(tentatoIl) && tentatoIl <= adesso && adesso - tentatoIl < 24 * 60 * 60 * 1000) return;
+        try { localStorage.setItem('aiModelloTentatoIl', String(adesso)); } catch (_) { }
         controllaModello(false, false);
     }, [aiEnabled, geminiApiKey]);
 
@@ -1908,7 +1935,13 @@ export default function App() {
     //   We count the PHOTO, not the file: plenty of photos have no .txt beside them, and a .txt
     //   that never existed is not a failure worth announcing. The image is what decides.
     const annullaSvuotamento = async () => {
-        if (!ultimoSvuotamento || ripristinoInCorso) return;
+        // ITALIANO: non durante uno svuotamento: alla sua fine liberava le anteprime delle foto che
+        //           stavano tornando, e l'annullamento, finendo, cancellava il ricordo del nuovo
+        //           svuotamento. I due tasti sono spenti; questo vale se un clic arriva lo stesso.
+        // ENGLISH: not during an emptying: when it ended it released the thumbnails of the photos
+        //          on their way back, and the undo, on finishing, erased the new emptying's record.
+        //          Both buttons are disabled; this holds if a click gets through anyway.
+        if (!ultimoSvuotamento || ripristinoInCorso || isEmptyingTrash) return;
         const apiLocale = (window as any).electronAPI;
         if (!apiLocale || typeof apiLocale.restoreTrashed !== 'function') return;
         setRipristinoInCorso(true);
@@ -1945,17 +1978,36 @@ export default function App() {
             const nonTrovate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'nonTrovato');
 
             const testi = tornate.map((v: any) => v.txtPath).filter(Boolean);
+            // ITALIANO: le foto la cui immagine e' tornata ma il cui .txt no. I tag sono ancora in
+            //           memoria, ma la foto risultava salvata (tag uguali a originalTags), quindi
+            //           "Salva Modifiche" non riscriveva mai quel .txt e il dataset restava con una
+            //           foto senza didascalia. Conta come non tornato ogni esito che non sia 'ok',
+            //           anche nessuna risposta o una seconda chiamata che si rompe: prima quella
+            //           finiva nel catch e le immagini gia' tornate non rientravano nemmeno nel
+            //           cestino dell'app.
+            // ENGLISH: the photos whose image came back but whose .txt did not. The tags are still in
+            //          memory, but the photo counted as saved (tags equal to originalTags), so "Save
+            //          Changes" never rewrote that .txt and the dataset kept a photo with no caption.
+            //          Every outcome other than 'ok' counts as not back, no answer and a second call
+            //          that breaks too: that one used to land in the catch, and the images already
+            //          back did not even re-enter the app's trash.
+            const senzaTesto = new Set<string>();
             if (testi.length > 0) {
-                const esitoTesti = await apiLocale.restoreTrashed(testi);
-                // ITALIANO: un .txt che non torna non e' una perdita: i tag sono gia' in memoria,
-                //           accanto alla foto, e "Salva modifiche" li riscrive. Si annota e basta.
-                // ENGLISH: a .txt that does not come back is not a loss: the tags are already in
-                //          memory beside the photo and "Save changes" rewrites them. Just log it.
-                if (esitoTesti && Array.isArray(esitoTesti.results)) {
-                    esitoTesti.results.forEach((r: any) => {
-                        if (r && r.esito !== 'ok') console.warn('[Cestino] Il file di testo non e\' tornato:', r.percorso, r.esito);
-                    });
+                let esitoTesti: any = null;
+                try {
+                    esitoTesti = await apiLocale.restoreTrashed(testi);
+                } catch (err) {
+                    console.warn('[Cestino] I file di testo non sono tornati:', err);
                 }
+                const testoPerPercorso = new Map<string, string>();
+                if (esitoTesti && Array.isArray(esitoTesti.results)) {
+                    esitoTesti.results.forEach((r: any) => { if (r && r.percorso) testoPerPercorso.set(r.percorso, String(r.esito || '')); });
+                }
+                tornate.forEach((v: any) => {
+                    if (!v.txtPath || testoPerPercorso.get(v.txtPath) === 'ok') return;
+                    console.warn('[Cestino] Il file di testo non e\' tornato:', v.txtPath, testoPerPercorso.get(v.txtPath) || '(nessuna risposta)');
+                    senzaTesto.add(v.img.id);
+                });
             }
 
             // ITALIANO: il progetto e' stato chiuso o azzerato mentre si aspettava il Cestino di
@@ -1976,9 +2028,14 @@ export default function App() {
                 //           nuovo, o ci sarebbero due card con lo stesso id.
                 // ENGLISH: never twice: a photo already in the project is not added again, or
                 //          there would be two cards with the same id.
+                // ITALIANO: originalTags vuoto = "sul disco non c'e' il suo .txt": la foto resta da
+                //           salvare, e "Salva Modifiche" lo riscrive dai tag in memoria.
+                // ENGLISH: empty originalTags = "its .txt is not on disk": the photo stays to be
+                //          saved, and "Save Changes" rewrites it from the tags in memory.
                 setImages(prev => {
                     const presenti = new Set(prev.map(i => i.id));
-                    return [...prev, ...tornate.filter((v: any) => !presenti.has(v.img.id)).map((v: any) => ({ ...v.img, isTrashed: true }))];
+                    return [...prev, ...tornate.filter((v: any) => !presenti.has(v.img.id))
+                        .map((v: any) => (senzaTesto.has(v.img.id) ? { ...v.img, isTrashed: true, originalTags: [] } : { ...v.img, isTrashed: true }))];
                 });
             }
             // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
@@ -2020,16 +2077,36 @@ export default function App() {
             //          back, as in the partial branch below: it used to win as soon as one was
             //          blocked, said "Photos: 1" out of three and kept quiet about the others, even
             //          those gone from the Recycle Bin.
+            // ITALIANO: non e' tornato niente, per motivi diversi (omonimo, sparita dal Cestino,
+            //           non riuscita): una frase con un conto per motivo. Prima si cadeva su
+            //           "Dovrebbero essere ancora li'", falso per quelle sparite dal Cestino di
+            //           Windows, e il motivo dell'omonimo si perdeva.
+            // ENGLISH: nothing came back, for different reasons (namesake, gone from the bin, not
+            //          managed): one sentence with a count per reason. It used to fall to "They
+            //          should still be there", false for those gone from the Windows Recycle Bin,
+            //          and the namesake reason was lost.
+            // ITALIANO: i .txt non tornati si dicono accanto all'esito delle immagini, e il
+            //           messaggio non e' piu' il verde "tutto a posto".
+            // ENGLISH: the .txt files not back are reported next to the images' outcome, and the
+            //          message is no longer the green "all done".
+            const conTesti = (frase: string) => (senzaTesto.size > 0
+                ? [frase, t.undoEmptyTxtNotBack.replace('{n}', String(senzaTesto.size))].join(' · ')
+                : frase);
             if (tornate.length === 0 && bloccate.length > 0 && bloccate.length === rimaste.length) {
                 showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
             } else if (tornate.length === 0 && nonTrovate.length === rimaste.length) {
                 showNotification(t.undoEmptyNone, 'error');
+            } else if (tornate.length === 0 && (bloccate.length > 0 || nonTrovate.length > 0)) {
+                showNotification(t.undoEmptyMixed.replace('{blocked}', String(bloccate.length)).replace('{gone}', String(nonTrovate.length))
+                    .replace('{failed}', String(rimaste.length - bloccate.length - nonTrovate.length)), 'error');
             } else if (tornate.length === 0) {
                 showNotification(t.undoEmptyFailed, 'error');
             } else if (bloccate.length > 0 && bloccate.length === rimaste.length) {
-                showNotification(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length)), 'info');
+                showNotification(conTesti(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length))), 'info');
             } else if (rimaste.length > 0) {
-                showNotification(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length)), 'info');
+                showNotification(conTesti(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length))), 'info');
+            } else if (senzaTesto.size > 0) {
+                showNotification(conTesti(t.undoEmptyDone.replace('{n}', String(tornate.length))), 'info');
             } else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
         } catch (err) {
             console.error('[Cestino] Annullamento dello svuotamento non riuscito:', err);
@@ -2256,6 +2333,7 @@ export default function App() {
     const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsEmptyingTrash(true);
+        const progetto = progettoGenRef.current;
         const removedIds = new Set<string>();
         let failed = 0;
         for (const scelta of imgs) {
@@ -2272,6 +2350,16 @@ export default function App() {
             if (await deleteImageFilesForGood(img)) removedIds.add(img.id); else failed++;
         }
         setIsEmptyingTrash(false);
+        // ITALIANO: come in "Svuota cestino": il progetto e' stato chiuso o azzerato durante la
+        //           cancellazione. Niente messaggio, chiusura della finestra del cestino o passo di
+        //           cronologia nel progetto di adesso: non e' il suo lavoro.
+        // ENGLISH: as in "Empty trash": the project was closed or reset during the delete. No
+        //          message, trash-window close or history step in the current project: it is not
+        //          that project's job.
+        if (progetto !== progettoGenRef.current) {
+            console.warn('[Cestino] Cancellazione definitiva interrotta dalla chiusura del progetto: file gia\' cancellati:', removedIds.size);
+            return;
+        }
         // ITALIANO: non e' stata cancellata nessuna foto (tutte tornate in galleria): niente
         //           "eliminate per sempre: 0", si dice solo com'e' andata la prima parte, se c'e'.
         // ENGLISH: no photo was deleted (all back in the gallery): no "deleted for good: 0", only
@@ -2316,7 +2404,13 @@ export default function App() {
     };
 
     const handleRestoreAll = () => {
-        setImages(prev => prev.map(img => ({ ...img, isTrashed: false })));
+        // ITALIANO: si rifanno solo le foto del cestino: le altre restano lo STESSO oggetto, come
+        //           negli altri passi della cronologia. Prima si copiava ogni foto, e dopo uno
+        //           svuotamento il primo Ctrl+Z si fermava su un passo uguale a quello attuale.
+        // ENGLISH: only the trashed photos are rebuilt: the others stay the SAME object, as in the
+        //          other history steps. Every photo used to be copied, and after an emptying the
+        //          first Ctrl+Z stopped on a step equal to the current one.
+        setImages(prev => prev.map(img => (img.isTrashed ? { ...img, isTrashed: false } : img)));
         showNotification(t.allPhotosRestored, "success");
         setIsTrashOpen(false);
         soundManager.pop();
@@ -2976,8 +3070,22 @@ export default function App() {
                     // ENGLISH: this reload is NOT a user action: it must not enter the history. It used
                     //          to, so "Undo" restored the OLD file instead of undoing the last tag edit;
                     //          worse, a background reload discarded any pending "Redo" steps.
+                    // ITALIANO: un oggetto nuovo per ogni oggetto vecchio, uno solo: i passi della
+                    //           cronologia (e la galleria) che avevano la stessa foto continuano ad
+                    //           averla. Prima ogni passo ne riceveva una copia sua, e dopo l'uscita di
+                    //           un'altra foto dal disco Ctrl+Z si fermava su passi rimasti identici.
+                    // ENGLISH: one new object per old object, only one: the history steps (and the
+                    //          gallery) that held the same photo keep sharing it. Every step used to
+                    //          get a copy of its own, and once another photo left the disk Ctrl+Z
+                    //          stopped on steps that had become identical.
+                    const rifatte = new Map<any, any>();
+                    const rifai = (i: any) => {
+                        if (i.id !== id) return i;
+                        if (!rifatte.has(i)) rifatte.set(i, { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height });
+                        return rifatte.get(i);
+                    };
                     isUndoRedoAction.current = true;
-                    setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
+                    setImages(prev => prev.map(rifai));
                     // ITALIANO: il ricarico non e' un'azione annullabile, ma cambia comunque il file
                     //           sottostante. Non bastava saltarne la registrazione: le istantanee gia'
                     //           in cronologia continuavano a contenere il file e l'anteprima VECCHI,
@@ -2990,9 +3098,7 @@ export default function App() {
                     //          an external retouch brought the pre-retouch photo back on screen. I
                     //          refresh the image inside those snapshots too, leaving each step's tags
                     //          untouched (those must stay undoable).
-                    setHistory(prev => prev.map(snap => snap.map((i: any) => i.id === id
-                        ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height }
-                        : i)));
+                    setHistory(prev => prev.map(snap => snap.map(rifai)));
                     showNotification(t.imageReloaded, 'info');
                 }
             } catch (_) { /* file spostato/illeggibile: ignoro */ }
@@ -4875,7 +4981,7 @@ export default function App() {
                                                 <p className={`text-sm max-w-md leading-relaxed mb-5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.undoEmptyHint}</p>
                                                 <button
                                                     onClick={annullaSvuotamento}
-                                                    disabled={ripristinoInCorso}
+                                                    disabled={ripristinoInCorso || isEmptyingTrash}
                                                     className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-md shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                     {ripristinoInCorso ? <Loader2 size={18} className="animate-spin" /> : <Undo2 size={18} />}
