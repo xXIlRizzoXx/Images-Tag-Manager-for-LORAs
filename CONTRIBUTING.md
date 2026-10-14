@@ -19,6 +19,7 @@ npm install
 npm run dev          # in the browser, fastest loop
 npm run electron:dev # as the real desktop app
 npm run lint         # tsc --noEmit, must be clean
+npm test             # the two checks below in one go; npm run electron:build runs it too and stops if it fails
 node scripts/check-translations.mjs   # same keys in all nine languages, must end "ESITO: nessun problema meccanico"
 node scripts/run-tests.mjs            # offline tests, must end "ESITO PROVE: TUTTE PASSATE"
 ```

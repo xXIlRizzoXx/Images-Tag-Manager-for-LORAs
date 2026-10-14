@@ -71,4 +71,37 @@ if (/chiediEliminazioneDefinitiva/.test(app)) {
     }
 }
 
+// ITALIANO: il cestino ha due passi: "Sposta nel Cestino" mette solo un segno sulla foto (i file
+//           restano nella cartella), il Cestino di Windows arriva con "Svuota Cestino" o con
+//           "Elimina dal disco", e lo svuotamento si puo' annullare. Il README diceva "cancellare
+//           li manda nel Cestino di Windows": chi lo legge cerca nel Cestino file ancora nella
+//           cartella. Le etichette si leggono dal blocco inglese di constants.ts.
+// ENGLISH: the trash has two steps: "Move to Trash" only flags the photo (the files stay in the
+//          folder), the Windows Recycle Bin comes with "Empty Trash" or "Delete from Disk", and
+//          the emptying can be undone. The README said "deleting sends them to the Windows Recycle
+//          Bin": a reader looks in the Recycle Bin for files still in the folder. The labels are
+//          read from the English block of constants.ts.
+// ITALIANO: il corpo di una funzione di App: dalla sua dichiarazione alla dichiarazione successiva.
+// ENGLISH: the body of an App function: from its declaration to the next declaration.
+const corpo = (nome) => {
+    const i = app.indexOf(`const ${nome} =`);
+    if (i < 0) return '';
+    const fine = app.indexOf('\n    const ', i + 1);
+    return app.slice(i, fine < 0 ? undefined : fine);
+};
+const spostaNelCestino = corpo('handleMoveToTrash');
+dice('premessa: App.tsx ha handleMoveToTrash', true, spostaNelCestino.length > 0);
+if (spostaNelCestino && !/trashFiles|deleteImageFiles/.test(spostaNelCestino) && /const handleEmptyTrash\b/.test(app)) {
+    console.log('Il cestino del programma non tocca i file finche\' non si svuota.');
+    const costanti = leggi('src/constants.ts');
+    const inglese = (costanti.match(/\n    en: \{[\s\S]*?\n    fr: \{/) || [''])[0];
+    const etichetta = (k) => (inglese.match(new RegExp(`\\n\\s+${k}: "([^"]+)"`)) || [])[1] || '';
+    dice('niente piu\' "Deleting sends them to the Windows Recycle Bin"', false, /Deleting sends them to the Windows Recycle Bin/i.test(readme));
+    for (const k of ['moveToTrash', 'emptyTrash', 'undoEmptyTrash']) {
+        const testo = etichetta(k);
+        dice(`premessa: etichetta inglese ${k} trovata`, true, testo.length > 0);
+        if (testo) dice(`la sezione Privacy nomina "${testo}"`, true, privacy.includes(testo));
+    }
+}
+
 process.exit(esito());
