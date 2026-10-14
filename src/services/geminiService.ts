@@ -93,7 +93,11 @@ const imageForGemini = async (file: File): Promise<{ data: string; mimeType: str
     if (!file || file.size === 0) throw fotoNonUsabile('Invalid or empty file');
     if (file.size > MAX_FILE_SIZE_BYTES) throw fotoNonUsabile('Image too large (> 20 MB)');
     if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw fotoNonUsabile('Unsupported file type');
-    const pulita = stripImageMetadata(new Uint8Array(await file.arrayBuffer()));
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // ITALIANO: una foto rovinata che non si riesce a pulire e' un problema della foto, non della rete.
+    // ENGLISH: a damaged photo that cannot be cleaned is a problem of the photo, not of the network.
+    let pulita: ReturnType<typeof stripImageMetadata>;
+    try { pulita = stripImageMetadata(bytes); } catch { throw fotoNonUsabile('Unsupported file type'); }
     const blob = pulita
         ? new Blob([pulita.bytes as Uint8Array<ArrayBuffer>], { type: pulita.mimeType })
         : await redrawAsPng(file);
