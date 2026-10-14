@@ -353,10 +353,16 @@ export const classifyGeminiError = (err: any): GeminiErrore => {
     if (msg.includes('billing')) {
         return { kind: 'billing_required', message: msg };
     }
-    if (msg.includes('NOT_FOUND') || msg.includes('404') || msg.toLowerCase().includes('model') && msg.toLowerCase().includes('not found')) {
+    // ITALIANO: come per 401 e 429, le cifre "404" e "403" del testo contano solo senza stato
+    //           numerico: un 403 "progetto 840412345678 sospeso" diventava "modello non
+    //           disponibile", e partiva la riparazione del modello per un problema della chiave.
+    // ENGLISH: as for 401 and 429, the "404" and "403" digits of the text count only with no
+    //          numeric status: a 403 "project 840412345678 suspended" became "model unavailable",
+    //          and the model repair started for a key problem.
+    if (msg.includes('NOT_FOUND') || stato === 404 || (senzaStato && msg.includes('404')) || msg.toLowerCase().includes('model') && msg.toLowerCase().includes('not found')) {
         return { kind: 'model_unavailable', message: msg };
     }
-    if (msg.includes('PERMISSION_DENIED') || msg.includes('403')) {
+    if (msg.includes('PERMISSION_DENIED') || stato === 403 || (senzaStato && msg.includes('403'))) {
         return { kind: 'billing_required', message: msg };
     }
     return { kind: 'unknown', message: msg };
@@ -592,7 +598,11 @@ export type EsitoModello = {
     // ENGLISH: when nothing changes because of a problem, the WHY decides the message. A single
     //          "failed" value forced the interface to say one sentence for three different
     //          things - wrong for two of them.
-    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRaggiungibile' | 'occupato' | 'nessunoValido';
+    // ITALIANO: 'chiaveNonValida' = Google ha rifiutato la chiave (scaduta, revocata, sbagliata):
+    //           non e' "non raggiungibile", e l'utente deve sapere che il problema e' la chiave.
+    // ENGLISH: 'chiaveNonValida' = Google refused the key (expired, revoked, wrong): it is not
+    //          "unreachable", and the user must know the key is the problem.
+    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRaggiungibile' | 'chiaveNonValida' | 'occupato' | 'nessunoValido';
     disponibili: ModelloTrovato[];
 };
 
@@ -615,6 +625,7 @@ export const aggiornaModelloAutomatico = async (
         candidati = await elencaModelliRemoti(apiKey);
     } catch (err) {
         console.warn('[AI] Elenco dei modelli non ottenuto:', err);
+        if (classifyGeminiError(err).kind === 'invalid_key') return fermo('chiaveNonValida');
         return fermo('nonRaggiungibile');
     }
     if (candidati.length === 0) return fermo('nonRaggiungibile');

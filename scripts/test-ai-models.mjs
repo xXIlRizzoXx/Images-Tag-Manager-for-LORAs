@@ -228,6 +228,18 @@ googleCon({ list: async () => { throw ERR.rete(); } });
 e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
 dice('niente rete: nonRaggiungibile, e il modello NON cambia', ['nonRaggiungibile', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
 
+// ITALIANO: una chiave scaduta, revocata o sbagliata NON e' "Google non raggiungibile": il
+//           motivo e' la chiave, e l'utente deve saperlo invece di controllare la rete.
+// ENGLISH: an expired, revoked or wrong key is NOT "Google unreachable": the reason is the
+//          key, and the user must know it instead of checking the network.
+googleCon({ list: async () => { throw VERI.chiave(); } });
+e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
+dice('chiave sbagliata all\'elenco: chiaveNonValida, e il modello NON cambia', ['chiaveNonValida', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
+googleCon({ list: async () => { throw apiErrore(400, { code: 400, status: 'INVALID_ARGUMENT', message: 'API key expired. Please renew the API key.',
+    details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' }] }); } });
+e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash', true);
+dice('chiave scaduta durante una riparazione: chiaveNonValida', 'chiaveNonValida', e.esito);
+
 googleCon({ modelli: [] });
 e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
 dice('elenco vuoto: nonRaggiungibile', 'nonRaggiungibile', e.esito);
@@ -265,6 +277,27 @@ dice('servizio spento (progetto con "401" nel numero): fatturazione, NON chiave 
 dice('chiave segnalata come trapelata: chiave sbagliata, NON fatturazione', 'invalid_key', S.classifyGeminiError(VERI.chiaveTrapelata()).kind);
 dice('chiave bloccata per questa API: chiave sbagliata, NON fatturazione', 'invalid_key', S.classifyGeminiError(VERI.chiaveBloccata()).kind);
 dice('il vecchio testo "[401] Unauthorized" senza stato resta chiave sbagliata', 'invalid_key', S.classifyGeminiError(errore('[401] Unauthorized')).kind);
+
+console.log('\n--- le cifre "404" e "403" nel testo non valgono come stato quando lo stato c\'e\' ---');
+// ITALIANO: un progetto sospeso (403) con "404" nel numero del progetto: e' un problema della
+//           chiave o del progetto, NON un modello che non esiste (prima partiva la riparazione).
+// ENGLISH: a suspended project (403) with "404" in the project number: it is a key or project
+//          problem, NOT a model that does not exist (the repair used to start).
+dice('403 progetto sospeso (progetto con "404" nel numero): fatturazione, NON modello non disponibile', 'billing_required',
+    S.classifyGeminiError(apiErrore(403, { code: 403, status: 'PERMISSION_DENIED',
+        message: "Permission denied: Consumer 'projects/840412345678' has been suspended." })).kind);
+dice('400 argomento non valido (progetto con "404" nel numero): sconosciuto, NON modello non disponibile', 'unknown',
+    S.classifyGeminiError(apiErrore(400, { code: 400, status: 'INVALID_ARGUMENT',
+        message: 'Request contains an invalid argument (project 840412345678).' })).kind);
+dice('400 argomento non valido (progetto con "403" nel numero): sconosciuto, NON fatturazione', 'unknown',
+    S.classifyGeminiError(apiErrore(400, { code: 400, status: 'INVALID_ARGUMENT',
+        message: 'Request contains an invalid argument (project 840312345678).' })).kind);
+dice('404 vero senza la parola NOT_FOUND: resta non disponibile', 'model_unavailable',
+    S.classifyGeminiError(apiErrore(404, { code: 404, message: 'Requested entity was not found.' })).kind);
+dice('403 vero senza la parola PERMISSION_DENIED: resta fatturazione', 'billing_required',
+    S.classifyGeminiError(apiErrore(403, { code: 403, message: 'The caller does not have permission' })).kind);
+dice('il vecchio testo "[404] ..." senza stato resta non disponibile', 'model_unavailable', S.classifyGeminiError(errore('[404] models/x was removed')).kind);
+dice('il vecchio testo "[403] ..." senza stato resta fatturazione', 'billing_required', S.classifyGeminiError(errore('[403] Forbidden')).kind);
 
 console.log('\n--- la quota del GIORNO finita si riconosce da quella del minuto ---');
 {

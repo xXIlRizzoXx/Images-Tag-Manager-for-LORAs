@@ -1230,7 +1230,7 @@ export default function App() {
 
             const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
             tieniElenco(esito.disponibili);
-            if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'occupato') segnaControllo();
+            if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'occupato') segnaControllo();
 
             // ITALIANO: mentre Google rispondeva (qualche secondo: elenco e fino a tre prove)
             //           l'utente ha scelto a mano un modello preciso, ed e' ancora bloccato: vale
@@ -1294,13 +1294,18 @@ export default function App() {
                 //          down" and "none passes the test" are three different things, and they
                 //          all used to say the same one - wrong for two of the three.
                 if (esito.esito === 'nonRaggiungibile') showNotification(t.aiModelCheckFailed, 'error');
+                else if (esito.esito === 'chiaveNonValida') showNotification(t.aiModelCheckKeyInvalid, 'error');
                 else if (esito.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
                 else if (esito.esito === 'nessunoValido') showNotification(t.aiModelNoneWorking, 'error');
                 else showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
             }
         } catch (err) {
             console.warn('[AI] Controllo del modello non riuscito:', err);
-            if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error');
+            // ITALIANO: con il modello bloccato l'elenco si chiede da qui: una chiave scaduta o
+            //           revocata non e' "Google non raggiungibile", come nel giro automatico.
+            // ENGLISH: with the model locked the list is asked from here: an expired or revoked
+            //          key is not "Google unreachable", as in the automatic round.
+            if (dilloComunque) showNotification(classifyGeminiError(err).kind === 'invalid_key' ? t.aiModelCheckKeyInvalid : t.aiModelCheckFailed, 'error');
         } finally {
             controlloModelloRef.current = false;
             setControlloModelloInCorso(false);
@@ -4067,11 +4072,11 @@ export default function App() {
                             fatalAbort = true;
                             break;
                         }
-                        // ITALIANO: la quota gratuita del GIORNO e' finita: riprovare fra 15 e 45 secondi
+                        // ITALIANO: la quota del GIORNO e' finita: riprovare fra 15 e 45 secondi
                         //           non serve, e ogni foto rimasta costava un minuto e tre richieste a
                         //           vuoto, per ore, con un riepilogo che non diceva il perche'. Ci si
                         //           ferma subito e lo si dice. Le foto gia' taggate restano.
-                        // ENGLISH: the free DAILY quota is used up: retrying in 15 and 45 seconds is
+                        // ENGLISH: the DAILY quota is used up: retrying in 15 and 45 seconds is
                         //          pointless, and every remaining photo cost a minute and three wasted
                         //          requests, for hours, with a summary that never said why. Stop at
                         //          once and say so. The photos already tagged stay tagged.
