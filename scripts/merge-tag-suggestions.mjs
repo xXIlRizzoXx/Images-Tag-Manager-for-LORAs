@@ -35,6 +35,17 @@ const ingressi = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i 
 //   different case: that is what actually prevents duplicates.
 const chiave = t => String(t).toLowerCase().replace(/[_\s]+/g, ' ').replace(/\s*\(.*?\)\s*/g, ' ').trim();
 
+// ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con
+//   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (a differenza di chiave),
+//   e un'emoticon senza lettere ne' cifre (^_^) tiene i suoi trattini bassi.
+// ENGLISH: the form in which a new tag enters the dictionary, where every tag is lowercase with
+//   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (unlike chiave), and an
+//   emoticon without letters or digits (^_^) keeps its underscores.
+const grafia = t => {
+    const s = String(t).toLowerCase().trim();
+    return (/[\p{L}\p{N}]/u.test(s) ? s.replace(/[_\s]+/g, ' ') : s.replace(/\s+/g, ' ')).trim();
+};
+
 function leggiDizionario() {
     const src = fs.readFileSync(FILE_TAG, 'utf8');
     const categorie = [];
@@ -102,8 +113,8 @@ if (APPLY) {
         if (!cat) { saltati.push(`${tag} -> categoria sconosciuta "${info.categoria}"`); continue; }
         if (!info.it || !String(info.it).trim()) { saltati.push(`${tag} -> manca la traduzione italiana`); continue; }
         if (!perCategoria.has(cat.id)) perCategoria.set(cat.id, []);
-        perCategoria.get(cat.id).push({ tag, it: String(info.it).trim() });
-        perChiave.set(k, { tag, categoria: cat.id });   // niente doppioni dentro lo stesso piano
+        perCategoria.get(cat.id).push({ tag: grafia(tag), it: String(info.it).trim() });
+        perChiave.set(k, { tag: grafia(tag), categoria: cat.id });   // niente doppioni dentro lo stesso piano
     }
 
     // inserisco partendo dal fondo del file, cosi' le posizioni non si spostano
@@ -150,14 +161,14 @@ if (ingressi.length === 0) {
 const { categorie, perChiave } = leggiDizionario();
 console.log(`dizionario attuale: ${perChiave.size} tag in ${categorie.length} categorie\n`);
 
-const visti = new Map();     // chiave -> prima grafia incontrata
+const visti = new Map();     // chiave -> prima grafia incontrata, nella forma del dizionario
 for (const f of ingressi) {
     const tags = leggiTagDaFile(f);
     let nuoviQui = 0;
     for (const t of tags) {
         const k = chiave(t);
         if (!k) continue;
-        if (!visti.has(k)) { visti.set(k, t); if (!perChiave.has(k)) nuoviQui++; }
+        if (!visti.has(k)) { visti.set(k, grafia(t)); if (!perChiave.has(k)) nuoviQui++; }
     }
     console.log(`${path.basename(f)}: ${tags.length} tag letti, ${nuoviQui} mai visti prima`);
 }

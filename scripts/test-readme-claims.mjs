@@ -123,7 +123,7 @@ if (spostaNelCestino && !/trashFiles|deleteImageFiles/.test(spostaNelCestino) &&
     const inglese = (costanti.match(/\n    en: \{[\s\S]*?\n    fr: \{/) || [''])[0];
     const etichetta = (k) => (inglese.match(new RegExp(`\\n\\s+${k}: "([^"]+)"`)) || [])[1] || '';
     dice('niente piu\' "Deleting sends them to the Windows Recycle Bin"', false, /Deleting sends them to the Windows Recycle Bin/i.test(readme));
-    for (const k of ['moveToTrash', 'emptyTrash', 'undoEmptyTrash']) {
+    for (const k of ['moveToTrash', 'emptyTrash', 'deletePermanently', 'undoEmptyTrash']) {
         const testo = etichetta(k);
         dice(`premessa: etichetta inglese ${k} trovata`, true, testo.length > 0);
         if (testo) dice(`la sezione Privacy nomina "${testo}"`, true, privacy.includes(testo));

@@ -14,7 +14,7 @@
     "dev": "vite --port=3000",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "npx rimraf dist release",
+    "clean": "node -e \"for (const d of ['dist','release/win-unpacked']) require('fs').rmSync(d,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
     "test": "node scripts/check-translations.mjs && node scripts/run-tests.mjs",
     "installer:art": "node scripts/make-installer-art.mjs",
@@ -71,8 +71,12 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/splash.html",
+      "electron/splash.js",
       "public/**/*",
+      "!**/*.md",
       "!node_modules/**/*"
     ],
     "asar": true
