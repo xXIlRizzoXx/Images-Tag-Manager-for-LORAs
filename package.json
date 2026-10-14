@@ -77,6 +77,8 @@
       "electron/splash.js",
       "public/**/*",
       "!**/*.md",
+      "!public/__shots/**/*",
+      "!dist/__shots/**/*",
       "!node_modules/**/*"
     ],
     "asar": true

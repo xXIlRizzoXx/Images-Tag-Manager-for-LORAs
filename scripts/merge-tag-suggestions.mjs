@@ -41,8 +41,19 @@ const chiave = t => String(t).toLowerCase().replace(/[_\s]+/g, ' ').replace(/\s*
 // ENGLISH: the form in which a new tag enters the dictionary, where every tag is lowercase with
 //   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (unlike chiave), and an
 //   emoticon without letters or digits (^_^) keeps its underscores.
+// ITALIANO: il trattino basso resta anche dove fa parte del tag, perche' i modelli conoscono
+//   solo quella forma: le emoticon di WD14 (o_o, x_x, 0_0: un segno, _, un segno, piu' le poche
+//   piu' lunghe) e i tag di qualita' di Pony (score_9, score_8_up, source_anime, rating_safe).
+//   Vale anche per un piano corretto a mano, che passa di qui con --apply.
+// ENGLISH: the underscore also stays where it is part of the tag, because models only know that
+//   form: the WD14 emoticons (o_o, x_x, 0_0: one sign, _, one sign, plus the few longer ones)
+//   and Pony's quality tags (score_9, score_8_up, source_anime, rating_safe). This also holds for
+//   a plan corrected by hand, which goes through here on --apply.
+const EMOTICON_LUNGHE = new Set(['(o)_(o)', '<o>_<o>', '<|>_<|>', '||_||']);
+const tieneTrattino = s => /^[^\s_]_[^\s_]$/u.test(s) || EMOTICON_LUNGHE.has(s) || /^(score|source|rating)_[\p{L}\p{N}_]+$/u.test(s);
 const grafia = t => {
     const s = String(t).toLowerCase().trim();
+    if (tieneTrattino(s)) return s;
     return (/[\p{L}\p{N}]/u.test(s) ? s.replace(/[_\s]+/g, ' ') : s.replace(/\s+/g, ' ')).trim();
 };
 

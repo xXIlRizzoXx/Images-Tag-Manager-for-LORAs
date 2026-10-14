@@ -22,7 +22,7 @@
 
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { creaControlli } from './main-harness.mjs';
@@ -66,5 +66,19 @@ dice('dist/assets/index.js e\' nel pacchetto', true, spedito('dist/assets/index.
 for (const rel of ['electron/CLAUDE.md', 'electron/NOTES.md', 'electron/appunti.txt', 'public/CLAUDE.md', 'dist/CLAUDE.md']) {
     dice(`${rel} resta fuori dal pacchetto`, false, spedito(rel));
 }
+
+// ITALIANO: make-readme-shots copia foto VERE e i loro .txt in public/__shots, e vite le ricopia in
+//           dist/__shots. Se il giro si interrompe (Ctrl+C, console chiusa) la cartella resta: non
+//           deve finire ne' nel pacchetto pubblico ne' in git.
+// ENGLISH: make-readme-shots copies REAL photos and their .txt files into public/__shots, and vite
+//          copies them again into dist/__shots. If the run is interrupted (Ctrl+C, console closed)
+//          the folder stays: it must end up neither in the public package nor in git.
+for (const rel of ['public/__shots/0001.png', 'public/__shots/0001.txt', 'public/__shots/sotto/0002.jpg', 'dist/__shots/0001.png', 'dist/__shots/0001.txt']) {
+    dice(`${rel} (foto vere di make-readme-shots) resta fuori dal pacchetto`, false, spedito(rel));
+}
+const ignorato = (rel) => spawnSync('git', ['check-ignore', '-q', '--no-index', rel], { cwd: radice }).status === 0;
+dice('premessa: git check-ignore riconosce un file ignorato (dist/index.html)', true, ignorato('dist/index.html'));
+dice('premessa: git check-ignore non ignora public/logo.png', false, ignorato('public/logo.png'));
+for (const rel of ['public/__shots/0001.png', 'public/__shots/0001.txt']) dice(`${rel} e' ignorato da git`, true, ignorato(rel));
 
 process.exit(esito());

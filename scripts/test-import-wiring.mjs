@@ -86,6 +86,18 @@ dice('la cartella della foto passa da cartellaImmagine', true, /folderOf\.set\(f
 dice('la cartella del .txt passa da cartellaTesto(s.dir)', true, /folderOf\.set\(file, [^\n;]*cartellaTesto\(s\.dir\)/.test(sidecar));
 dice('la cartella del .txt NON e\' s.dir grezza', false, /folderOf\.set\(file, (typeof s\.dir === 'string' \? )?s\.dir\b/.test(sidecar));
 dice('processImportData abbina con makeFolderKeyer(folderOf)', true, /const folderKeyOf = makeFolderKeyer\(folderOf\);/.test(importa));
+// ITALIANO: il riepilogo prima dell'import ("con testo / senza testo") deve abbinare con la STESSA
+//           regola dell'import: con una chiave sua (nome senza estensione, maiuscole contate)
+//           IMG_001.JPG e img_001.txt, o foto omonime in sottocartelle, verrebbero contate male.
+// ENGLISH: the pre-import summary ("with text / without text") must pair with the SAME rule as
+//          the import: with a key of its own (name without extension, case-sensitive) IMG_001.JPG
+//          and img_001.txt, or same-named photos in subfolders, would be counted wrongly.
+const riepilogo = corpo('calculateImportSummary');
+dice('premessa: App.tsx ha calculateImportSummary', true, riepilogo.length > 0);
+dice('il riepilogo abbina con makeFolderKeyer(folderOf)', true, /const keyOf = makeFolderKeyer\(folderOf\);/.test(riepilogo));
+dice('il riepilogo usa keyOf per i .txt e per le foto', [true, true], [/new Set\(txtFiles\.map\(keyOf\)\)/.test(riepilogo), /txtKeys\.has\(keyOf\(f\)\)/.test(riepilogo)]);
+dice('il riepilogo non costruisce una chiave sua dal nome del file (.name)', false, /\.name\b/.test(riepilogo));
+dice('il riepilogo definisce un solo abbinamento (una sola makeFolderKeyer, nessun altro keyOf)', [1, 1], [(riepilogo.match(/makeFolderKeyer\(/g) || []).length, (riepilogo.match(/\b(const|let|var) keyOf\b/g) || []).length]);
 
 // ITALIANO: 3) la lettura del .txt passa da parseSidecarText (limiti larghi, testo accorciato
 //              contato), senza un taglio a 100 caratteri o una divisione scritti a mano.
