@@ -31,6 +31,11 @@ const fine = /\r?\n    \};\r?\n/g;
 fine.lastIndex = inizio;
 const trovata = inizio >= 0 ? fine.exec(sorgente) : null;
 if (!trovata) { console.log('NO  handleTagEditorSaved non trovato in src/App.tsx'); process.exit(1); }
+const uscita = await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/sidecarTags.ts')],
+    bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+});
+const S = await import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'));
 const codice = (await esbuild.transform(sorgente.slice(inizio, trovata.index + trovata[0].length), { loader: 'ts' })).code;
 
 // ITALIANO: una cartella finta come NTFS: ogni file e' un'"entrata" unica, trovata senza maiuscole.
@@ -48,8 +53,8 @@ const cartella = (nomiSuDisco) => {
 // ENGLISH: the editor saves `name` in folder `dir`: see how the photo looks afterwards.
 const salvaNellEditor = async (images, nome, nuovi, dir) => {
     let stato = images;
-    const f = new Function('images', 'setImages', 'globalTriggers', codice + '\nreturn handleTagEditorSaved;')(
-        images, (agg) => { stato = typeof agg === 'function' ? agg(stato) : agg; }, []);
+    const f = new Function('images', 'setImages', 'globalTriggers', 'tagDopoEditor', codice + '\nreturn handleTagEditorSaved;')(
+        images, (agg) => { stato = typeof agg === 'function' ? agg(stato) : agg; }, [], S.tagDopoEditor);
     await f(nome, nuovi, dir.handle(nome));
     return stato;
 };

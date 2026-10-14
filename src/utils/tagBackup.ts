@@ -15,6 +15,7 @@
 *******************************************************************************/
 
 import { parseSidecarText, TXT_MAX_TAGS_PER_FILE, TXT_TAG_MAX_CHARS } from './sidecarTags';
+import { uniqueTagsIgnoringCase } from './tagCase';
 
 // ITALIANO: separatore fra cartella e nome nelle chiavi del backup (vedi makeBackupKeyer in App.tsx).
 // ENGLISH: separator between folder and name in the backup keys (see makeBackupKeyer in App.tsx).
@@ -305,10 +306,18 @@ export const tagDaRipristinare = (entry: any, orderedTags: string[], originalTag
     const backupTags = letti
         .map(x => x.slice(0, TXT_TAG_MAX_CHARS))
         .slice(0, TXT_MAX_TAGS_PER_FILE);
-    const differs = JSON.stringify([...backupTags].sort()) !== JSON.stringify([...orderedTags].sort());
+    // ITALIANO: le trigger attive all'import vanno TUTTE davanti, come sulle foto senza backup
+    //           (tagDiImport), una volta sola e con la grafia del riquadro. Prima restavano solo
+    //           quelle gia' nel backup: con la trigger scritta prima di riaprire la cartella, le foto
+    //           recuperate la perdevano e "Salva" scriveva i loro .txt senza. Il confronto si fa sulla
+    //           lista unita: un backup uguale al disco, a parte la trigger, non e' un recupero.
+    // ENGLISH: the triggers active at import ALL go first, as on photos with no backup
+    //          (tagDiImport), once and with the box's spelling. Only those already in the backup
+    //          used to stay: with the trigger typed before reopening the folder, the recovered photos
+    //          lost it and "Save" wrote their .txt without it. The comparison uses the merged list: a
+    //          backup equal to the disk, apart from the trigger, is not a recovery.
+    const unite = uniqueTagsIgnoringCase([...globalTriggers, ...backupTags], globalTriggers);
+    const differs = JSON.stringify([...unite].sort()) !== JSON.stringify([...orderedTags].sort());
     if (!differs || backupTags.length === 0) return null;
-    return [
-        ...globalTriggers.filter(t => backupTags.includes(t)),
-        ...backupTags.filter(t => !globalTriggers.includes(t))
-    ];
+    return unite;
 };

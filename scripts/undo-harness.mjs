@@ -42,6 +42,7 @@ const carica = async (rel) => {
 export const t = (await carica('src/constants.ts')).translations.en;
 const P = await carica('src/utils/pathUtils.ts');
 const H = await carica('src/utils/historyUtils.ts');
+const S = await carica('src/utils/sidecarTags.ts');
 export const cronologia = H;
 
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
@@ -99,7 +100,7 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'setImages', 'setHistory', 'setHistoryIndex', 'setToast', 'setSelectedImageId', 'setStagedBulkTags',
     'setSaveCloseDialog', 'setConfirmDialog', 'setIsSaving', 'setImportProgress',
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
-    'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef',
+    'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
     'useCallback', 'window', 'document', 'URL', 'Blob', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco',
@@ -169,7 +170,7 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         (id, tags) => r.tagSuFotoAperta.push([id, tags]),
         () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
-        P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef,
+        P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto);
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.

@@ -35,7 +35,7 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
-import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport } from './utils/sidecarTags';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
 import { avvisoImport } from './utils/importNotice';
@@ -569,6 +569,18 @@ export default function App() {
     // ITALIANO: Specchio sempre aggiornato di `images` per i loop async (evita snapshot stantii che sovrascrivono le modifiche manuali)
     // ENGLISH: Always-fresh mirror of `images` for async loops (avoids stale snapshots that overwrite manual edits)
     const imagesRef = useRef<any[]>([]);
+    // ITALIANO: le trigger word di ADESSO, per l'import che le legge dopo lunghe attese (le miniature
+    //           di migliaia di foto): la sua copia di globalTriggers e' quella di quando si e' premuto
+    //           Importa. Prima una trigger scritta (o tolta) nel frattempo non arrivava alle foto in
+    //           arrivo, e i loro .txt si salvavano diversi da quello che il riquadro mostrava. Si
+    //           aggiorna a ogni render e subito in handleGlobalTagsChange.
+    // ENGLISH: the CURRENT trigger words, for the import that reads them after long waits (the
+    //          thumbnails of thousands of photos): its copy of globalTriggers is the one from when
+    //          Import was pressed. A trigger typed (or removed) meanwhile used to miss the incoming
+    //          photos, and their .txt files were saved unlike what the box showed. It is updated on
+    //          every render and at once in handleGlobalTagsChange.
+    const globalTriggersRef = useRef<string[]>(globalTriggers);
+    globalTriggersRef.current = globalTriggers;
     // ITALIANO: Le foto CHIUSE con la "x" (per id): tolte dalla vista ma ancora su disco, quindi
     //           ancora contate nell'impronta del backup anti-crash (vedi costruisciBackup). Ne
     //           escono solo quando il file lascia davvero il disco (cestino svuotato, eliminata per
@@ -1255,10 +1267,20 @@ export default function App() {
     };
 
     const handleDeleteTagFromProject = (tagToDelete: string) => {
-        setImages(prev => prev.map(img => ({
-            ...img,
-            tags: img.tags.filter(t => t !== tagToDelete)
-        })));
+        // ITALIANO: la X su una trigger word la toglie anche dal suo riquadro, come toglierla da li'
+        //           a mano (che la toglie da tutte le foto). Prima lasciava le foto ma restava nel
+        //           riquadro: i .txt salvati dopo uscivano senza, le foto importate dopo con.
+        // ENGLISH: the X on a trigger word also takes it out of its box, like removing it there by
+        //          hand (which strips it from every photo). It used to leave the photos but stay in
+        //          the box: .txt files saved afterwards came out without it, photos imported later with.
+        if (globalTriggers.includes(tagToDelete)) {
+            handleGlobalTagsChange(globalTriggers.filter(tg => tg !== tagToDelete));
+        } else {
+            setImages(prev => prev.map(img => ({
+                ...img,
+                tags: img.tags.filter(t => t !== tagToDelete)
+            })));
+        }
         setCustomProjectTags(prev => prev.filter(t => t !== tagToDelete));
         soundManager.click();
     };
@@ -1342,15 +1364,13 @@ export default function App() {
             } catch { /* ITALIANO: sidecar assente o non confrontabile: salto, per prudenza */ }
         }
         if (!matchId) return;
-        setImages(prev => {
-            const ordered = [
-                ...globalTriggers.filter(tag => savedTags.includes(tag)),
-                ...savedTags.filter(tag => !globalTriggers.includes(tag)),
-            ];
-            return prev.map(i =>
-                i.id === matchId ? { ...i, tags: ordered, originalTags: [...ordered] } : i
-            );
-        });
+        // ITALIANO: una trigger word ancora da salvare resta sulla foto (vedi tagDopoEditor): l'editor
+        //           non l'ha mai vista, e prima spariva insieme alla sua scrittura nel .txt.
+        // ENGLISH: a trigger word still to be saved stays on the photo (see tagDopoEditor): the editor
+        //          never saw it, and it used to vanish along with its write into the .txt.
+        setImages(prev => prev.map(i =>
+            i.id === matchId ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], savedTags, globalTriggers) } : i
+        ));
     };
 
     // ITALIANO: useCallback con identita' STABILE (nessuna dipendenza): cosi' passandolo a tutte le
@@ -2176,6 +2196,11 @@ export default function App() {
                 await Promise.all(batch);
             }
 
+            // ITALIANO: le trigger di adesso, non quelle di quando si e' premuto Importa (vedi
+            //           globalTriggersRef). Da qui a setImages non c'e' nessuna attesa.
+            // ENGLISH: the current triggers, not those from when Import was pressed (see
+            //          globalTriggersRef). There is no wait from here to setImages.
+            const triggerAttive = globalTriggersRef.current;
             const newImages = [];
             for (let i = 0; i < imgFiles.length; i++) {
                 const thumbData: any = thumbs[i];
@@ -2183,7 +2208,7 @@ export default function App() {
                 //           (vedi tagDiImport), cosi' "Salva modifiche" scrive la trigger dove manca.
                 // ENGLISH: tags = active triggers + .txt; originalTags = only what is really in the .txt
                 //          (see tagDiImport), so "Save changes" writes the trigger where it is missing.
-                const { tags: orderedTags, originalTags } = tagDiImport(globalTriggers, textMap.get(folderKeyOf(imgFiles[i])) || [], txtNonLetti.has(folderKeyOf(imgFiles[i])));
+                const { tags: orderedTags, originalTags } = tagDiImport(triggerAttive, textMap.get(folderKeyOf(imgFiles[i])) || [], txtNonLetti.has(folderKeyOf(imgFiles[i])));
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
@@ -2207,7 +2232,7 @@ export default function App() {
                         entry = backupMap[imgFiles[i].name];
                     }
                 }
-                const ripristinati = tagDaRipristinare(entry, orderedTags, originalTags, globalTriggers, txtMtime.get(folderKeyOf(imgFiles[i])), backup ? backup.ts : null);
+                const ripristinati = tagDaRipristinare(entry, orderedTags, originalTags, triggerAttive, txtMtime.get(folderKeyOf(imgFiles[i])), backup ? backup.ts : null);
                 if (ripristinati) {
                     finalTags = ripristinati;
                     restoredCount++;
@@ -3882,6 +3907,7 @@ export default function App() {
     const handleGlobalTagsChange = (newGlobalTags: string[]) => {
         const added = newGlobalTags.filter(t => !globalTriggers.includes(t));
         const removed = globalTriggers.filter(t => !newGlobalTags.includes(t));
+        globalTriggersRef.current = newGlobalTags;
         setGlobalTriggers(newGlobalTags);
         if (images.length > 0) {
             setImages(prev => prev.map(img => {

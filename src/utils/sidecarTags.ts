@@ -15,7 +15,7 @@
 *******************************************************************************
 *******************************************************************************/
 
-import { uniqueTagsIgnoringCase } from './tagCase';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from './tagCase';
 
 // ITALIANO: Nome-base di un file, senza estensione (foto.jpg -> foto). Stessa regola usata
 //           storicamente dall'import, estratta qui per usarla in un solo posto.
@@ -153,15 +153,21 @@ export const parseSidecarText = (text: string): { tags: string[]; truncated: boo
 };
 
 // ITALIANO: I tag di una foto appena importata. `tags` = le trigger word attive davanti, poi quelli
-//   del .txt. `originalTags` = SOLO cio' che c'e' DAVVERO nel .txt (le trigger che il file
-//   contiene davanti, nello stesso ordine, cosi' un .txt che le ha gia' non risulta modificato).
-//   Prima era la stessa lista di `tags`: una foto aggiunta con una trigger word gia' attiva la
-//   mostrava, ma "Salva modifiche" rispondeva "Nessuna modifica" e il suo .txt restava senza.
+//   del .txt. `originalTags` = SOLO cio' che c'e' DAVVERO nel .txt, nel suo ordine: un .txt che ha
+//   gia' le trigger davanti, nell'ordine del riquadro, non risulta modificato; uno che le ha in
+//   mezzo (o in un altro ordine) si', e "Salva modifiche" lo riscrive con le trigger davanti, come
+//   quando la trigger si scrive dopo l'import. Prima il ricordo del disco le spostava davanti anche
+//   lui, e quel .txt restava con la trigger in mezzo (con keep_tokens restava fisso un altro tag).
+//   Prima ancora era la stessa lista di `tags`: una foto aggiunta con una trigger word gia' attiva
+//   la mostrava, ma "Salva modifiche" rispondeva "Nessuna modifica" e il suo .txt restava senza.
 // ENGLISH: The tags of a freshly imported photo. `tags` = the active trigger words first, then the
-//   .txt's own. `originalTags` = ONLY what is REALLY in the .txt (the triggers the file holds
-//   first, same order, so a .txt that already has them does not count as modified). It used to be
-//   the same list as `tags`: a photo added while a trigger word was active showed it, but "Save
-//   changes" answered "No changes" and its .txt stayed without it.
+//   .txt's own. `originalTags` = ONLY what is REALLY in the .txt, in its own order: a .txt that
+//   already has the triggers first, in the box's order, does not count as modified; one that has
+//   them in the middle (or in another order) does, and "Save changes" rewrites it trigger-first, as
+//   when the trigger is typed after the import. The disk record used to move them first too, and
+//   that .txt kept the trigger in the middle (with keep_tokens another tag stayed fixed). Before
+//   that it was the same list as `tags`: a photo added while a trigger word was active showed it,
+//   but "Save changes" answered "No changes" and its .txt stayed without it.
 // ITALIANO: `txtNonLetto` = il .txt c'e' ma non si e' potuto leggere (oltre 1 MB, bloccato, un file
 //   di OneDrive solo in rete): cosa contiene non si sa, quindi originalTags = tags e la foto non
 //   risulta modificata. Contata come "senza .txt", il primo "Salva modifiche" scriveva la sola
@@ -185,9 +191,25 @@ export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txt
         ...combinedTags.filter(t => !globalTriggers.includes(t))
     ];
     if (txtNonLetto) return { tags: orderedTags, originalTags: [...orderedTags] };
-    const suDisco = [
-        ...globalTriggers.filter(t => sidecarTags.includes(t)),
-        ...sidecarTags.filter(t => !globalTriggers.includes(t))
-    ];
-    return { tags: orderedTags, originalTags: [...new Set(suDisco)] };
+    return { tags: orderedTags, originalTags: [...new Set(sidecarTags)] };
+};
+
+// ITALIANO: I tag di una foto dopo che l'editor dei file di tag ha salvato il suo .txt. L'editor
+//   mostra solo il file su disco, quindi non ha mai visto una trigger word ancora da salvare (sulla
+//   card ma non nel .txt): quella resta davanti e fuori da `originalTags`, cosi' "Salva modifiche"
+//   la scrive, come dopo l'import. Prima la foto prendeva il file sia come tag sia come disco: la
+//   trigger spariva e il .txt restava senza, mentre il riquadro la mostrava attiva. Una trigger che
+//   il file aveva e che l'utente ha tolto nell'editor resta tolta; le altre modifiche non salvate
+//   della card lasciano il posto al file salvato, come prima. `originalTags` = il file scritto.
+// ENGLISH: A photo's tags after the tag file editor saved its .txt. The editor only shows the file
+//   on disk, so it never saw a trigger word still to be saved (on the card but not in the .txt):
+//   that one stays first and out of `originalTags`, so "Save changes" writes it, as after the
+//   import. The photo used to take the file both as tags and as disk: the trigger vanished and the
+//   .txt stayed without it, while the box showed it active. A trigger the file had and the user
+//   removed in the editor stays removed; the card's other unsaved edits give way to the saved file,
+//   as before. `originalTags` = the file written.
+export const tagDopoEditor = (tags: string[], originalTags: string[], savedTags: string[], globalTriggers: string[]): { tags: string[]; originalTags: string[] } => {
+    const daTenere = globalTriggers.filter(tg => hasTagIgnoringCase(savedTags, tg)
+        || (hasTagIgnoringCase(tags, tg) && !hasTagIgnoringCase(originalTags, tg)));
+    return tagDiImport(daTenere, savedTags);
 };

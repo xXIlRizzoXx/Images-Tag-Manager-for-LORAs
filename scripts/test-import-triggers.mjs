@@ -65,15 +65,39 @@ console.log('\n--- trigger attiva, il .txt c\'e\' ma non si e\' potuto leggere -
     const segnati = (app.match(/txtNonLetti\.add\(folderKeyOf\(txtFiles\[i\]\)\)/g) || []).length;
     dice('App.tsx: i .txt saltati (troppo grandi e illeggibili) vengono segnati', 2, segnati);
     dice('App.tsx: l\'import di ogni foto sa se il suo .txt non e\' stato letto', true,
-        /tagDiImport\(globalTriggers, textMap\.get\(([^)]+\))\) \|\| \[\], txtNonLetti\.has\(\1\)\)/.test(app));
+        /tagDiImport\(\w+, textMap\.get\(([^)]+\))\) \|\| \[\], txtNonLetti\.has\(\1\)\)/.test(app));
+}
+
+// ITALIANO: un .txt con la trigger in mezzo ("smile, ohwx, hat", come la aggiungono altri programmi):
+//           la card la mostrava davanti, ma il ricordo del disco la metteva davanti anche lui, quindi
+//           "Salva modifiche" rispondeva "Nessuna modifica" e il .txt restava con la trigger in mezzo
+//           (con keep_tokens=1 e shuffle_caption restava fisso "smile"). Scrivendo la trigger DOPO
+//           l'import la foto risultava invece da salvare: dipendeva da quando la si scriveva.
+// ENGLISH: a .txt with the trigger in the middle ("smile, ohwx, hat", as other programs append it):
+//          the card showed it first, but the disk record put it first too, so "Save changes" answered
+//          "No changes" and the .txt kept the trigger in the middle (with keep_tokens=1 and
+//          shuffle_caption "smile" stayed fixed). Typing the trigger AFTER the import made the photo
+//          count as unsaved instead: it depended on when the trigger was typed.
+console.log('\n--- trigger attiva, il .txt la contiene ma non davanti ---');
+{
+    const r = S.tagDiImport(['ohwx'], S.parseSidecarText('smile, ohwx, hat,').tags);
+    dice('la card mostra la trigger davanti', ['ohwx', 'smile', 'hat'], r.tags);
+    dice('originalTags = il .txt nel suo ordine', ['smile', 'ohwx', 'hat'], r.originalTags);
+    dice('"Salva modifiche" lo riscrive con la trigger davanti', true, daSalvare(r));
+    const gia = S.tagDiImport(['mychar'], ['1girl', 'mychar', 'smile']);
+    dice('il .txt ha la trigger in mezzo: da salvare', [['mychar', '1girl', 'smile'], ['1girl', 'mychar', 'smile'], true], [gia.tags, gia.originalTags, daSalvare(gia)]);
+    const ordine = S.tagDiImport(['a', 'b'], ['b', 'a', 'x']);
+    dice('due trigger in ordine diverso da quello del riquadro: da salvare', [['a', 'b', 'x'], true], [ordine.tags, daSalvare(ordine)]);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
 {
-    const gia = S.tagDiImport(['mychar'], ['1girl', 'mychar', 'smile']);
-    dice('il .txt ha gia\' la trigger (altrove): stesso ordine, niente da salvare', [['mychar', '1girl', 'smile'], false], [gia.tags, daSalvare(gia)]);
+    const davanti = S.tagDiImport(['ohwx'], ['ohwx', 'smile']);
+    dice('il .txt ha gia\' la trigger davanti: niente da salvare', [['ohwx', 'smile'], false], [davanti.tags, daSalvare(davanti)]);
+    const dueDavanti = S.tagDiImport(['a', 'b'], ['a', 'b', 'x']);
+    dice('due trigger gia\' davanti, nello stesso ordine: niente da salvare', false, daSalvare(dueDavanti));
     const due = S.tagDiImport(['a', 'b'], ['x', 'b']);
-    dice('due trigger, il .txt ne ha una: tags e originalTags', [['a', 'b', 'x'], ['b', 'x']], [due.tags, due.originalTags]);
+    dice('due trigger, il .txt ne ha una: tags e originalTags', [['a', 'b', 'x'], ['x', 'b']], [due.tags, due.originalTags]);
     const senza = S.tagDiImport([], ['1girl', 'smile']);
     dice('nessuna trigger attiva: identici, niente da salvare', [['1girl', 'smile'], ['1girl', 'smile'], false], [senza.tags, senza.originalTags, daSalvare(senza)]);
     const vuota = S.tagDiImport([], []);

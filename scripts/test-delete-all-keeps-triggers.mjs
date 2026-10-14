@@ -105,4 +105,49 @@ console.log('\n--- la conferma lo dice, in tutte e nove le lingue ---');
     }
 }
 
+// ITALIANO: la X su una pillola del gestore dei tag del progetto (handleDeleteTagFromProject). Sulla
+//           trigger "mychar" la toglieva da tutte le foto mentre il riquadro delle trigger continuava
+//           a mostrarla: i .txt salvati dopo uscivano senza, le foto importate dopo la ricevevano. Ora
+//           la X su una trigger la toglie anche dal riquadro, come toglierla dal riquadro a mano.
+// ENGLISH: the X on a pill of the project tag manager (handleDeleteTagFromProject). On the trigger
+//          "mychar" it stripped it from every photo while the trigger box kept showing it: .txt
+//          files saved afterwards came out without it, photos imported later got it. Now the X on a
+//          trigger also takes it out of the box, like removing it from the box by hand.
+const caso = await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/tagCase.ts')],
+    bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+});
+const C = await import('data:text/javascript;base64,' + Buffer.from(caso.outputFiles[0].text).toString('base64'));
+const fabbricaX = new Function('globalTriggers', 'setGlobalTriggers', 'globalTriggersRef', 'images', 'setImages', 'setCustomProjectTags', 'soundManager', 'uniqueTagsIgnoringCase',
+    (await ritaglia('    const handleDeleteTagFromProject = (')) + '\n' + (await ritaglia('    const handleGlobalTagsChange = (')) +
+    '\nreturn { handleDeleteTagFromProject };');
+// ITALIANO: preme la X sul tag `tag`; torna le foto, il riquadro delle trigger e l'elenco del progetto.
+// ENGLISH: presses the X on tag `tag`; returns the photos, the trigger box and the project list.
+const premiX = (foto, trigger, tag) => {
+    let immagini = foto, riquadro = trigger, palette = ['smile', 'altro'];
+    fabbricaX(trigger,
+        (v) => { riquadro = typeof v === 'function' ? v(riquadro) : v; }, { current: trigger }, foto,
+        (fn) => { immagini = typeof fn === 'function' ? fn(immagini) : fn; },
+        (fn) => { palette = typeof fn === 'function' ? fn(palette) : fn; },
+        { click() { }, pop() { } }, C.uniqueTagsIgnoringCase).handleDeleteTagFromProject(tag);
+    return { immagini: immagini.map(i => i.tags), riquadro, palette };
+};
+
+console.log('\n--- gestore dei tag del progetto: X sulla trigger "mychar" ---');
+{
+    const r = premiX([{ id: '1', tags: ['mychar', 'red hair'] }, { id: '2', tags: ['mychar', 'smile'] }], ['mychar'], 'mychar');
+    dice('la trigger lascia anche il riquadro: le foto importate dopo non la ricevono', [], r.riquadro);
+    dice('e lascia tutte le foto, come chiesto', [['red hair'], ['smile']], r.immagini);
+    const due = premiX([{ id: '1', tags: ['alfa', 'beta', 'smile'] }], ['alfa', 'beta'], 'alfa');
+    dice('con due trigger resta l\'altra, nel riquadro e sulle foto', [['beta'], [['beta', 'smile']]], [due.riquadro, due.immagini]);
+}
+
+console.log('\n--- gestore dei tag del progetto: X su un tag che non e\' una trigger ---');
+{
+    const r = premiX([{ id: '1', tags: ['mychar', 'red hair'] }, { id: '2', tags: ['mychar', 'smile'] }], ['mychar'], 'smile');
+    dice('il riquadro delle trigger non cambia', ['mychar'], r.riquadro);
+    dice('il tag lascia ogni foto, la trigger resta', [['mychar', 'red hair'], ['mychar']], r.immagini);
+    dice('e lascia l\'elenco dei tag del progetto', ['altro'], r.palette);
+}
+
 process.exit(esito());
