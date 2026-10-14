@@ -5,7 +5,9 @@
    le modifiche non salvate, che stanno nel salvataggio di emergenza, non tornavano finche'
    l'utente non chiudeva e riapriva il programma. Ora la pagina si ricarica da sola, una volta: la
    finestra torna usabile e, riaprendo la cartella, il salvataggio di emergenza ripropone i tag.
-   Un secondo crollo entro un minuto non la ricarica di nuovo (niente giri infiniti); un'uscita
+   Un secondo crollo entro un minuto non la ricarica subito (niente giri infiniti), ma alla fine
+   del minuto: prima veniva ignorato e la finestra restava bianca per sempre. Un solo
+   ricaricamento in attesa, annullato se la finestra si chiude prima. Un'uscita
    normale ('clean-exit') o un processo chiuso apposta ('killed') non la ricaricano.
    Si carica il main.cjs VERO con un Electron finto che "apre" finestre finte: niente compare sullo
    schermo, niente rete.
@@ -17,7 +19,9 @@
    production there is no menu, so no Ctrl+R), and the unsaved edits, which sit in the crash backup,
    did not come back until the user closed and reopened the program. Now the page reloads by
    itself, once: the window is usable again and, reopening the folder, the crash backup offers the
-   tags. A second crash within a minute does not reload it again (no endless loop); a normal exit
+   tags. A second crash within a minute does not reload it at once (no endless loop) but at the end of
+   the minute: it used to be ignored and the window stayed blank for good. Only one reload is
+   pending, cancelled if the window closes first. A normal exit
    ('clean-exit') or a process ended on purpose ('killed') does not reload it.
    The REAL main.cjs is loaded with a fake Electron that "opens" fake windows: nothing appears on
    screen, no network.
@@ -112,34 +116,78 @@ try {
     const principale = finestre.find((f) => f !== splash);
     dice('ci sono la schermata di avvio e la finestra principale', [true, true], [Boolean(splash), Boolean(principale)]);
     const crollo = (motivo) => principale.webContents.emetti('render-process-gone', {}, { reason: motivo, exitCode: 1 });
+    // ITALIANO: i cronometri messi da qui in poi sono finti: si annotano e si fanno scattare a mano.
+    //           Quelli veri gia' accesi (il cronometro di 20 secondi) passano a clearTimeout vero.
+    // ENGLISH: timers set from here on are fake: they are recorded and fired by hand. The real
+    //          ones already armed (the 20-second watchdog) go to the real clearTimeout.
+    const cronometri = [];
+    const setTimeoutVero = globalThis.setTimeout;
+    const clearTimeoutVero = globalThis.clearTimeout;
+    globalThis.setTimeout = (fn, ms) => { const c = { fn, ms, annullato: false, scattato: false }; cronometri.push(c); return c; };
+    globalThis.clearTimeout = (c) => { if (cronometri.includes(c)) c.annullato = true; else clearTimeoutVero(c); };
+    const inAttesa = () => cronometri.filter((c) => !c.annullato && !c.scattato);
+    const scatta = (c) => { if (c) { c.scattato = true; c.fn(); } };
+    try {
 
     console.log('\n--- la pagina muore prima di essere pronta (memoria esaurita) ---');
     crollo('oom');
     dice('la pagina si ricarica da sola', 1, principale.ricaricata);
     dice('la schermata di avvio si chiude e la finestra si mostra subito (non dopo 20 secondi)', [1, 1], [splash.chiusa, principale.mostrata]);
 
-    console.log('\n--- un secondo crollo subito dopo: niente giri infiniti ---');
+    console.log('\n--- un secondo crollo subito dopo: niente giri infiniti, ma nemmeno finestra bianca per sempre ---');
     adesso += 5_000;
     crollo('crashed');
-    dice('non si ricarica di nuovo', 1, principale.ricaricata);
+    dice('non si ricarica subito', 1, principale.ricaricata);
+    dice('...ma un ricaricamento aspetta la fine del minuto (55 secondi)', [1, 55_000], [inAttesa().length, inAttesa()[0] && inAttesa()[0].ms]);
+    adesso += 5_000;
+    crollo('crashed');
+    dice('un terzo crollo mentre aspetta non ne aggiunge un altro', [1, 1], [inAttesa().length, principale.ricaricata]);
+    adesso += 50_000;
+    scatta(inAttesa()[0]);
+    dice('alla fine del minuto la pagina si ricarica', 2, principale.ricaricata);
+    dice('...e non resta niente in attesa', 0, inAttesa().length);
 
-    console.log('\n--- un crollo piu\' di un minuto dopo: si ricarica ancora ---');
+    console.log('\n--- un crollo piu\' di un minuto dopo: si ricarica ancora, subito ---');
     adesso += 61_000;
     crollo('crashed');
-    dice('si ricarica una seconda volta', 2, principale.ricaricata);
+    dice('si ricarica una terza volta', 3, principale.ricaricata);
+    dice('...senza aspettare', 0, inAttesa().length);
     dice('...e la finestra, gia\' visibile, non viene mostrata di nuovo', 1, principale.mostrata);
 
     console.log('\n--- quello che NON deve ricaricare ---');
     adesso += 120_000;
     crollo('clean-exit');
-    dice('uscita normale: nessun ricaricamento', 2, principale.ricaricata);
+    dice('uscita normale: nessun ricaricamento', 3, principale.ricaricata);
     crollo('killed');
-    dice('processo chiuso apposta: nessun ricaricamento', 2, principale.ricaricata);
+    dice('processo chiuso apposta: nessun ricaricamento', 3, principale.ricaricata);
+    dice('...e niente in attesa', 0, inAttesa().length);
     principale.distrutta = true;
     crollo('crashed');
-    dice('finestra gia\' distrutta: nessun ricaricamento', 2, principale.ricaricata);
+    dice('finestra gia\' distrutta: nessun ricaricamento', [3, 0], [principale.ricaricata, inAttesa().length]);
+    principale.distrutta = false;
+    crollo('crashed');
+    dice('(di nuovo viva: si ricarica subito)', 4, principale.ricaricata);
+    adesso += 1_000;
+    crollo('crashed');
+    principale.distrutta = true;
+    scatta(inAttesa()[0]);
+    dice('finestra distrutta prima della fine del minuto: nessun ricaricamento', 4, principale.ricaricata);
+    principale.distrutta = false;
+    adesso += 1_000;
+    crollo('crashed');
+    const pendente = inAttesa()[0];
+    dice('(un ricaricamento in attesa)', true, Boolean(pendente));
+    principale.close();
+    dice('la finestra si chiude: il ricaricamento in attesa si annulla', [true, 0], [Boolean(pendente && pendente.annullato), inAttesa().length]);
+    let errore = null;
+    try { if (pendente) pendente.fn(); } catch (e) { errore = e; }
+    dice('...e anche se scattasse non ricarica niente e non si rompe', [4, null], [principale.ricaricata, errore]);
 
     codice = esito();
+    } finally {
+        globalThis.setTimeout = setTimeoutVero;
+        globalThis.clearTimeout = clearTimeoutVero;
+    }
 } finally {
     Module._load = caricaOriginale;
     Date.now = oraVera;

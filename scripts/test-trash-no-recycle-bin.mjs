@@ -7,8 +7,9 @@
    cartelle di rete. Lo stesso su un disco che il Cestino ce l'ha ma spento ("non spostare i file
    nel Cestino") o troppo piccolo per quel file: Windows rifiuta, il file e' ancora li' e si puo'
    aprire, quindi non lo blocca nessuno e si risponde 'rifiutato' (prima era 'errore', e la foto
-   non usciva mai dal cestino dell'app). Un file bloccato da un altro programma resta 'errore'; se
-   il blocco era solo di un attimo, il secondo tentativo lo manda nel Cestino.
+   non usciva mai dal cestino dell'app). Un file bloccato da un altro programma resta 'errore', anche
+   quando il programma lascia leggere e scrivere ma non cancellare (Python open(), PIL); se il
+   blocco era solo di un attimo, il secondo tentativo lo manda nel Cestino.
    Il Cestino di Windows e' un finto; anche la cartella $RECYCLE.BIN e' finta (quella vera non si
    guarda mai).
    Uso:  node scripts/test-trash-no-recycle-bin.mjs      (esce con codice 1 se qualcosa non torna)
@@ -22,8 +23,9 @@
    that has a Recycle Bin turned off ("don't move files to the Recycle Bin") or too small for that
    file: Windows refuses, the file is still there and can be opened, so nobody is locking it and the
    answer is 'rifiutato' (it used to be 'errore', and the photo never left the app's trash). A file
-   locked by another program stays 'errore'; if the lock lasted only a moment, the second try sends
-   it to the Recycle Bin.
+   locked by another program stays 'errore', also when that program allows read and write but not
+   delete (Python open(), PIL); if the lock lasted only a moment, the second try sends it to the
+   Recycle Bin.
    The Windows Recycle Bin is a fake; the $RECYCLE.BIN folder is fake too (the real one is never
    looked at).
    Usage:  node scripts/test-trash-no-recycle-bin.mjs      (exits with code 1 if anything is off) */
@@ -56,6 +58,20 @@ fs.openSync = (p, ...resto) => {
     if (sblocca.has(p)) rifiutaCestino.delete(p);
     return openVero(p, ...resto);
 };
+// ITALIANO: i file tenuti aperti da un programma che lascia leggere e scrivere ma non cancellare
+//           (Python open(), PIL): si aprono, ma rinominarli (che chiede il permesso di cancellare)
+//           da' EBUSY, come su Windows. Gli altri si rinominano davvero (su se' stessi: niente cambia).
+// ENGLISH: the files held open by a program that allows read and write but not delete (Python
+//          open(), PIL): they open, but renaming them (which needs delete access) gives EBUSY, as
+//          on Windows. The others are really renamed (onto themselves: nothing changes).
+const bloccatiCancellazione = new Set();
+const rinominati = [];
+const renameVero = fs.renameSync;
+fs.renameSync = (da, a, ...resto) => {
+    if (typeof da === 'string') rinominati.push(path.basename(da));
+    if (bloccatiCancellazione.has(da)) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+    return renameVero(da, a, ...resto);
+};
 fs.statSync = (p, ...resto) => {
     if (typeof p === 'string' && path.basename(p).toLowerCase() === '$recycle.bin') {
         guardate.push(p);
@@ -73,7 +89,8 @@ try {
     const spento = path.join(cartella, 'cestino-spento.png');
     const attimo = path.join(cartella, 'attimo.png');
     const altraLibera = path.join(cartella, 'altra-libera.txt');
-    for (const f of [foto, testo, bloccata, libera, spento, attimo, altraLibera]) fs.writeFileSync(f, 'x');
+    const soloCancellazione = path.join(cartella, 'tenuta-da-python.png');
+    for (const f of [foto, testo, bloccata, libera, spento, attimo, altraLibera, soloCancellazione]) fs.writeFileSync(f, 'x');
 
     console.log('\n--- chiavetta USB: il Cestino non c\'e\' ---');
     rifiutaCestino.add(foto);
@@ -92,11 +109,20 @@ try {
     dice('"errore", nessuna offerta di cancellazione definitiva', [['errore'], false, 1], [r.results, r.ok, r.failed]);
     dice('il file resta sul disco', true, fs.existsSync(bloccata));
 
+    console.log('\n--- disco con il Cestino: un file che si apre ma non si puo\' cancellare (Python, PIL) ---');
+    rifiutaCestino.add(soloCancellazione);
+    bloccatiCancellazione.add(soloCancellazione);
+    r = await cestina([soloCancellazione]);
+    dice('"errore", nessuna offerta di cancellazione definitiva', [['errore'], false, 0, 1], [r.results, r.ok, r.trashed, r.failed]);
+    dice('il file resta sul disco', true, fs.existsSync(soloCancellazione));
+
     console.log('\n--- disco con il Cestino spento (o file troppo grande per il Cestino) ---');
     rifiutaCestino.add(spento);
+    rinominati.length = 0;
     r = await cestina([spento]);
     dice('Windows rifiuta, il file si apre: "rifiutato", cosi\' l\'app offre la seconda conferma', [['rifiutato'], true, 0, 0], [r.results, r.ok, r.trashed, r.failed]);
-    dice('il file resta sul disco', true, fs.existsSync(spento));
+    dice('il file resta sul disco, con il suo contenuto', [true, 'x'], [fs.existsSync(spento), fs.readFileSync(spento, 'utf8')]);
+    dice('...anche dopo la prova del permesso di cancellare (rinominato su se\' stesso, davvero)', ['cestino-spento.png'], rinominati);
 
     console.log('\n--- un blocco di un attimo: il secondo tentativo va nel Cestino ---');
     rifiutaCestino.add(attimo);
@@ -120,6 +146,7 @@ try {
 } finally {
     fs.statSync = statVero;
     fs.openSync = openVero;
+    fs.renameSync = renameVero;
     fs.rmSync(cartella, { recursive: true, force: true });
 }
 process.exit(codice);

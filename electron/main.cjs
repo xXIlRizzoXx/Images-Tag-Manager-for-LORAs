@@ -453,8 +453,31 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
         // ENGLISH: a missing file (e.g. the .txt of a photo with no tags) is NORMAL: skip it and do
         //          not count it as an error. A file that EXISTS but cannot be trashed (locked,
         //          permissions) is a real error.
+        // ITALIANO: "assente" pero' solo se Windows dice che il file non c'e' (ENOENT/ENOTDIR) E la
+        //           radice della sua unita' risponde, come per le cartelle di rete. Una chiavetta
+        //           staccata o un'unita' di rete (Z:\) spenta davano 'ok': la foto usciva dal
+        //           progetto con "spostati nel Cestino di Windows" ed era ancora nella cartella.
+        //           Ora resta 'errore': la foto resta nel cestino dell'app e si puo' riprovare.
+        // ENGLISH: "missing" only when Windows says the file is not there (ENOENT/ENOTDIR) AND the
+        //          root of its drive answers, as for network folders. An unplugged USB stick or a
+        //          network drive (Z:\) that is off answered 'ok': the photo left the project with
+        //          "moved to the Windows Recycle Bin" and was still in the folder. Now it stays
+        //          'errore': the photo stays in the app's trash and the user can try again.
         let exists = false;
-        try { exists = fs.statSync(raw).isFile(); } catch (_) { exists = false; }
+        let assenzaCerta = true;
+        try { exists = fs.statSync(raw).isFile(); } catch (err) {
+            exists = false;
+            assenzaCerta = Boolean(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR'));
+            if (assenzaCerta) {
+                try { assenzaCerta = fs.statSync(path.parse(raw).root).isDirectory(); } catch (_) { assenzaCerta = false; }
+            }
+        }
+        if (!exists && !assenzaCerta) {
+            console.error('trash-files: drive not reachable', raw);
+            failed++;
+            results.push('errore');
+            continue;
+        }
         if (!exists) { results.push('ok'); continue; }
         try {
             await shell.trashItem(raw);
@@ -511,6 +534,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             //           Se si apre, nessuno lo blocca: un blocco di un attimo (antivirus, indicizzazione)
             //           si riconosce riprovando una volta il Cestino; se rifiuta di nuovo, si risponde
             //           'rifiutato' e la pagina chiede la seconda conferma, che dice che e' definitivo.
+            //           Dopo l'apertura si rinomina il file su se' stesso: serve il permesso di
+            //           cancellare, quindi fallisce (EBUSY) anche con un programma che lo tiene
+            //           aperto lasciando leggere e scrivere ma non cancellare (Python open(), PIL);
+            //           su un file libero non cambia niente. Anche quell'errore resta 'errore'.
             //           Nota: aprire un file "solo online" di OneDrive lo scarica; succede solo dopo
             //           che il Cestino lo ha gia' rifiutato.
             // ENGLISH: a disk with the Recycle Bin TURNED OFF ("don't move files to the Recycle Bin"),
@@ -522,11 +549,15 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             //          locking it: a lock of a moment (antivirus, indexing) is caught by trying the
             //          Recycle Bin once more; if it refuses again we answer 'rifiutato' and the page asks
             //          the second confirmation, which says it is final.
+            //          After the open the file is renamed onto itself: that needs delete access, so
+            //          it fails (EBUSY) also when a program holds it open allowing read and write but
+            //          not delete (Python open(), PIL); on a free file it changes nothing. That error
+            //          stays 'errore' too.
             //          Note: opening an online-only OneDrive file downloads it; this only happens after
             //          the Recycle Bin has already refused it.
             if (ancoraLi && !diRete) {
                 let siApre = false;
-                try { fs.closeSync(fs.openSync(raw, 'r+')); siApre = true; } catch (_) { siApre = false; }
+                try { fs.closeSync(fs.openSync(raw, 'r+')); fs.renameSync(raw, raw); siApre = true; } catch (_) { siApre = false; }
                 if (siApre) {
                     try {
                         await shell.trashItem(raw);
@@ -1207,13 +1238,20 @@ function createMainWindow() {
     //           ancora. Le modifiche non salvate sono nel salvataggio di emergenza: tornano
     //           riaprendo la cartella. Un'uscita normale ('clean-exit') o un processo chiuso apposta
     //           ('killed', anche alla chiusura del programma) non si ricaricano.
+    //           Un secondo crollo entro il minuto non viene piu' ignorato (la finestra restava
+    //           bianca per sempre): il ricaricamento si rimanda alla fine del minuto, uno solo in
+    //           attesa, e si annulla se la finestra si chiude prima.
     // ENGLISH: when the page process dies (out of memory, crash) the window stayed blank: no
     //          message, and in production no menu, so no Ctrl+R. Now the page reloads by itself, at
     //          most once a minute (a crash that repeats at once does not become an endless loop),
     //          and the window is shown right away if it was not yet. Unsaved edits are in the crash
     //          backup: they come back when the folder is reopened. A normal exit ('clean-exit') or a
     //          process ended on purpose ('killed', also while the program closes) does not reload.
+    //          A second crash within the minute is no longer ignored (the window stayed blank for
+    //          good): the reload is delayed to the end of the minute, only one pending, and it is
+    //          cancelled if the window closes first.
     let ultimoRicaricamento = 0;
+    let ricaricamentoPendente = null;
     mainWindow.webContents.on('render-process-gone', (_e, details) => {
         console.error('main window render process gone', details);
         if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
@@ -1221,7 +1259,17 @@ function createMainWindow() {
         if (motivo === 'clean-exit' || motivo === 'killed') return;
         if (!mainWindow || mainWindow.isDestroyed()) return;
         const ora = Date.now();
-        if (ultimoRicaricamento && ora - ultimoRicaricamento < 60000) return;
+        if (ultimoRicaricamento && ora - ultimoRicaricamento < 60000) {
+            if (ricaricamentoPendente) return;
+            ricaricamentoPendente = setTimeout(() => {
+                ricaricamentoPendente = null;
+                if (!mainWindow || mainWindow.isDestroyed()) return;
+                ultimoRicaricamento = Date.now();
+                mostraApp(true);
+                try { mainWindow.webContents.reload(); } catch (e) { console.error('main window reload failed', e); }
+            }, ultimoRicaricamento + 60000 - ora);
+            return;
+        }
         ultimoRicaricamento = ora;
         mostraApp(true);
         try { mainWindow.webContents.reload(); } catch (e) { console.error('main window reload failed', e); }
@@ -1229,6 +1277,7 @@ function createMainWindow() {
 
     mainWindow.on('closed', () => {
         if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+        if (ricaricamentoPendente) { clearTimeout(ricaricamentoPendente); ricaricamentoPendente = null; }
         mainWindow = null;
     });
 }
