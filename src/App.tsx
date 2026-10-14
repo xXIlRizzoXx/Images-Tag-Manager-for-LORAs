@@ -3441,7 +3441,7 @@ export default function App() {
             return added;
         } catch (e: any) {
             console.error('AI tag failed', e);
-            const { kind } = classifyGeminiError(e);
+            const { kind, quotaGiorno } = classifyGeminiError(e);
             if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
             // ITALIANO: `invalid_key` e' il caso piu' frequente di tutti — la chiave sbagliata o
             //           scaduta — ed era l'unico che cadeva sul messaggio grezzo di Google, sempre
@@ -3456,9 +3456,17 @@ export default function App() {
                 : kind === 'billing_required'
                 ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
                 : kind === 'rate_limit'
-                ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
+                ? (quotaGiorno ? t.aiDailyQuota : (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.'))
                 : kind === 'model_unavailable'
                 ? (t.aiModelUnavailable || 'Model unavailable for your account.')
+                // ITALIANO: Google sovraccarico e foto rifiutata dal filtro: frasi tradotte, non il
+                //           JSON grezzo di Google (e niente suono o messaggio verde di successo).
+                // ENGLISH: Google overloaded and photo refused by the filter: translated sentences,
+                //          not Google's raw JSON (and no success chime or green message).
+                : kind === 'busy'
+                ? t.aiServerBusy
+                : kind === 'blocked'
+                ? t.aiResponseBlocked
                 : String(e?.message || e || '').slice(0, 200);
             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
             // ITALIANO: il modello non esiste piu': invece di lasciare l'AI rotta finche'
@@ -3582,7 +3590,7 @@ export default function App() {
                         // ITALIANO: Se l'errore deriva dall'annullamento (abort), esci subito senza contarlo come errore
                         // ENGLISH: If the error comes from cancellation (abort), exit immediately without counting it as an error
                         if (aiCancelRequestedRef.current) { cancelled = true; break; }
-                        const { kind, message } = classifyGeminiError(err);
+                        const { kind, message, quotaGiorno } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (kind === 'invalid_key') {
                             // ITALIANO: si apre la finestra della chiave, ma senza una riga di
@@ -3608,7 +3616,24 @@ export default function App() {
                             fatalAbort = true;
                             break;
                         }
-                        if (kind === 'rate_limit' && attempt < 2) {
+                        // ITALIANO: la quota gratuita del GIORNO e' finita: riprovare fra 15 e 45 secondi
+                        //           non serve, e ogni foto rimasta costava un minuto e tre richieste a
+                        //           vuoto, per ore, con un riepilogo che non diceva il perche'. Ci si
+                        //           ferma subito e lo si dice. Le foto gia' taggate restano.
+                        // ENGLISH: the free DAILY quota is used up: retrying in 15 and 45 seconds is
+                        //          pointless, and every remaining photo cost a minute and three wasted
+                        //          requests, for hours, with a summary that never said why. Stop at
+                        //          once and say so. The photos already tagged stay tagged.
+                        if (kind === 'rate_limit' && quotaGiorno) {
+                            showNotification(`${t.aiError || 'AI Error'}: ${t.aiDailyQuota}`, 'error');
+                            fatalAbort = true;
+                            break;
+                        }
+                        // ITALIANO: Google sovraccarico (503/500) passa da solo: si riprova come per il
+                        //           limite di frequenza. Una foto rifiutata ('blocked') invece no.
+                        // ENGLISH: Google overloaded (503/500) passes on its own: retry as for the rate
+                        //          limit. A refused photo ('blocked') does not.
+                        if ((kind === 'rate_limit' || kind === 'busy') && attempt < 2) {
                             // ITALIANO: Backoff progressivo: 15s, 45s — cancellabile
                             // ENGLISH: Progressive backoff: 15s, 45s — cancellable
                             const backoff = attempt === 0 ? 15000 : 45000;
@@ -3696,6 +3721,8 @@ export default function App() {
                     ? (t.aiBillingRequired || 'Billing required on your Google Cloud project.')
                     : result.errorKind === 'rate_limit'
                     ? (t.aiRateLimit || 'Rate limit (key valid but throttled).')
+                    : result.errorKind === 'busy'
+                    ? t.aiServerBusy
                     : result.errorKind === 'model_unavailable'
                     ? (t.aiModelUnavailable || 'Model unavailable for your account.')
                     : (result.error || (t.aiKeyInvalid || 'API Key invalid'));
@@ -4515,7 +4542,11 @@ export default function App() {
                                                         >
                                                             <option value="__auto__">{t.aiModelAutomatic.replace('{a}', aiModel)}</option>
                                                             {elencoModelli.map(m => {
-                                                                const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : ' $';
+                                                                // ITALIANO: 'unknown' (flash-lite, senza versione): nessun simbolo, invece di
+                                                                //           promettere un piano gratuito che il modello puo' non avere.
+                                                                // ENGLISH: 'unknown' (flash-lite, no version): no badge, rather than promising
+                                                                //          a free tier the model may not have.
+                                                                const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : m.tier === 'paid' ? ' $' : '';
                                                                 return (
                                                                     <option key={m.id} value={m.id}>
                                                                         {m.label}{tierBadge}{m.recommended ? ' ★' : ''}

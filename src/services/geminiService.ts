@@ -134,15 +134,33 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
         },
     });
 
+    // ITALIANO: una foto che Google rifiuta (filtro dei contenuti) arriva come risposta NORMALE,
+    //           senza testo: la libreria non lancia niente. Restituire [] la faceva contare fra le
+    //           "taggate", con suono e messaggio verde. Rifiutata, vuota, illeggibile o non un
+    //           elenco: e' un errore riconoscibile ('blocked'), e nessun pezzo diventa un tag.
+    //           Il messaggio non contiene cifre: non puo' sembrare un altro tipo di errore.
+    // ENGLISH: a photo Google refuses (content filter) arrives as a NORMAL answer with no text:
+    //          the library throws nothing. Returning [] counted it as "tagged", with the chime
+    //          and a green message. Refused, empty, unreadable or not a list: it is a recognisable
+    //          error ('blocked'), and no piece of it becomes a tag. The message holds no digits:
+    //          it cannot look like another kind of error.
+    const nessunTag = (motivo: string): Error => {
+        const e = new Error('AI_RESPONSE_BLOCKED: ' + motivo);
+        (e as Error & { geminiKind?: string }).geminiKind = 'blocked';
+        return e;
+    };
     const text = response.text;
-    if (!text) return [];
-    try {
-        const parsed = JSON.parse(text);
-        return validateAndCleanTags(parsed, Math.max(1, Math.floor(opts.maxTags) || 30));
-    } catch {
-        console.error('Gemini response was not valid JSON.');
-        return [];
+    if (!text) {
+        throw nessunTag(String(response.promptFeedback?.blockReason || response.candidates?.[0]?.finishReason || 'empty answer'));
     }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        throw nessunTag('the answer was not valid JSON');
+    }
+    if (!Array.isArray(parsed)) throw nessunTag('the answer was not a JSON list');
+    return validateAndCleanTags(parsed, Math.max(1, Math.floor(opts.maxTags) || 30));
 };
 
 // ITALIANO: Modello vision di Gemini usato dall'app. Ne teniamo UNO SOLO (Gemini 3.6
@@ -158,7 +176,11 @@ export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise
 //          and the model takes image input and structured JSON output, exactly what is
 //          needed here. Tier stays 'limited': the free tier has low rate limits and heavy
 //          use requires billing to be enabled.
-export type GeminiTier = 'free' | 'limited' | 'paid';
+// ITALIANO: 'unknown' = dal nome non si puo' sapere se c'e' un piano gratuito: nessun simbolo e
+//           nessun avviso, invece di una promessa che puo' essere falsa.
+// ENGLISH: 'unknown' = the name cannot tell whether there is a free tier: no badge and no notice,
+//          instead of a promise that may be false.
+export type GeminiTier = 'free' | 'limited' | 'paid' | 'unknown';
 // ITALIANO: Questo elenco NON e' piu' la gabbia del programma: e' la RISERVA, cio' che si usa
 //           quando non si e' ancora potuto chiedere l'elenco vero a Google (nessuna chiave,
 //           niente rete, primo avvio). Appena si puo', i modelli disponibili li dice Google.
@@ -200,14 +222,33 @@ export const getModelTier = (modelId: string): GeminiTier => {
     // ENGLISH: a model discovered from Google and absent from the fallback list: if it is on
     //          the flash line it counts as 'limited' like the rest. Calling it 'paid' would
     //          show a "billing required" notice to someone who is perfectly fine on the free plan.
-    return String(modelId || '').toLowerCase().includes('flash') ? 'limited' : 'paid';
+    // ITALIANO: un flash-lite, o un id senza versione (es. la linea video omni), e' 'unknown':
+    //           dal solo nome 2.5-flash-lite ha il piano gratuito e 3.5-flash-lite no.
+    // ENGLISH: a flash-lite, or an id with no version (e.g. the omni video line), is 'unknown':
+    //          by name alone 2.5-flash-lite has a free tier and 3.5-flash-lite does not.
+    const id = String(modelId || '').toLowerCase();
+    if (!id.includes('flash')) return 'paid';
+    if (id.includes('lite') || versioneDi(id).length === 0) return 'unknown';
+    return 'limited';
 };
 
 // ITALIANO: Classifica un errore restituito da Gemini in modo leggibile per l'utente
 // ENGLISH: Classify a Gemini error into a human-readable category
-export type GeminiErrorKind = 'invalid_key' | 'billing_required' | 'rate_limit' | 'model_unavailable' | 'unknown';
-export const classifyGeminiError = (err: any): { kind: GeminiErrorKind; message: string } => {
+// ITALIANO: 'busy' = Google sovraccarico o con un guasto interno (500/502/503/504): passa da solo.
+//           'blocked' = la risposta non porta tag (foto rifiutata dal filtro, vuota, illeggibile).
+//           `quotaGiorno` = il limite superato e' la quota del GIORNO: riprovare fra un minuto non
+//           serve. Resta 'rate_limit' per tutto il resto (prova del modello compresa: un modello
+//           con la quota del giorno finita esiste eccome, non va scartato).
+// ENGLISH: 'busy' = Google overloaded or with an internal fault (500/502/503/504): it passes.
+//          'blocked' = the answer carries no tags (photo refused by the filter, empty, unreadable).
+//          `quotaGiorno` = the limit hit is the DAILY quota: retrying in a minute is pointless. It
+//          stays 'rate_limit' for everything else (model probe included: a model whose daily
+//          quota is used up exists just fine and must not be discarded).
+export type GeminiErrorKind = 'invalid_key' | 'billing_required' | 'rate_limit' | 'model_unavailable' | 'busy' | 'blocked' | 'unknown';
+export type GeminiErrore = { kind: GeminiErrorKind; message: string; quotaGiorno?: boolean };
+export const classifyGeminiError = (err: any): GeminiErrore => {
     const msg = String(err?.message || err || '');
+    if (err?.geminiKind === 'blocked') return { kind: 'blocked', message: msg };
     // ITALIANO: il "troppe richieste" VERO di Google (429 RESOURCE_EXHAUSTED) dice "check your
     //           plan and billing details": deciso sulla parola 'billing' diventava "serve la
     //           fatturazione", e la taggatura in blocco si fermava invece di aspettare e
@@ -225,18 +266,47 @@ export const classifyGeminiError = (err: any): { kind: GeminiErrorKind; message:
     //          text the limit comes before the word 'billing'. A limit of 0 instead means the
     //          model has NO free tier: not "too fast" and not "billing", but "not usable": so the
     //          probe discards it and the repair looks for a free model.
-    const limite = (): { kind: GeminiErrorKind; message: string } => {
+    // ITALIANO: con uno stato numerico le cifre "401" e "429" del testo NON si leggono come stato:
+    //           sono numeri di progetto o di richiesta (una fatturazione spenta sul progetto
+    //           842942901234 diventava "troppe richieste"). Solo un errore senza stato (testo
+    //           semplice) si riconosce ancora dalle cifre.
+    // ENGLISH: with a numeric status the "401" and "429" digits of the text are NOT read as a
+    //          status: they are project or request numbers (billing disabled on project
+    //          842942901234 became "too many requests"). Only an error with no status (plain text)
+    //          is still recognised by its digits.
+    const stato = typeof err?.status === 'number' ? err.status : undefined;
+    const senzaStato = stato === undefined;
+    const limite = (): GeminiErrore => {
         const senzaGratuito = /limit:\s*0(?![\d.])/i.test(msg) || /quotaValue[^0-9]{0,6}0(?![\d.])/.test(msg);
-        return { kind: senzaGratuito ? 'model_unavailable' : 'rate_limit', message: msg };
+        if (senzaGratuito) return { kind: 'model_unavailable', message: msg };
+        // ITALIANO: la quota superata e' del giorno (quotaId "...PerDay...") e non del minuto.
+        // ENGLISH: the quota hit is the daily one (quotaId "...PerDay...") and not the per-minute one.
+        return { kind: 'rate_limit', message: msg, quotaGiorno: /PerDay/i.test(msg) };
     };
-    if (err?.status === 429) return limite();
-    if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('401')) {
+    if (stato === 429) return limite();
+    // ITALIANO: Google sovraccarico ("The model is overloaded") o guasto interno: si decide sullo
+    //           stato numerico, o senza stato sulla parola di stato di Google, mai sulle cifre.
+    //           La rete assente resta 'unknown'.
+    // ENGLISH: Google overloaded ("The model is overloaded") or an internal fault: decided on the
+    //          numeric status, or with no status on Google's status word, never on digits. A
+    //          missing network stays 'unknown'.
+    if (stato === 500 || stato === 502 || stato === 503 || stato === 504
+        || (senzaStato && (/"status":\s*"(UNAVAILABLE|INTERNAL)"/.test(msg) || /overloaded/i.test(msg)))) {
+        return { kind: 'busy', message: msg };
+    }
+    // ITALIANO: una chiave che Google ha spento perche' trapelata, scaduta o bloccata per questa API
+    //           e' un problema della CHIAVE (403): con la fatturazione non c'entra.
+    // ENGLISH: a key Google switched off because it leaked, expired or is blocked for this API is a
+    //          KEY problem (403): billing has nothing to do with it.
+    if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID')
+        || /reported as leaked|API_KEY_[A-Z_]*BLOCKED|API_KEY_EXPIRED|API key expired/i.test(msg)
+        || stato === 401 || (senzaStato && msg.includes('401'))) {
         return { kind: 'invalid_key', message: msg };
     }
     if (msg.includes('FAILED_PRECONDITION') || msg.includes('SERVICE_DISABLED') || msg.includes('does not have access')) {
         return { kind: 'billing_required', message: msg };
     }
-    if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429') || msg.toLowerCase().includes('quota')) {
+    if (msg.includes('RESOURCE_EXHAUSTED') || (senzaStato && msg.includes('429')) || msg.toLowerCase().includes('quota')) {
         return limite();
     }
     if (msg.includes('billing')) {
@@ -352,12 +422,13 @@ const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkY
 //           Gli altri numeri del nome NON sono versioni: "-8b" e' la taglia (un modello
 //           piu' piccolo) e "-001" e' un'istantanea. Leggerli tutti metteva
 //           "gemini-3.6-flash-8b" [3,6,8] DAVANTI a "gemini-3.6-flash" [3,6], cioe' faceva
-//           scegliere il modello piu' debole. Senza numero dopo "gemini-" torna [] e va in fondo.
+//           scegliere il modello piu' debole. Senza numero dopo "gemini-" torna [] (e
+//           scegliCandidati lo scarta).
 // ENGLISH: the version is ONLY the number right after "gemini-": "gemini-3.6-flash" -> [3, 6].
 //          The other numbers in the name are NOT versions: "-8b" is the size (a smaller model)
 //          and "-001" is a snapshot. Reading them all put "gemini-3.6-flash-8b" [3,6,8] AHEAD of
 //          "gemini-3.6-flash" [3,6], i.e. it picked the weaker model. With no number after
-//          "gemini-" it returns [] and ranks last.
+//          "gemini-" it returns [] (and scegliCandidati drops it).
 export const versioneDi = (id: string): number[] => {
     const m = /^gemini-(\d+(?:\.\d+)*)/i.exec(String(id || ''));
     return m ? m[1].split('.').map(p => parseInt(p, 10)).filter(n => Number.isFinite(n)) : [];
@@ -394,6 +465,11 @@ export const scegliCandidati = (grezzi: any[]): ModelloTrovato[] => {
         const minuscolo = id.toLowerCase();
         if (!minuscolo.includes('flash')) continue;
         if (MODELLI_ESCLUSI.some(p => minuscolo.includes(p))) continue;
+        // ITALIANO: senza un numero subito dopo "gemini-" non e' la linea flash numerata: e' un
+        //           alias o un'altra famiglia (es. "gemini-omni-1.1-flash", che genera video).
+        // ENGLISH: with no number right after "gemini-" it is not the numbered flash line: it is an
+        //          alias or another family (e.g. "gemini-omni-1.1-flash", which generates video).
+        if (versioneDi(id).length === 0) continue;
         visti.add(id);
         buoni.push({
             id,
@@ -434,9 +510,11 @@ export const elencaModelliRemoti = async (apiKey: string): Promise<ModelloTrovat
     return scegliCandidati(grezzi);
 };
 
-// ITALIANO: la prova sul campo. 'incerto' quando l'esito non dice niente sul modello.
-// ENGLISH: the real probe. 'incerto' when the outcome says nothing about the model itself.
-export const provaModello = async (apiKey: string, id: string): Promise<'ok' | 'no' | 'occupato' | 'incerto'> => {
+// ITALIANO: la prova sul campo. 'incerto' quando l'esito non dice niente sul modello;
+//           'sovraccarico' quando Google ha risposto ma il modello e' sovraccarico (503/500).
+// ENGLISH: the real probe. 'incerto' when the outcome says nothing about the model itself;
+//          'sovraccarico' when Google answered but the model is overloaded (503/500).
+export const provaModello = async (apiKey: string, id: string): Promise<'ok' | 'no' | 'occupato' | 'sovraccarico' | 'incerto'> => {
     try {
         const ai = new GoogleGenAI({ apiKey });
         const risposta = await ai.models.generateContent({
@@ -457,6 +535,7 @@ export const provaModello = async (apiKey: string, id: string): Promise<'ok' | '
     } catch (err: any) {
         const { kind } = classifyGeminiError(err);
         if (kind === 'rate_limit') return 'occupato';
+        if (kind === 'busy') return 'sovraccarico';
         if (kind === 'unknown') return 'incerto';
         return 'no';
     }
@@ -503,11 +582,25 @@ export const aggiornaModelloAutomatico = async (
     // ENGLISH: already on the newest one and working: not a single call is spent.
     if (!rotto && candidati[0].id === attuale) return { ...fermo('invariato', candidati), disponibili: candidati };
 
+    let sovraccarico = false;
     for (const c of candidati.slice(0, PROVE_MAX)) {
         const esito = await provaModello(apiKey, c.id);
         // ITALIANO: non si sa niente del modello: ci si ferma dove si e', dicendo il perche'.
         // ENGLISH: nothing is known about the model: stay put, and say why.
         if (esito === 'occupato') return { ...fermo('occupato', candidati), disponibili: candidati };
+        // ITALIANO: un modello sovraccarico. Nel controllo normale si resta dove si e' (niente
+        //           discesa). In una RIPARAZIONE invece il modello di adesso e' gia' morto: restare
+        //           vuol dire restare rotti, quindi si prova il candidato dopo. Se nessuno passa,
+        //           il motivo e' "Google occupato", non "Google non raggiungibile".
+        // ENGLISH: an overloaded model. In the routine check we stay put (no downgrade). In a
+        //          REPAIR instead the current model is already dead: staying means staying broken,
+        //          so the next candidate is tried. If none passes, the reason is "Google busy",
+        //          not "Google unreachable".
+        if (esito === 'sovraccarico') {
+            if (!rotto) return { ...fermo('occupato', candidati), disponibili: candidati };
+            sovraccarico = true;
+            continue;
+        }
         if (esito === 'incerto') return { ...fermo('nonRaggiungibile', candidati), disponibili: candidati };
         if (esito !== 'ok') continue;
         if (c.id === attuale) return { modello: attuale, precedente: attuale, cambiato: false, esito: 'invariato', disponibili: candidati };
@@ -519,5 +612,5 @@ export const aggiornaModelloAutomatico = async (
             disponibili: candidati,
         };
     }
-    return { ...fermo('nessunoValido', candidati), disponibili: candidati };
+    return { ...fermo(sovraccarico ? 'occupato' : 'nessunoValido', candidati), disponibili: candidati };
 };

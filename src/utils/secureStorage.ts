@@ -55,11 +55,16 @@ export const getSecret = async (key: string): Promise<string> => {
     }
     // ITALIANO: Fuori da Electron non c'e' storage cifrato e la chiave non si scrive mai in
     //           chiaro (vedi setSecret): non c'e' niente da leggere. Un eventuale residuo in
-    //           chiaro di versioni precedenti NON si usa; sparisce quando si salva o si toglie
-    //           la chiave.
+    //           chiaro di versioni precedenti NON si usa e si toglie qui, alla lettura: senza
+    //           chiave in memoria la X "togli chiave" non compare e il salvataggio non parte,
+    //           quindi altrimenti restava su disco per sempre. La chiave si puo' sempre
+    //           incollare di nuovo da Google AI Studio.
     // ENGLISH: Outside Electron there is no encrypted storage and the key is never written in
     //          clear text (see setSecret): there is nothing to read. Any clear-text leftover from
-    //          earlier versions is NOT used; it goes away when the key is saved or removed.
+    //          earlier versions is NOT used and is removed here, on read: with no key in memory
+    //          the "remove key" X does not show and the save never runs, so otherwise it stayed
+    //          on disk forever. The key can always be pasted again from Google AI Studio.
+    try { localStorage.removeItem(key); } catch (_) { /* ignore */ }
     return '';
 };
 

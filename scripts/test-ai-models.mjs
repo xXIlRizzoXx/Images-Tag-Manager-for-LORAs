@@ -109,6 +109,35 @@ const VERI = {
         message: 'Gemini API free tier is not available in your country. Please enable billing on your project in Google AI Studio.' }),
     chiuso: () => apiErrore(404, { code: 404, status: 'NOT_FOUND',
         message: 'models/gemini-9.9-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.' }),
+    // ITALIANO: fatturazione spenta (403 BILLING_DISABLED) con "429" nel numero del progetto: non
+    //           e' un limite di frequenza. Con uno stato numerico le cifre del testo non contano.
+    // ENGLISH: billing disabled (403 BILLING_DISABLED) with "429" in the project number: it is not
+    //          a rate limit. With a numeric status the digits in the text do not count.
+    fatturazioneSpenta: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED',
+        message: 'This API method requires billing to be enabled. Please enable billing on project #842942901234 by visiting https://console.developers.google.com/billing/enable?project=842942901234 then retry.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'BILLING_DISABLED', domain: 'googleapis.com', metadata: { consumer: 'projects/842942901234', service: 'generativelanguage.googleapis.com' } }] }),
+    // ITALIANO: il servizio spento con "401" nel numero del progetto: la chiave e' buona.
+    // ENGLISH: the service disabled with "401" in the project number: the key is fine.
+    servizioSpento401: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED',
+        message: 'Generative Language API has not been used in project 840112345678 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=840112345678 then retry.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'SERVICE_DISABLED', domain: 'googleapis.com', metadata: { consumer: 'projects/840112345678' } }] }),
+    // ITALIANO: una chiave che Google ha spento perche' finita in pubblico, o bloccata per questa API:
+    //           va cambiata la chiave, la fatturazione non c'entra.
+    // ENGLISH: a key Google switched off because it leaked, or blocked for this API: the key must
+    //          be replaced, billing has nothing to do with it.
+    chiaveTrapelata: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED',
+        message: 'Your API key was reported as leaked. Please use another API key.' }),
+    chiaveBloccata: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED',
+        message: 'Requests to this API generativelanguage.googleapis.com method google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent are blocked.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_SERVICE_BLOCKED', domain: 'googleapis.com' }] }),
+    // ITALIANO: Google sovraccarico (503) o con un guasto interno (500): passa da solo, si riprova.
+    //           Il secondo contiene "401" fra le cifre: non e' una chiave sbagliata.
+    // ENGLISH: Google overloaded (503) or with an internal fault (500): it passes, retry. The
+    //          second one holds "401" among its digits: it is not a bad key.
+    sovraccarico: () => apiErrore(503, { code: 503, status: 'UNAVAILABLE',
+        message: 'The model is overloaded. Please try again later.' }),
+    interno: () => apiErrore(500, { code: 500, status: 'INTERNAL',
+        message: 'An internal error has occurred (request 7740193). Please retry or report in https://developers.generativeai.google/guide/troubleshooting' }),
 };
 const M = (nome, azioni = ['generateContent']) => ({ name: 'models/' + nome, displayName: nome, supportedActions: azioni });
 const pagine = (voci) => ({ async *[Symbol.asyncIterator]() { for (const v of voci) yield v; } });
@@ -231,6 +260,58 @@ dice('chiave sbagliata vera: chiave sbagliata', 'invalid_key', S.classifyGeminiE
 dice('servizio spento (progetto con "429" nel numero): fatturazione', 'billing_required', S.classifyGeminiError(VERI.servizioSpento()).kind);
 dice('piano gratuito non disponibile nel paese: fatturazione', 'billing_required', S.classifyGeminiError(VERI.fatturazione()).kind);
 dice('modello chiuso vero: non disponibile', 'model_unavailable', S.classifyGeminiError(VERI.chiuso()).kind);
+dice('fatturazione spenta (progetto con "429" nel numero): fatturazione', 'billing_required', S.classifyGeminiError(VERI.fatturazioneSpenta()).kind);
+dice('servizio spento (progetto con "401" nel numero): fatturazione, NON chiave sbagliata', 'billing_required', S.classifyGeminiError(VERI.servizioSpento401()).kind);
+dice('chiave segnalata come trapelata: chiave sbagliata, NON fatturazione', 'invalid_key', S.classifyGeminiError(VERI.chiaveTrapelata()).kind);
+dice('chiave bloccata per questa API: chiave sbagliata, NON fatturazione', 'invalid_key', S.classifyGeminiError(VERI.chiaveBloccata()).kind);
+dice('il vecchio testo "[401] Unauthorized" senza stato resta chiave sbagliata', 'invalid_key', S.classifyGeminiError(errore('[401] Unauthorized')).kind);
+
+console.log('\n--- la quota del GIORNO finita si riconosce da quella del minuto ---');
+{
+    const giorno = S.classifyGeminiError(VERI.frettaGiorno());
+    dice('quota del giorno: limite di frequenza, e si sa che e quella del giorno', ['rate_limit', true], [giorno.kind, giorno.quotaGiorno === true]);
+    const minuto = S.classifyGeminiError(VERI.fretta());
+    dice('quota del minuto: limite di frequenza, NON del giorno', ['rate_limit', false], [minuto.kind, minuto.quotaGiorno === true]);
+    dice('limite 0 del giorno resta "non usabile gratis"', 'model_unavailable',
+        S.classifyGeminiError(fretta429({ limite: 0, quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' })).kind);
+}
+googleCon({ generate: async () => { throw VERI.frettaGiorno(); } });
+dice('la prova di un modello con la quota del giorno finita: occupato, NON scartato', 'occupato', await S.provaModello(CHIAVE, 'gemini-3.10-flash'));
+
+console.log('\n--- Google sovraccarico o con un guasto interno: passeggero, non sconosciuto ---');
+dice('503 "model overloaded": occupato', 'busy', S.classifyGeminiError(VERI.sovraccarico()).kind);
+dice('500 INTERNAL (con "401" fra le cifre): occupato', 'busy', S.classifyGeminiError(VERI.interno()).kind);
+dice('la rete assente resta sconosciuta', 'unknown', S.classifyGeminiError(ERR.rete()).kind);
+{
+    const modelli = [M('gemini-3.8-flash'), M('gemini-3.7-flash'), M('gemini-3.6-flash')];
+    const sovraccarico38 = async (_k, p) => { if (p.model === 'gemini-3.8-flash') throw VERI.sovraccarico(); return { text: '["ok"]' }; };
+    googleCon({ modelli, generate: sovraccarico38 });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash', true);
+    dice('riparazione: il piu recente e sovraccarico, si passa al successivo che funziona', ['riparato', 'gemini-3.7-flash', true], [e.esito, e.modello, e.cambiato]);
+    googleCon({ modelli, generate: sovraccarico38 });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
+    dice('controllo normale: il piu recente e sovraccarico, si resta dove si e (niente discesa)', ['occupato', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
+    googleCon({ modelli, generate: async () => { throw VERI.sovraccarico(); } });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash', true);
+    dice('riparazione con tutti sovraccarichi: occupato, NON "Google non raggiungibile"', ['occupato', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
+}
+
+console.log('\n--- nella tendina solo modelli sensati, e il "gratis" solo dove lo e davvero ---');
+{
+    // ITALIANO: l'elenco pubblico di Google del 26 settembre 2026, tutto dichiarato "generateContent".
+    // ENGLISH: Google's public list of 26 September 2026, all declared "generateContent".
+    const elenco = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash',
+        'gemini-2.5-flash-lite', 'gemini-2.5-pro', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-live',
+        'gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image',
+        'gemini-omni-1.1-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'].map(n => M(n));
+    const scelti = S.scegliCandidati(elenco).map(x => x.id);
+    dice('il modello video senza numero di versione (omni) NON e un candidato', false, scelti.some(id => id.includes('omni')));
+    dice('l\'ordine dei gratuiti resta 3.8, 3.7, 3.6, 3.5', ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'], scelti.slice(0, 4));
+    dice('un flash-lite NON si dichiara "gratuito con limiti" (3.5-lite non ha il piano gratuito)', false, S.getModelTier('gemini-3.5-flash-lite') === 'limited');
+    dice('...ma nemmeno "a pagamento" (2.5-lite invece ce l\'ha)', false, S.getModelTier('gemini-2.5-flash-lite') === 'paid');
+    dice('il modello video NON si dichiara "gratuito con limiti"', false, S.getModelTier('gemini-omni-1.1-flash') === 'limited');
+    dice('il flash pieno resta "gratuito con limiti"', 'limited', S.getModelTier('gemini-3.8-flash'));
+}
 
 googleCon({ generate: async () => { throw VERI.fretta(); } });
 dice('la prova di un modello sotto "troppe richieste": occupato', 'occupato', await S.provaModello(CHIAVE, 'gemini-3.10-flash'));
@@ -265,6 +346,35 @@ let segnale;
 googleCon({ list: async (_k, p) => { segnale = p && p.config && p.config.abortSignal; return pagine([M('gemini-3.10-flash')]); } });
 await S.elencaModelliRemoti(CHIAVE);
 dice('l\'elenco parte con un segnale di scadenza', true, segnale instanceof AbortSignal && !segnale.aborted);
+// ITALIANO: un segnale qualunque non basta: deve SCADERE. Qui Google apre la connessione e non
+//           risponde mai (rifiuta solo quando il segnale scatta) e la scadenza vera viene
+//           accorciata a 20 ms: l'elenco e la verifica della chiave devono finire da soli, non
+//           restare appesi. Senza la scadenza la gara la vince "appeso".
+// ENGLISH: any signal is not enough: it must EXPIRE. Here Google opens the connection and never
+//          answers (it rejects only when the signal fires) and the real deadline is shortened to
+//          20 ms: the listing and the key check must end on their own, not hang. Without the
+//          deadline the race is won by "appeso" (hung).
+{
+    const timeoutVero = AbortSignal.timeout;
+    const chiesti = [];
+    AbortSignal.timeout = (ms) => { chiesti.push(ms); return timeoutVero.call(AbortSignal, 20); };
+    const corsa = (promessa) => {
+        let timer;
+        const appeso = new Promise(r => { timer = setTimeout(() => r('appeso'), 2000); });
+        return Promise.race([promessa, appeso]).finally(() => clearTimeout(timer));
+    };
+    try {
+        googleCon({ list: (_k, p) => new Promise((_, rifiuta) => {
+            const s = p && p.config && p.config.abortSignal;
+            if (s) s.addEventListener('abort', () => rifiuta(s.reason || new Error('aborted')), { once: true });
+        }) });
+        dice('l\'elenco appeso si interrompe da solo', 'interrotto', await corsa(S.elencaModelliRemoti(CHIAVE).then(() => 'risolto', () => 'interrotto')));
+        dice('la verifica della chiave appesa si interrompe da sola', false, await corsa(S.verifyGeminiApiKey(CHIAVE).then(r => r.ok)));
+        dice('...con un limite di tempo vero (fra 1 ms e 60 s)', true, chiesti.length === 2 && chiesti.every(ms => ms > 0 && ms <= 60000));
+    } finally {
+        AbortSignal.timeout = timeoutVero;
+    }
+}
 
 // =============================================================================
 console.log('\n--- il modello salvato non viene piu buttato via ---');

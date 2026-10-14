@@ -38,7 +38,7 @@ const finto = {
                 export class GoogleGenAI {
                     constructor() {}
                     get models() {
-                        return { generateContent: async () => ({ text: globalThis.__RISPOSTA__ }) };
+                        return { generateContent: async () => (globalThis.__INTERA__ || { text: globalThis.__RISPOSTA__ }) };
                     }
                 }`,
             loader: 'js',
@@ -92,8 +92,35 @@ console.log('\n--- quello che funzionava resta uguale ---');
 dice('minuscole, spazi tolti, doppioni tolti', ['red hair'], await tagDa('["Red Hair", " red hair "]'));
 dice('ogni tag resta sotto i 60 caratteri', ['x'.repeat(60)], await tagDa(JSON.stringify(['x'.repeat(80)])));
 dice('elementi che non sono testo vengono ignorati', ['cat'], await tagDa('[42, null, "cat"]'));
-dice('una risposta che non e un elenco da nessun tag', [], await tagDa('{"tags": "cat"}'));
-dice('una risposta che non e JSON da nessun tag', [], await tagDa('cat, dog'));
+dice('un elenco vero ma vuoto resta zero tag, senza errore', [], await tagDa('[]'));
+
+// =============================================================================
+// ITALIANO: una foto che Google rifiuta (filtro dei contenuti) arriva come risposta normale,
+//           senza testo: prima diventava [] e l'app la contava fra le "taggate", con il suono e il
+//           messaggio verde. Adesso e' un errore riconoscibile ('blocked'), e cosi' pure una
+//           risposta vuota, illeggibile o che non e' un elenco. Nessun pezzo diventa un tag.
+// ENGLISH: a photo Google refuses (content filter) arrives as a normal answer with no text: it
+//          used to become [] and the app counted it as "tagged", with the chime and the green
+//          message. Now it is a recognisable error ('blocked'), and so is an empty, unreadable or
+//          non-list answer. No piece of it becomes a tag.
+console.log('\n--- una risposta rifiutata, vuota o illeggibile NON e un successo ---');
+const rifiuto = async (cosa, risposta) => {
+    globalThis.__INTERA__ = risposta;
+    let esito;
+    try {
+        esito = { risolta: await S.getGeminiTags(foto, { apiKey: 'AIza' + 'x'.repeat(35), modelName: 'gemini-3.6-flash', maxTags: 30 }) };
+    } catch (err) {
+        esito = { tipo: S.classifyGeminiError(err).kind };
+    } finally {
+        globalThis.__INTERA__ = null;
+    }
+    dice(cosa, { tipo: 'blocked' }, esito);
+};
+await rifiuto('foto bloccata dal filtro (promptFeedback.blockReason)', { text: undefined, promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } });
+await rifiuto('risposta fermata per sicurezza (finishReason SAFETY, nessun testo)', { text: undefined, candidates: [{ finishReason: 'SAFETY', content: { parts: [] } }] });
+await rifiuto('risposta troncata (JSON a meta)', { text: '["red hair", "blue ey' });
+await rifiuto('una risposta che non e JSON', { text: 'cat, dog' });
+await rifiuto('una risposta che non e un elenco', { text: '{"tags": "cat"}' });
 
 console.log(`\n${guai === 0 ? 'TUTTO A POSTO' : 'PROBLEMI: ' + guai} (${fatti} controlli)`);
 process.exit(guai === 0 ? 0 : 1);

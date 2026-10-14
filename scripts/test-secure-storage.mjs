@@ -64,7 +64,13 @@ console.log('\n--- anteprima nel browser: nessuno storage cifrato ---');
     dice('...e in localStorage NON finisce niente', null, disco.get(K) ?? null);
     disco.set(K, V);
     dice('un residuo in chiaro di prima NON viene letto', '', await S.getSecret(K));
-    dice('...e non viene cancellato di nascosto all\'avvio', V, disco.get(K) ?? null);
+    // ITALIANO: nell'anteprima la chiave non c'e', quindi la X "togli chiave" non compare e il
+    //           salvataggio non parte: il residuo in chiaro restava su disco per sempre. Si toglie
+    //           alla lettura; si puo' sempre incollare di nuovo la chiave da Google AI Studio.
+    // ENGLISH: in the preview there is no key, so the "remove key" X does not show and the save
+    //          never runs: the clear-text leftover stayed on disk forever. It is removed on read;
+    //          the key can always be pasted again from Google AI Studio.
+    dice('...e il residuo in chiaro viene tolto subito, alla lettura', null, disco.get(K) ?? null);
     dice('salvando di nuovo la chiave il residuo in chiaro sparisce', [false, null], [await S.setSecret(K, V), disco.get(K) ?? null]);
     disco.set(K, V);
     dice('togliere la chiave (valore vuoto) riesce e pulisce il residuo', [true, null], [await S.setSecret(K, ''), disco.get(K) ?? null]);
