@@ -40,7 +40,7 @@ import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, t
 import { modificheNonSalvate, scriviBackupSubito } from './utils/closeGuard';
 import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
-import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase } from './utils/tagCase';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
@@ -604,6 +604,19 @@ export default function App() {
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
+    // ITALIANO: le trigger word di ogni passo della cronologia, allo stesso indice del passo. Il
+    //           riquadro delle trigger e le foto cambiano insieme (handleGlobalTagsChange) in un solo
+    //           passo, ma la cronologia ricordava solo le foto: Ctrl+Z toglieva la trigger dalle foto e
+    //           il riquadro continuava a mostrarla (o il contrario, e il .txt non la scriveva piu' per
+    //           prima). Il numero dei passi resta uguale a quello di `history`: si taglia, si aggiunge
+    //           e si accorcia insieme a lei, e le pulizie della cronologia non cambiano i passi.
+    // ENGLISH: the trigger words of every history step, at the same index as the step. The trigger
+    //          box and the photos change together (handleGlobalTagsChange) in one step, but the
+    //          history remembered only the photos: Ctrl+Z took the trigger off the photos while the
+    //          box kept showing it (or the other way round, and the .txt no longer wrote it first).
+    //          The number of steps stays the same as `history`: it is cut, pushed and shortened
+    //          along with it, and the history clean-ups do not change the steps.
+    const triggerHistoryRef = useRef<string[][]>([]);
 
     const handleSuggestedTagClick = (tag: string) => {
         if (selectedImageId) {
@@ -636,6 +649,12 @@ export default function App() {
             if (newHistory.length > 50) newHistory.shift();
             return newHistory;
         });
+        // ITALIANO: le trigger di questo passo, con gli stessi tagli della cronologia qui sopra.
+        // ENGLISH: this step's triggers, with the same cuts as the history above.
+        const triggerPassi = triggerHistoryRef.current.slice(0, historyIndex + 1);
+        triggerPassi.push(globalTriggers);
+        if (triggerPassi.length > 50) triggerPassi.shift();
+        triggerHistoryRef.current = triggerPassi;
         setHistoryIndex(prev => Math.min(prev + 1, 49));
     }, [images]);
 
@@ -775,12 +794,20 @@ export default function App() {
     // ENGLISH: jump to the nearest step DIFFERENT from the current one (see nearestDifferentStep):
     //          photos that left the disk leave identical steps, and a Ctrl+Z there said "Action
     //          undone" without changing anything. With no different step: nothing, and no notice.
+    // ITALIANO: e rimettono anche il riquadro delle trigger com'era in quel passo (triggerHistoryRef),
+    //           tranne quando si torna alla galleria vuota di prima dell'import: una trigger scritta
+    //           prima di importare non deve sparire per questo.
+    // ENGLISH: and they also put the trigger box back as it was at that step (triggerHistoryRef),
+    //          except when going back to the empty gallery from before the import: a trigger typed
+    //          before importing must not vanish because of that.
     const handleUndo = useCallback(() => {
         const passo = nearestDifferentStep(history, historyIndex, -1);
         if (passo >= 0) {
             isUndoRedoAction.current = true;
             setHistoryIndex(passo);
             setImages(withLiveOriginalTags(history[passo], discoNotoRef.current));
+            const triggerDelPasso = triggerHistoryRef.current[passo];
+            if (triggerDelPasso && history[passo].length > 0) { globalTriggersRef.current = triggerDelPasso; setGlobalTriggers(triggerDelPasso); }
             setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
@@ -791,6 +818,8 @@ export default function App() {
             isUndoRedoAction.current = true;
             setHistoryIndex(passo);
             setImages(withLiveOriginalTags(history[passo], discoNotoRef.current));
+            const triggerDelPasso = triggerHistoryRef.current[passo];
+            if (triggerDelPasso && history[passo].length > 0) { globalTriggersRef.current = triggerDelPasso; setGlobalTriggers(triggerDelPasso); }
             setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
@@ -924,6 +953,27 @@ export default function App() {
     useEffect(() => {
         if (selectedImageId && !images.some(img => img.id === selectedImageId && !img.isTrashed)) setSelectedImageId(null);
     }, [selectedImageId, images]);
+
+    // ITALIANO: lo stesso per la selezione in blocco: una foto che non c'e' piu' o che e' nel
+    //           cestino (Ctrl+Z, Ctrl+Shift+Z, un annullamento oltre l'import) esce dalla
+    //           selezione. Prima restava: il pannello la contava ("foto selezionate: 2" con una sola
+    //           a schermo), le pillole "presenti su alcune" mostravano i suoi tag e Conferma diceva
+    //           un numero piu' basso. Le foto nascoste solo dalla ricerca restano selezionate. Se non
+    //           cambia niente si tiene lo stesso elenco, cosi' le card non si ridisegnano.
+    // ENGLISH: the same for the bulk selection: a photo that is gone or in the trash (Ctrl+Z,
+    //          Ctrl+Shift+Z, an undo past the import) leaves the selection. It used to stay: the
+    //          panel counted it ("selected photos: 2" with one on screen), the "on some" pills
+    //          showed its tags and Confirm said a lower number. Photos hidden only by the search
+    //          stay selected. When nothing changes the same list is kept, so the cards are not
+    //          redrawn.
+    useEffect(() => {
+        setSelectedForBulk(prev => {
+            if (prev.length === 0) return prev;
+            const fotoNelProgetto = new Set(images.filter(img => !img.isTrashed).map(img => img.id));
+            const restano = prev.filter(id => fotoNelProgetto.has(id));
+            return restano.length === prev.length ? prev : restano;
+        });
+    }, [images]);
 
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
     // ITALIANO: le foto del progetto, cioe' quelle fuori dal cestino: il contatore della barra le
@@ -1242,13 +1292,13 @@ export default function App() {
                 // ITALIANO: le trigger word restano sulle foto che le avevano. Prima se ne andavano
                 //           anche loro mentre il riquadro delle trigger continuava a mostrarle, e
                 //           niente le rimetteva: i .txt salvati dopo uscivano senza trigger, quelli
-                //           delle foto importate dopo con. Non si svuota il riquadro: Ctrl+Z non lo
-                //           ripristina, e riportando i tag si perderebbe l'ordine delle trigger.
+                //           delle foto importate dopo con. Non si svuota il riquadro: questo comando
+                //           toglie i tag delle foto, non le trigger, che restano le prime nei .txt.
                 // ENGLISH: trigger words stay on the photos that had them. They used to go too while
                 //          the trigger box kept showing them, and nothing put them back: .txt files
                 //          saved afterwards came out without the trigger, those of photos imported
-                //          later with it. The box is not emptied: Ctrl+Z does not restore it, and the
-                //          tags brought back would lose the trigger order.
+                //          later with it. The box is not emptied: this command removes the photos'
+                //          tags, not the triggers, which stay first in the .txt files.
                 setImages(prev => prev.map(img => ({ ...img, tags: globalTriggers.filter(tg => img.tags.includes(tg)) })));
                 setCustomProjectTags([]);
                 setConfirmDialog(prev => ({ ...prev, isOpen: false }));
@@ -1503,7 +1553,17 @@ export default function App() {
         return { imgPath, txtPath: imgPath.replace(/\.[^.\\/]+$/, '') + '.txt' };
     };
 
-    const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
+    // ITALIANO: `spostati` (facoltativo) dice cosa e' arrivato DAVVERO nel Cestino di Windows. Il
+    //           canale risponde 'ok' anche per un file che non c'e' (il .txt di una foto senza tag):
+    //           solo il conto `trashed` distingue "spostato" da "non c'era". "Annulla lo
+    //           svuotamento" deve ripescare solo cio' che e' stato spostato, o tirerebbe fuori un
+    //           omonimo lasciato nel Cestino da uno svuotamento vecchio.
+    // ENGLISH: `spostati` (optional) tells what REALLY reached the Windows Recycle Bin. The channel
+    //          answers 'ok' also for a file that is not there (the .txt of a photo with no tags):
+    //          only the `trashed` count tells "moved" from "was not there". "Undo the emptying"
+    //          must fish back only what was moved, or it would pull out a namesake left in the
+    //          Recycle Bin by an older emptying.
+    const deleteImageFiles = async (img: any, spostati?: { img?: boolean; txt?: boolean }): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
             return img.dirHandle ? 'nopath' : 'failed';
@@ -1553,7 +1613,9 @@ export default function App() {
             //          every try.
             const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
             if (esitoImg === 'ok') {
+                if (spostati) spostati.img = !!(resImg && resImg.trashed > 0);
                 const resTxt = await api.trashFiles([txtPath]);
+                if (spostati) spostati.txt = !!(resTxt && resTxt.trashed > 0);
                 if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
                 return 'trashed';
             }
@@ -1793,7 +1855,14 @@ export default function App() {
             // ENGLISH: and "not found, it may have been emptied" only when true for ALL of them:
             //          when PowerShell is stopped, blocked or answers badly, the files are still in
             //          the Windows Recycle Bin and calling it emptied would make them look lost.
-            if (tornate.length === 0 && bloccate.length > 0) {
+            // ITALIANO: "c'e' gia' un omonimo" solo se e' il motivo di TUTTE quelle non tornate, come
+            //           nel ramo parziale qui sotto: prima vinceva appena una era bloccata, diceva
+            //           "Foto: 1" su tre e taceva le altre, anche quelle sparite dal Cestino.
+            // ENGLISH: "a namesake is already there" only when it is the reason for ALL those not
+            //          back, as in the partial branch below: it used to win as soon as one was
+            //          blocked, said "Photos: 1" out of three and kept quiet about the others, even
+            //          those gone from the Recycle Bin.
+            if (tornate.length === 0 && bloccate.length > 0 && bloccate.length === rimaste.length) {
                 showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
             } else if (tornate.length === 0 && nonTrovate.length === rimaste.length) {
                 showNotification(t.undoEmptyNone, 'error');
@@ -1873,14 +1942,23 @@ export default function App() {
             // ENGLISH: take the paths BEFORE moving the file: afterwards nothing is left in its
             //          place to work them out from.
             const percorsi = percorsiSuDisco(img);
+            const spostati: { img?: boolean; txt?: boolean } = {};
             try {
-                esito = await deleteImageFiles(img);
+                esito = await deleteImageFiles(img, spostati);
             } catch (error) {
                 console.error("Failed to delete", img.file.name, error);
             }
+            // ITALIANO: si annota solo cio' che e' stato spostato davvero: un .txt che non c'era non
+            //           si chiede indietro (finirebbe accanto alla foto il .txt omonimo di un'altra
+            //           foto, rimasto nel Cestino da prima), e un'immagine gia' sparita dal disco esce
+            //           dal progetto senza poter essere "annullata" in un'immagine vecchia.
+            // ENGLISH: record only what really moved: a .txt that was not there is not asked back (the
+            //          namesake .txt of another photo, left in the bin from before, would land beside
+            //          this photo), and an image already gone from disk leaves the project without
+            //          being "undone" into an old image.
             if (esito === 'trashed') {
                 removedIds.add(img.id);
-                if (percorsi.imgPath) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: percorsi.txtPath });
+                if (percorsi.imgPath && spostati.img) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: spostati.txt ? percorsi.txtPath : '' });
             }
             else if (esito === 'nopath') senzaPercorso.push(img);
             else {
@@ -3782,9 +3860,13 @@ export default function App() {
                     setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
                     continue;
                 }
-                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag (stato live)
-                // ENGLISH: Skip if requested and the image already has at least one tag (live state)
-                if (aiSkipTagged && Array.isArray(current.tags) && current.tags.length > 0) {
+                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag (stato live). Le
+                //           trigger word non contano (vedi hasTagsBeyondTriggers): con una trigger
+                //           impostata ogni foto risultava taggata e non ne partiva nessuna.
+                // ENGLISH: Skip if requested and the image already has at least one tag (live state).
+                //          Trigger words do not count (see hasTagsBeyondTriggers): with a trigger set
+                //          every photo looked tagged and none was sent.
+                if (aiSkipTagged && Array.isArray(current.tags) && hasTagsBeyondTriggers(current.tags, globalTriggersRef.current)) {
                     skippedCount++;
                     console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
                     setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
@@ -4675,7 +4757,9 @@ export default function App() {
                                                         {t.aiBeta || 'Beta'}
                                                     </span>
                                                 </div>
-                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
+                                                {/* ITALIANO: spegnere l'AI ferma anche la taggatura in blocco in corso, come Annulla: prima le foto continuavano a partire verso Google con l'AI "spenta" */}
+                                                {/* ENGLISH: switching the AI off also stops the running bulk tagging, like Cancel: photos used to keep going to Google with the AI "off" */}
+                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (!v && aiAbortControllerRef.current) handleCancelAITagging(); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
                                             </div>
                                             {aiEnabled && (
                                                 <div className={`flex flex-col gap-2 p-2 rounded-lg text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/50 text-gray-600'}`}>
@@ -4989,7 +5073,9 @@ export default function App() {
                                             {isGlobalAITagging ? `${globalAIProgress.done}/${globalAIProgress.total}` : (t.aiAutoTagAll || 'Auto-tag all with AI')}
                                         </button>
                                     )}
-                                    {aiEnabled && isGlobalAITagging && (
+                                    {/* ITALIANO: Annulla resta finche' la taggatura gira, anche con l'AI appena spenta */}
+                                    {/* ENGLISH: Cancel stays while the tagging runs, even with the AI just switched off */}
+                                    {isGlobalAITagging && (
                                         <button
                                             onClick={handleCancelAITagging}
                                             disabled={aiCancelRequested}

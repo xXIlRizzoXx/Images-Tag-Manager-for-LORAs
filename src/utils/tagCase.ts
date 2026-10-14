@@ -61,3 +61,15 @@ export const uniqueTagsIgnoringCase = (tags: string[], preferred: string[] = [])
 //   even if `base` already holds duplicates (an imported .txt with "smile, Smile").
 export const countNewTagsIgnoringCase = (base: string[], incoming: string[]): number =>
     uniqueTagsIgnoringCase(incoming).filter(tag => !hasTagIgnoringCase(base, tag)).length;
+
+// ITALIANO: la foto ha almeno un tag che NON e' una trigger word? E' la domanda di "Salta foto gia'
+//   taggate": la trigger ("ohwx") sta sulle foto ma non le descrive. Contandola, con una trigger
+//   impostata (il flusso normale: prima la trigger, poi l'AI) ogni foto risultava gia' taggata e
+//   "Tagga tutte con AI" le saltava tutte, senza mandarne nessuna. Confronto senza maiuscole.
+// ENGLISH: does the photo have at least one tag that is NOT a trigger word? It is the question
+//   behind "Skip already-tagged photos": the trigger ("ohwx") sits on the photos but does not
+//   describe them. Counting it, with a trigger set (the normal flow: trigger first, then the AI)
+//   every photo looked already tagged and "Auto-tag all with AI" skipped them all, sending none.
+//   Compared regardless of case.
+export const hasTagsBeyondTriggers = (tags: string[], triggers: string[]): boolean =>
+    tags.some(tag => !hasTagIgnoringCase(triggers, tag));

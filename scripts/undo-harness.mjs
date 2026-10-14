@@ -2,7 +2,9 @@
    Ritaglia da src/App.tsx i testi VERI dell'effetto che registra la cronologia, di handleUndo e
    handleRedo, del salvataggio (performSave, handleSaveChanges, il "Salva file .txt" del
    visualizzatore e la sincronizzazione dell'editor di tag), della chiusura del progetto e del clic
-   su un tag suggerito, li compila con esbuild e li esegue con i testi veri di src/constants.ts.
+   su un tag suggerito, del riquadro delle trigger word (handleGlobalTagsChange) e dell'effetto che
+   ripulisce la selezione in blocco, li compila con esbuild e li esegue con i testi veri di
+   src/constants.ts.
    Al posto di React c'e' un piccolo stato che si comporta come lui nelle cose che contano qui:
    - ogni "render" crea funzioni NUOVE che vedono lo stato di QUEL momento;
    - gli aggiornamenti non si applicano subito ma tutti insieme poco dopo (in un microtask); dopo
@@ -15,8 +17,9 @@
    ENGLISH: TEST BENCH FOR Ctrl+Z / Ctrl+Shift+Z (history, saving, viewer)
    Cuts the REAL text of the effect that records the history, of handleUndo and handleRedo, of the
    saving (performSave, handleSaveChanges, the viewer's "Save .txt file" and the tag editor sync),
-   of the project close and of the click on a suggested tag out of src/App.tsx, compiles it with
-   esbuild and runs it with the real strings of src/constants.ts. Instead of React there is a
+   of the project close, of the click on a suggested tag, of the trigger word box
+   (handleGlobalTagsChange) and of the effect that cleans the bulk selection out of src/App.tsx,
+   compiles it with esbuild and runs it with the real strings of src/constants.ts. Instead of React there is a
    small state that behaves like it in what matters here:
    - every "render" creates NEW functions that see the state of THAT moment;
    - updates are not applied at once but all together a moment later (in a microtask); after every
@@ -43,6 +46,7 @@ export const t = (await carica('src/constants.ts')).translations.en;
 const P = await carica('src/utils/pathUtils.ts');
 const H = await carica('src/utils/historyUtils.ts');
 const S = await carica('src/utils/sidecarTags.ts');
+const C = await carica('src/utils/tagCase.ts');
 export const cronologia = H;
 
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
@@ -78,6 +82,7 @@ const PEZZI = {
     updateOriginalTags: ritaglia('    const updateOriginalTags = ', /\r?\n/g),
     handleTagEditorSaved: ritaglia('    const handleTagEditorSaved = async '),
     handleSuggestedTagClick: ritaglia('    const handleSuggestedTagClick = '),
+    handleGlobalTagsChange: ritaglia('    const handleGlobalTagsChange = ('),
 };
 for (const [nome, testo] of Object.entries(PEZZI)) {
     if (!testo) { console.log(`NO  ${nome} non trovato in src/App.tsx`); process.exit(1); }
@@ -92,18 +97,26 @@ export const haEffettoVisualizzatore = Boolean(visualizzatore);
 //          have it, and then it does not run.
 const RIGA_DISCO = '        images.forEach((foto: any) => discoNotoRef.current.set(';
 const disco = sorgente.includes(RIGA_DISCO) ? effetto('    }, [images]);', RIGA_DISCO) : '';
+// ITALIANO: l'effetto che toglie dalla selezione in blocco le foto uscite o nel cestino: il codice
+//           di prima non lo aveva, e allora non gira.
+// ENGLISH: the effect that drops from the bulk selection the photos gone or in the trash: the
+//          previous code did not have it, and then it does not run.
+const RIGA_SELEZIONE = '            const fotoNelProgetto = new Set(';
+const selezione = sorgente.includes(RIGA_SELEZIONE) ? effetto('    }, [images]);', RIGA_SELEZIONE) : '';
 
 const testi = [...Object.values(PEZZI), 'const effettoCronologia = ' + testoCronologia + ';'];
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
 testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
+testi.push('const effettoSelezione = ' + (selezione || '() => { }') + ';');
 const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedForBulk', 'stagedBulkTags', 'globalTriggers',
     'setImages', 'setHistory', 'setHistoryIndex', 'setToast', 'setSelectedImageId', 'setStagedBulkTags',
     'setSaveCloseDialog', 'setConfirmDialog', 'setIsSaving', 'setImportProgress',
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
     'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
+    'setSelectedForBulk', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef', 'uniqueTagsIgnoringCase',
     'useCallback', 'window', 'document', 'URL', 'Blob', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
-const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco',
+const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione',
     ...(visualizzatore ? ['effettoVisualizzatore'] : [])].join(', ') + ' };');
 
 /* ITALIANO: una cartella finta: `scritti` = nome del file -> ultimo contenuto scritto.
@@ -136,7 +149,8 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false },
     };
     const r = { stato, notifiche: [], tagSuFotoAperta: [] };
-    const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() } };
+    const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() },
+        globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] } };
     const coda = [];
     let programmato = false;
     const quieto = { log() { }, warn() { }, error() { } };
@@ -157,13 +171,16 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
             if ((stato.images !== primaImmagini || stato.selectedImageId !== primaAperta) && haEffettoVisualizzatore) {
                 render().effettoVisualizzatore();
             }
+            if (stato.images !== primaImmagini) render().effettoSelezione();
         }
     };
     const imposta = (chiave) => (v) => {
         coda.push([chiave, v]);
         if (!programmato) { programmato = true; queueMicrotask(scarica); }
     };
-    const render = () => fabbrica(
+    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef prende il valore dello stato.
+    // ENGLISH: as in App.tsx, on every render globalTriggersRef takes the state's value.
+    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, fabbrica(
         stato.images, stato.history, stato.historyIndex, stato.selectedImageId, stato.selectedForBulk, stato.stagedBulkTags, stato.globalTriggers,
         imposta('images'), imposta('history'), imposta('historyIndex'), () => { }, imposta('selectedImageId'), imposta('stagedBulkTags'),
         imposta('saveCloseDialog'), imposta('confirmDialog'), () => { }, () => { },
@@ -171,7 +188,8 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         (id, tags) => r.tagSuFotoAperta.push([id, tags]),
         () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
-        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto);
+        imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
+        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();

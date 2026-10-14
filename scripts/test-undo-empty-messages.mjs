@@ -65,6 +65,18 @@ console.log('\n--- il ripescaggio fallisce: non e\' "non trovato" ---');
     dice('il tasto resta solo per quello che si puo\' riprovare', ['B'], misto.restano);
 }
 
+console.log('\n--- un omonimo blocca A, B non torna per un altro motivo: B non sparisce dal messaggio ---');
+{
+    // ITALIANO: prima vinceva il messaggio dell'omonimo, con "Foto: 1" su due, e di B non si diceva niente.
+    // ENGLISH: the namesake message used to win, with "Photos: 1" out of two, and B was never mentioned.
+    const nonTrovata = await prova(solo('occupato', 'nonTrovato'));
+    dice('A bloccata, B non trovata: non solo "omonimo, Foto: 1"', [t.undoEmptyFailed, 'error'], nonTrovata.messaggio);
+    dice('il tasto resta solo per A', ['A'], nonTrovata.restano);
+    const fallita = await prova(solo('occupato', 'fallito'));
+    dice('A bloccata, B fallita: si dice che non si e\' riusciti', [t.undoEmptyFailed, 'error'], fallita.messaggio);
+    dice('il tasto resta per tutte e due', ['A', 'B'], fallita.restano);
+}
+
 console.log('\n--- nel Cestino di Windows i file non ci sono piu\' ---');
 {
     const r = await prova(() => 'nonTrovato');

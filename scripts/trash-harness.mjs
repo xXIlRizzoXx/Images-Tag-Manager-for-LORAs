@@ -97,7 +97,8 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'setImages', 'setHistory', 'setHistoryIndex', 'setUltimoSvuotamento', 'setRipristinoInCorso', 'setIsEmptyingTrash',
     'setSelectedForBulk', 'setConfirmDialog', 'setIsTrashOpen', 'setToast', 'showNotification',
     'imagesRef', 'isUndoRedoAction', 'fotoChiuseRef', 'ripristinoInCorsoRef', 't', 'soundManager', 'sidecarTagFileName', 'purgeIdsFromHistory',
-    'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'useCallback', 'window', 'URL', 'console'];
+    'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'globalTriggers', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef',
+    'useCallback', 'window', 'URL', 'console'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -162,11 +163,12 @@ export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null
    thumbnails were released; attendi() lets time pass (calls to the main process, updates). */
 export const creaApp = (immagini, { api = null } = {}) => {
     const stato = {
-        images: immagini, history: [], historyIndex: -1, ultimoSvuotamento: null, ripristinoInCorso: false,
+        images: immagini, history: [], historyIndex: -1, ultimoSvuotamento: null, ripristinoInCorso: false, globalTriggers: [],
         isEmptyingTrash: false, selectedForBulk: [], confirmDialog: { isOpen: false }, isTrashOpen: true,
     };
     const r = { stato, notifiche: [], revocati: [], avvisi: [] };
-    const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false }, discoNotoRef: { current: new Map() } };
+    const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false }, discoNotoRef: { current: new Map() },
+        globalTriggersRef: { current: [] }, triggerHistoryRef: { current: [] } };
     const coda = [];
     let programmato = false;
     const finestra = api ? { electronAPI: api } : {};
@@ -197,7 +199,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
         (x) => r.notifiche.push([x.message, x.type]),
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         refs.imagesRef, refs.isUndoRedoAction, refs.fotoChiuseRef, refs.ripristinoInCorsoRef, t, { pop() { }, chime() { } }, P.sidecarTagFileName, H.purgeIdsFromHistory,
-        H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, (f) => f, finestra, url, quieto);
+        H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, stato.globalTriggers, imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef,
+        (f) => f, finestra, url, quieto);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();
