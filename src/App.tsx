@@ -4396,7 +4396,7 @@ export default function App() {
             return added;
         } catch (e: any) {
             console.error('AI tag failed', e);
-            const { kind, quotaGiorno } = classifyGeminiError(e);
+            const { kind, quotaGiorno, progetto } = classifyGeminiError(e);
             if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
             // ITALIANO: `invalid_key` e' il caso piu' frequente di tutti — la chiave sbagliata o
             //           scaduta — ed era l'unico che cadeva sul messaggio grezzo di Google, sempre
@@ -4408,8 +4408,10 @@ export default function App() {
             //          key dialog): it was simply never used here.
             const friendly = kind === 'invalid_key'
                 ? (t.aiKeyInvalid || 'API key not valid')
+                // ITALIANO: API Gemini spenta o progetto sospeso: non e' la fatturazione (`progetto`).
+                // ENGLISH: Gemini API turned off or project suspended: it is not billing (`progetto`).
                 : kind === 'billing_required'
-                ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
+                ? (progetto ? t.aiProjectRefused : (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.'))
                 : kind === 'rate_limit'
                 ? (quotaGiorno ? t.aiDailyQuota : (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.'))
                 : kind === 'model_unavailable'
@@ -4578,7 +4580,7 @@ export default function App() {
                         // ITALIANO: Se l'errore deriva dall'annullamento (abort), esci subito senza contarlo come errore
                         // ENGLISH: If the error comes from cancellation (abort), exit immediately without counting it as an error
                         if (aiCancelRequestedRef.current) { cancelled = true; break; }
-                        const { kind, message, quotaGiorno } = classifyGeminiError(err);
+                        const { kind, message, quotaGiorno, progetto } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (kind === 'invalid_key') {
                             // ITALIANO: si apre la finestra della chiave, ma senza una riga di
@@ -4593,7 +4595,7 @@ export default function App() {
                         }
                         if (kind === 'billing_required' || kind === 'model_unavailable') {
                             const friendly = kind === 'billing_required'
-                                ? (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.')
+                                ? (progetto ? t.aiProjectRefused : (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.'))
                                 : (t.aiModelUnavailable || 'Model unavailable for your account.');
                             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
                             // ITALIANO: la riparazione automatica era collegata solo al tagging di
@@ -4751,7 +4753,7 @@ export default function App() {
                 const friendly = result.errorKind === 'invalid_key'
                     ? (t.aiKeyInvalid || 'API Key invalid')
                     : result.errorKind === 'billing_required'
-                    ? (t.aiBillingRequired || 'Billing required on your Google Cloud project.')
+                    ? (result.progetto ? t.aiProjectRefused : (t.aiBillingRequired || 'Billing required on your Google Cloud project.'))
                     : result.errorKind === 'rate_limit'
                     ? (t.aiRateLimit || 'Rate limit (key valid but throttled).')
                     : result.errorKind === 'busy'

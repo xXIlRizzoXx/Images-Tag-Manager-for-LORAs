@@ -335,7 +335,16 @@ export const getModelTier = (modelId: string): GeminiTier => {
 //          stays 'rate_limit' for everything else (model probe included: a model whose daily
 //          quota is used up exists just fine and must not be discarded).
 export type GeminiErrorKind = 'invalid_key' | 'billing_required' | 'rate_limit' | 'model_unavailable' | 'busy' | 'blocked' | 'unknown';
-export type GeminiErrore = { kind: GeminiErrorKind; message: string; quotaGiorno?: boolean };
+// ITALIANO: `progetto` = un 'billing_required' che NON e' la fatturazione: Google rifiuta il
+//           progetto Google Cloud della chiave (API Gemini spenta, progetto sospeso, permesso
+//           negato). Il tipo resta lo stesso (il controllo dei modelli lo dice gia' "progetto
+//           rifiutato"); serve alle schermate per non dire "serve la fatturazione" a chi deve
+//           solo attivare l'API.
+// ENGLISH: `progetto` = a 'billing_required' that is NOT billing: Google refuses the key's
+//          Google Cloud project (Gemini API turned off, project suspended, permission denied).
+//          The kind stays the same (the model check already calls it "project refused"); it lets
+//          the screens avoid saying "billing required" to someone who only has to enable the API.
+export type GeminiErrore = { kind: GeminiErrorKind; message: string; quotaGiorno?: boolean; progetto?: boolean };
 export const classifyGeminiError = (err: any): GeminiErrore => {
     const msg = String(err?.message || err || '');
     if (err?.geminiKind === 'blocked') return { kind: 'blocked', message: msg };
@@ -393,8 +402,16 @@ export const classifyGeminiError = (err: any): GeminiErrore => {
         || stato === 401 || (senzaStato && msg.includes('401'))) {
         return { kind: 'invalid_key', message: msg };
     }
+    // ITALIANO: SERVICE_DISABLED da solo (API Gemini mai attivata sul progetto) e' il progetto,
+    //           non la fatturazione: il rimedio e' attivare l'API. Con la parola 'billing', un
+    //           FAILED_PRECONDITION (paese senza piano gratuito) o "does not have access" (modello a
+    //           pagamento) resta fatturazione.
+    // ENGLISH: SERVICE_DISABLED alone (Gemini API never enabled on the project) is the project, not
+    //          billing: the remedy is enabling the API. With the word 'billing', a FAILED_PRECONDITION
+    //          (country with no free tier) or "does not have access" (paid model) it stays billing.
+    const soloProgetto = !/billing/i.test(msg) && !msg.includes('FAILED_PRECONDITION') && !msg.includes('does not have access');
     if (msg.includes('FAILED_PRECONDITION') || msg.includes('SERVICE_DISABLED') || msg.includes('does not have access')) {
-        return { kind: 'billing_required', message: msg };
+        return soloProgetto ? { kind: 'billing_required', message: msg, progetto: true } : { kind: 'billing_required', message: msg };
     }
     if (msg.includes('RESOURCE_EXHAUSTED') || (senzaStato && msg.includes('429')) || msg.toLowerCase().includes('quota')) {
         return limite();
@@ -411,8 +428,10 @@ export const classifyGeminiError = (err: any): GeminiErrore => {
     if (msg.includes('NOT_FOUND') || stato === 404 || (senzaStato && msg.includes('404')) || msg.toLowerCase().includes('model') && msg.toLowerCase().includes('not found')) {
         return { kind: 'model_unavailable', message: msg };
     }
+    // ITALIANO: un 403 senza la parola 'billing' (progetto sospeso, permesso negato) e' il progetto.
+    // ENGLISH: a 403 without the word 'billing' (project suspended, permission denied) is the project.
     if (msg.includes('PERMISSION_DENIED') || stato === 403 || (senzaStato && msg.includes('403'))) {
-        return { kind: 'billing_required', message: msg };
+        return soloProgetto ? { kind: 'billing_required', message: msg, progetto: true } : { kind: 'billing_required', message: msg };
     }
     return { kind: 'unknown', message: msg };
 };
@@ -430,7 +449,7 @@ export const classifyGeminiError = (err: any): GeminiErrore => {
 //   even be saved. That is exactly the tie the automatic model selection exists to remove,
 //   still alive at the front door. Now we ask for the first page of the model list: it
 //   proves the key is valid, costs no tokens, and does not depend on which models exist.
-export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean; error?: string; errorKind?: GeminiErrorKind }> => {
+export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean; error?: string; errorKind?: GeminiErrorKind; progetto?: boolean }> => {
     if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 20) {
         return { ok: false, error: 'API key looks invalid (too short)', errorKind: 'invalid_key' };
     }
@@ -441,8 +460,10 @@ export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean;
         });
         return { ok: true };
     } catch (err: any) {
-        const { kind, message } = classifyGeminiError(err);
-        return { ok: false, error: message.slice(0, 200), errorKind: kind };
+        const { kind, message, progetto } = classifyGeminiError(err);
+        return progetto
+            ? { ok: false, error: message.slice(0, 200), errorKind: kind, progetto: true }
+            : { ok: false, error: message.slice(0, 200), errorKind: kind };
     }
 };
 
