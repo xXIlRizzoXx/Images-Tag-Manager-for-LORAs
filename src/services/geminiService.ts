@@ -483,7 +483,7 @@ export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean;
       esattamente il mestiere che serve qui. Si tengono solo quelli stabili della linea flash.
    3. ESSERE NELL'ELENCO NON VUOL DIRE POTERLO USARE: un modello puo' comparire e poi
       rispondere "serve la fatturazione" sul tuo account. Per questo, prima di adottarne uno,
-      GLIELO SI FA FARE: una chiamata vera con un'immagine di un pixel e lo stesso schema JSON
+      GLIELO SI FA FARE: una chiamata vera con un'immagine minuscola e lo stesso schema JSON
       del tagging. Adottarlo sperando che funzioni sarebbe di nuovo dichiarare un successo
       senza averlo controllato.
    4. UN LIMITE DI FREQUENZA NON DICE NIENTE SUL MODELLO. Se la prova torna "troppe richieste",
@@ -508,7 +508,7 @@ export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean;
       needed here. Only stable models of the flash line are kept.
    3. BEING IN THE LIST DOES NOT MEAN YOU CAN USE IT: a model can appear and then answer
       "billing required" on your account. So before adopting one, WE MAKE IT DO THE JOB: a real
-      call with a one-pixel image and the same JSON schema the tagging uses. Adopting it and
+      call with a tiny image and the same JSON schema the tagging uses. Adopting it and
       hoping would be declaring success without checking, all over again.
    4. A RATE LIMIT SAYS NOTHING ABOUT THE MODEL. If the probe comes back "too many requests",
       the model exists just fine - we are simply going too fast. Treating that as a rejection
@@ -533,9 +533,15 @@ const PROVA_TIMEOUT_MS = 25_000;
 const MODELLI_MAX = 400;
 const PROVE_MAX = 3;
 
-// ITALIANO: un PNG di un pixel trasparente: basta a dimostrare che il modello accetta immagini.
-// ENGLISH: a one-pixel transparent PNG: enough to prove the model takes images at all.
-const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+// ITALIANO: un PNG grigio 8x8 senza trasparenza: basta a dimostrare che il modello accetta
+//           immagini. Deve essere un PNG VALIDO: quello di prima (1x1 trasparente) aveva i dati
+//           troncati, Google rispondeva 400 a ogni modello e la prova li dava tutti "non adatti".
+//           Lo controlla scripts/test-ai-probe-image.mjs.
+// ENGLISH: an 8x8 grey PNG with no transparency: enough to prove the model takes images at all.
+//          It must be a VALID PNG: the old one (1x1 transparent) had truncated data, Google
+//          answered 400 to every model and the probe called them all "not suitable". Checked
+//          by scripts/test-ai-probe-image.mjs.
+const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAD0lEQVR42mNowAEYhpYEAILzYAEllbNjAAAAAElFTkSuQmCC';
 
 // ITALIANO: la versione e' SOLO il numero subito dopo "gemini-": "gemini-3.6-flash" -> [3, 6].
 //           Gli altri numeri del nome NON sono versioni: "-8b" e' la taglia (un modello
@@ -753,7 +759,7 @@ export const aggiornaModelloAutomatico = async (
 /* ITALIANO: TUTTI I MODELLI DELLA CHIAVE, PROVATI UNO PER UNO
    La scelta automatica guarda solo la linea flash stabile. Qui invece si chiede a Google
    l'elenco COMPLETO dei modelli che la chiave puo' chiamare e si prova ognuno con lo stesso
-   lavoro del tagging (un'immagine di un pixel, risposta in JSON). L'esito dice all'utente cosa
+   lavoro del tagging (un'immagine minuscola, risposta in JSON). L'esito dice all'utente cosa
    puo' scegliere davvero, invece di indovinarlo dal nome:
    - 'utilizzabile': ha risposto;
    - 'aPagamento': Google chiede la fatturazione, o il piano gratuito ha limite 0;
@@ -766,7 +772,7 @@ export const aggiornaModelloAutomatico = async (
    ENGLISH: ALL THE KEY'S MODELS, PROBED ONE BY ONE
    The automatic choice only looks at the stable flash line. Here instead Google is asked for
    the FULL list of models the key can call, and each is probed with the tagging's own job (a
-   one-pixel image, a JSON answer). The outcome tells the user what they can really pick,
+   tiny image, a JSON answer). The outcome tells the user what they can really pick,
    instead of guessing it from the name (the states are listed above). If the key is refused,
    the project is off or the network does not answer, the whole round stops: every model would
    give the same answer, and it would not be the model's fault. */
