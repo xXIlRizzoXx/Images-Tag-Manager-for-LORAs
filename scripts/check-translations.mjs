@@ -87,6 +87,7 @@ const CITAZIONI = [
     ['aiSkipTaggedHint', 'aiAutoTagAll'],
     ['trashInfo', 'restore'],
     ['trashInfo', 'emptyTrash'],
+    ['trashInfo', 'loadFolder'],
     ['aiKeyGuideStep5Desc', 'aiKeyLabel'],
     ['updateAskMsg', 'settings', { ru: 'Настройках' }],
     ['langPickerHint', 'settings', { ru: 'Настройках' }],
