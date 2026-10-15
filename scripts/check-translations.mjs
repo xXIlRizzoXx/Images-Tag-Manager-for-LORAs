@@ -97,6 +97,8 @@ const CITAZIONI = [
     ['undoEmptyTxtNotBack', 'restore'],
     ['saveEmptyCaptionOne', 'emptyTrash'],
     ['saveEmptyCaptionMany', 'emptyTrash'],
+    ['mcpHint', 'saveChanges'],
+    ['mcpEditedNotice', 'saveChanges'],
 ];
 
 const rif = 'en';

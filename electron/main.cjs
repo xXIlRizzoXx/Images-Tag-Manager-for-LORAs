@@ -925,6 +925,119 @@ ipcMain.handle('updates:check', async () => new Promise((resolve) => {
         req.end();
     } catch (_) { rispondi(null); }
 }));
+// ITALIANO: SERVER MCP (vedi electron/mcp-server.src.mjs). Spento di serie; lo stato e il codice
+//           segreto stanno in userData/mcp.json. Il server non ha le foto: ogni domanda di un'AI
+//           esterna si gira alla finestra (canale 'mcp:request'), che risponde su 'mcp:response'.
+//           Il codice del server si carica solo quando lo si accende.
+// ENGLISH: MCP SERVER (see electron/mcp-server.src.mjs). Off by default; its state and secret
+//          token live in userData/mcp.json. The server holds no photos: every question from an
+//          external AI is forwarded to the window ('mcp:request'), which answers on
+//          'mcp:response'. The server code is loaded only when it is switched on.
+const MCP_PORTA = 37620;
+const MCP_TIMEOUT_MS = 60000;
+const getMcpPath = () => path.join(app.getPath('userData'), 'mcp.json');
+const leggiMcp = () => {
+    try {
+        const j = JSON.parse(fs.readFileSync(getMcpPath(), 'utf8'));
+        return { acceso: j.acceso === true, codice: typeof j.codice === 'string' && j.codice.length >= 32 ? j.codice : '' };
+    } catch (_) {
+        return { acceso: false, codice: '' };
+    }
+};
+const scriviMcp = (dati) => {
+    try {
+        fs.writeFileSync(getMcpPath(), JSON.stringify({ acceso: dati.acceso === true, codice: String(dati.codice || '') }), 'utf8');
+        return true;
+    } catch (e) {
+        console.error('[MCP] settings not saved', e);
+        return false;
+    }
+};
+const nuovoCodiceMcp = () => require('crypto').randomBytes(24).toString('base64url');
+let mcpServer = null;
+let mcpErrore = '';
+let mcpProssimoId = 1;
+const mcpInAttesa = new Map();
+
+const chiediAllaFinestra = (strumento, argomenti) => new Promise((risolvi) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        risolvi({ errore: 'Images Tag Manager has no open window.' });
+        return;
+    }
+    const id = mcpProssimoId++;
+    const timer = setTimeout(() => {
+        mcpInAttesa.delete(id);
+        risolvi({ errore: 'Images Tag Manager did not answer in time.' });
+    }, MCP_TIMEOUT_MS);
+    mcpInAttesa.set(id, { risolvi, timer });
+    mainWindow.webContents.send('mcp:request', { id, strumento: String(strumento), argomenti: argomenti || {} });
+});
+ipcMain.on('mcp:response', (event, messaggio) => {
+    // ITALIANO: risponde solo la finestra principale, e solo a una domanda fatta davvero.
+    // ENGLISH: only the main window answers, and only to a question really asked.
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+    const voce = mcpInAttesa.get(messaggio && messaggio.id);
+    if (!voce) return;
+    clearTimeout(voce.timer);
+    mcpInAttesa.delete(messaggio.id);
+    voce.risolvi(messaggio.risposta && typeof messaggio.risposta === 'object' ? messaggio.risposta : { errore: 'Empty answer.' });
+});
+const statoMcp = () => {
+    const c = leggiMcp();
+    return { acceso: c.acceso, attivo: mcpServer !== null, porta: MCP_PORTA, codice: c.codice, errore: mcpErrore };
+};
+const fermaMcp = async () => {
+    const s = mcpServer;
+    mcpServer = null;
+    if (s) { try { await s.chiudi(); } catch (_) { } }
+    for (const voce of mcpInAttesa.values()) {
+        clearTimeout(voce.timer);
+        voce.risolvi({ errore: 'The MCP server was switched off.' });
+    }
+    mcpInAttesa.clear();
+};
+const avviaMcp = async () => {
+    await fermaMcp();
+    mcpErrore = '';
+    let c = leggiMcp();
+    if (!c.codice) {
+        c = { ...c, codice: nuovoCodiceMcp() };
+        scriviMcp(c);
+    }
+    try {
+        const { avviaServerMcp } = require('./mcp-server.cjs');
+        mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion });
+    } catch (e) {
+        mcpServer = null;
+        // ITALIANO: 'porta' = un altro programma usa gia' la porta; 'avvio' = qualunque altro guasto.
+        // ENGLISH: 'porta' = another program already uses the port; 'avvio' = any other fault.
+        mcpErrore = e && e.code === 'EADDRINUSE' ? 'porta' : 'avvio';
+        console.error('[MCP] start failed', e);
+    }
+};
+ipcMain.handle('mcp:get-status', () => statoMcp());
+ipcMain.handle('mcp:set-enabled', async (_event, acceso) => {
+    const c = leggiMcp();
+    const nuovo = { acceso: acceso === true, codice: c.codice || nuovoCodiceMcp() };
+    if (!scriviMcp(nuovo)) {
+        mcpErrore = 'salvataggio';
+        return { ...statoMcp(), acceso: mcpServer !== null };
+    }
+    if (nuovo.acceso) await avviaMcp();
+    else { await fermaMcp(); mcpErrore = ''; }
+    return statoMcp();
+});
+ipcMain.handle('mcp:new-token', async () => {
+    const c = leggiMcp();
+    if (!scriviMcp({ acceso: c.acceso, codice: nuovoCodiceMcp() })) {
+        mcpErrore = 'salvataggio';
+        return statoMcp();
+    }
+    if (c.acceso) await avviaMcp();
+    return statoMcp();
+});
+app.on('will-quit', () => { fermaMcp(); });
+
 ipcMain.handle('shell:open-external', async (_event, url) => {
     if (typeof url !== 'string') return false;
     try {
@@ -1340,6 +1453,9 @@ app.whenReady().then(() => {
 
     createSplashWindow();
     createMainWindow();
+    // ITALIANO: il server MCP riparte da solo se l'utente lo aveva lasciato acceso.
+    // ENGLISH: the MCP server starts again by itself if the user left it on.
+    if (leggiMcp().acceso) avviaMcp();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

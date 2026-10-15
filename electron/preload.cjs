@@ -67,4 +67,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     //          nothing new, when there is no network, or when the user never agreed (in
     //          which case the page does not call at all).
     checkForUpdate: () => ipcRenderer.invoke('updates:check'),
+
+    // ITALIANO: server MCP per le AI esterne. La pagina riceve le domande del server (onRequest)
+    //           e risponde (respond); ipcRenderer non passa mai intero alla pagina.
+    // ENGLISH: MCP server for external AIs. The page receives the server's questions (onRequest)
+    //          and answers them (respond); ipcRenderer is never handed to the page whole.
+    mcp: {
+        getStatus: () => ipcRenderer.invoke('mcp:get-status'),
+        setEnabled: (acceso) => ipcRenderer.invoke('mcp:set-enabled', acceso === true),
+        newToken: () => ipcRenderer.invoke('mcp:new-token'),
+        onRequest: (cb) => {
+            const ascolta = (_event, richiesta) => { if (typeof cb === 'function') cb(richiesta); };
+            ipcRenderer.on('mcp:request', ascolta);
+            return () => ipcRenderer.removeListener('mcp:request', ascolta);
+        },
+        respond: (id, risposta) => ipcRenderer.send('mcp:response', { id, risposta }),
+    },
 });

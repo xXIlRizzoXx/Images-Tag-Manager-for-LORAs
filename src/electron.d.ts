@@ -66,6 +66,35 @@ export interface ElectronAPI {
     /** ITALIANO: null = niente di nuovo, nessuna rete, o controllo non acconsentito.
      *  ENGLISH: null = nothing new, no network, or the check was never agreed to. */
     checkForUpdate: () => Promise<{ versione: string; pagina: string } | null>;
+
+    /** ITALIANO: server MCP per le AI esterne (spento di serie, solo 127.0.0.1, con codice segreto).
+     *  ENGLISH: MCP server for external AIs (off by default, 127.0.0.1 only, with a secret token). */
+    mcp: ElectronMcp;
+}
+
+// ITALIANO: `errore`: '' = nessuno; 'porta' = porta gia' usata da un altro programma;
+//           'avvio' = il server non e' partito; 'salvataggio' = impostazione non salvata.
+// ENGLISH: `errore`: '' = none; 'porta' = port already used by another program; 'avvio' = the
+//          server did not start; 'salvataggio' = setting not saved.
+export interface McpStatus {
+    acceso: boolean;
+    attivo: boolean;
+    porta: number;
+    codice: string;
+    errore: '' | 'porta' | 'avvio' | 'salvataggio';
+}
+export interface McpRichiesta {
+    id: number;
+    strumento: string;
+    argomenti: Record<string, unknown>;
+}
+export interface ElectronMcp {
+    getStatus: () => Promise<McpStatus>;
+    setEnabled: (acceso: boolean) => Promise<McpStatus>;
+    newToken: () => Promise<McpStatus>;
+    /** ITALIANO: restituisce la funzione che smette di ascoltare. ENGLISH: returns the unsubscribe function. */
+    onRequest: (cb: (richiesta: McpRichiesta) => void) => () => void;
+    respond: (id: number, risposta: unknown) => void;
 }
 
 declare global {

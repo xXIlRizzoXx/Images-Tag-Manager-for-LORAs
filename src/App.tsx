@@ -12,7 +12,10 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2, Plug, Eye, EyeOff } from 'lucide-react';
+import { eseguiStrumentoMcp, fotoPerMcp } from './utils/mcpBridge';
+import type { RispostaMcp } from './utils/mcpBridge';
+import type { McpStatus, McpRichiesta } from './electron';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli } from './services/geminiService';
 import type { ModelloChiave, StatoModello } from './services/geminiService';
@@ -1536,6 +1539,72 @@ export default function App() {
             setProvaModelliStato(null);
         }
     };
+    // ITALIANO: SERVER MCP PER LE AI ESTERNE (vedi src/utils/mcpBridge.ts ed electron/mcp-server.src.mjs).
+    //           Le domande arrivano dal processo principale; si risponde con i dati in memoria.
+    //           Le modifiche ai tag aggiornano SUBITO anche imagesRef: un'AI puo' fare piu'
+    //           chiamate insieme, e la seconda deve vedere i tag gia' cambiati dalla prima.
+    // ENGLISH: MCP SERVER FOR EXTERNAL AIs. Questions come from the main process; answers come
+    //          from what is in memory. Tag changes update imagesRef AT ONCE too: an AI may make
+    //          several calls together, and the second must see the tags already changed by the first.
+    const [mcpStato, setMcpStato] = useState<McpStatus | null>(null);
+    const [mcpCodiceVisibile, setMcpCodiceVisibile] = useState(false);
+    const mcpGestoreRef = useRef<(r: McpRichiesta) => void>(() => { });
+    mcpGestoreRef.current = async (r: McpRichiesta) => {
+        let risposta: RispostaMcp;
+        try {
+            risposta = await eseguiStrumentoMcp(String(r.strumento), r.argomenti || {}, {
+                foto: () => imagesRef.current,
+                trigger: () => globalTriggersRef.current,
+                applica: (nuovi) => {
+                    imagesRef.current = imagesRef.current.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img));
+                    setImages(prev => prev.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img)));
+                },
+                immagine: async (id) => fotoPerMcp(imagesRef.current.find(img => img.id === id)?.file),
+            });
+        } catch (e) {
+            console.warn('[MCP] request failed', e);
+            risposta = { errore: 'Images Tag Manager could not answer this request.' };
+        }
+        window.electronAPI?.mcp?.respond(r.id, risposta);
+        if (risposta.cambiate) showNotification(t.mcpEditedNotice.replace('{n}', String(risposta.cambiate)), 'info');
+    };
+    useEffect(() => {
+        const api = window.electronAPI?.mcp;
+        if (!api) return undefined;
+        api.getStatus().then(setMcpStato).catch(() => { });
+        return api.onRequest((r) => { mcpGestoreRef.current(r); });
+    }, []);
+    const cambiaMcp = async (acceso: boolean) => {
+        const api = window.electronAPI?.mcp;
+        if (!api) return;
+        try { setMcpStato(await api.setEnabled(acceso)); } catch (_) { showNotification(t.mcpErrStart, 'error'); }
+    };
+    const nuovoCodiceMcp = async () => {
+        const api = window.electronAPI?.mcp;
+        if (!api) return;
+        try {
+            const s = await api.newToken();
+            setMcpStato(s);
+            showNotification(s.errore === 'salvataggio' ? t.mcpErrSave : t.mcpNewTokenDone, s.errore === 'salvataggio' ? 'error' : 'info');
+        } catch (_) { showNotification(t.mcpErrSave, 'error'); }
+    };
+    const copiaMcp = async (testo: string) => {
+        try { await navigator.clipboard.writeText(testo); showNotification(t.mcpCopied, 'success'); } catch (_) { showNotification(t.mcpCopyFailed, 'error'); }
+    };
+    const indirizzoMcp = mcpStato ? `http://127.0.0.1:${mcpStato.porta}/images-tag-manager` : '';
+    const configMcp = (tipo: 'claudeCode' | 'desktop' | 'cursor'): string => {
+        const codice = mcpStato?.codice || '';
+        if (tipo === 'claudeCode') return `claude mcp add --transport http images-tag-manager ${indirizzoMcp} --header "Authorization: Bearer ${codice}"`;
+        // ITALIANO: Claude Desktop parla solo con programmi locali: mcp-remote fa da ponte. Il codice
+        //           sta in una variabile d'ambiente perche' su Windows gli spazi negli argomenti si rompono.
+        // ENGLISH: Claude Desktop only talks to local programs: mcp-remote bridges. The token sits in an
+        //          environment variable because on Windows spaces inside arguments break.
+        if (tipo === 'desktop') return JSON.stringify({ mcpServers: { 'images-tag-manager': {
+            command: 'npx', args: ['-y', 'mcp-remote', indirizzoMcp, '--allow-http', '--header', 'Authorization:${AUTH_HEADER}'],
+            env: { AUTH_HEADER: `Bearer ${codice}` } } } }, null, 2);
+        return JSON.stringify({ mcpServers: { 'images-tag-manager': { url: indirizzoMcp, headers: { Authorization: `Bearer ${codice}` } } } }, null, 2);
+    };
+
     // ITALIANO: con l'AI spenta una prova in corso si ferma subito, anche fra una chiamata e l'altra.
     // ENGLISH: with the AI switched off a running test stops at once, even between two calls.
     useEffect(() => { if (!aiEnabled) provaModelliRef.current?.abort(); }, [aiEnabled]);
@@ -5919,6 +5988,59 @@ export default function App() {
                                                     </p>
                                                 </div>
                                             )}
+                                        </div>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        {/* ITALIANO: Server MCP per le AI esterne: spento di serie, solo nel programma installato.
+                                            ENGLISH: MCP server for external AIs: off by default, only in the installed program. */}
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
+                                                    <Plug size={16} className="text-emerald-500"/>
+                                                    {t.mcpTitle}
+                                                </div>
+                                                {window.electronAPI?.mcp && (
+                                                    <AppleToggle checked={!!mcpStato?.acceso} onChange={(v: boolean) => { cambiaMcp(v); }} colorClass="bg-emerald-500" />
+                                                )}
+                                            </div>
+                                            <div className={`flex flex-col gap-2 p-2 rounded-lg text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-emerald-50/50 text-gray-600'}`}>
+                                                <p className="leading-relaxed">{window.electronAPI?.mcp ? t.mcpHint : t.mcpOnlyDesktop}</p>
+                                                {mcpStato?.errore === 'porta' && <p className="text-red-500 leading-snug">{t.mcpErrPort.replace('{porta}', String(mcpStato.porta))}</p>}
+                                                {mcpStato?.errore === 'avvio' && <p className="text-red-500 leading-snug">{t.mcpErrStart}</p>}
+                                                {mcpStato?.errore === 'salvataggio' && <p className="text-red-500 leading-snug">{t.mcpErrSave}</p>}
+                                                {mcpStato?.acceso && mcpStato.attivo && (
+                                                    <>
+                                                        <p className={`font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{t.mcpListening.replace('{url}', indirizzoMcp)}</p>
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className="font-medium text-[11px]">{t.mcpToken}</label>
+                                                            <div className="flex items-center gap-1">
+                                                                <code className={`flex-1 min-w-0 truncate rounded-md border px-2 py-1 font-mono ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}>
+                                                                    {mcpCodiceVisibile ? mcpStato.codice : '•'.repeat(16)}
+                                                                </code>
+                                                                <button onClick={() => setMcpCodiceVisibile(v => !v)} title={mcpCodiceVisibile ? t.mcpHide : t.mcpShow} aria-label={mcpCodiceVisibile ? t.mcpHide : t.mcpShow}
+                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                                                    {mcpCodiceVisibile ? <EyeOff size={12}/> : <Eye size={12}/>}
+                                                                </button>
+                                                                <button onClick={() => copiaMcp(mcpStato.codice)} title={t.mcpCopyToken} aria-label={t.mcpCopyToken}
+                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                                                    <Copy size={12}/>
+                                                                </button>
+                                                                <button onClick={nuovoCodiceMcp} title={t.mcpNewToken} aria-label={t.mcpNewToken}
+                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                                                    <RefreshCw size={12}/>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        {(['claudeCode', 'desktop', 'cursor'] as const).map(tipo => (
+                                                            <button key={tipo} onClick={() => copiaMcp(configMcp(tipo))}
+                                                                className={`flex items-center gap-1.5 text-left text-[10px] px-2 py-1 rounded-md border transition-colors ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
+                                                                <Copy size={11} className="shrink-0"/>
+                                                                {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
+                                                            </button>
+                                                        ))}
+                                                        <p className="leading-snug italic">{t.mcpDesktopNote}</p>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
                                         <div className="flex items-center justify-between">

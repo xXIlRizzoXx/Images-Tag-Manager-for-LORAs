@@ -36,3 +36,6 @@ NOTES.md
 ANALISI-*.md
 Civitai/
 _to_delete/
+
+# MCP server bundle, rebuilt by npm run build:mcp
+electron/mcp-server.cjs

@@ -41,10 +41,22 @@ const esposti = [];
 const canaliChiamati = [];
 const argomentiChiamati = [];
 const risposta = (canale) => ({ rispostaDi: canale });
+// ITALIANO: send/on/removeListener servono solo al server MCP, e solo sui suoi due canali.
+// ENGLISH: send/on/removeListener are only for the MCP server, and only on its two channels.
+const inviati = [];
+const ascolti = [];
+const tolti = [];
 const ipcRenderer = {
     invoke: (canale, ...argomenti) => { canaliChiamati.push(canale); argomentiChiamati.push(argomenti); return risposta(canale); },
-    send: () => { throw new Error('test-preload-bridge: ipcRenderer.send is not expected'); },
-    on: () => { throw new Error('test-preload-bridge: ipcRenderer.on is not expected'); },
+    send: (canale, ...argomenti) => {
+        if (canale !== 'mcp:response') throw new Error('test-preload-bridge: ipcRenderer.send is only expected on mcp:response');
+        inviati.push({ canale, argomenti });
+    },
+    on: (canale, fn) => {
+        if (canale !== 'mcp:request') throw new Error('test-preload-bridge: ipcRenderer.on is only expected on mcp:request');
+        ascolti.push({ canale, fn });
+    },
+    removeListener: (canale, fn) => { tolti.push({ canale, fn }); },
 };
 const electronFinto = {
     contextBridge: { exposeInMainWorld: (nome, oggetto) => esposti.push({ nome, oggetto }) },
@@ -103,7 +115,9 @@ dice('ogni canale registrato in main.cjs e\' raggiungibile dal preload', [], reg
 //           undefined); getPathForFile e' l'unico che non passa da un canale.
 // ENGLISH: a method that uses a channel returns its answer (otherwise the page would get
 //          undefined); getPathForFile is the only one that does not go through a channel.
+const SENZA_INVOKE = ['getPathForFile', 'mcp.onRequest', 'mcp.respond'];
 for (const [chiave, { canali, avuto }] of esitoDi) {
+    if (chiave === 'mcp.onRequest' || chiave === 'mcp.respond') continue;
     if (chiave === 'getPathForFile') {
         dice('getPathForFile usa webUtils e nessun canale', [[], 'C:\\finto\\foto.png'], [canali, avuto]);
         continue;
@@ -135,9 +149,12 @@ const ATTESI = {
     takePickedFolderPath: ['folder:take-picked-dir', ['a']],
     openExternal: ['shell:open-external', ['a']],
     checkForUpdate: ['updates:check', []],
+    'mcp.getStatus': ['mcp:get-status', []],
+    'mcp.setEnabled': ['mcp:set-enabled', [false]],
+    'mcp.newToken': ['mcp:new-token', []],
 };
 dice('la tabella dei canali copre esattamente i metodi che usano un canale',
-    Object.keys(ATTESI).sort(), [...esitoDi.keys()].filter((k) => k !== 'getPathForFile').sort());
+    Object.keys(ATTESI).sort(), [...esitoDi.keys()].filter((k) => !SENZA_INVOKE.includes(k)).sort());
 for (const [chiave, { canali, argomenti }] of esitoDi) {
     if (!ATTESI[chiave]) continue;
     const [canale, argomentiAttesi] = ATTESI[chiave];
@@ -156,6 +173,27 @@ dice('premessa: trovati i membri di ElectronAPI in src/electron.d.ts', true, mem
 dice('electronAPI ha esattamente le chiavi di ElectronAPI', membri('ElectronAPI'), Object.keys(api).sort());
 dice('secureStorage ha esattamente le chiavi di ElectronSecureStorage', membri('ElectronSecureStorage'), Object.keys(api.secureStorage || {}).sort());
 dice('isElectron vale true', true, api.isElectron);
+dice('mcp ha esattamente le chiavi di ElectronMcp', membri('ElectronMcp'), Object.keys(api.mcp || {}).sort());
+
+// ITALIANO: il server MCP: le domande arrivano su 'mcp:request' e la pagina riceve SOLO la domanda
+//           (non l'evento di Electron); la funzione restituita smette di ascoltare la STESSA
+//           funzione; la risposta parte su 'mcp:response' con id e contenuto.
+// ENGLISH: the MCP server: questions arrive on 'mcp:request' and the page gets ONLY the question
+//          (not Electron's event); the returned function stops listening to the SAME function; the
+//          answer leaves on 'mcp:response' with id and content.
+{
+    const ricevute = [];
+    ascolti.length = 0; tolti.length = 0; inviati.length = 0;
+    const smetti = api.mcp.onRequest((r) => ricevute.push(r));
+    dice('mcp.onRequest ascolta il canale mcp:request', ['mcp:request'], ascolti.map((a) => a.canale));
+    ascolti[0] && ascolti[0].fn({ sender: 'evento' }, { id: 7, strumento: 'list_photos', argomenti: {} });
+    dice('...e alla pagina arriva la domanda, non l\'evento',[{ id: 7, strumento: 'list_photos', argomenti: {} }], ricevute);
+    dice('...e restituisce una funzione per smettere', 'function', typeof smetti);
+    smetti();
+    dice('...che toglie lo stesso ascolto', true, tolti.length === 1 && tolti[0].canale === 'mcp:request' && tolti[0].fn === (ascolti[0] && ascolti[0].fn));
+    api.mcp.respond(7, { risultato: 1 });
+    dice('mcp.respond manda id e risposta su mcp:response', [{ canale: 'mcp:response', argomenti: [{ id: 7, risposta: { risultato: 1 } }] }], inviati);
+}
 
 // ITALIANO: la pagina non deve ricevere ipcRenderer (o i suoi metodi) per intero.
 // ENGLISH: the page must not receive ipcRenderer (or its methods) whole.
