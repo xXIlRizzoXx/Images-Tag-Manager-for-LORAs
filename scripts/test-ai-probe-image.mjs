@@ -1,5 +1,5 @@
 /* ITALIANO: PROVA DELL'IMMAGINE DI PROVA DEI MODELLI
-   La scelta automatica del modello e "Prova tutti i modelli" mandano a Google una piccola
+   La scelta automatica del modello e "Prova i modelli recenti" mandano a Google una piccola
    immagine PNG scritta nel codice (PIXEL_PNG). Se quel PNG e' rotto Google risponde 400 a OGNI
    modello: la prova li segnava tutti "non adatti" e la scelta automatica non adottava mai un
    modello nuovo, mentre il tagging con le foto vere funzionava. Le prove con il Google finto non
@@ -8,7 +8,7 @@
    Uso:  node scripts/test-ai-probe-image.mjs      (esce con codice 1 se qualcosa non torna)
 
    ENGLISH: TEST OF THE MODEL PROBE IMAGE
-   The automatic model choice and "Test all models" send Google a small PNG written in the code
+   The automatic model choice and "Test recent models" send Google a small PNG written in the code
    (PIXEL_PNG). If that PNG is broken Google answers 400 to EVERY model: the probe marked them all
    "not suitable" and the automatic choice never adopted a new model, while tagging real photos
    worked. The tests with the fake Google missed it, since the fake never opens the image. Here
@@ -81,8 +81,8 @@ let filtriValidi = grezzi.length === attesi;
 for (let y = 0; filtriValidi && y < altezza; y++) if (grezzi[y * (1 + larghezza * canali)] > 4) filtriValidi = false;
 dice('ogni riga ha un filtro PNG valido', true, filtriValidi);
 
-// ITALIANO: entrambe le prove (scelta automatica e "Prova tutti i modelli") usano questa immagine.
-// ENGLISH: both probes (automatic choice and "Test all models") use this image.
+// ITALIANO: entrambe le prove (scelta automatica e "Prova i modelli recenti") usano questa immagine.
+// ENGLISH: both probes (automatic choice and "Test recent models") use this image.
 dice('le due prove mandano PIXEL_PNG', 2, (sorgente.match(/inlineData: \{ data: PIXEL_PNG, mimeType: 'image\/png' \}/g) || []).length);
 
 console.log(`\n${guai === 0 ? 'TUTTO A POSTO' : 'PROBLEMI: ' + guai} (${fatti} controlli)`);

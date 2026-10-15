@@ -73,9 +73,9 @@ const APP_LANGUAGES = [
 ];
 const LANG_CODES = APP_LANGUAGES.map(l => l.code);
 
-// ITALIANO: i gruppi della tendina dei modelli dopo "Prova tutti i modelli", nell'ordine in cui
+// ITALIANO: i gruppi della tendina dei modelli dopo "Prova i modelli recenti", nell'ordine in cui
 //           si mostrano. `spento` = si vedono ma non si possono scegliere.
-// ENGLISH: the model dropdown's groups after "Test all models", in display order. `spento` =
+// ENGLISH: the model dropdown's groups after "Test recent models", in display order. `spento` =
 //          shown but not selectable.
 const GRUPPI_MODELLI: ReadonlyArray<{
     stato: StatoModello | 'daProvare';
@@ -1501,10 +1501,10 @@ export default function App() {
     };
 
 
-    // ITALIANO: "Prova tutti i modelli": parte solo a mano, con l'AI accesa e la chiave salvata
+    // ITALIANO: "Prova i modelli recenti": parte solo a mano, con l'AI accesa e la chiave salvata
     //           (con l'AI spenta non si parla con Google). Spegnere l'AI a meta' ferma la prova.
     //           Non gira insieme al controllo del modello: si contenderebbero le chiamate.
-    // ENGLISH: "Test all models": starts only by hand, with the AI on and a key saved (with the
+    // ENGLISH: "Test recent models": starts only by hand, with the AI on and a key saved (with the
     //          AI off Google is not contacted). Switching the AI off halfway stops the test. It
     //          does not run together with the model check: they would compete for calls.
     const provaModelliChiave = async () => {
@@ -5852,11 +5852,11 @@ export default function App() {
                                                             className={`w-full text-[11px] font-medium rounded-lg border px-2.5 py-2 outline-none cursor-pointer transition-colors focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-100 hover:border-purple-500/60' : 'bg-gray-50 border-gray-200 text-gray-800 hover:border-purple-300'}`}
                                                         >
                                                             <option value="__auto__">{t.aiModelAutomatic.replace('{a}', aiModel)}</option>
-                                                            {/* ITALIANO: dopo "Prova tutti i modelli" la tendina mostra i modelli VERI della
+                                                            {/* ITALIANO: dopo "Prova i modelli recenti" la tendina mostra i modelli VERI della
                                                                           chiave, a gruppi secondo l'esito; quelli senza accesso o non
                                                                           adatti si vedono ma non si scelgono (resta sceglibile solo se e'
                                                                           gia' quello in uso, altrimenti la tendina resterebbe vuota).
-                                                                ENGLISH: after "Test all models" the dropdown shows the key's REAL models,
+                                                                ENGLISH: after "Test recent models" the dropdown shows the key's REAL models,
                                                                          grouped by outcome; those with no access or not suitable are
                                                                          shown but cannot be picked (unless already in use, or the
                                                                          dropdown would sit blank). */}
@@ -5926,7 +5926,8 @@ export default function App() {
                                                                                 .replace('{pag}', String(modelliProvati.filter(m => m.stato === 'aPagamento').length))
                                                                                 .replace('{no}', String(modelliProvati.filter(m => m.stato === 'senzaAccesso').length))
                                                                                 .replace('{na}', String(modelliProvati.filter(m => m.stato === 'nonAdatto').length))
-                                                                                .replace('{occ}', String(modelliProvati.filter(m => m.stato === 'occupato' || !m.stato).length))
+                                                                                .replace('{occ}', String(modelliProvati.filter(m => m.stato === 'occupato').length))
+                                                                                .replace('{np}', String(modelliProvati.filter(m => !m.stato).length))
                                                                             : ''}
                                                                 </span>
                                                             )}
