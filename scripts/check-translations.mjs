@@ -3,7 +3,8 @@
  *   Verifica quello che si puo' verificare senza leggere: stesse chiavi ovunque, nessuna voce
  *   vuota, nessun doppione, stessi segnaposto ({n}, {done}, {failed}) in tutte le lingue, e
  *   segnala le voci identiche all'inglese (spesso una traduzione dimenticata, a volte no), e
- *   che una scritta che NOMINA un comando lo chiami con l'etichetta vera di quel comando.
+ *   che una scritta che NOMINA un comando lo chiami con l'etichetta vera di quel comando, e che
+ *   ogni chiave letta dal codice senza tipo (t.<chiave> nei componenti) esista davvero.
  *   Serve perche' il controllo dei tipi NON copre queste scritte: quelle lette dentro i
  *   componenti arrivano senza tipo, quindi una chiave mancante li' passerebbe inosservata.
  *   Uso:  node scripts/check-translations.mjs [lingua]
@@ -13,13 +14,16 @@
  *   Verifies what can be verified without reading: same keys everywhere, no empty entries, no
  *   duplicates, same placeholders ({n}, {done}, {failed}) in every language, and flags entries
  *   identical to English (often a forgotten translation, sometimes not), and that a string
- *   NAMING a command spells it exactly as that command's own label.
+ *   NAMING a command spells it exactly as that command's own label, and that every key the code
+ *   reads untyped (t.<key> in the components) really exists.
  *   It exists because the type check does NOT cover these strings: the ones read inside the
  *   components arrive untyped, so a key missing there would go unnoticed.
  *   Usage:  node scripts/check-translations.mjs [language]
  *   Exits 1 when something is broken, so it can sit in an automated check.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
 const FILE = 'src/constants.ts';
 const src = readFileSync(FILE, 'utf8');
@@ -90,6 +94,8 @@ const CITAZIONI = [
     ['zipPhotoUnreadable', 'closeImageTitle'],
     ['undoEmptyTxtNotBack', 'saveChanges'],
     ['undoEmptyTxtNotBack', 'restore'],
+    ['saveEmptyCaptionOne', 'emptyTrash'],
+    ['saveEmptyCaptionMany', 'emptyTrash'],
 ];
 
 const rif = 'en';
@@ -134,6 +140,64 @@ for (const codice of codici) {
             return r && r.testo && v.testo === r.testo && v.testo.length > 3;
         }).map(([k]) => k);
         if (uguali.length) console.log(`  da guardare: ${uguali.length} voci identiche all'inglese (a volte e' giusto: "Zoom", "Original"): ${uguali.slice(0, 12).join(', ')}${uguali.length > 12 ? '…' : ''}`);
+    }
+}
+
+// ITALIANO: le chiavi lette dal codice. Il confronto qui sopra guarda solo le nove lingue tra loro:
+//   una chiave scritta male in un componente (t.tagsAlreadyInsertd), o aggiunta al codice e mai a
+//   constants.ts, passava ovunque e la scritta usciva vuota in tutte le lingue. Si leggono i file
+//   di src con il compilatore TypeScript e si guarda ogni `t.<chiave>` / `tPending.<chiave>` dove
+//   `t` NON ha tipo (any: le props dei componenti, `t: any` nei moduli di utilita'): li' la chiave
+//   deve esistere nel blocco inglese. Dove `t` ha un tipo (App.tsx, o una `t` locale di tipo
+//   string come in `(t: string) => t.trim()`) controlla gia' il compilatore, e non si segnala.
+// ENGLISH: the keys the code reads. The comparison above only checks the nine languages against
+//   each other: a key misspelled in a component (t.tagsAlreadyInsertd), or added to the code and
+//   never to constants.ts, passed everywhere and the label came out blank in every language. The
+//   src files are read with the TypeScript compiler, looking at every `t.<key>` / `tPending.<key>`
+//   where `t` is UNTYPED (any: the components' props, `t: any` in utility modules): there the key
+//   must exist in the English block. Where `t` has a type (App.tsx, or a local string `t` as in
+//   `(t: string) => t.trim()`) the compiler already checks, and nothing is reported.
+const fileCodice = [];
+const raccogli = (cartella) => {
+    if (!existsSync(cartella)) return;
+    for (const voce of readdirSync(cartella, { withFileTypes: true })) {
+        const pieno = path.join(cartella, voce.name);
+        if (voce.isDirectory()) raccogli(pieno);
+        else if (/\.tsx?$/.test(voce.name) && !/\.d\.ts$/.test(voce.name) && path.resolve(pieno) !== path.resolve(FILE)) fileCodice.push(pieno);
+    }
+};
+raccogli('src');
+if (fileCodice.length) {
+    let ts = null;
+    try { ts = createRequire(import.meta.url)('typescript'); } catch { /* sotto: segnalato / reported below */ }
+    if (!ts) {
+        segnala('impossibile caricare il compilatore TypeScript: le chiavi lette dal codice non sono state controllate');
+    } else {
+        const programma = ts.createProgram(fileCodice, {
+            target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler,
+            jsx: ts.JsxEmit.ReactJSX, allowImportingTsExtensions: true, noEmit: true, skipLibCheck: true, types: [],
+        });
+        const controllore = programma.getTypeChecker();
+        const nostri = new Set(fileCodice.map(f => path.resolve(f)));
+        let lette = 0;
+        for (const sf of programma.getSourceFiles()) {
+            if (!nostri.has(path.resolve(sf.fileName))) continue;
+            const visita = (nodo) => {
+                if (ts.isPropertyAccessExpression(nodo) && ts.isIdentifier(nodo.expression)
+                    && (nodo.expression.text === 't' || nodo.expression.text === 'tPending')
+                    && (controllore.getTypeAtLocation(nodo.expression).flags & ts.TypeFlags.Any)) {
+                    lette++;
+                    const nome = nodo.name.text;
+                    if (!chiaviRif.has(nome)) {
+                        const riga = sf.getLineAndCharacterOfPosition(nodo.name.getStart(sf)).line + 1;
+                        segnala(`chiave "${nome}" letta dal codice (${path.relative(process.cwd(), sf.fileName)}:${riga}) ma assente dal blocco ${rif}: uscirebbe vuota in tutte le lingue`);
+                    }
+                }
+                ts.forEachChild(nodo, visita);
+            };
+            visita(sf);
+        }
+        console.log(`\nchiavi lette dal codice senza tipo: ${lette} (in ${fileCodice.length} file)`);
     }
 }
 
