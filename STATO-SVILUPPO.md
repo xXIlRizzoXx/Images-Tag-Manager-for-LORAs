@@ -1,7 +1,20 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 14 ottobre 2026
-**Versione attuale:** 1.3.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+**Ultimo aggiornamento:** 15 ottobre 2026
+**Versione attuale:** 2.0.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 2.0.0 (traguardo 107, 15 ottobre 2026): **secondo grande ciclo di controllo chiuso, e la
+versione diventa 2.0.0.** Tre giri completi su tutto il programma, con lo stesso metodo del ciclo
+precedente: 122 problemi segnalati, 106 confermati da verificatori indipendenti, **99 riparati in
+26 salvataggi**, ognuno con la sua prova automatica e ricontrollato da un revisore. Le prove
+automatiche sono passate da 86 a 148 file, tutte verdi. Il terzo giro ha trovato molto meno dei
+primi due (25 segnalazioni contro 46 e 51). I più seri: la domanda "salvare prima di chiudere?"
+che restava nascosta, un .txt non letto che poteva essere sovrascritto, il recupero dopo un crash
+che perdeva una cartella, le foto HEIC che l'AI non taggava più, e lo svuotamento del Cestino che
+si portava via il .txt di un'altra foto con lo stesso nome (a.png e a.jpg). Una prova usava una
+posizione GPS vera come esempio: è stata sostituita con una finta in tutta la storia non ancora
+pubblicata. Restano 9 rifiniture minori in elenco per il prossimo controllo. Le riparazioni vanno
+ancora provate sul programma vero. La 1.3.0 non è mai stata costruita né pubblicata: la prossima
+versione scaricabile sarà la 2.0.0, e da lì riparte la regola del +0.0.1.
 Novità 1.3.0 (traguardo 106, 14 ottobre 2026): **chiuso il grande ciclo di controllo e riparazione.**
 Due giri completi su tutto il programma: agenti che cercano i difetti per area, tre verificatori
 indipendenti che provano a smontare ogni segnalazione, un correttore che ripara con una prova
