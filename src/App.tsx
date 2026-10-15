@@ -1798,6 +1798,48 @@ export default function App() {
         return { imgPath, txtPath: imgPath.replace(/\.[^.\\/]+$/, '') + '.txt' };
     };
 
+    // ITALIANO: a.png e a.jpg nella stessa cartella usano lo STESSO a.txt: l'import lo da' a tutte
+    //           e due (makeFolderKeyer), Kohya pure, e Salva lo sa. Togliendo solo a.png, a.txt
+    //           deve restare per a.jpg: prima se ne andava con a.png, e a.jpg restava in galleria
+    //           "salvata" ma senza piu' il suo .txt sul disco (per sempre, su chiavette e schede SD).
+    //           Dice se un'ALTRA foto ancora nel progetto (in galleria o nel cestino dell'app) usa
+    //           il .txt di `img`. `giaTolte` sono le foto gia' tolte nella stessa operazione: restano
+    //           in imagesRef fino alla fine del giro, e senza saltarle il .txt non se ne andrebbe
+    //           mai. Cosi' il .txt parte con l'ultima foto che lo usa. In caso di dubbio (errore) il
+    //           .txt resta: un .txt in piu' sul disco e' innocuo, una didascalia persa no.
+    // ENGLISH: a.png and a.jpg in the same folder use the SAME a.txt: the import gives it to both
+    //          (makeFolderKeyer), so does Kohya, and Save knows it. Removing only a.png, a.txt must
+    //          stay for a.jpg: it used to leave with a.png, and a.jpg stayed in the gallery "saved"
+    //          but with no .txt left on disk (for good, on USB sticks and SD cards).
+    //          Tells whether ANOTHER photo still in the project (gallery or app trash) uses the .txt
+    //          of `img`. `giaTolte` are the photos already removed in the same operation: they stay
+    //          in imagesRef until the loop ends, and without skipping them the .txt would never
+    //          leave. So the .txt goes with the last photo that uses it. When in doubt (an error)
+    //          the .txt stays: an extra .txt on disk is harmless, a lost caption is not.
+    const txtUsatoDaAltre = async (img: any, giaTolte?: Set<string>): Promise<boolean> => {
+        try {
+            const nome = sidecarTagFileName(img.file.name).toLowerCase();
+            const mio = percorsiSuDisco(img).txtPath.toLowerCase();
+            for (const altra of imagesRef.current) {
+                if (!altra || altra.id === img.id || (giaTolte && giaTolte.has(altra.id))) continue;
+                if (!altra.file || sidecarTagFileName(altra.file.name).toLowerCase() !== nome) continue;
+                // ITALIANO: con i due percorsi su disco decide il percorso (stessa cartella o no);
+                //           senza (anteprima nel browser) decide la cartella aperta.
+                // ENGLISH: with both paths on disk the path decides (same folder or not); without
+                //          them (browser preview) the open folder decides.
+                const suo = percorsiSuDisco(altra).txtPath.toLowerCase();
+                if (mio && suo) { if (suo === mio) return true; continue; }
+                if (!img.dirHandle || !altra.dirHandle) continue;
+                if (altra.dirHandle === img.dirHandle) return true;
+                if (typeof img.dirHandle.isSameEntry === 'function' && await img.dirHandle.isSameEntry(altra.dirHandle)) return true;
+            }
+            return false;
+        } catch (err) {
+            console.warn('[Cestino] Non so se il .txt serve ad altre foto: lo lascio sul disco.', err);
+            return true;
+        }
+    };
+
     // ITALIANO: `spostati` (facoltativo) dice cosa e' arrivato DAVVERO nel Cestino di Windows. Il
     //           canale risponde 'ok' anche per un file che non c'e' (il .txt di una foto senza tag):
     //           solo il conto `trashed` distingue "spostato" da "non c'era". "Annulla lo
@@ -1808,7 +1850,11 @@ export default function App() {
     //          only the `trashed` count tells "moved" from "was not there". "Undo the emptying"
     //          must fish back only what was moved, or it would pull out a namesake left in the
     //          Recycle Bin by an older emptying.
-    const deleteImageFiles = async (img: any, spostati?: { img?: boolean; txt?: boolean }): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
+    // ITALIANO: `giaTolte` (facoltativo): le foto gia' tolte nella stessa operazione (vedi
+    //           txtUsatoDaAltre).
+    // ENGLISH: `giaTolte` (optional): the photos already removed in the same operation (see
+    //          txtUsatoDaAltre).
+    const deleteImageFiles = async (img: any, spostati?: { img?: boolean; txt?: boolean }, giaTolte?: Set<string>): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
             return img.dirHandle ? 'nopath' : 'failed';
@@ -1859,6 +1905,14 @@ export default function App() {
             const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
             if (esitoImg === 'ok') {
                 if (spostati) spostati.img = !!(resImg && resImg.trashed > 0);
+                // ITALIANO: il .txt serve ancora a un'altra foto del progetto: resta dov'e', e
+                //           "Annulla lo svuotamento" non lo chiede indietro (spostati.txt falso).
+                // ENGLISH: the .txt is still used by another photo of the project: it stays where
+                //          it is, and "Undo the emptying" does not ask it back (spostati.txt false).
+                if (await txtUsatoDaAltre(img, giaTolte)) {
+                    if (spostati) spostati.txt = false;
+                    return 'trashed';
+                }
                 const resTxt = await api.trashFiles([txtPath]);
                 if (spostati) spostati.txt = !!(resTxt && resTxt.trashed > 0);
                 if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
@@ -1883,7 +1937,7 @@ export default function App() {
     //          Until this morning this very call ran on its own, silently, whenever the Recycle Bin
     //          was out of reach - that is, always, for folders opened with "Load Folder" - and the
     //          app still announced "Files deleted successfully".
-    const deleteImageFilesForGood = async (img: any): Promise<boolean> => {
+    const deleteImageFilesForGood = async (img: any, giaTolte?: Set<string>): Promise<boolean> => {
         const folder = img.dirHandle;
         if (!folder || typeof folder.removeEntry !== 'function') return false;
         try {
@@ -1894,6 +1948,9 @@ export default function App() {
             //          with it (sidecarTagFileName). With the "cleaned" name, "photo..v2.png" became
             //          "photo.v2.png": ANOTHER photo, if there was one, deleted for good in its place.
             await folder.removeEntry(img.file.name);
+            // ITALIANO: il .txt in comune con un'altra foto del progetto resta (vedi txtUsatoDaAltre).
+            // ENGLISH: a .txt shared with another photo of the project stays (see txtUsatoDaAltre).
+            if (await txtUsatoDaAltre(img, giaTolte)) return true;
             try { await folder.removeEntry(sidecarTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
             return true;
         } catch (err) {
@@ -2264,7 +2321,7 @@ export default function App() {
             const percorsi = percorsiSuDisco(img);
             const spostati: { img?: boolean; txt?: boolean } = {};
             try {
-                esito = await deleteImageFiles(img, spostati);
+                esito = await deleteImageFiles(img, spostati, removedIds);
             } catch (error) {
                 console.error("Failed to delete", img.file.name, error);
             }
@@ -2429,7 +2486,7 @@ export default function App() {
             //          anyway, and vanished from the gallery.
             const img = imagesRef.current.find(i => i.id === scelta.id);
             if (!img || !img.isTrashed) continue;
-            if (await deleteImageFilesForGood(img)) removedIds.add(img.id); else failed++;
+            if (await deleteImageFilesForGood(img, removedIds)) removedIds.add(img.id); else failed++;
         }
         setIsEmptyingTrash(false);
         // ITALIANO: come in "Svuota cestino": il progetto e' stato chiuso o azzerato durante la

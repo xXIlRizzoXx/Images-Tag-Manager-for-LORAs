@@ -57,7 +57,7 @@ const ritaglia = async (file, intestazione) => {
     return (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'tsx' })).code;
 };
 const jsSalva = await ritaglia('src/App.tsx', '    const performSave = async (imagesToSave: any[]');
-const jsCancella = await ritaglia('src/App.tsx', '    const deleteImageFilesForGood = async (img: any): Promise<boolean> => {');
+const jsCancella = await ritaglia('src/App.tsx', '    const deleteImageFilesForGood = async (img: any');
 const jsLightbox = await ritaglia('src/components/Lightbox.tsx', '    const handleSaveSingleTxt = async () => {');
 // ITALIANO: i nomi che i tre testi possono usare, presi dai moduli veri.
 // ENGLISH: the names the three texts may use, taken from the real modules.
@@ -88,9 +88,11 @@ const salvaLightbox = async (nome) => {
     await f();
     return dir.scritti;
 };
+// ITALIANO: una foto sola nel progetto: nessun'altra usa il suo .txt (txtUsatoDaAltre dice no).
+// ENGLISH: a single photo in the project: no other uses its .txt (txtUsatoDaAltre says no).
 const cancella = async (nome) => {
     const dir = cartella();
-    const f = new Function('console', ...nomiAiuti, jsCancella + '\nreturn deleteImageFilesForGood;')(muto, ...Object.values(aiuti));
+    const f = new Function('console', 'txtUsatoDaAltre', ...nomiAiuti, jsCancella + '\nreturn deleteImageFilesForGood;')(muto, async () => false, ...Object.values(aiuti));
     await f({ file: { name: nome }, dirHandle: dir });
     return dir.tolti;
 };
