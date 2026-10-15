@@ -1,15 +1,15 @@
 /* ITALIANO: PROVA CHE NEL REPOSITORY NON CI SIANO COORDINATE GPS VERE
-   Il repository e' pubblico. Una prova sui dati nascosti delle foto usava come "segreto" di
-   esempio una posizione GPS vera, un paese abitato: un file pubblicato legava cosi' l'account a
-   un luogo reale. Le prove devono usare coordinate chiaramente finte. Qui si cercano, in tutti i
+   Il repository e' pubblico: le prove sui dati nascosti delle foto non devono mai usare come
+   "segreto" di esempio una posizione GPS che esiste davvero, perche' legherebbe l'account a un
+   luogo. Le prove devono usare coordinate chiaramente finte. Qui si cercano, in tutti i
    file di testo del repository, le coppie "gradi N/S + gradi E/W" con i decimali, e si accettano
    solo i valori finti dell'elenco qui sotto (65.4321 E e' in mezzo al mare).
    Gira senza rete: legge solo i file del repository (l'elenco di git, o la cartella se git non c'e').
    Uso:  node scripts/test-no-real-coordinates.mjs      (esce con codice 1 se qualcosa non torna)
 
    ENGLISH: TEST THAT THE REPOSITORY HOLDS NO REAL GPS COORDINATES
-   The repository is public. A test of the photos' hidden data used a real GPS position, an
-   inhabited town, as its sample "secret": a published file tied the account to a real place.
+   The repository is public: tests of the photos' hidden data must never use a GPS position
+   that really exists as their sample "secret", because it would tie the account to a place.
    Tests must use obviously fake coordinates. This looks, in every text file of the repository,
    for "degrees N/S + degrees E/W" pairs with decimals, and accepts only the fake values listed
    below (65.4321 E is in the middle of the sea).
