@@ -15,6 +15,7 @@ import { X, FilePlus2, FolderOpen, Save, Tag as TagIcon, ListPlus, FileX2 } from
 import { getTagCategory, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { soundManager } from '../utils/soundManager';
+import { uniqueTagsIgnoringCase, hasTagIgnoringCase } from '../utils/tagCase';
 
 // ITALIANO: Legge i tag da un testo. Il .json accetta sia il formato esportato
 //           dall'app ({tags: [...]}) sia un semplice elenco ["a","b"]. Il .txt usa
@@ -451,7 +452,13 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const aggiungiTag = () => {
         const nuovi = inputValue.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
         if (!nuovi.length) return;
-        setTags(prev => [...new Set([...prev, ...nuovi])]);
+        // ITALIANO: "Smile" su un file con "smile" non entra: come nel resto dell'app, i tag che
+        //           differiscono solo per le maiuscole sono uno, e resta la grafia gia' presente.
+        //           Prima Salva scriveva "smile, Smile,". I tag gia' nel file non si toccano.
+        // ENGLISH: "Smile" on a file with "smile" does not go in: as in the rest of the app, tags
+        //          that differ only in case are one, and the spelling already there stays. Save
+        //          used to write "smile, Smile,". The tags already in the file are not touched.
+        setTags(prev => [...prev, ...uniqueTagsIgnoringCase(nuovi).filter(n => !hasTagIgnoringCase(prev, n))]);
         setInputValue('');
         setDirty(true);
         soundManager.pop();
@@ -462,7 +469,9 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const aggiungiTagProgetto = () => {
         const nuovi = [...new Set((projectTags as any[]).map(s => String(s).trim()).filter(Boolean))];
         if (!nuovi.length) { showNotification(t.noTagsInProject, 'info'); return; }
-        setTags(prev => [...new Set([...prev, ...nuovi])]);
+        // ITALIANO: stessa regola di aggiungiTag: niente seconda grafia di un tag gia' presente.
+        // ENGLISH: same rule as aggiungiTag: no second spelling of a tag already there.
+        setTags(prev => [...prev, ...uniqueTagsIgnoringCase(nuovi).filter(n => !hasTagIgnoringCase(prev, n))]);
         setDirty(true);
         soundManager.pop();
     };

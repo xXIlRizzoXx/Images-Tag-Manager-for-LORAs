@@ -41,7 +41,7 @@ import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChius
 import { isLetterShortcut } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
 import { avvisoImport } from './utils/importNotice';
-import { purgeIdsFromHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
+import { purgeIdsFromHistory, addPhotosToHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
@@ -818,6 +818,16 @@ export default function App() {
     isSavingRef.current = isSaving;
     const chiusuraInScritturaRef = useRef(false);
     if (!isSaving) chiusuraInScritturaRef.current = false;
+    // ITALIANO: lo stesso per "Annulla lo svuotamento" (ripristinoInCorsoRef): riprende prima le
+    //           immagini e poi, con una seconda chiamata, i loro .txt. Chiudendo la finestra in mezzo
+    //           le immagini tornavano nella cartella e i .txt restavano nel Cestino di Windows, senza
+    //           un avviso. La prima X si ferma e avvisa; una seconda X chiude comunque.
+    // ENGLISH: the same for "Undo the emptying" (ripristinoInCorsoRef): it takes the images back
+    //          first and then, with a second call, their .txt files. Closing the window in between
+    //          put the images back in the folder and left the .txt files in the Windows Recycle Bin,
+    //          with no notice. The first X stops and warns; a second X closes anyway.
+    const chiusuraInRipristinoRef = useRef(false);
+    if (!ripristinoInCorso) chiusuraInRipristinoRef.current = false;
     useEffect(() => {
         const allaChiusura = (e: BeforeUnloadEvent) => {
             // ITALIANO: l'utente ha gia' deciso (salvato, o chiuso senza salvare): si chiude e basta.
@@ -845,6 +855,15 @@ export default function App() {
                 e.returnValue = false;
                 chiusuraInScritturaRef.current = true;
                 setTimeout(() => showNotification(t.closeWhileWriting, 'info'), 0);
+                return;
+            }
+            // ITALIANO: un "Annulla lo svuotamento" in corso (vedi chiusuraInRipristinoRef).
+            // ENGLISH: an "Undo the emptying" in progress (see chiusuraInRipristinoRef).
+            if (ripristinoInCorsoRef.current && !chiusuraInRipristinoRef.current) {
+                e.preventDefault();
+                e.returnValue = false;
+                chiusuraInRipristinoRef.current = true;
+                setTimeout(() => showNotification(t.closeWhileRestoring, 'info'), 0);
                 return;
             }
             // ITALIANO: prima la bozza dell'editor (vedi tagEditorDirtyRef); le foto si chiedono alla X dopo.
@@ -2074,11 +2093,19 @@ export default function App() {
                 // ENGLISH: empty originalTags = "its .txt is not on disk": the photo stays to be
                 //          saved, and after "Restore" (Save skips trashed photos) "Save Changes"
                 //          rewrites it from the tags in memory; the message says so.
+                // ITALIANO: e il ritorno non e' un passo da annullare, come non lo e' l'uscita (vedi
+                //           addPhotosToHistory): un Ctrl+Z subito dopo le toglieva dall'app mentre i
+                //           loro file erano di nuovo nella cartella.
+                // ENGLISH: and the return is not a step to undo, just as the leaving is not (see
+                //          addPhotosToHistory): a Ctrl+Z right after took them out of the app while
+                //          their files were back in the folder.
+                const rientrate = tornate.map((v: any) => (senzaTesto.has(v.img.id) ? { ...v.img, isTrashed: true, originalTags: [] } : { ...v.img, isTrashed: true }));
+                isUndoRedoAction.current = true;
                 setImages(prev => {
                     const presenti = new Set(prev.map(i => i.id));
-                    return [...prev, ...tornate.filter((v: any) => !presenti.has(v.img.id))
-                        .map((v: any) => (senzaTesto.has(v.img.id) ? { ...v.img, isTrashed: true, originalTags: [] } : { ...v.img, isTrashed: true }))];
+                    return [...prev, ...rientrate.filter((f: any) => !presenti.has(f.id))];
                 });
+                setHistory(prev => addPhotosToHistory(prev, rientrate));
             }
             // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
             //           per quelle e sparisce quando non c'e' piu' niente da ripescare.
@@ -3252,9 +3279,21 @@ export default function App() {
             //          each tag's length and the total count (see pulisciTagProgetto).
             if (file.size > 1024 * 1024) { showNotification(t.importTagsError, 'error'); return; }
             const text = (await file.text()).trim();
-            let tags: string[] = [];
-            let triggers: string[] = [];
-            if (text.startsWith('{')) {
+            let tags: unknown[] = [];
+            let triggers: unknown[] = [];
+            // ITALIANO: anche un semplice elenco JSON ["a","b"] (lo accetta pure l'editor dei file di
+            //           tag): prima si leggeva come TXT e nella palette entravano '["a"' e '"b"]'.
+            //           Un testo che inizia con "[" ma non e' JSON resta un TXT, come prima.
+            // ENGLISH: a plain JSON list ["a","b"] too (the tag file editor accepts it as well): it
+            //          used to be read as TXT and the palette got '["a"' and '"b"]'. A text that
+            //          starts with "[" but is not JSON stays a TXT, as before.
+            let elenco: unknown = undefined;
+            if (text.startsWith('[')) {
+                try { elenco = JSON.parse(text); } catch (_) { elenco = undefined; }
+            }
+            if (Array.isArray(elenco)) {
+                tags = elenco;
+            } else if (text.startsWith('{')) {
                 const data = JSON.parse(text);
                 if (Array.isArray(data.tags)) tags = data.tags;
                 if (Array.isArray(data.globalTriggers)) triggers = data.globalTriggers;
@@ -3263,6 +3302,17 @@ export default function App() {
                 // ENGLISH: TXT: one tag per line (commas are also accepted as separators).
                 tags = text.split(/[\r\n,]+/);
             }
+            // ITALIANO: i tag sono testo (o numeri). Un elenco di oggetti (tipico di chi esporta
+            //           le frequenze, {"tag":"1girl","count":5}) dava il tag "[object Object]" con
+            //           l'avviso verde: lo si rifiuta come fa l'editor. Le voci null si saltano
+            //           (prima diventavano il tag "null").
+            // ENGLISH: tags are text (or numbers). A list of objects (typical of frequency exports,
+            //          {"tag":"1girl","count":5}) gave the tag "[object Object]" with the green
+            //          notice: it is refused as the editor does. Null entries are skipped (they used
+            //          to become the tag "null").
+            if ([...tags, ...triggers].some(x => x !== null && typeof x === 'object')) { showNotification(t.importTagsError, 'error'); return; }
+            tags = tags.filter(x => x !== null && x !== undefined);
+            triggers = triggers.filter(x => x !== null && x !== undefined);
             // ITALIANO: i trigger del file entrano comunque nella palette del progetto. Ogni tag e'
             //           ripulito dai caratteri di controllo e tagliato al limite dei .txt (4000
             //           caratteri: prima 100, e una didascalia in frase tornava monca); in tutto se ne
@@ -3729,21 +3779,6 @@ export default function App() {
                 //          does not. Its name stays taken all the same, as for the others.
                 const conTag = Array.isArray(img.tags) && img.tags.length > 0;
                 if (conImmagini && !conTag) senzaTag++;
-                if (rinomina) {
-                    progressivo++;
-                    const numero = String(progressivo).padStart(cifre, '0');
-                    const nf = String(img.file.name || '');
-                    const pt = nf.lastIndexOf('.');
-                    if (conTag) voci.push({ nome: numero + '.txt', dati: getOrderedTagString(img.tags) });
-                    voci.push({ nome: numero + (pt > 0 ? nf.slice(pt) : ''), dati: fotoAggiornata(img), etichetta: nf });
-                    return;
-                }
-                // ITALIANO: il .txt dell'archivio si chiama come quello che l'import abbina alla foto
-                //           (sidecarTagFileName): estratto accanto a "photo..v2.png" deve essere
-                //           "photo..v2.txt", non il nome ripulito "photo.v2.txt", che non si abbinava.
-                // ENGLISH: the archive's .txt is named like the one the import pairs with the photo
-                //          (sidecarTagFileName): extracted next to "photo..v2.png" it must be
-                //          "photo..v2.txt", not the cleaned "photo.v2.txt", which did not pair.
                 // ITALIANO: la foto torna nella sua sottocartella (cartellaRel, da "Carica cartella"):
                 //           10_face/a.txt, 20_body/b.txt. Prima finiva tutto alla radice tranne gli
                 //           omonimi, e sd-scripts (train_data_dir) legge solo le cartelle N_nome: le
@@ -3756,7 +3791,28 @@ export default function App() {
                 //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
                 const sotto = String(img.cartellaRel || '').split(/[\\/]/)
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
-                const baseName = (sotto ? sotto + '/' : '') + sidecarTagFileName(img.file.name);
+                // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
+                //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
+                //           Prima l'archivio usciva piatto e le cartelle N_nome sparivano in silenzio.
+                // ENGLISH: when renaming the same holds: the number (unique across the archive, so
+                //          no duplicate names) sits in the photo's subfolder, 10_face/0001.png.
+                //          The archive used to come out flat and the N_name folders vanished silently.
+                if (rinomina) {
+                    progressivo++;
+                    const numero = (sotto ? sotto + '/' : '') + String(progressivo).padStart(cifre, '0');
+                    const nf = String(img.file.name || '');
+                    const pt = nf.lastIndexOf('.');
+                    if (conTag) voci.push({ nome: numero + '.txt', dati: getOrderedTagString(img.tags) });
+                    voci.push({ nome: numero + (pt > 0 ? nf.slice(pt) : ''), dati: fotoAggiornata(img), etichetta: nf });
+                    return;
+                }
+                // ITALIANO: il .txt dell'archivio si chiama come quello che l'import abbina alla foto
+                //           (sidecarTagFileName): estratto accanto a "photo..v2.png" deve essere
+                //           "photo..v2.txt", non il nome ripulito "photo.v2.txt", che non si abbinava.
+                // ENGLISH: the archive's .txt is named like the one the import pairs with the photo
+                //          (sidecarTagFileName): extracted next to "photo..v2.png" it must be
+                //          "photo..v2.txt", not the cleaned "photo.v2.txt", which did not pair.
+                const baseName =(sotto ? sotto + '/' : '') + sidecarTagFileName(img.file.name);
                 let name = baseName;
                 if (occupato(name)) {
                     collisionCount++;
@@ -4343,6 +4399,11 @@ export default function App() {
         // ITALIANO: foto di fila che non sono riuscite a raggiungere Google (vedi sotto).
         // ENGLISH: photos in a row that could not reach Google (see below).
         let reteConsecutivi = 0;
+        // ITALIANO: foto di fila che, anche dopo i tentativi, hanno trovato Google sovraccarico o
+        //           oltre il limite al minuto (vedi sotto).
+        // ENGLISH: photos in a row that, even after the retries, found Google overloaded or past
+        //          the per-minute limit (see below).
+        let occupatoConsecutivi = 0;
         try {
             for (let i = 0; i < images.length; i++) {
                 if (aiCancelRequestedRef.current) { cancelled = true; break; }
@@ -4384,6 +4445,7 @@ export default function App() {
                 //          like one closed before. It used to count as "tagged".
                 let removedMidRequest = false;
                 let erroreRete = false;
+                let erroreOccupato = false;
                 // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
                 // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
                 for (let attempt = 0; attempt < 3; attempt++) {
@@ -4480,6 +4542,11 @@ export default function App() {
                         //          Google was not reached: not a photo that cannot be sent, nor an
                         //          answer from Google.
                         if (kind === 'unknown' && typeof err?.status !== 'number' && err?.geminiKind !== 'photo') erroreRete = true;
+                        // ITALIANO: anche l'ultimo tentativo ha trovato Google sovraccarico o oltre
+                        //           il limite al minuto (la quota del giorno si e' gia' fermata sopra).
+                        // ENGLISH: the last attempt too found Google overloaded or past the
+                        //          per-minute limit (the daily quota already stopped above).
+                        if (kind === 'rate_limit' || kind === 'busy') erroreOccupato = true;
                         break;
                     }
                 }
@@ -4500,6 +4567,20 @@ export default function App() {
                 reteConsecutivi = erroreRete && !success && !removedMidRequest ? reteConsecutivi + 1 : 0;
                 if (reteConsecutivi >= 3) {
                     showNotification(`${t.aiError || 'AI Error'}: ${t.aiNetworkStopped}`, 'error');
+                    fatalAbort = true;
+                    break;
+                }
+                // ITALIANO: lo stesso quando Google risponde, ma sempre "sovraccarico" (503) o "troppe
+                //           richieste" (429 al minuto): ogni foto costava tre richieste e un minuto
+                //           di attese, per ore, e il riepilogo diceva solo "Non riuscite: 300". Dopo
+                //           tre foto di fila cosi' ci si ferma e si dice di riprovare piu' tardi.
+                // ENGLISH: the same when Google does answer, but always "overloaded" (503) or "too
+                //          many requests" (per-minute 429): every photo cost three requests and a
+                //          minute of waits, for hours, and the summary only said "Failed: 300". After
+                //          three such photos in a row the run stops and says to try again later.
+                occupatoConsecutivi = erroreOccupato && !success && !removedMidRequest ? occupatoConsecutivi + 1 : 0;
+                if (occupatoConsecutivi >= 3) {
+                    showNotification(`${t.aiError || 'AI Error'}: ${t.aiBusyStopped}`, 'error');
                     fatalAbort = true;
                     break;
                 }
@@ -6128,7 +6209,13 @@ export default function App() {
                                 const statsUniqueTags = [...new Set([...statsImages.flatMap(img => img.tags), ...customProjectTags])].sort((a, b) => a.localeCompare(b));
                                 const totalImages = statsImages.length;
                                 const totalTags = statsUniqueTags.length;
-                                const taggedImages = statsImages.filter(img => img.tags && img.tags.length > 0).length;
+                                // ITALIANO: "con tag" = almeno un tag che NON e' una trigger word, come per "Salta
+                                //           foto gia' taggate": con una trigger impostata ogni foto la porta, e il
+                                //           pannello diceva "Immagini senza tag 0" anche con foto senza descrizione.
+                                // ENGLISH: "tagged" = at least one tag that is NOT a trigger word, as for "Skip
+                                //          already-tagged photos": with a trigger set every photo carries it, and
+                                //          the panel said "Untagged images 0" even with undescribed photos.
+                                const taggedImages = statsImages.filter(img => Array.isArray(img.tags) && hasTagsBeyondTriggers(img.tags, globalTriggers)).length;
                                 const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};

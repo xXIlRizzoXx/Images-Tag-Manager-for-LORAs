@@ -6,7 +6,7 @@
    cartella mezza vuota non si capiva. Ora ogni foto aperta con "Carica cartella" ricorda la sua
    sottocartella rispetto a quella scelta, e l'archivio la rimette: 10_face/a.txt, 20_body/b.txt...
    Le foto senza cartella (o alla radice) restano alla radice come prima; rinominando in sequenza
-   (0001, 0002...) l'archivio resta piatto come prima.
+   (0001, 0002...) ogni foto numerata resta nella sua sottocartella (10_face/0001.png).
    Si eseguono i testi VERI presi da src/App.tsx: handleLoadFolderClick, handleFolderUploadFallback,
    processImportData (cosa ricorda ogni foto) e l'esportazione (export-harness.mjs).
    Uso:  node scripts/test-export-subfolders.mjs      (esce con codice 1 se qualcosa non torna)
@@ -18,8 +18,8 @@
    repeat counts in the folder names were lost, and a half-empty folder made no sense. Now every
    photo opened with "Load folder" remembers its subfolder relative to the picked one, and the
    archive puts it back: 10_face/a.txt, 20_body/b.txt... Photos with no folder (or at the root)
-   stay at the root as before; renaming in sequence (0001, 0002...) keeps the archive flat as
-   before.
+   stay at the root as before; renaming in sequence (0001, 0002...) keeps every numbered photo in
+   its subfolder (10_face/0001.png).
    The REAL text taken from src/App.tsx is run: handleLoadFolderClick, handleFolderUploadFallback,
    processImportData (what each photo remembers) and the export (export-harness.mjs).
    Usage:  node scripts/test-export-subfolders.mjs      (exits with code 1 if anything is off) */
@@ -168,9 +168,40 @@ console.log('\n--- quello che NON deve cambiare ---');
     const sonda = creaSonda();
     const sciolte = (await (await creaApp(progetto(sonda, [['', 'img.png', 'p1'], ['', 'b.png', 'p2']]), sonda).esporta(true)).archivio()) || {};
     dice('foto alla radice (o senza cartella): alla radice', ['b.png', 'b.txt', 'img.png', 'img.txt'], Object.keys(sciolte).sort());
+    const s2b = creaSonda();
+    const numerateRadice = (await (await creaApp(progetto(s2b, [['', 'img.png', 'p1'], ['', 'b.png', 'p2']]), s2b).esporta(true, true)).archivio()) || {};
+    dice('rinominando in sequenza, le foto alla radice (o senza cartella) restano alla radice',
+        ['0001.png', '0001.txt', '0002.png', '0002.txt'], Object.keys(numerateRadice).sort());
+}
+
+console.log('\n--- "Rinomina in sequenza" tiene le sottocartelle Kohya ---');
+{
+    // ITALIANO: rinominando, l'archivio era piatto: 0001..0004 alla radice, senza 10_face/ e
+    //           20_body/. sd-scripts legge solo le cartelle N_nome, e la stessa esportazione coi
+    //           nomi originali le tiene. Ora il numero (unico per tutto l'archivio) sta nella
+    //           sottocartella della foto.
+    // ENGLISH: when renaming, the archive was flat: 0001..0004 at the root, without 10_face/ and
+    //          20_body/. sd-scripts only reads N_name folders, and the same export with the
+    //          original names keeps them. Now the number (unique across the archive) sits in the
+    //          photo's subfolder.
     const s2 = creaSonda();
-    const numerate = (await (await creaApp(progetto(s2, kohya), s2).esporta(true, true)).archivio()) || {};
-    dice('rinominando in sequenza l\'archivio resta piatto', ['0001.png', '0001.txt', '0002.png', '0002.txt', '0003.png', '0003.txt', '0004.png', '0004.txt'], Object.keys(numerate).sort());
+    const r = await creaApp(progetto(s2, kohya), s2).esporta(true, true);
+    const numerate = (await r.archivio()) || {};
+    // ITALIANO: i numeri seguono l'ordine della galleria (per nome: a, b, img, img).
+    // ENGLISH: the numbers follow the gallery order (by name: a, b, img, img).
+    dice('ogni foto numerata e il suo .txt nella sua sottocartella',
+        ['10_face/0001.png', '10_face/0001.txt', '10_face/0003.png', '10_face/0003.txt', '20_body/0002.png', '20_body/0002.txt', '20_body/0004.png', '20_body/0004.txt'],
+        Object.keys(numerate).sort());
+    dice('20_body/0002.txt ha i tag di 20_body/b.png', 'tb,', numerate['20_body/0002.txt'] ? numerate['20_body/0002.txt'].toString('utf8') : null);
+    dice('20_body/0004.txt ha i tag di 20_body/img.png', 'ti2,', numerate['20_body/0004.txt'] ? numerate['20_body/0004.txt'].toString('utf8') : null);
+    dice('nessun avviso di nomi doppi', [[t.zipSuccess, 'success']], r.notifiche.filter(([, tipo]) => tipo !== 'info'));
+    const s4 = creaSonda();
+    const pericolose = (await (await creaApp(progetto(s4, [['../fuori', 'x.png', 'tx'], ['C:/win', 'y.png', 'ty']]), s4).esporta(true, true)).archivio()) || {};
+    dice('rinominando, nessun ".." e nessuna unita\' nei nomi', [],
+        Object.keys(pericolose).filter(n => n.split('/').some(p => p === '..' || p === '.' || /:/.test(p)) || n.startsWith('/')));
+}
+
+{
     const s3 = creaSonda();
     const doppie = (await (await creaApp(progetto(s3, [['', 'img.png', 'p1'], ['', 'img.png', 'p2']]), s3).esporta(false)).archivio()) || {};
     dice('due omonime senza sottocartella: ancora distinte', 2, Object.keys(doppie).length);

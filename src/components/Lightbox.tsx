@@ -284,7 +284,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                           su monitor larghi (prima si fermava a 1920px lasciando fasce vuote).
                 ENGLISH: No width cap: the window fills the whole screen even on wide monitors
                          (it used to stop at 1920px, leaving empty bands). */}
-            <div className="w-full h-full mx-auto flex gap-6" onClick={e => e.stopPropagation()}>
+            <div className="w-full h-full mx-auto flex gap-4 lg:gap-6" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 flex flex-col items-center gap-6 h-full min-w-0 relative">
                     <div className="absolute top-0 left-0 flex gap-2 z-[110]">
                         <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>
@@ -335,7 +335,13 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         </div>
                     </div>
                 </div>
-                <div className={`hidden lg:flex flex-col w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
+                {/* ITALIANO: la colonna dei tag c'e' a ogni larghezza, piu' stretta sotto i 1024 px.
+                              Era "hidden lg:flex": con la finestra a meta' schermo spariva, e con
+                              lei i tag della foto, "Genera tag con AI" e "Salva file .txt".
+                    ENGLISH: the tag column is there at every width, narrower below 1024 px. It was
+                             "hidden lg:flex": with the window at half the screen it vanished, and
+                             with it the photo's tags, "Generate tags with AI" and "Save .txt file". */}
+                <div className={`flex flex-col w-64 lg:w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
                             <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
                                 <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
                                 <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>

@@ -25,6 +25,26 @@
 export const purgeIdsFromHistory = <T extends { id: string }>(history: T[][], ids: Set<string>): T[][] =>
     history.map(passo => passo.filter(foto => !ids.has(foto.id)));
 
+// ITALIANO: Il contrario di purgeIdsFromHistory, per "Annulla lo svuotamento": le foto i cui file
+//   sono tornati dal Cestino di Windows si aggiungono in fondo a OGNI passo che non le ha, cosi'
+//   il loro ritorno non e' un passo da annullare. Prima lo era: un Ctrl+Z subito dopo le toglieva
+//   dall'app mentre i file erano di nuovo nella cartella, e una foto il cui .txt non era tornato
+//   perdeva anche i tag che c'erano solo in memoria. I passi vuoti (la galleria di prima
+//   dell'import) restano vuoti. Il numero dei passi non cambia; la cronologia passata non si tocca.
+// ENGLISH: The opposite of purgeIdsFromHistory, for "Undo the emptying": the photos whose files came
+//   back from the Windows Recycle Bin are appended to EVERY step that lacks them, so their return
+//   is not a step to undo. It used to be: a Ctrl+Z right after took them out of the app while the
+//   files were back in the folder, and a photo whose .txt had not come back also lost the tags
+//   that existed only in memory. Empty steps (the gallery before the import) stay empty. The
+//   number of steps does not change; the history passed in is left untouched.
+export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[]): T[][] =>
+    history.map(passo => {
+        if (passo.length === 0) return passo;
+        const presenti = new Set(passo.map(foto => foto.id));
+        const mancanti = photos.filter(foto => !presenti.has(foto.id));
+        return mancanti.length > 0 ? [...passo, ...mancanti] : passo;
+    });
+
 // ITALIANO: Il passo dove porta Ctrl+Z (verso -1) o Ctrl+Shift+Z (verso +1): il piu' vicino che sia
 //   DIVERSO da quello attuale, -1 se non ce n'e'. Due passi sono uguali quando hanno le stesse foto,
 //   nello stesso posto (vedi sotto). Serve dopo purgeIdsFromHistory: il passo "A nel cestino",

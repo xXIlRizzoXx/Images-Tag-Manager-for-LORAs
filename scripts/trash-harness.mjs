@@ -110,7 +110,10 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'useCallback', 'window', 'URL', 'console', 'backupDopoChiusura',
     // ITALIANO: la spia dello svuotamento in corso (annullaSvuotamento la guarda).
     // ENGLISH: the emptying-in-progress flag (annullaSvuotamento looks at it).
-    'isEmptyingTrash'];
+    'isEmptyingTrash',
+    // ITALIANO: Annulla lo svuotamento rimette le foto tornate in ogni passo (il codice di prima non l'aveva).
+    // ENGLISH: Undo the emptying puts the returned photos back in every step (the previous code did not have it).
+    'addPhotosToHistory'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -217,7 +220,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
         H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, stato.globalTriggers, imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef,
         refs.progettoGenRef, refs.aiCancelRequestedRef, nulla, refs.aiAbortControllerRef, memoria, nulla,
         nulla, nulla, nulla, nulla, nulla,
-        (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla, stato.isEmptyingTrash);
+        (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla, stato.isEmptyingTrash,
+        H.addPhotosToHistory || ((h) => h));
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();
