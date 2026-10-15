@@ -114,7 +114,8 @@ console.log('\n--- quello che NON deve cambiare ---');
     dice('editor pulito e foto da salvare: si ferma', true, c.chiudi());
     await attendi();
     dice('...compare la finestra a tre scelte e l\'editor si mette via (lei sta sotto)', [true, false, true], [c.finestra.isOpen, c.editorAperto, c.chiusuraFinestraRef.current]);
-    const d = app({ immagini: [foto('b.png', ['ohwx'], [], { baseTxtNonLetto: [] })], trigger: ['ohwx'] });
+    const discoB = [];
+    const d = app({ immagini: [foto('b.png', ['ohwx'], discoB, { baseTxtNonLetto: discoB })], trigger: ['ohwx'] });
     dice('solo una trigger su una foto col .txt non letto: si chiude subito, come per Salva', false, d.chiudi());
 }
 

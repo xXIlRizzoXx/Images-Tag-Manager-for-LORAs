@@ -22,10 +22,18 @@
    The REAL code taken from src/App.tsx is run (see trash-harness.mjs).
    Usage:  node scripts/test-undo-empty-txt-not-back.mjs      (exits with code 1 if anything is off) */
 
+import * as esbuild from 'esbuild';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { creaApp, apiFinta, foto, percorsoImg, percorsoTxt, lingue, t } from './trash-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
 
 const { dice, esito } = creaControlli();
+const S = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
+    entryPoints: [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src/utils/sidecarTags.ts')],
+    bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+})).outputFiles[0].text).toString('base64'));
 
 const fraseTesti = (n) => (typeof t.undoEmptyTxtNotBack === 'string' ? t.undoEmptyTxtNotBack.replace('{n}', String(n)) : '(manca undoEmptyTxtNotBack)');
 // ITALIANO: la foto, come la vedrebbe "Salva Modifiche" dopo "Ripristina": va scritta?
@@ -95,11 +103,34 @@ console.log('\n--- quello che NON deve cambiare ---');
     dice('e il messaggio resta quello verde di prima', [t.undoEmptyDone.replace('{n}', '2'), 'success'], r.messaggio);
 }
 
+console.log('\n--- chi segue il messaggio alla lettera ---');
+{
+    // ITALIANO: la foto torna nel cestino dell'app, e "Salva Modifiche" salta le foto nel cestino
+    //           (si esegue il filtro VERO di handleSaveChanges): premuto subito, non scrive niente.
+    //           Per questo il messaggio deve dire di premere prima "Ripristina".
+    // ENGLISH: the photo comes back into the app's trash, and "Save Changes" skips trashed photos
+    //          (the REAL filter of handleSaveChanges is run): pressed right away, it writes nothing.
+    //          That is why the message must say to press "Restore" first.
+    const sorgente = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src/App.tsx'), 'utf8');
+    const salva = sorgente.slice(sorgente.indexOf('    const handleSaveChanges = async ('));
+    const riga = /const modifiedImages = (images\.filter\([^\r\n]*\));/.exec(salva);
+    dice('premessa: trovato il filtro di "Salva Modifiche"', true, !!riga);
+    const filtro = new Function('images', 'fotoDaSalvare', 'globalTriggers', 'return ' + (riga ? riga[1] : '[]') + '.map(i => i.id);');
+    const app = (await prova('fallito', ['A'])).app;
+    const nelCestino = app.stato.images.map(i => ({ ...i, isTrashed: true }));
+    dice('"Salva Modifiche" premuto prima di "Ripristina": la foto non si scrive', [], filtro(nelCestino, S.fotoDaSalvare, []));
+    dice('dopo "Ripristina": si scrive', ['A'], filtro(app.stato.images, S.fotoDaSalvare, []));
+}
+
 console.log('\n--- la frase nuova nelle nove lingue ---');
 {
     const mancanti = Object.keys(lingue).filter(l => typeof lingue[l].undoEmptyTxtNotBack !== 'string'
         || !lingue[l].undoEmptyTxtNotBack.includes('{n}') || !lingue[l].undoEmptyTxtNotBack.includes(lingue[l].saveChanges));
     dice('undoEmptyTxtNotBack c\'e\' in tutte e nove, con {n} e il nome vero di "Salva Modifiche"', [], mancanti);
+    const senzaRipristina = Object.keys(lingue).filter(l => typeof lingue[l].undoEmptyTxtNotBack !== 'string'
+        || !lingue[l].undoEmptyTxtNotBack.includes(lingue[l].restore)
+        || lingue[l].undoEmptyTxtNotBack.indexOf(lingue[l].restore) > lingue[l].undoEmptyTxtNotBack.indexOf(lingue[l].saveChanges));
+    dice('...e prima il nome vero di "Ripristina" (le foto sono nel cestino dell\'app)', [], senzaRipristina);
 }
 
 process.exit(esito());

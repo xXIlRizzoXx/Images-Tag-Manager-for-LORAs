@@ -46,8 +46,8 @@ const cartella = { getFileHandle: async (nome) => { if (nome !== 'p.txt') throw 
 const salvato = { isSameEntry: async (h) => h === sidecar };
 // ITALIANO: l'editor salva `nuovi` in p.txt; torna la foto come la vede la galleria dopo.
 // ENGLISH: the editor saves `nuovi` into p.txt; returns the photo as the gallery sees it afterwards.
-const salvaNellEditor = async (tags, originalTags, nuovi, trigger = []) => {
-    let stato = [{ id: 'p', file: { name: 'p.png' }, dirHandle: cartella, tags, originalTags }];
+const salvaNellEditor = async (tags, originalTags, nuovi, trigger = [], altro = {}) => {
+    let stato = [{ id: 'p', file: { name: 'p.png' }, dirHandle: cartella, tags, originalTags, ...altro }];
     const f = new Function('images', 'setImages', 'globalTriggers', 'tagDopoEditor', codice + '\nreturn handleTagEditorSaved;')(
         stato, (agg) => { stato = typeof agg === 'function' ? agg(stato) : agg; }, trigger, S.tagDopoEditor);
     await f('p.txt', nuovi, salvato);
@@ -78,6 +78,27 @@ console.log('\n--- con una trigger ancora da salvare ---');
     // ENGLISH: the trigger removed by hand from this one card, while the file still holds it.
     const q = await salvaNellEditor(['smile'], ['ohwx', 'smile'], ['ohwx', 'smile', 'hat'], ['ohwx']);
     dice('una trigger tolta a mano dalla card resta tolta, e Salva lo scrivera\'', [['smile', 'hat'], ['ohwx', 'smile', 'hat'], true], [q.tags, q.originalTags, daSalvare(q)]);
+}
+
+console.log('\n--- .txt non letto all\'import con la trigger "ohwx" attiva, poi salvato nell\'editor ---');
+{
+    // ITALIANO: come la segna l'import (processImportData): baseTxtNonLetto e' il ricordo del disco
+    //           di allora, cioe' le sole trigger, che nel .txt non sono mai state scritte.
+    // ENGLISH: as the import marks it (processImportData): baseTxtNonLetto is the disk record of that
+    //          time, i.e. only the triggers, which were never written into the .txt.
+    const imp = S.tagDiImport(['ohwx'], [], true);
+    const p = await salvaNellEditor(imp.tags, imp.originalTags, ['girl', 'red hair', 'smile'], ['ohwx'], { baseTxtNonLetto: imp.originalTags });
+    dice('la trigger resta davanti, il disco e\' il file, e la foto resta da salvare',
+        [['ohwx', 'girl', 'red hair', 'smile'], ['girl', 'red hair', 'smile'], true], [p.tags, p.originalTags, S.fotoDaSalvare(p, ['ohwx'])]);
+    const imp2 = S.tagDiImport(['ohwx'], [], true);
+    const q = await salvaNellEditor(['ohwx', 'cat'], imp2.originalTags, ['girl'], ['ohwx'], { baseTxtNonLetto: imp2.originalTags });
+    dice('...con un tag aggiunto sulla card prima: resta anche quello', [['ohwx', 'girl', 'cat'], ['girl']], [q.tags, q.originalTags]);
+    const imp3 = S.tagDiImport(['ohwx'], [], true);
+    const r = await salvaNellEditor([], imp3.originalTags, ['girl'], ['ohwx'], { baseTxtNonLetto: imp3.originalTags });
+    dice('la trigger tolta a mano dalla card prima dell\'editor resta tolta', [['girl'], ['girl'], false], [r.tags, r.originalTags, S.fotoDaSalvare(r, ['ohwx'])]);
+    const imp4 = S.tagDiImport(['ohwx'], [], true);
+    const u = await salvaNellEditor(imp4.tags, imp4.originalTags, ['ohwx', 'girl'], ['ohwx'], { baseTxtNonLetto: imp4.originalTags });
+    dice('il file salvato ha gia\' la trigger: niente da salvare', [['ohwx', 'girl'], ['ohwx', 'girl'], false], [u.tags, u.originalTags, S.fotoDaSalvare(u, ['ohwx'])]);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

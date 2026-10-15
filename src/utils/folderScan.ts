@@ -40,6 +40,21 @@
 //          listed or a flaky network drive made the whole scan fail, and nothing was imported. Now
 //          that entry is skipped and counted (`skipped`); an unreadable subfolder is skipped as a
 //          whole. Only when the picked folder itself cannot be read does the scan fail.
+// ITALIANO: file nascosti del Mac: la cartella __MACOSX degli .zip fatti col Finder e i file "._nome"
+//           (dati del Finder di pochi KB, non immagini) che un Mac lascia anche accanto ai file veri
+//           su chiavette e dischi di rete. Prima entravano come foto ("._0001.png" e' image/png per
+//           l'estensione): conteggio doppio, anteprime rotte, "tag" binari da "._0001.txt", richieste
+//           AI sprecate e .txt scritti dentro __MACOSX. `percorsoRelativo` = il percorso nella
+//           cartella scelta, quando c'e' (selettore di riserva).
+// ENGLISH: Mac hidden files: the __MACOSX folder of .zip files made with the Finder and the "._name"
+//          files (a few KB of Finder data, not images) that a Mac also leaves next to the real files
+//          on USB sticks and network drives. They used to come in as photos ("._0001.png" is
+//          image/png by its extension): double count, broken thumbnails, binary "tags" from
+//          "._0001.txt", wasted AI requests and .txt files written into __MACOSX. `percorsoRelativo`
+//          = the path inside the picked folder, when known (fallback picker).
+export const fileDiMac = (nome: string, percorsoRelativo = ''): boolean =>
+    String(nome || '').startsWith('._') || String(percorsoRelativo || '').split(/[\\/]/).some(p => p.toLowerCase() === '__macosx');
+
 export const scanDirectoryHandle = async (handle: any, maxDepth = 8): Promise<{ imgFiles: any[]; txtFiles: any[]; folderOf: Map<any, any>; relPathOf: Map<any, string>; skipped: number }> => {
     const imgFiles: any[] = [];
     const txtFiles: any[] = [];
@@ -50,6 +65,9 @@ export const scanDirectoryHandle = async (handle: any, maxDepth = 8): Promise<{ 
     const scan = async (dir: any, depth: number, prefix: string) => {
         for await (const entry of dir.values()) {
             try {
+                // ITALIANO: i file nascosti del Mac non si leggono nemmeno (vedi fileDiMac).
+                // ENGLISH: the Mac hidden files are not even read (see fileDiMac).
+                if (entry.kind === 'file' ? fileDiMac(entry.name) : fileDiMac('', entry.name)) continue;
                 if (entry.kind === 'file') {
                     const file = await entry.getFile();
                     if (file.type.startsWith('image/')) {

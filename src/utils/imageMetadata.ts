@@ -176,17 +176,27 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
 //          software, sometimes paths), eXIf, date (tIME), C2PA and private parts.
 const PNG_KEEP = new Set(['tRNS', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'cICP', 'mDCV', 'cLLI', 'bKGD', 'hIST', 'pHYs', 'sPLT',
     'acTL', 'fcTL', 'fdAT']);
+// ITALIANO: un PNG che finisce prima di IEND (copia interrotta, programma che non lo scrive) e che
+//           ha gia' almeno un IDAT completo parte con le sole parti COMPLETE lette fin li', come il
+//           JPEG troncato; la parte tagliata non parte mai, perche' non si sa che cosa contiene.
+//           Senza un IDAT completo la foto non parte.
+// ENGLISH: a PNG that ends before IEND (cut-off copy, a writer that omits it) and already has at
+//          least one complete IDAT is sent with only the COMPLETE parts read so far, like the
+//          truncated JPEG; the cut part is never sent, since its content is unknown. Without one
+//          complete IDAT the photo is not sent.
 const stripPng = (b: Uint8Array): Uint8Array => {
     const out: Uint8Array[] = [b.subarray(0, 8)];
     let i = 8;
+    let pixel = false;
     while (true) {
-        if (i + 12 > b.length) throw malformed();
+        if (i + 12 > b.length) { if (pixel) break; throw malformed(); }
         const len = b[i] * 0x1000000 + ((b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]);
         const type = ascii(b, i + 4, 4);
         const end = i + 12 + len;
-        if (end > b.length) throw malformed();
+        if (end > b.length) { if (pixel) break; throw malformed(); }
         const critical = type.charCodeAt(0) >= 65 && type.charCodeAt(0) <= 90;
         if (critical || PNG_KEEP.has(type)) out.push(b.subarray(i, end));
+        if (type === 'IDAT') pixel = true;
         i = end;
         if (type === 'IEND') break;
     }
@@ -196,8 +206,15 @@ const stripPng = (b: Uint8Array): Uint8Array => {
 // ITALIANO: WebP. Via le parti EXIF e XMP e i loro segni nell'intestazione VP8X; resta il resto.
 // ENGLISH: WebP. The EXIF and XMP parts and their flags in the VP8X header go; the rest stays.
 const WEBP_KEEP = new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF', 'ICCP']);
+// ITALIANO: alcuni programmi contano nella lunghezza RIFF il byte di riempimento dell'ultima parte
+//           (lunghezza dispari) senza scriverlo: un solo byte in meno si accetta; se manca un byte
+//           di dati la parte resta piu' lunga del file e la foto non parte.
+// ENGLISH: some writers count the last part's pad byte (odd length) in the RIFF size without
+//          writing it: one missing byte is accepted; if a data byte is missing the part runs past
+//          the file and the photo is not sent.
 const stripWebp = (b: Uint8Array): Uint8Array => {
-    const riffEnd = 8 + (b[4] | (b[5] << 8) | (b[6] << 16)) + b[7] * 0x1000000;
+    let riffEnd = 8 + (b[4] | (b[5] << 8) | (b[6] << 16)) + b[7] * 0x1000000;
+    if (riffEnd === b.length + 1) riffEnd = b.length;
     if (riffEnd > b.length) throw malformed();
     const out: Uint8Array[] = [];
     let i = 12;
@@ -377,10 +394,12 @@ const concat = (parts: Uint8Array[]): Uint8Array => {
 
 // ITALIANO: restituisce i byte senza i dati nascosti e il loro formato vero, oppure null se il
 //           formato non si sa pulire qui. Un JPEG, PNG, WebP o HEIC rovinato fa errore: non si manda
-//           mai il file originale "perche' tanto non si riusciva a pulirlo".
+//           mai il file originale "perche' tanto non si riusciva a pulirlo". Un JPEG o PNG troncato
+//           dopo l'inizio dei pixel parte con le parti lette (vedi sopra).
 // ENGLISH: returns the bytes without the hidden data and their real format, or null if the format
 //          cannot be cleaned here. A damaged JPEG, PNG, WebP or HEIC throws: the original file is never
-//          sent "because it could not be cleaned anyway".
+//          sent "because it could not be cleaned anyway". A JPEG or PNG cut off after the pixels began
+//          is sent with the parts read (see above).
 export const stripImageMetadata = (bytes: Uint8Array): { bytes: Uint8Array; mimeType: ImageFormat } | null => {
     const format = detectImageFormat(bytes);
     if (format === 'image/jpeg') return { bytes: stripJpeg(bytes), mimeType: format };

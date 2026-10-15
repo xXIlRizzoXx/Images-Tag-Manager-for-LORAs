@@ -44,7 +44,7 @@ import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
-import { scanDirectoryHandle } from './utils/folderScan';
+import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
@@ -1616,12 +1616,14 @@ export default function App() {
                     const s = Array.isArray(letti) ? letti[0] : null;
                     if (!s || s.skipped || typeof s.content !== 'string' || String(s.name).toLowerCase() !== savedName.toLowerCase()) continue;
                     const sulDisco = parseSidecarText(s.content).tags;
-                    if (JSON.stringify(sulDisco) !== JSON.stringify(img.originalTags || [])) dalDisco.set(img.id, sulDisco);
+                    // ITALIANO: anche uguale, se il .txt all'import non si era letto: ora e' scritto e noto.
+                    // ENGLISH: also when equal, if the .txt was unread at import: it is now written and known.
+                    if (JSON.stringify(sulDisco) !== JSON.stringify(img.originalTags || []) || txtNonLettoInVigore(img)) dalDisco.set(img.id, sulDisco);
                 } catch { /* ITALIANO: .txt non rileggibile: la foto resta com'era / ENGLISH: .txt not readable: the photo stays as it was */ }
             }
             if (dalDisco.size === 0) return;
             setImages(prev => prev.map(i =>
-                dalDisco.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], dalDisco.get(i.id) || [], globalTriggers) } : i
+                dalDisco.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], dalDisco.get(i.id) || [], globalTriggers, i.baseTxtNonLetto) } : i
             ));
             return;
         }
@@ -1630,7 +1632,7 @@ export default function App() {
         // ENGLISH: a trigger word still to be saved stays on the photo (see tagDopoEditor): the editor
         //          never saw it, and it used to vanish along with its write into the .txt.
         setImages(prev => prev.map(i =>
-            i.id === matchId ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], savedTags, globalTriggers) } : i
+            i.id === matchId ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], savedTags, globalTriggers, i.baseTxtNonLetto) } : i
         ));
     };
 
@@ -2067,9 +2069,11 @@ export default function App() {
                 // ENGLISH: never twice: a photo already in the project is not added again, or
                 //          there would be two cards with the same id.
                 // ITALIANO: originalTags vuoto = "sul disco non c'e' il suo .txt": la foto resta da
-                //           salvare, e "Salva Modifiche" lo riscrive dai tag in memoria.
+                //           salvare, e dopo "Ripristina" (Salva salta le foto nel cestino) "Salva
+                //           Modifiche" lo riscrive dai tag in memoria; il messaggio lo dice.
                 // ENGLISH: empty originalTags = "its .txt is not on disk": the photo stays to be
-                //          saved, and "Save Changes" rewrites it from the tags in memory.
+                //          saved, and after "Restore" (Save skips trashed photos) "Save Changes"
+                //          rewrites it from the tags in memory; the message says so.
                 setImages(prev => {
                     const presenti = new Set(prev.map(i => i.id));
                     return [...prev, ...tornate.filter((v: any) => !presenti.has(v.img.id))
@@ -2645,6 +2649,7 @@ export default function App() {
                     finalTags = ripristinati;
                     restoredCount++;
                 }
+                const discoImport = [...originalTags];
                 newImages.push({
                     id: nuovoIdFoto(),
                     file: imgFiles[i],
@@ -2652,12 +2657,16 @@ export default function App() {
                     width: thumbData?.width || 0,
                     height: thumbData?.height || 0,
                     tags: finalTags,
-                    originalTags: [...originalTags],
+                    originalTags: discoImport,
                     // ITALIANO: il .txt c'e' ma non si e' potuto leggere: i tag di adesso, cosi' le
-                    //           trigger cambiate dopo non lo fanno scrivere (vedi fotoDaSalvare).
+                    //           trigger cambiate dopo non lo fanno scrivere (vedi fotoDaSalvare). E'
+                    //           LO STESSO array di originalTags: ogni scrittura del .txt ne mette uno
+                    //           nuovo, e da li' la regola torna quella di sempre (txtNonLettoInVigore).
                     // ENGLISH: the .txt exists but could not be read: the current tags, so triggers
-                    //          changed later do not get it written (see fotoDaSalvare).
-                    ...(txtNonLetti.has(folderKeyOf(imgFiles[i])) ? { baseTxtNonLetto: [...originalTags] } : {}),
+                    //          changed later do not get it written (see fotoDaSalvare). It is THE SAME
+                    //          array as originalTags: every write of the .txt puts a new one there,
+                    //          and from then on the usual rule applies (txtNonLettoInVigore).
+                    ...(txtNonLetti.has(folderKeyOf(imgFiles[i])) ? { baseTxtNonLetto: discoImport } : {}),
                     // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash, e il
                     //           lotto di import con la sua cartella (un'impronta per cartella).
                     // ENGLISH: the key under which this photo is stored in the crash backup, and the
@@ -2879,7 +2888,9 @@ export default function App() {
     };
 
     const handleFolderUploadFallback = async (e: any) => {
-        const files = Array.from(e.target.files as FileList);
+        // ITALIANO: senza i file nascosti del Mac (__MACOSX, "._nome"), come "Carica cartella".
+        // ENGLISH: without the Mac hidden files (__MACOSX, "._name"), as in "Load folder".
+        const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name, f.webkitRelativePath));
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
         // ITALIANO: una cartella senza immagini va detta, come nelle altre strade, e il campo va
@@ -2976,7 +2987,9 @@ export default function App() {
     };
 
     const handleImagesUpload = async (e: any) => {
-        const files = Array.from(e.target.files as FileList);
+        // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
+        // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
+        const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name));
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
         // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
@@ -2997,7 +3010,18 @@ export default function App() {
     //          Electron path). In the browser (no Electron, no disk access) I use the .txt files
     //          actually dropped, paired by name.
     const handleDroppedFiles = useCallback(async (fileList: FileList) => {
-        const files = Array.from(fileList || []);
+        // ITALIANO: con l'editor dei file di tag (z 320) o la finestra della API key (z 400) aperti il
+        //           riepilogo dell'importazione (z 300) si apriva SOTTO: il rilascio sembrava ignorato
+        //           e un secondo rilascio sostituiva in silenzio quello in attesa. Si dice di chiudere
+        //           prima la finestra (il messaggio sta sopra tutto).
+        // ENGLISH: with the Tag file editor (z 320) or the API key dialog (z 400) open the import
+        //          summary (z 300) opened UNDER it: the drop looked ignored and a second drop silently
+        //          replaced the pending one. The user is told to close that window first (the message
+        //          sits above everything).
+        if (isTagEditorOpen || isApiKeyDialogOpen) { showNotification(t.dropCloseWindowFirst, 'info'); return; }
+        // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
+        // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
+        const files = Array.from(fileList || []).filter((f: any) => !fileDiMac(f.name));
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         if (imgFiles.length === 0) { showNotification(t.dropOnlyImages, 'info'); return; }
         const droppedTxt = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
@@ -3021,7 +3045,7 @@ export default function App() {
             if (folderOf) for (const f of imgFiles) { const d = folderOf.get(f); if (typeof d === 'string' && d) chiavePercorso.set(f, d); }
             calculateImportSummary(imgFiles, droppedTxt, null, null, chiavePercorso.size > 0 ? chiavePercorso : null);
         }
-    }, [t]);
+    }, [t, isTagEditorOpen, isApiKeyDialogOpen]);
     // ITALIANO: riferimento SEMPRE aggiornato al gestore, cosi' i listener globali (sotto) restano
     //           registrati una volta sola ma chiamano sempre la versione corrente.
     // ENGLISH: an always-current ref to the handler, so the global listeners (below) subscribe once
@@ -3352,13 +3376,15 @@ export default function App() {
         //           finirebbero nello stesso .txt: vinceva l'ultima scritta, e la card dell'altra
         //           mostrava come salvata una modifica che sul disco non c'era piu'. Non si sceglie
         //           in silenzio: nessuna delle due si scrive, restano da salvare e l'avviso dice di
-        //           chiuderne una. Due copie con gli stessi tag si salvano come sempre.
+        //           chiuderne una. Due copie con gli stessi tag si salvano come sempre. Lo stesso vale
+        //           per due foto diverse con lo stesso nome (a.png e a.jpg): il .txt e' uno, a.txt.
         //           `chiave` dice dove finisce il .txt; `stessoPosto` confronta due chiavi uguali.
         // ENGLISH: two copies of the same photo (the same folder opened twice) with DIFFERENT tags
         //          would end in the same .txt: the last one written won, and the other one's card
         //          showed as saved an edit that was no longer on disk. No silent pick: neither is
         //          written, both stay to be saved and the notice says to close one. Two copies with
-        //          the same tags are saved as always.
+        //          the same tags are saved as always. The same goes for two different photos with the
+        //          same name (a.png and a.jpg): there is one .txt, a.txt.
         //          `chiave` says where the .txt ends up; `stessoPosto` compares two equal keys.
         const doppie: string[] = [];
         const inConflitto = async (lista: any[], chiave: (img: any) => string, stessoPosto: (a: any, b: any) => Promise<boolean>) => {
@@ -3444,9 +3470,23 @@ export default function App() {
             let remaining = withoutFolder;
             if (remaining.length > 0 && api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
                 showNotification(t.processingFiles, "info");
-                // ITALIANO: la stessa foto caricata due volte ha lo stesso percorso (Windows non bada alle maiuscole).
-                // ENGLISH: the same photo loaded twice has the same path (Windows ignores case).
-                const doppiePercorso = await inConflitto(remaining, img => String(api.getPathForFile(img.file) || '').toLowerCase(), async () => true);
+                // ITALIANO: la chiave e' il .txt di arrivo (cartella + sidecarTagFileName, come nel processo
+                //           principale), senza maiuscole come Windows: la stessa foto caricata due volte,
+                //           ma anche a.png e a.jpg, finiscono nello stesso a.txt. Prima contava il percorso
+                //           dell'immagine: a.png e a.jpg con tag diversi si scrivevano tutte e due nello
+                //           stesso a.txt, vinceva l'ultima, e risultavano salvate tutte e due.
+                // ENGLISH: the key is the target .txt (folder + sidecarTagFileName, as in the main process),
+                //          case-insensitive like Windows: the same photo loaded twice, but also a.png and
+                //          a.jpg, end in the same a.txt. It used to be the image path: a.png and a.jpg with
+                //          different tags were both written into the same a.txt, the last one won, and both
+                //          counted as saved.
+                const txtDiArrivo = (img: any) => {
+                    const p = String(api.getPathForFile(img.file) || '');
+                    if (!p) return '';
+                    const taglio = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1;
+                    return (p.slice(0, taglio) + sidecarTagFileName(p.slice(taglio))).toLowerCase();
+                };
+                const doppiePercorso = await inConflitto(remaining, txtDiArrivo, async () => true);
                 remaining.forEach(img => { if (doppiePercorso.has(img.id)) doppie.push(img.file.name); });
                 bump(doppiePercorso.size);
                 remaining = remaining.filter(img => !doppiePercorso.has(img.id));

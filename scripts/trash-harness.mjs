@@ -224,6 +224,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
     render().effettoDisco();
     scarica();
     r.render = render;
+    r.refs = refs;
     r.attendi = async (giri = 5) => { for (let i = 0; i < giri; i++) await new Promise(ok => setTimeout(ok, 0)); };
     // ITALIANO: un'altra azione dell'utente sulle foto (cestinarne una, cambiare dei tag): passa da
     //           setImages come nell'app, quindi entra nella cronologia.

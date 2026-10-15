@@ -35,7 +35,10 @@ const { dice, esito } = creaControlli();
 //          time), c.png with the .txt read. `trigger` = the trigger active at import.
 const progetto = async (trigger = []) => {
     const cartella = cartellaFinta();
-    const b = { ...foto('b', [...trigger], cartella), baseTxtNonLetto: [...trigger] };
+    // ITALIANO: come l'import, baseTxtNonLetto e' lo stesso array di originalTags (vedi txtNonLettoInVigore).
+    // ENGLISH: as the import does, baseTxtNonLetto is the same array as originalTags (see txtNonLettoInVigore).
+    const b0 = foto('b', [...trigger], cartella);
+    const b = { ...b0, baseTxtNonLetto: b0.originalTags };
     const c = foto('c', [...trigger, 'blue sky'], cartella);
     const app = creaApp([b, c], { trigger });
     app.importa();
@@ -80,7 +83,8 @@ console.log('\n--- .txt non letto, poi un tag aggiunto a tutte le foto, poi Salv
 console.log('\n--- "Tagga tutte con AI" con "Salta foto gia\' taggate" acceso ---');
 {
     const ai = nuovaApp([{ id: 'b' }, { id: 'c' }], () => BUONA, { skip: true });
-    Object.assign(ai.foto[0], { originalTags: [], baseTxtNonLetto: [] });
+    const disco = [];
+    Object.assign(ai.foto[0], { originalTags: disco, baseTxtNonLetto: disco });
     Object.assign(ai.foto[1], { originalTags: [] });
     await ai.tutte();
     dice('la foto col .txt non letto e\' saltata, quella senza tag no', [1, [], ['cat', 'sofa']], [ai.chiamate(), ai.foto[0].tags, ai.foto[1].tags]);
@@ -89,7 +93,8 @@ console.log('\n--- "Tagga tutte con AI" con "Salta foto gia\' taggate" acceso --
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const ai = nuovaApp([{ id: 'b' }], () => BUONA, { skip: false });
-    Object.assign(ai.foto[0], { originalTags: [], baseTxtNonLetto: [] });
+    const disco = [];
+    Object.assign(ai.foto[0], { originalTags: disco, baseTxtNonLetto: disco });
     await ai.tutte();
     dice('con "Salta" spento la foto col .txt non letto si tagga (poi Salva non la scrive)', 1, ai.chiamate());
 }

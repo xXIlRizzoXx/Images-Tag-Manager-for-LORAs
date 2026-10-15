@@ -199,6 +199,41 @@ const chunk = (tipo, corpo) => B(be32(Buffer.from(corpo).length), tipo, corpo, [
     dice('restano firma, IHDR, iCCP, pHYs, IDAT e IEND identici', !!r.dati && r.dati.equals(B(FIRMA, IHDR, ICCP, PHYS, IDAT, IEND)));
     dice('il tipo mandato e\' image/png', r.mime === 'image/png', String(r.mime));
 }
+{
+    // ITALIANO: PNG incompleti che Chromium mostra lo stesso (copia interrotta, programma che non
+    //           scrive IEND): come il JPEG troncato partono, con le sole parti COMPLETE gia' lette e
+    //           senza i testi; la parte tagliata non parte mai. Senza nemmeno un IDAT completo: errore.
+    // ENGLISH: incomplete PNGs that Chromium still shows (cut-off copy, a writer that omits IEND):
+    //          like the truncated JPEG they are sent, with only the COMPLETE parts already read and
+    //          without the text; the cut part is never sent. Without one complete IDAT: error.
+    const FIRMA = B([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    const IHDR = chunk('IHDR', B(be32(16), be32(16), [8, 6, 0, 0, 0]));
+    const TESTO = chunk('tEXt', B('Author\0', AUTORE));
+    const IDAT = chunk('IDAT', B([0x78, 0x9C, 1, 2, 3, 4, 5, 6, 7, 8]));
+    const IDAT2 = chunk('IDAT', B([9, 10, 11, 12, 13, 14, 15, 16]));
+    const r1 = await invia(B(FIRMA, IHDR, TESTO, IDAT), 'senza-iend.png', 'image/png');
+    dice('PNG senza IEND (parti complete): parte, senza i testi', !!r1.dati && r1.dati.equals(B(FIRMA, IHDR, IDAT)),
+        String(r1.errore || r1.dati?.toString('hex')));
+    const r2 = await invia(B(FIRMA, IHDR, TESTO, IDAT, IDAT2.subarray(0, 13)), 'tagliata.png', 'image/png');
+    dice('PNG tagliato dentro il secondo IDAT: parte con gli IDAT completi, senza la parte tagliata ne\' i testi',
+        !!r2.dati && r2.dati.equals(B(FIRMA, IHDR, IDAT)), String(r2.errore || r2.dati?.toString('hex')));
+    const r3 = await invia(B(FIRMA, IHDR, IDAT, TESTO.subarray(0, 14)), 'testo-tagliato-dopo.png', 'image/png');
+    dice('PNG tagliato in un testo dopo i pixel: parte senza il testo tagliato',
+        !!r3.dati && r3.dati.equals(B(FIRMA, IHDR, IDAT)) && contieneSegreto(r3.dati).length === 0, String(r3.errore || r3.dati?.toString('hex')));
+    const r3b = await invia(B(FIRMA, IHDR, IDAT, [0, 0, 0]), 'coda-corta.png', 'image/png');
+    dice('PNG con meno di un\'intestazione di parte dopo i pixel: parte senza quei byte',
+        !!r3b.dati && r3b.dati.equals(B(FIRMA, IHDR, IDAT)), String(r3b.errore || r3b.dati?.toString('hex')));
+    const r4 = await invia(B(FIRMA, IHDR, TESTO, IDAT.subarray(0, 15)), 'unico-idat-tagliato.png', 'image/png');
+    dice('PNG tagliato dentro l\'unico IDAT: errore della foto, e a Google non parte niente',
+        !!r4.errore && r4.errore.geminiKind === 'photo' && r4.chiamate === 0, String(r4.errore));
+    const r5 = await invia(B(FIRMA, IHDR.subarray(0, 10)), 'rotta-ihdr.png', 'image/png');
+    dice('PNG tagliato dentro IHDR: errore della foto, e a Google non parte niente',
+        !!r5.errore && r5.errore.geminiKind === 'photo' && r5.chiamate === 0, String(r5.errore));
+    const r6 = await invia(B(FIRMA, IHDR, TESTO.subarray(0, 12)), 'rotta-testo.png', 'image/png');
+    dice('PNG tagliato in un testo prima dei pixel: errore, e a Google non parte niente', !!r6.errore && r6.chiamate === 0);
+    const r7 = await invia(B(FIRMA, IHDR, TESTO), 'senza-pixel.png', 'image/png');
+    dice('PNG finito prima dei pixel (nessun IDAT): errore, e a Google non parte niente', !!r7.errore && r7.chiamate === 0);
+}
 
 // =============================================================================
 console.log('\n--- WebP ---');
@@ -217,6 +252,23 @@ const riff = (...chunks) => { const corpo = B('WEBP', ...chunks); return B('RIFF
     const semplice = riff(VP8);
     const r2 = await invia(semplice, 'semplice.webp', 'image/webp');
     dice('un WebP semplice parte identico', !!r2.dati && r2.dati.equals(semplice));
+    // ITALIANO: la lunghezza RIFF conta il byte di riempimento finale, ma il file finisce prima.
+    // ENGLISH: the RIFF size counts the final pad byte, but the file ends before it.
+    const dispari = riff(VP8X(0x20 | 0x08), wchunk('VP8 ', B([1, 2, 3, 4, 5, 6])), wchunk('EXIF', B('Exif ', GPS, 'x')));
+    const r3 = await invia(dispari.subarray(0, dispari.length - 1), 'senza-pad.webp', 'image/webp');
+    dice('WebP con la lunghezza RIFF che conta il byte finale mancante (EXIF in coda): parte, senza EXIF',
+        !!r3.dati && contieneSegreto(r3.dati).length === 0 && r3.dati.equals(riff(VP8X(0x20), wchunk('VP8 ', B([1, 2, 3, 4, 5, 6])))),
+        String(r3.errore || r3.dati?.toString('hex')));
+    const dispari2 = riff(VP8X(0x20), wchunk('VP8 ', B([1, 2, 3, 4, 5])));
+    const r3b = await invia(dispari2.subarray(0, dispari2.length - 1), 'senza-pad-vp8.webp', 'image/webp');
+    dice('WebP con l\'immagine dispari in coda e il byte finale mancante: parte con tutti i pixel',
+        !!r3b.dati && r3b.dati.subarray(0, 4).toString('latin1') === 'RIFF' && r3b.dati.includes(B('VP8 ', le32(5), [1, 2, 3, 4, 5])),
+        String(r3b.errore || r3b.dati?.toString('hex')));
+    const pari = riff(VP8X(0x20), wchunk('VP8 ', B([1, 2, 3, 4, 5, 6, 7, 8])));
+    const r4 = await invia(pari.subarray(0, pari.length - 1), 'pari-tagliata.webp', 'image/webp');
+    dice('WebP con un byte di pixel mancante (lunghezza pari): errore, e a Google non parte niente', !!r4.errore && r4.chiamate === 0);
+    const r5 = await invia(pari.subarray(0, pari.length - 3), 'tagliata.webp', 'image/webp');
+    dice('WebP con piu\' di un byte mancante: errore, e a Google non parte niente', !!r5.errore && r5.chiamate === 0);
 }
 
 // =============================================================================

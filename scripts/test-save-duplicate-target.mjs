@@ -108,6 +108,42 @@ console.log('\n--- foto di "Carica immagini" caricate due volte (Electron, stess
     dice('le due copie con tag diversi non si scrivono, l\'altra foto si', [['E:\\foto\\c.png'], ['C'], false], [scritti, r.salvate, r.ok]);
 }
 
+// ITALIANO: a.png e a.jpg sono due foto DIVERSE, ma l'import (makeFolderKeyer), Kohya e il processo
+//           principale le abbinano allo stesso a.txt. Con tag diversi non si sceglie in silenzio:
+//           con "Carica immagini" prima si scrivevano tutte e due nello stesso a.txt (vinceva
+//           l'ultima) e risultavano salvate tutte e due; con "Carica cartella" erano bloccate, ma
+//           l'avviso le chiamava "copie aperte due volte".
+// ENGLISH: a.png and a.jpg are two DIFFERENT photos, but the import (makeFolderKeyer), Kohya and the
+//          main process pair them with the same a.txt. With different tags there is no silent pick:
+//          with "Load images" both used to be written into the same a.txt (the last one won) and
+//          both counted as saved; with "Load folder" they were blocked, but the notice called them
+//          "copies open twice".
+console.log('\n--- a.png e a.jpg nella stessa cartella: lo stesso a.txt ---');
+{
+    const d = creaDisco();
+    const h = d.cartella('dataset');
+    const r = await salva([foto('A', 'a.png', h, ['red dress']), foto('B', 'a.jpg', h, ['blue dress'])]);
+    dice('"Carica cartella": nessuna delle due si scrive, nessuna risulta salvata', [[], [], false], [d.scritture, r.salvate, r.ok]);
+    dice('...l\'avviso le nomina', [lingue.en.saveSameFileTwice.replace('{names}', 'a.png, a.jpg'), 'error'], r.ultimo);
+}
+{
+    const scritti = [];
+    const api = {
+        getPathForFile: (f) => f.percorso,
+        writeSidecarTags: async (items) => { scritti.push(...items.map(i => i.imagePath)); return { results: items.map(() => true) }; },
+    };
+    const via = (id, percorso, tags) => ({ id, file: { name: path.win32.basename(percorso), percorso }, dirHandle: null, tags, originalTags: ['x'] });
+    const r = await salva([via('A', 'E:\\foto\\a.png', ['red dress']), via('B', 'E:\\Foto\\A.JPG', ['blue dress']), via('C', 'E:\\foto\\c.png', ['z'])], { finestra: { electronAPI: api } });
+    dice('"Carica immagini": a.png e a.jpg con tag diversi non si scrivono, c.png si', [['E:\\foto\\c.png'], ['C'], false], [scritti, r.salvate, r.ok]);
+    dice('...l\'avviso le nomina', [lingue.en.saveSameFileTwice.replace('{names}', 'a.png, A.JPG'), 'error'], r.ultimo);
+    scritti.length = 0;
+    const s = await salva([via('A', 'E:\\foto\\a.png', ['cat']), via('B', 'E:\\foto\\a.jpg', ['cat'])], { finestra: { electronAPI: api } });
+    dice('...con gli STESSI tag si scrivono come sempre', [['E:\\foto\\a.png', 'E:\\foto\\a.jpg'], ['A', 'B'], true], [scritti, s.salvate, s.ok]);
+    scritti.length = 0;
+    const u = await salva([via('A', 'E:\\foto\\a.png', ['cat']), via('B', 'E:\\altra\\a.jpg', ['dog']), via('D', 'E:\\foto\\a.b.png', ['owl'])], { finestra: { electronAPI: api } });
+    dice('...in cartelle diverse, o con un altro nome (a.b.png), si scrivono tutte', [['E:\\foto\\a.png', 'E:\\altra\\a.jpg', 'E:\\foto\\a.b.png'], true], [scritti, u.ok]);
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const d = creaDisco();
@@ -128,6 +164,9 @@ console.log('\n--- la frase nelle nove lingue ---');
 for (const l of ['it', 'en', 'fr', 'es', 'de', 'zh', 'ja', 'pt', 'ru']) {
     const s = lingue[l].saveSameFileTwice;
     dice(l + ': saveSameFileTwice presente, con {names} una sola volta', true, typeof s === 'string' && s.split('{names}').length === 2);
+    // ITALIANO: la frase vale anche per due foto diverse (a.png e a.jpg): parla del .txt in comune.
+    // ENGLISH: the sentence also fits two different photos (a.png and a.jpg): it names the shared .txt.
+    dice(l + ': saveSameFileTwice parla del file .txt in comune', true, typeof s === 'string' && s.includes('.txt'));
 }
 
 process.exit(esito());

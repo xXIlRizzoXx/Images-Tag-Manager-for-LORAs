@@ -151,6 +151,71 @@ console.log('\n--- il backup anti-crash usa la stessa regola ---');
     dice('in App.tsx le due scritture del backup passano le trigger attive', [2, true], [righe.length, righe.every(r => r.includes('globalTriggersRef.current)'))]);
 }
 
+// ITALIANO: il visualizzatore scrive il .txt della foto: si esegue la riga VERA di updateOriginalTags.
+// ENGLISH: the viewer writes the photo's .txt: the REAL line of updateOriginalTags is run.
+const rigaVisualizzatore = sorgente.split('\n').find(r => r.startsWith('    const updateOriginalTags = '));
+if (!rigaVisualizzatore) { console.log('NO  updateOriginalTags non trovato in src/App.tsx'); process.exit(1); }
+const fabbricaVisualizzatore = new Function('isUndoRedoAction', 'setImages',
+    (await esbuild.transform(rigaVisualizzatore, { loader: 'ts' })).code + '\nreturn updateOriginalTags;');
+const salvaDalVisualizzatore = (app, nome, tags) => {
+    app.modifica(nome, tags);
+    fabbricaVisualizzatore({ current: false }, (fn) => { app.stato.images = typeof fn === 'function' ? fn(app.stato.images) : fn; })(app.foto(nome).id, tags);
+};
+
+console.log('\n--- .txt scritto davvero con lo stesso contenuto dell\'import: la regola di sempre torna ---');
+{
+    // ITALIANO: trigger "ohwx" prima dell'import, b.txt non letto. Il visualizzatore scrive
+    //           "ohwx, cat", poi "ohwx," (uguale al ricordo dell'import), poi la trigger diventa
+    //           "sks": b.txt va riscritto come gli altri, non lasciato con "ohwx" senza avviso.
+    // ENGLISH: trigger "ohwx" before the import, b.txt unread. The viewer writes "ohwx, cat", then
+    //          "ohwx," (equal to the import's record), then the trigger becomes "sks": b.txt must be
+    //          rewritten like the others, not left with "ohwx" without a notice.
+    const app = await creaApp(['ohwx']);
+    salvaDalVisualizzatore(app, 'b.png', ['ohwx', 'cat']);
+    salvaDalVisualizzatore(app, 'b.png', ['ohwx']);
+    app.trigger(['sks']);
+    dice('la X della finestra la conta fra le modifiche non salvate', true, G.modificheNonSalvate([app.foto('b.png')], app.stato.trigger));
+    dice('"Salva" scrive anche b.txt con la trigger nuova', ['b.png', 'c.png'], await app.salva());
+}
+{
+    // ITALIANO: senza trigger: il visualizzatore svuota b.txt (uguale al ricordo dell'import, []),
+    //           poi sulla card si aggiunge "dog": "Salva" lo scrive.
+    // ENGLISH: no trigger: the viewer empties b.txt (equal to the import's record, []), then "dog"
+    //          is added on the card: "Save" writes it.
+    const app = await creaApp([]);
+    salvaDalVisualizzatore(app, 'b.png', []);
+    app.modifica('b.png', ['dog']);
+    dice('b.txt svuotato dal visualizzatore, poi "dog": "Salva" lo scrive', ['b.png'], await app.salva());
+}
+{
+    // ITALIANO: l'editor dei file di tag scrive b.txt con le sole trigger (uguale al ricordo dell'import).
+    // ENGLISH: the tag file editor writes b.txt with the triggers only (equal to the import's record).
+    const app = await creaApp(['ohwx']);
+    app.stato.images = app.stato.images.map(i => i.file.name === 'b.png' ? { ...i, ...S.tagDopoEditor(i.tags, i.originalTags, ['ohwx'], ['ohwx'], i.baseTxtNonLetto) } : i);
+    app.trigger(['sks']);
+    dice('dopo l\'editor, la trigger nuova: "Salva" scrive anche b.txt', ['b.png', 'c.png'], await app.salva());
+}
+{
+    // ITALIANO: Ctrl+Z fino al passo dell'import dopo le scritture: il .txt resta noto.
+    // ENGLISH: Ctrl+Z back to the import step after the writes: the .txt stays known.
+    const app = await creaApp(['ohwx']);
+    const passoImport = app.stato.images;
+    salvaDalVisualizzatore(app, 'b.png', ['ohwx', 'cat']);
+    salvaDalVisualizzatore(app, 'b.png', ['ohwx']);
+    const disco = new Map(app.stato.images.map(i => [i.id, i.originalTags]));
+    app.stato.images = H.withLiveOriginalTags(passoImport, disco);
+    app.trigger(['sks']);
+    dice('Ctrl+Z dopo le scritture, poi la trigger nuova: "Salva" scrive anche b.txt', ['b.png', 'c.png'], await app.salva());
+}
+{
+    // ITALIANO: una copia della foto senza scrittura (come "Ripristina tutte") non chiude l'eccezione.
+    // ENGLISH: a copy of the photo with no write (like "Restore all") does not end the exemption.
+    const app = await creaApp(['ohwx']);
+    app.stato.images = app.stato.images.map(i => ({ ...i }));
+    app.trigger(['sks']);
+    dice('copia senza scrittura: b.txt non letto resta fuori da "Salva"', ['c.png'], await app.salva());
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const app = await creaApp([]);

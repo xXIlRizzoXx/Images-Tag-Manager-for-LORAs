@@ -197,8 +197,50 @@ console.log('\n--- la regola da sola (src/utils/historyUtils.ts) ---');
         dice('avanti: salta i passi identici', 2, N([[a, b], [a, b], [a, b2]], 0, 1));
         dice('avanti: nessun passo diverso = -1', -1, N([[b], [b], [b]], 0, 1));
         dice('stessi oggetti ma in numero diverso: passo diverso', 0, N([[a, b], [a]], 1, -1));
-        dice('oggetti uguali nel contenuto ma non gli stessi: passo diverso', 0, N([[{ id: 'B' }], [b]], 1, -1));
+        // ITALIANO: si confronta quello che Ctrl+Z mostrerebbe: originalTags non conta (lo rimette
+        //           withLiveOriginalTags dal ricordo del disco), ogni altro campo si'.
+        // ENGLISH: what Ctrl+Z would show is compared: originalTags does not count (withLiveOriginalTags
+        //          puts it back from the disk record), every other field does.
+        dice('oggetti uguali nel contenuto ma non gli stessi: stesso passo', -1, N([[{ id: 'B' }], [b]], 1, -1));
+        dice('stessi tag in un array nuovo, cambia solo originalTags (dopo "Salva"): stesso passo', -1,
+            N([[{ id: 'B', tags: ['x'], originalTags: ['x'] }], [{ id: 'B', tags: ['x'], originalTags: [] }]], 1, -1));
+        dice('tag diversi: passo diverso', 0, N([[{ id: 'B', tags: ['x'] }], [{ id: 'B', tags: ['y'] }]], 1, -1));
+        dice('stessi tag in ordine diverso: passo diverso', 0, N([[{ id: 'B', tags: ['x', 'y'] }], [{ id: 'B', tags: ['y', 'x'] }]], 1, -1));
+        dice('cestinata in un passo e non nell\'altro: passo diverso', 0, N([[{ id: 'B', tags: ['x'], isTrashed: true }], [{ id: 'B', tags: ['x'], isTrashed: false }]], 1, -1));
+        dice('un altro campo diverso (anteprima): passo diverso', 0, N([[{ id: 'B', thumb: 'u1' }], [{ id: 'B', thumb: 'u2' }]], 1, -1));
+        dice('un campo in piu\' in un passo: passo diverso', 0, N([[{ id: 'B' }], [{ id: 'B', isTrashed: false }]], 1, -1));
     }
+}
+
+console.log('\n--- modifica B, "Salva" (il visualizzatore), cestina A, Svuota cestino, poi Ctrl+Z ---');
+{
+    // ITALIANO: il salvataggio non e' un passo della cronologia, ma rifa' l'oggetto di B con il nuovo
+    //           originalTags: il passo "A nel cestino" ha la B nuova, quello prima la B vecchia, e
+    //           tolta A erano uguali a schermo ma non "gli stessi oggetti". Il primo Ctrl+Z diceva
+    //           "Azione annullata" senza cambiare niente. Si esegue la riga VERA di updateOriginalTags.
+    // ENGLISH: saving is not a history step, but it rebuilds B's object with the new originalTags:
+    //          the step "A in the trash" holds the new B, the one before the old B, and with A
+    //          removed they looked the same on screen but were not "the same objects". The first
+    //          Ctrl+Z said "Action undone" without changing anything. The REAL line of
+    //          updateOriginalTags is run.
+    const riga = sorgenteApp.split('\n').find(r => r.startsWith('    const updateOriginalTags = '));
+    dice('premessa: trovato updateOriginalTags in src/App.tsx', true, !!riga);
+    const salvaB = (app) => new Function('isUndoRedoAction', 'setImages',
+        esbuild.transformSync(riga || '', { loader: 'ts' }).code + '\nreturn updateOriginalTags;')(app.refs.isUndoRedoAction, app.modifica)('B', ['modificato']);
+    const app = creaApp(['A', 'B'].map(id => foto(id, { cestinata: false })), { api: apiFinta() });
+    app.modifica(prev => prev.map(i => (i.id === 'B' ? { ...i, tags: ['modificato'] } : i)));
+    await app.attendi();
+    salvaB(app);
+    await app.attendi();
+    app.cestina('A');
+    await app.attendi();
+    await app.render().handleEmptyTrash();
+    await app.attendi();
+    dice('prima di Ctrl+Z: si vede solo B, con la modifica salvata', [['B'], ['modificato']], [app.vista(), tagDi(app, 'B')]);
+    const primo = await premi(app, 'handleUndo');
+    dice('UN Ctrl+Z riporta i tag di B a quelli di prima, con un solo "Azione annullata"', [['tag B'], [t.undoSuccess]], [tagDi(app, 'B'), primo]);
+    const r1 = await premi(app, 'handleRedo');
+    dice('UN Ctrl+Shift+Z rimette la modifica', [['modificato'], [t.redoSuccess]], [tagDi(app, 'B'), r1]);
 }
 
 process.exit(esito());

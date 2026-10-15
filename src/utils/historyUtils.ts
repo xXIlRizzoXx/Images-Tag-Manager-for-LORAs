@@ -27,17 +27,38 @@ export const purgeIdsFromHistory = <T extends { id: string }>(history: T[][], id
 
 // ITALIANO: Il passo dove porta Ctrl+Z (verso -1) o Ctrl+Shift+Z (verso +1): il piu' vicino che sia
 //   DIVERSO da quello attuale, -1 se non ce n'e'. Due passi sono uguali quando hanno le stesse foto,
-//   lo stesso oggetto nello stesso posto. Serve dopo purgeIdsFromHistory: il passo "A nel cestino",
+//   nello stesso posto (vedi sotto). Serve dopo purgeIdsFromHistory: il passo "A nel cestino",
 //   tolta A, diventa identico a quello di prima, e un Ctrl+Z ci si fermava mostrando "Azione
 //   annullata" senza cambiare niente (uno per ogni foto cestinata e poi svuotata).
 // ENGLISH: The step Ctrl+Z (direction -1) or Ctrl+Shift+Z (direction +1) leads to: the nearest one
 //   that is DIFFERENT from the current one, -1 if there is none. Two steps are equal when they hold
-//   the same photos, the same object in the same place. Needed after purgeIdsFromHistory: the step
+//   the same photos in the same place (see below). Needed after purgeIdsFromHistory: the step
 //   "A in the trash", once A is removed, becomes identical to the one before, and a Ctrl+Z stopped
 //   there showing "Action undone" without changing anything (one per photo trashed then emptied).
+// ITALIANO: Due foto "uguali" sono quelle che Ctrl+Z mostrerebbe uguali: lo stesso oggetto, oppure
+//   gli stessi campi con gli stessi valori, i tag confrontati uno per uno e originalTags ignorato
+//   (lo rimette withLiveOriginalTags dal ricordo del disco). "Salva", il visualizzatore e l'editor
+//   dei file di tag rifanno l'oggetto con il nuovo originalTags senza un passo nuovo: dopo
+//   "modifica B, Salva, cestina A, Svuota cestino" i due passi restavano "diversi" per il solo
+//   oggetto, e il primo Ctrl+Z diceva "Azione annullata" senza cambiare niente.
+// ENGLISH: Two photos are "equal" when Ctrl+Z would show them the same: the same object, or the
+//   same fields with the same values, the tags compared one by one and originalTags ignored
+//   (withLiveOriginalTags puts it back from the disk record). "Save", the viewer and the tag file
+//   editor rebuild the object with the new originalTags without a new step: after "edit B, Save,
+//   trash A, Empty trash" the two steps stayed "different" only by the object, and the first
+//   Ctrl+Z said "Action undone" without changing anything.
+const stessaFotoASchermo = (a: any, b: any): boolean => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const campi = Object.keys(a).filter(k => k !== 'originalTags');
+    if (campi.length !== Object.keys(b).filter(k => k !== 'originalTags').length) return false;
+    return campi.every(k => Object.prototype.hasOwnProperty.call(b, k) && (a[k] === b[k]
+        || (k === 'tags' && Array.isArray(a[k]) && Array.isArray(b[k]) && a[k].length === b[k].length
+            && a[k].every((tg: unknown, i: number) => tg === b[k][i]))));
+};
 export const nearestDifferentStep = <T>(history: T[][], index: number, direction: 1 | -1): number => {
     const attuale = history[index] || [];
-    const uguale = (passo: T[]) => passo.length === attuale.length && passo.every((foto, k) => foto === attuale[k]);
+    const uguale = (passo: T[]) => passo.length === attuale.length && passo.every((foto, k) => stessaFotoASchermo(foto, attuale[k]));
     for (let j = index + direction; j >= 0 && j < history.length; j += direction) {
         if (!uguale(history[j])) return j;
     }

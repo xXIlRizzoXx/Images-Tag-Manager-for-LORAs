@@ -73,7 +73,11 @@ dice('premessa: App.tsx ha processImportData', true, importa.length > 0);
 dice('processImportData prende tags e originalTags da tagDiImport', true, /const \{ tags: orderedTags, originalTags \} = tagDiImport\(/.test(importa));
 const fotoNuova = tratto(importa, 'newImages.push({', '});');
 dice('premessa: trovata la foto nuova (newImages.push)', true, fotoNuova.length > 0);
-dice('la foto nuova ha originalTags: [...originalTags]', true, /\boriginalTags: \[\.\.\.originalTags\]/.test(fotoNuova));
+dice('la foto nuova ha originalTags = una copia di originalTags (discoImport)', true,
+    /\bconst discoImport = \[\.\.\.originalTags\];/.test(importa) && /\boriginalTags: discoImport,/.test(fotoNuova));
+// ITALIANO: il segno del .txt non letto e' LO STESSO array di originalTags (vedi txtNonLettoInVigore).
+// ENGLISH: the unread-.txt mark is THE SAME array as originalTags (see txtNonLettoInVigore).
+dice('baseTxtNonLetto e originalTags sono lo stesso array', true, /\{ baseTxtNonLetto: discoImport \}/.test(fotoNuova));
 dice('la foto nuova NON ha originalTags: [...orderedTags]', false, /\boriginalTags: \[\.\.\.orderedTags\]/.test(fotoNuova));
 
 // ITALIANO: 2) l'abbinamento: foto e .txt passano per la stessa regola di cartella, anche alla

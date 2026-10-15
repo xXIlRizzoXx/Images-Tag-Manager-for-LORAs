@@ -89,6 +89,7 @@ const CITAZIONI = [
     ['deleteNoRecycleBin', 'loadFolder'],
     ['zipPhotoUnreadable', 'closeImageTitle'],
     ['undoEmptyTxtNotBack', 'saveChanges'],
+    ['undoEmptyTxtNotBack', 'restore'],
 ];
 
 const rif = 'en';

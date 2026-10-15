@@ -42,7 +42,7 @@ const carica = async (rel) => {
 const S = await carica('src/utils/sidecarTags.ts');
 const B = await carica('src/utils/tagBackup.ts');
 const N = await carica('src/utils/importNotice.ts');
-const { scanDirectoryHandle } = await carica('src/utils/folderScan.ts');
+const { scanDirectoryHandle, fileDiMac } = await carica('src/utils/folderScan.ts');
 const { dice, esito } = creaControlli();
 
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
@@ -96,12 +96,12 @@ console.log('\n--- "Carica cartella": ogni foto ricorda la sua sottocartella ---
 
 console.log('\n--- il ripiego del browser (webkitdirectory) fa lo stesso ---');
 {
-    const fabbrica = new Function('t', 'showNotification', 'calculateImportSummary', 'folderInputRef',
+    const fabbrica = new Function('t', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'fileDiMac',
         (await ritaglia('    const handleFolderUploadFallback = async (e: any) => {')) + '\nreturn handleFolderUploadFallback;');
     let argomenti = null;
     const files = [['dataset/cover.png'], ['dataset/10_face/a.png'], ['dataset/20_body/extra/c.png']]
         .map(([p]) => ({ name: p.split('/').pop(), type: 'image/png', webkitRelativePath: p }));
-    await fabbrica(t, () => { }, (...x) => { argomenti = x; }, { current: { value: '' } })({ target: { files } });
+    await fabbrica(t, () => { }, (...x) => { argomenti = x; }, { current: { value: '' } }, fileDiMac)({ target: { files } });
     const rel = relDa(argomenti);
     dice('"", "10_face", "20_body/extra"', ['', '10_face', '20_body/extra'], files.map(rel));
 }

@@ -63,8 +63,8 @@ const creaApi = (disco) => {
 const salvaNellEditor = async (images, nome, nuovi, { api, trigger = [], handle } = {}) => {
     let stato = images;
     const finestra = api ? { electronAPI: api } : {};
-    const f = new Function('images', 'setImages', 'globalTriggers', 'tagDopoEditor', 'window', 'parseSidecarText', codice + '\nreturn handleTagEditorSaved;')(
-        images, (agg) => { stato = typeof agg === 'function' ? agg(stato) : agg; }, trigger, S.tagDopoEditor, finestra, S.parseSidecarText);
+    const f = new Function('images', 'setImages', 'globalTriggers', 'tagDopoEditor', 'window', 'parseSidecarText', 'txtNonLettoInVigore', codice + '\nreturn handleTagEditorSaved;')(
+        images, (agg) => { stato = typeof agg === 'function' ? agg(stato) : agg; }, trigger, S.tagDopoEditor, finestra, S.parseSidecarText, S.txtNonLettoInVigore);
     await f(nome, nuovi, handle || { name: nome, isSameEntry: async () => false });
     return stato;
 };
@@ -82,6 +82,19 @@ console.log('\n--- a.png caricata con "Carica immagini", a.txt salvato nell\'edi
     const conTrigger = await salvaNellEditor([foto('p1', 'a.png', 'E:\\foto\\a.png', ['ohwx', 'smile', 'hat'], ['smile', 'hat'])], 'a.txt', ['smile', 'hat', 'red dress'], { api, trigger: ['ohwx'] });
     dice('una trigger ancora da salvare resta davanti e fuori dal disco', [['ohwx', 'smile', 'hat', 'red dress'], ['smile', 'hat', 'red dress']],
         [conTrigger[0].tags, conTrigger[0].originalTags]);
+}
+{
+    // ITALIANO: .txt non letto all'import (trigger "ohwx" attiva); l'editor ci scrive le sole trigger,
+    //           cioe' lo stesso contenuto del ricordo dell'import: ora il .txt e' noto, e una trigger
+    //           cambiata dopo si salva come per le altre foto.
+    // ENGLISH: .txt unread at import (trigger "ohwx" active); the editor writes the triggers only into
+    //          it, i.e. the same content as the import's record: the .txt is now known, and a trigger
+    //          changed afterwards is saved as for the other photos.
+    const api = creaApi({ 'E:\\foto\\a.png': 'ohwx,' });
+    const disco = ['ohwx'];
+    const dopo = await salvaNellEditor([{ ...foto('p1', 'a.png', 'E:\\foto\\a.png', ['ohwx'], disco), baseTxtNonLetto: disco }], 'a.txt', ['ohwx'], { api, trigger: ['ohwx'] });
+    dice('.txt non letto, l\'editor scrive le sole trigger: la foto non e\' piu\' "non letta"', [['ohwx'], false, true],
+        [dopo[0].tags, S.txtNonLettoInVigore(dopo[0]), S.fotoDaSalvare({ ...dopo[0], tags: ['sks'] }, ['sks'])]);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

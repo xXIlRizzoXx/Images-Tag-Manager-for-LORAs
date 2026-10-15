@@ -43,8 +43,12 @@ if (inizio < 0 || !fine) {
     process.exit(1);
 }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
-const fabbrica = new Function('t', 'showNotification', 'calculateImportSummary', 'folderInputRef',
+const { fileDiMac } = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/folderScan.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+})).outputFiles[0].text).toString('base64'));
+const fabbricaVera = new Function('t', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'fileDiMac',
     js + '\nreturn handleFolderUploadFallback;');
+const fabbrica = (...a) => fabbricaVera(...a, fileDiMac);
 
 const prova = async (nomi) => {
     const r = { notifiche: [], riepiloghi: 0 };
