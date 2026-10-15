@@ -89,6 +89,16 @@ const ERRORI = {
     sbagliata: () => apiErrore(400, { code: 400, status: 'INVALID_ARGUMENT', message: 'API key not valid. Please pass a valid API key.',
         details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID', domain: 'googleapis.com' }] }),
     rete: () => new Error('fetch failed'),
+    // ITALIANO: Google ha risposto, ma rifiuta il progetto della chiave (sospeso, API spenta) o chiede
+    //           di rallentare / e' sovraccarico. Il numero di progetto contiene "404" di proposito.
+    // ENGLISH: Google answered, but refuses the key's project (suspended, API off) or asks to slow
+    //          down / is overloaded. The project number holds "404" on purpose.
+    sospeso: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED', message: "Permission denied: Consumer 'projects/840412345678' has been suspended.",
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'CONSUMER_SUSPENDED', domain: 'googleapis.com' }] }),
+    apiSpenta: () => apiErrore(403, { code: 403, status: 'PERMISSION_DENIED', message: 'Generative Language API has not been used in project 840412345678 before or it is disabled.',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'SERVICE_DISABLED', domain: 'googleapis.com' }] }),
+    troppe: () => apiErrore(429, { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Resource has been exhausted (e.g. check quota).' }),
+    occupato: () => apiErrore(503, { code: 503, status: 'UNAVAILABLE', message: 'The service is currently unavailable.' }),
 };
 
 const M = (nome) => ({ name: 'models/' + nome, displayName: nome, supportedActions: ['generateContent'] });
@@ -138,6 +148,46 @@ console.log('\n--- Google rifiuta la chiave: il messaggio dice che e\' la chiave
     dice('controllo silenzioso all\'avvio, chiave scaduta: nessun avviso', [], r.notifiche);
     r = await prova({ fissato: true, dilloComunque: false, list: async () => { throw ERRORI.scaduta(); } });
     dice('controllo silenzioso all\'avvio, modello bloccato, chiave scaduta: nessun avviso', [], r.notifiche);
+}
+
+console.log('\n--- Google ha risposto ma non da\' l\'elenco: NON "non raggiungibile" ---');
+{
+    // ITALIANO: un progetto sospeso, l'API spenta, troppe richieste o Google sovraccarico: Google
+    //           ha risposto, quindi "non e' riuscito a parlare con Google" mandava a controllare la
+    //           rete. Vale sia su Automatico sia con il modello bloccato (l'elenco si chiede da li').
+    // ENGLISH: a suspended project, the API turned off, too many requests or Google overloaded:
+    //          Google answered, so "could not reach Google" sent the user to check the network. It
+    //          holds both on Automatic and with the model locked (the list is asked from there).
+    dice('il testo "progetto rifiutato" esiste', 'string', typeof t.aiModelCheckProjectRefused);
+    const progetto = [[t.aiModelCheckProjectRefused, 'error']];
+    const occupato = [[t.aiModelCheckBusy, 'info']];
+    for (const fissato of [false, true]) {
+        const dove = fissato ? 'modello bloccato' : 'Automatico';
+        for (const [nome, errore, atteso] of [
+            ['progetto sospeso (403)', ERRORI.sospeso, progetto],
+            ['API spenta sul progetto (403)', ERRORI.apiSpenta, progetto],
+            ['troppe richieste (429)', ERRORI.troppe, occupato],
+            ['Google sovraccarico (503)', ERRORI.occupato, occupato],
+        ]) {
+            const r = await prova({ fissato, list: async () => { throw errore(); } });
+            dice(`${dove}, ${nome}: il messaggio giusto`, atteso, r.notifiche);
+            dice(`${dove}, ${nome}: il modello non cambia e l'ultimo controllo non si segna`,
+                ['gemini-3.6-flash', fissato, false], [r.stato.aiModel, r.stato.aiModelloFissato, r.controllato]);
+        }
+        const r = await prova({ fissato, dilloComunque: false, list: async () => { throw ERRORI.sospeso(); } });
+        dice(`${dove}, controllo silenzioso all'avvio, progetto sospeso: nessun avviso`, [], r.notifiche);
+    }
+    let r = await prova({ fissato: true, rotto: true, list: async () => { throw ERRORI.sospeso(); } });
+    dice('riparazione (modello bloccato e morto), progetto sospeso: "progetto rifiutato"', progetto, r.notifiche);
+    // ITALIANO: il servizio da solo: l'esito dice il perche'.
+    // ENGLISH: the service alone: the outcome says why.
+    const esiti = [];
+    for (const errore of [ERRORI.sospeso, ERRORI.apiSpenta, ERRORI.troppe, ERRORI.occupato, ERRORI.rete, ERRORI.scaduta]) {
+        globalThis.__GOOGLE__ = { list: async () => { throw errore(); }, generate: async () => ({ text: '["ok"]' }) };
+        esiti.push((await S.aggiornaModelloAutomatico('AIza' + 'x'.repeat(35), 'gemini-3.6-flash')).esito);
+    }
+    dice('aggiornaModelloAutomatico: un esito per ogni motivo',
+        ['progettoRifiutato', 'progettoRifiutato', 'occupato', 'occupato', 'nonRaggiungibile', 'chiaveNonValida'], esiti);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

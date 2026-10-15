@@ -223,8 +223,14 @@ const riff = (...chunks) => { const corpo = B('WEBP', ...chunks); return B('RIFF
 console.log('\n--- altri formati: copia PNG ridisegnata, mai il file originale ---');
 const GIF = B('GIF89a', [1, 0, 1, 0, 0, 0, 0], [0x21, 0xFE, 20], 'comment ', AUTORE, ' ', SERIALE, [0], ';');
 const PNG_RIDISEGNATA = B([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], 'solo-pixel');
+const JPEG_RIDISEGNATA = B([0xFF, 0xD8, 0xFF, 0xDB], 'solo-pixel-jpeg', [0xFF, 0xD9]);
+const MB = 1024 * 1024;
+// ITALIANO: opz.png / opz.jpeg = quanti byte esce la copia in quel formato (assente = piccola);
+//           opz.jpeg = 'no' = il JPEG non si sa fare (esce un PNG, come fa il browser).
+// ENGLISH: opz.png / opz.jpeg = how many bytes the copy in that format is (absent = small);
+//          opz.jpeg = 'no' = JPEG is not supported (a PNG comes out, as the browser does).
 const tela = (opz = {}) => {
-    const stato = { decodifiche: 0, chiuse: 0, tipi: [] };
+    const stato = { decodifiche: 0, chiuse: 0, tipi: [], disegni: [], qualita: [] };
     globalThis.createImageBitmap = async (sorgente) => {
         stato.decodifiche++;
         if (opz.decodificaFallisce) throw new Error('The source image could not be decoded.');
@@ -232,8 +238,20 @@ const tela = (opz = {}) => {
     };
     globalThis.OffscreenCanvas = class {
         constructor(w, h) { this.width = w; this.height = h; }
-        getContext() { return { drawImage: () => {} }; }
-        async convertToBlob(o) { stato.tipi.push(o?.type); return new Blob([opz.grande ? new Uint8Array(21 * 1024 * 1024) : PNG_RIDISEGNATA], { type: 'image/png' }); }
+        getContext() {
+            const ctx = {
+                fillStyle: '#000000',
+                drawImage: () => { stato.disegni.push('immagine'); },
+                fillRect: (x, y, w, h) => { stato.disegni.push(`riempi ${ctx.fillStyle} ${x},${y},${w},${h}`); },
+            };
+            return ctx;
+        }
+        async convertToBlob(o) {
+            stato.tipi.push(o?.type);
+            stato.qualita.push(o?.quality);
+            if (o?.type === 'image/jpeg' && opz.jpeg !== 'no') return new Blob([opz.jpeg ? new Uint8Array(opz.jpeg) : JPEG_RIDISEGNATA], { type: 'image/jpeg' });
+            return new Blob([opz.png ? new Uint8Array(opz.png) : PNG_RIDISEGNATA], { type: 'image/png' });
+        }
     };
     return stato;
 };
@@ -245,6 +263,50 @@ const togliTela = () => { delete globalThis.createImageBitmap; delete globalThis
         `mime ${r.mime}, errore ${r.errore}`);
     dice('GIF: nessun dato nascosto nella richiesta', !!r.dati && contieneSegreto(r.dati).length === 0);
     dice('GIF: l\'immagine decodificata viene chiusa', st.decodifiche === 1 && st.chiuse === 1);
+    dice('GIF piccola: solo la copia PNG, nessun JPEG, nessuno sfondo', st.tipi.join() === 'image/png' && st.disegni.join() === 'immagine',
+        `tipi ${st.tipi.join()}, disegni ${st.disegni.join()}`);
+    togliTela();
+}
+{
+    // ITALIANO: un AVIF o una GIF di pochi MB ma con tanti pixel: la copia PNG (senza perdita)
+    //           supera i 20 MB. Prima la foto veniva rifiutata ("oltre 20 MB" per un file di
+    //           2 MB); ora parte una copia JPEG degli stessi pixel, su fondo bianco.
+    // ENGLISH: an AVIF or a GIF of a few MB but with many pixels: the (lossless) PNG copy is
+    //          over 20 MB. The photo used to be refused ("over 20 MB" for a 2 MB file); now a
+    //          JPEG copy of the same pixels goes, on a white background.
+    const st = tela({ png: 21 * MB });
+    const r = await invia(GIF, 'grande.avif', 'image/avif');
+    dice('copia PNG oltre 20 MB: parte una copia JPEG', !r.errore && r.chiamate === 1 && r.mime === 'image/jpeg' && !!r.dati && r.dati.equals(JPEG_RIDISEGNATA),
+        `mime ${r.mime}, errore ${r.errore}, chiamate ${r.chiamate}`);
+    dice('...prima il PNG, poi il JPEG', st.tipi.join() === 'image/png,image/jpeg', st.tipi.join());
+    dice('...il JPEG ha un fondo bianco sotto l\'immagine (la trasparenza non diventa nera)',
+        st.disegni.join() === 'immagine,riempi #ffffff 0,0,4,3,immagine', st.disegni.join());
+    dice('...con una qualita\' alta', typeof st.qualita[1] === 'number' && st.qualita[1] >= 0.85 && st.qualita[1] <= 1, String(st.qualita[1]));
+    dice('...nessun dato nascosto nella richiesta', !!r.dati && contieneSegreto(r.dati).length === 0);
+    dice('...l\'immagine decodificata viene chiusa', st.decodifiche === 1 && st.chiuse === 1);
+    togliTela();
+}
+{
+    // ITALIANO: un PNG da 15 MB passa il controllo dei 20 MB, ma in base64 sono 20 MB: Google lo
+    //           rifiuterebbe. Anche qui parte il JPEG.
+    // ENGLISH: a 15 MB PNG passes the 20 MB check, but in base64 it is 20 MB: Google would refuse
+    //          it. Here too the JPEG goes.
+    const st = tela({ png: 15 * MB });
+    const r = await invia(GIF, 'media.gif', 'image/gif');
+    dice('copia PNG da 15 MB: parte la copia JPEG', !r.errore && r.mime === 'image/jpeg' && st.tipi.join() === 'image/png,image/jpeg', `mime ${r.mime}, errore ${r.errore}`);
+    togliTela();
+}
+{
+    tela({ png: 15 * MB, jpeg: 'no' });
+    const r = await invia(GIF, 'media.gif', 'image/gif');
+    dice('copia PNG da 15 MB e JPEG non disponibile: parte il PNG come prima', !r.errore && r.chiamate === 1 && r.mime === 'image/png', `mime ${r.mime}, errore ${r.errore}`);
+    togliTela();
+}
+{
+    tela({ png: 21 * MB, jpeg: 'no' });
+    const r = await invia(GIF, 'grande.gif', 'image/gif');
+    dice('copia PNG oltre 20 MB e JPEG non disponibile: errore della foto, e a Google non parte niente',
+        r.errore?.geminiKind === 'photo' && r.chiamate === 0, String(r.errore));
     togliTela();
 }
 {
@@ -258,9 +320,9 @@ const togliTela = () => { delete globalThis.createImageBitmap; delete globalThis
     dice('senza strumenti per ridisegnare: errore, e a Google non parte niente', !!r.errore && r.chiamate === 0);
 }
 {
-    tela({ grande: true });
+    tela({ png: 21 * MB, jpeg: 21 * MB });
     const r = await invia(GIF, 'foto.gif', 'image/gif');
-    dice('copia ridisegnata oltre 20 MB: errore, e a Google non parte niente', !!r.errore && r.chiamate === 0);
+    dice('copia ridisegnata oltre 20 MB anche in JPEG: errore della foto, e a Google non parte niente', r.errore?.geminiKind === 'photo' && r.chiamate === 0, String(r.errore));
     togliTela();
 }
 
@@ -273,6 +335,36 @@ console.log('\n--- i controlli di prima restano ---');
     dice('non e\' un\'immagine: stesso errore di prima', testo.errore?.message === 'Unsupported file type' && testo.chiamate === 0, String(testo.errore));
     const enorme = await invia(new Uint8Array(20 * 1024 * 1024 + 1), 'enorme.jpg', 'image/jpeg');
     dice('oltre 20 MB: stesso errore di prima', enorme.errore?.message === 'Image too large (> 20 MB)' && enorme.chiamate === 0, String(enorme.errore));
+}
+
+// =============================================================================
+console.log('\n--- una foto che non si legge piu\' dal disco: e\' la foto, non la rete ---');
+{
+    // ITALIANO: foto cancellata, spostata, risalvata da un altro programma o su una chiavetta
+    //           staccata: il File dell'importazione non si legge piu' (NotReadableError,
+    //           NotFoundError) e Google non viene mai chiamato. Prima l'errore non aveva il segno
+    //           'photo': un solo scatto diceva "Google non raggiungibile, controlla la connessione",
+    //           e tre di fila fermavano la taggatura in blocco come se mancasse la rete.
+    // ENGLISH: photo deleted, moved, saved again by another program or on an unplugged stick: the
+    //          import's File can no longer be read (NotReadableError, NotFoundError) and Google is
+    //          never called. The error used to lack the 'photo' mark: one photo said "Google could
+    //          not be reached, check your connection", and three in a row stopped bulk tagging as
+    //          if the network were down.
+    for (const nome of ['NotReadableError', 'NotFoundError']) {
+        globalThis.__RICHIESTE__ = [];
+        const foto = new File([B([0xFF, 0xD8, 0xFF, 0xD9])], 'sparita.jpg', { type: 'image/jpeg' });
+        foto.arrayBuffer = () => Promise.reject(new DOMException('The requested file could not be read.', nome));
+        let errore = null;
+        try { await S.getGeminiTags(foto, { apiKey: 'AIza' + 'x'.repeat(35), modelName: 'gemini-3.6-flash', maxTags: 5 }); }
+        catch (e) { errore = e; }
+        const c = errore ? S.classifyGeminiError(errore) : null;
+        dice(`${nome}: errore della foto, e a Google non parte niente`, errore?.geminiKind === 'photo' && globalThis.__RICHIESTE__.length === 0,
+            `geminiKind ${errore?.geminiKind}, errore ${errore}`);
+        // ITALIANO: la stessa regola di handleAITagAll in src/App.tsx per "errore di rete".
+        // ENGLISH: the same rule handleAITagAll in src/App.tsx uses for "network error".
+        const erroreRete = c?.kind === 'unknown' && typeof errore?.status !== 'number' && errore?.geminiKind !== 'photo';
+        dice(`${nome}: non conta come errore di rete nella taggatura in blocco`, !!errore && !erroreRete);
+    }
 }
 
 console.log(`\n${fatti - guai}/${fatti} prove superate`);

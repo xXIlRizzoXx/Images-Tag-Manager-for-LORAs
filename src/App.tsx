@@ -1306,7 +1306,7 @@ export default function App() {
             const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
             if (!aiEnabledRef.current) return;
             tieniElenco(esito.disponibili);
-            if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'occupato') segnaControllo();
+            if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'progettoRifiutato' && esito.esito !== 'occupato') segnaControllo();
 
             // ITALIANO: mentre Google rispondeva (qualche secondo: elenco e fino a tre prove)
             //           l'utente ha scelto a mano un modello preciso, ed e' ancora bloccato: vale
@@ -1371,6 +1371,7 @@ export default function App() {
                 //          all used to say the same one - wrong for two of the three.
                 if (esito.esito === 'nonRaggiungibile') showNotification(t.aiModelCheckFailed, 'error');
                 else if (esito.esito === 'chiaveNonValida') showNotification(t.aiModelCheckKeyInvalid, 'error');
+                else if (esito.esito === 'progettoRifiutato') showNotification(t.aiModelCheckProjectRefused, 'error');
                 else if (esito.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
                 else if (esito.esito === 'nessunoValido') showNotification(t.aiModelNoneWorking, 'error');
                 else showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
@@ -1381,7 +1382,17 @@ export default function App() {
             //           revocata non e' "Google non raggiungibile", come nel giro automatico.
             // ENGLISH: with the model locked the list is asked from here: an expired or revoked
             //          key is not "Google unreachable", as in the automatic round.
-            if (dilloComunque && aiEnabledRef.current) showNotification(classifyGeminiError(err).kind === 'invalid_key' ? t.aiModelCheckKeyInvalid : t.aiModelCheckFailed, 'error');
+            // ITALIANO: ...e nemmeno un progetto rifiutato, troppe richieste o Google sovraccarico:
+            //           stesse frasi del giro automatico. "Non raggiungibile" resta per la rete.
+            // ENGLISH: ...nor is a refused project, too many requests or Google overloaded: the same
+            //          sentences as the automatic round. "Unreachable" stays for the network.
+            if (dilloComunque && aiEnabledRef.current) {
+                const { kind } = classifyGeminiError(err);
+                if (kind === 'invalid_key') showNotification(t.aiModelCheckKeyInvalid, 'error');
+                else if (kind === 'billing_required') showNotification(t.aiModelCheckProjectRefused, 'error');
+                else if (kind === 'rate_limit' || kind === 'busy') showNotification(t.aiModelCheckBusy, 'info');
+                else showNotification(t.aiModelCheckFailed, 'error');
+            }
         } finally {
             controlloModelloRef.current = false;
             setControlloModelloInCorso(false);

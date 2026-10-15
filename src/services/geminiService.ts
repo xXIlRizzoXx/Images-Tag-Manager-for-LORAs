@@ -64,6 +64,17 @@ const fotoNonUsabile = (motivo: string): Error => {
 // ENGLISH: a photo in a format that cannot be cleaned byte by byte (GIF, BMP, AVIF, ICO...) is
 //          redrawn and sent as PNG: the pixels stay, everything else goes. If it cannot be redrawn
 //          (TIFF, SVG, damaged file) nothing is sent: never the original file.
+// ITALIANO: il PNG non perde niente, quindi pesa per i pixel e non per il file: un AVIF o una GIF
+//           di 2 MB con tanti pixel diventava un PNG oltre i 20 MB, e la foto veniva rifiutata
+//           ("oltre 20 MB"). Sopra i 14 MB (in base64 sarebbero quasi 20 MB, il limite della
+//           richiesta di Google) parte invece una copia JPEG degli stessi pixel, anche lei senza
+//           dati nascosti, su fondo bianco: il JPEG non ha la trasparenza, e senza fondo diventa nera.
+// ENGLISH: PNG loses nothing, so its weight follows the pixels and not the file: a 2 MB AVIF or
+//          GIF with many pixels became a PNG over 20 MB, and the photo was refused ("over
+//          20 MB"). Above 14 MB (in base64 nearly 20 MB, Google's request limit) a JPEG copy of the
+//          same pixels goes instead, also without hidden data, on a white background: JPEG has no
+//          transparency, and without a background it turns black.
+const REDRAW_PNG_MAX_BYTES = 14 * 1024 * 1024;
 const redrawAsPng = async (file: File): Promise<Blob> => {
     if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') throw fotoNonUsabile('Unsupported file type');
     let bitmap: ImageBitmap | undefined;
@@ -75,7 +86,18 @@ const redrawAsPng = async (file: File): Promise<Blob> => {
         ctx.drawImage(bitmap, 0, 0);
         const png = await canvas.convertToBlob({ type: 'image/png' });
         if (png.type !== 'image/png') throw new Error('not a png');
-        return png;
+        if (png.size <= REDRAW_PNG_MAX_BYTES) return png;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, bitmap.width, bitmap.height);
+        ctx.drawImage(bitmap, 0, 0);
+        const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+        // ITALIANO: un browser che non sa fare il JPEG restituisce un PNG, e un JPEG piu' pesante
+        //           del PNG non serve: in quei casi si tiene il primo PNG (il controllo dei 20 MB
+        //           dopo decide se puo' partire).
+        // ENGLISH: a browser that cannot make JPEG returns a PNG, and a JPEG heavier than the PNG
+        //          is no use: in those cases the first PNG is kept (the 20 MB check afterwards
+        //          decides whether it can go).
+        return jpeg.type === 'image/jpeg' && jpeg.size < png.size ? jpeg : png;
     } catch {
         throw fotoNonUsabile('Unsupported file type');
     } finally {
@@ -93,7 +115,16 @@ const imageForGemini = async (file: File): Promise<{ data: string; mimeType: str
     if (!file || file.size === 0) throw fotoNonUsabile('Invalid or empty file');
     if (file.size > MAX_FILE_SIZE_BYTES) throw fotoNonUsabile('Image too large (> 20 MB)');
     if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw fotoNonUsabile('Unsupported file type');
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    // ITALIANO: una foto cancellata, spostata, risalvata da un altro programma o su una chiavetta
+    //           staccata non si legge piu' (NotReadableError, NotFoundError): e' un problema della
+    //           foto, Google non e' stato nemmeno chiamato. Senza il segno l'app diceva "Google non
+    //           raggiungibile", e tre di fila fermavano la taggatura in blocco come rete assente.
+    // ENGLISH: a photo deleted, moved, saved again by another program or on an unplugged stick can
+    //          no longer be read (NotReadableError, NotFoundError): a problem of the photo, Google
+    //          was not even called. Without the mark the app said "Google could not be reached",
+    //          and three in a row stopped bulk tagging as if the network were down.
+    let bytes: Uint8Array;
+    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch { throw fotoNonUsabile('File can no longer be read'); }
     // ITALIANO: una foto rovinata che non si riesce a pulire e' un problema della foto, non della rete.
     // ENGLISH: a damaged photo that cannot be cleaned is a problem of the photo, not of the network.
     let pulita: ReturnType<typeof stripImageMetadata>;
@@ -620,7 +651,11 @@ export type EsitoModello = {
     //           non e' "non raggiungibile", e l'utente deve sapere che il problema e' la chiave.
     // ENGLISH: 'chiaveNonValida' = Google refused the key (expired, revoked, wrong): it is not
     //          "unreachable", and the user must know the key is the problem.
-    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRaggiungibile' | 'chiaveNonValida' | 'occupato' | 'nessunoValido';
+    // ITALIANO: 'progettoRifiutato' = Google rifiuta il progetto Google Cloud della chiave (sospeso,
+    //           API Gemini spenta): anche qui Google ha risposto, e il problema non e' la rete.
+    // ENGLISH: 'progettoRifiutato' = Google refuses the key's Google Cloud project (suspended, Gemini
+    //          API turned off): here too Google answered, and the network is not the problem.
+    esito: 'invariato' | 'aggiornato' | 'riparato' | 'nonRaggiungibile' | 'chiaveNonValida' | 'progettoRifiutato' | 'occupato' | 'nessunoValido';
     disponibili: ModelloTrovato[];
 };
 
@@ -643,7 +678,14 @@ export const aggiornaModelloAutomatico = async (
         candidati = await elencaModelliRemoti(apiKey);
     } catch (err) {
         console.warn('[AI] Elenco dei modelli non ottenuto:', err);
-        if (classifyGeminiError(err).kind === 'invalid_key') return fermo('chiaveNonValida');
+        // ITALIANO: Google ha risposto (progetto sospeso o API spenta, troppe richieste, sovraccarico):
+        //           non e' "non raggiungibile". Quella frase resta per la rete che non risponde.
+        // ENGLISH: Google answered (project suspended or API off, too many requests, overloaded): it
+        //          is not "unreachable". That sentence stays for a network that does not answer.
+        const { kind } = classifyGeminiError(err);
+        if (kind === 'invalid_key') return fermo('chiaveNonValida');
+        if (kind === 'billing_required') return fermo('progettoRifiutato');
+        if (kind === 'rate_limit' || kind === 'busy') return fermo('occupato');
         return fermo('nonRaggiungibile');
     }
     if (candidati.length === 0) return fermo('nonRaggiungibile');
