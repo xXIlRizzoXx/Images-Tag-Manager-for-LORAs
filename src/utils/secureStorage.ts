@@ -3,13 +3,15 @@
 **                                                                            **
 **  ITALIANO: STORAGE SICURO PER SEGRETI                                      **
 **  Salva valori sensibili (es. API key Gemini) nello storage cifrato di      **
-**  Electron (safeStorage, basato sul keychain del sistema operativo).        **
+**  Electron (safeStorage: su Windows la protezione dati DPAPI dell'account,  **
+**  in userData/secrets.json).                                                **
 **  In browser/dev la chiave resta solo in memoria: mai scritta in chiaro.    **
 **                                                                            **
 **  ENGLISH: SECURE STORAGE FOR SECRETS                                       **
 **  Stores sensitive values (e.g. Gemini API key) in Electron's encrypted     **
-**  storage (safeStorage, backed by the OS keychain). In browser/dev the      **
-**  key stays in memory only: never written in clear text.                    **
+**  storage (safeStorage: on Windows the account's DPAPI data protection, in  **
+**  userData/secrets.json). In browser/dev the key stays in memory only:      **
+**  never written in clear text.                                              **
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/

@@ -33,7 +33,14 @@ const ingressi = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i 
 //   o maiuscole diverse: e' cosi' che si evitano i doppioni veri.
 // ENGLISH: two tags are "the same tag" even when spelled with underscores, extra spaces or
 //   different case: that is what actually prevents duplicates.
-const chiave = t => String(t).toLowerCase().replace(/[_\s]+/g, ' ').replace(/\s*\(.*?\)\s*/g, ' ').trim();
+// ITALIANO: un tag fatto solo di parentesi ('(o)_(o)') senza di loro resterebbe vuoto, e il
+//   rapporto lo scarterebbe: in quel caso la chiave tiene le parentesi.
+// ENGLISH: a tag made only of parentheses ('(o)_(o)') would be empty without them, and the report
+//   would drop it: in that case the key keeps the parentheses.
+const chiave = t => {
+    const base = String(t).toLowerCase().replace(/[_\s]+/g, ' ').trim();
+    return base.replace(/\s*\(.*?\)\s*/g, ' ').trim() || base;
+};
 
 // ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con
 //   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (a differenza di chiave),

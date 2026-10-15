@@ -38,7 +38,9 @@ const costanti = fs.readFileSync(path.join(radice, 'src/constants.ts'), 'utf8');
 
 // ITALIANO: l'effetto d'avvio che controlla i modelli da solo, senza guardare l'interruttore.
 // ENGLISH: the startup effect that checks the models on its own, without looking at the switch.
-const effetto = app.match(/useEffect\(\(\) => \{\s*if \(!aiEnabled \|\| !geminiApiKey\) return;[\s\S]{0,300}?\}, \[aiEnabled, geminiApiKey\]\);/);
+// ITALIANO: si cerca fino alla riga delle dipendenze, senza limite di lunghezza (i commenti la allungano).
+// ENGLISH: searched up to the dependency line, with no length limit (comments make it longer).
+const effetto = app.match(/useEffect\(\(\) => \{\s*if \(!aiEnabled \|\| !geminiApiKey\) return;[\s\S]*?\}, \[aiEnabled, geminiApiKey\]\);/);
 const controlloDaSolo = !!effetto && /controllaModello\(/.test(effetto[0]) && !/updateCheck/.test(effetto[0]);
 console.log(controlloDaSolo
     ? 'Il programma controlla i modelli di Google da solo all\'avvio: la frase deve dirlo.'
@@ -80,6 +82,13 @@ console.log(aggiornamentiDaSoli
     : 'Nessun controllo automatico degli aggiornamenti trovato.');
 
 dice('la frase c\'e\' in tutte e nove le lingue', 9, frasi.size);
+// ITALIANO: senza questa premessa, un effetto riscritto (o un commento che lo allunga) spegneva
+//           in silenzio tutti i controlli per lingua e la prova restava verde con 1 controllo.
+//           Se un giorno il controllo automatico dei modelli sparisce davvero, si toglie questa riga.
+// ENGLISH: without this premise, a rewritten effect (or a comment that makes it longer) silently
+//          switched off every per-language check and the test stayed green with 1 check. If one
+//          day the automatic model check really goes away, remove this line.
+dice('premessa: trovato l\'effetto d\'avvio che controlla i modelli da solo', true, controlloDaSolo);
 if (controlloDaSolo) {
     for (const [codice, frase] of frasi) {
         dice(`[${codice}] la frase nomina Google`, true, frase.includes('Google'));

@@ -84,18 +84,27 @@ try {
     //           nell'inserimento (anche di un piano scritto a mano); gli altri no.
     // ENGLISH: tags whose underscore is part of the name keep it, in the plan and in the insertion
     //          (also of a hand-written plan); the others do not.
-    fs.writeFileSync(path.join(prova, 'pony.txt'), 'score_9, Score_8_Up, source_anime, rating_safe, o_o, X_X, 0_0, Green_Field, scored_high\n');
-    lancia('pony.txt', '--out', 'piano-pony.json');
+    // ITALIANO: '(o)_(o)' e' fatto solo di gruppi tra parentesi: la chiave che ignora le parentesi
+    //           lo riduceva a '' e il rapporto lo scartava senza dirlo.
+    // ENGLISH: '(o)_(o)' is made only of parenthesised groups: the key that ignores parentheses
+    //          reduced it to '' and the report dropped it without a word.
+    fs.writeFileSync(path.join(prova, 'pony.txt'), 'score_9, Score_8_Up, source_anime, rating_safe, o_o, X_X, 0_0, (o)_(o), <o>_<o>, Green_Field, scored_high\n');
+    const rapportoPony = lancia('pony.txt', '--out', 'piano-pony.json');
     const pianoPony = JSON.parse(fs.readFileSync(path.join(prova, 'piano-pony.json'), 'utf8'));
-    dice('il piano tiene i trattini bassi di emoticon e tag di Pony, toglie gli altri', ['0_0', 'green field', 'o_o', 'rating_safe', 'score_8_up', 'score_9', 'scored high', 'source_anime', 'x_x'], Object.keys(pianoPony).sort());
+    dice('il piano tiene i trattini bassi di emoticon e tag di Pony, toglie gli altri', ['(o)_(o)', '0_0', '<o>_<o>', 'green field', 'o_o', 'rating_safe', 'score_8_up', 'score_9', 'scored high', 'source_anime', 'x_x'], Object.keys(pianoPony).sort());
+    dice('il rapporto conta 11 tag distinti (anche (o)_(o))', true, /tag distinti nei file : 11\b/.test(rapportoPony));
     fs.writeFileSync(path.join(prova, 'mano.json'), JSON.stringify({
         'Score_9': { categoria: 'framing', it: 'x' },
         'O_O': { categoria: 'framing', it: 'x' },
         'Source_Anime': { categoria: 'framing', it: 'x' },
         'Green_Field': { categoria: 'framing', it: 'x' },
+        '(o)_(o)': { categoria: 'framing', it: 'x' },
+        '(x)': { categoria: 'framing', it: 'x' },
     }));
     lancia('--apply', 'mano.json');
     const testoMano = fs.readFileSync(path.join(prova, 'src', 'constants', 'tagSuggestions.ts'), 'utf8');
+    dice('un piano a mano con (o)_(o) lo inserisce col trattino basso', true, testoMano.includes("{ tag: '(o)_(o)', translations: { it: 'x', en: '(o)_(o)' } },"));
+    dice('due tag fatti solo di parentesi non si scambiano per doppioni: (x) inserito', true, testoMano.includes("{ tag: '(x)', translations: { it: 'x', en: '(x)' } },"));
     dice('un piano a mano con score_9 inserisce { tag: \'score_9\', ... en: \'score_9\' }', true, testoMano.includes("{ tag: 'score_9', translations: { it: 'x', en: 'score_9' } },"));
     dice('un piano a mano con O_O inserisce o_o', true, testoMano.includes("{ tag: 'o_o', translations: { it: 'x', en: 'o_o' } },"));
     dice('un piano a mano con Source_Anime inserisce source_anime', true, testoMano.includes("{ tag: 'source_anime', translations: { it: 'x', en: 'source_anime' } },"));
@@ -108,7 +117,7 @@ try {
         return tagScritti().length;
     })());
 
-    const TENUTI = new Set(['^_^', 'score_9', 'o_o', 'source_anime']);
+    const TENUTI = new Set(['^_^', 'score_9', 'o_o', 'source_anime', '(o)_(o)']);
     const sbagliati = tagScritti().filter((t) => !TENUTI.has(t) && (/[A-Z_]/.test(t) || / {2}/.test(t)));
     dice('nessun altro tag del dizionario ha maiuscole, trattini bassi o doppi spazi', [], sbagliati);
 

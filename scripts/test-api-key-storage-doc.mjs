@@ -6,6 +6,7 @@
    in Gestione credenziali di Windows non la trova.
    La regola: finche' il codice scrive la chiave cifrata in un file della cartella userData, il
    README non deve parlare di keychain e deve nominare la protezione dati di Windows e %APPDATA%.
+   Lo stesso vale per i commenti di main.cjs, .env.example e src/utils/secureStorage.ts.
    Si legge il codice VERO, non una copia.
    Uso:  node scripts/test-api-key-storage-doc.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -17,6 +18,7 @@
    Windows Credential Manager finds nothing.
    The rule: while the code writes the encrypted key to a file in the userData folder, the README
    must not talk about a keychain and must name Windows data protection and %APPDATA%.
+   The same holds for the comments of main.cjs, .env.example and src/utils/secureStorage.ts.
    The REAL code is read, not a copy.
    Usage:  node scripts/test-api-key-storage-doc.mjs      (exits with code 1 if anything is off) */
 
@@ -51,6 +53,14 @@ if (inUnFile) {
     dice('il paragrafo dice che non e\' mai in chiaro', true, /never stored in plain text/.test(paragrafo));
     dice('la scheda illustrata non parla di keychain', false, /keychain/i.test(schede));
     dice('il commento di main.cjs non parla di keychain', false, /keychain/i.test(main));
+    // ITALIANO: anche .env.example (pubblico) e l'intestazione di secureStorage.ts dicevano "OS keychain".
+    // ENGLISH: .env.example (public) and the secureStorage.ts header also said "OS keychain".
+    const env = leggi('.env.example');
+    const archivio = leggi('src/utils/secureStorage.ts');
+    dice('.env.example non parla di keychain', false, /keychain/i.test(env));
+    dice('.env.example nomina safeStorage e secrets.json', true, env.includes('safeStorage') && env.includes('secrets.json'));
+    dice('l\'intestazione di secureStorage.ts non parla di keychain', false, /keychain/i.test(archivio));
+    dice('l\'intestazione di secureStorage.ts nomina DPAPI', true, /DPAPI/.test(archivio));
 }
 
 process.exit(esito());

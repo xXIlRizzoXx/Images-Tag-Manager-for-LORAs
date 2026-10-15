@@ -5,8 +5,8 @@
    partiva senza electronAPI (niente Cestino, niente .txt dal processo principale, niente chiave).
    Qui si carica il preload VERO con un 'electron' finto, si chiama ogni metodo esposto e si
    pretende che: il caricamento non dia errori; il nome sia electronAPI; ogni canale chiamato sia
-   uno di quelli che main.cjs registra davvero (caricato con main-harness) e viceversa; i metodi
-   restituiscano la risposta del canale; le chiavi esposte siano quelle dichiarate in
+   uno di quelli che main.cjs registra davvero (caricato con main-harness) e viceversa; ogni
+   metodo usi il SUO canale e passi i suoi argomenti (tabella ATTESI); i metodi restituiscano la risposta del canale; le chiavi esposte siano quelle dichiarate in
    src/electron.d.ts; ipcRenderer non passi intero alla pagina. Niente finestre, niente rete.
    Uso:  node scripts/test-preload-bridge.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -17,7 +17,8 @@
    Recycle Bin, no .txt through the main process, no key). Here the REAL preload is loaded with a
    fake 'electron', every exposed method is called, and the test requires that: loading throws
    nothing; the name is electronAPI; every channel called is one main.cjs really registers
-   (loaded through main-harness) and vice versa; the methods return the channel's answer; the
+   (loaded through main-harness) and vice versa; every method uses ITS channel and forwards its
+   arguments (table ATTESI); the methods return the channel's answer; the
    exposed keys are the ones declared in src/electron.d.ts; ipcRenderer is not handed to the page
    whole. No window, no network.
    Usage:  node scripts/test-preload-bridge.mjs      (exits with code 1 if anything is off) */
@@ -32,13 +33,16 @@ const require = createRequire(import.meta.url);
 const radice = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { dice, esito } = creaControlli();
 
-// ITALIANO: l'electron finto del preload: annota cosa viene esposto e quali canali vengono chiamati.
-// ENGLISH: the preload's fake electron: records what gets exposed and which channels get called.
+// ITALIANO: l'electron finto del preload: annota cosa viene esposto, quali canali vengono chiamati
+//           e con quali argomenti.
+// ENGLISH: the preload's fake electron: records what gets exposed, which channels get called
+//          and with which arguments.
 const esposti = [];
 const canaliChiamati = [];
+const argomentiChiamati = [];
 const risposta = (canale) => ({ rispostaDi: canale });
 const ipcRenderer = {
-    invoke: (canale) => { canaliChiamati.push(canale); return risposta(canale); },
+    invoke: (canale, ...argomenti) => { canaliChiamati.push(canale); argomentiChiamati.push(argomenti); return risposta(canale); },
     send: () => { throw new Error('test-preload-bridge: ipcRenderer.send is not expected'); },
     on: () => { throw new Error('test-preload-bridge: ipcRenderer.on is not expected'); },
 };
@@ -84,7 +88,7 @@ for (const { chiave, fn } of metodi) {
     const prima = canaliChiamati.length;
     let avuto;
     try { avuto = fn('a', 'b'); } catch (e) { avuto = { errore: String(e && e.message) }; }
-    esitoDi.set(chiave, { canali: canaliChiamati.slice(prima), avuto });
+    esitoDi.set(chiave, { canali: canaliChiamati.slice(prima), argomenti: argomentiChiamati.slice(prima), avuto });
 }
 
 // ITALIANO: i canali che main.cjs registra davvero (main.cjs vero, electron finto).
@@ -105,6 +109,40 @@ for (const [chiave, { canali, avuto }] of esitoDi) {
         continue;
     }
     dice(`${chiave} usa un solo canale e ne restituisce la risposta`, true, canali.length === 1 && JSON.stringify(avuto) === JSON.stringify(risposta(canali[0])));
+}
+
+// ITALIANO: il confronto fra insiemi di canali qui sopra non vede due metodi coi canali scambiati
+//           (Svuota cestino che chiama il ripristino) ne' un argomento perso (Salva che manda
+//           undefined). Per questo ogni metodo ha il SUO canale e gli argomenti che deve passare.
+//           I metodi sono chiamati con ('a', 'b'): String('a') resta 'a'. Un metodo nuovo va
+//           aggiunto a questa tabella, altrimenti la prova diventa rossa (voluto).
+// ENGLISH: the channel-set comparison above cannot see two methods with swapped channels (Empty
+//          Trash calling the restore) nor a dropped argument (Save sending undefined). So every
+//          method has ITS channel and the arguments it must forward. Methods are called with
+//          ('a', 'b'): String('a') stays 'a'. A new method must be added to this table, otherwise
+//          the test turns red (on purpose).
+const ATTESI = {
+    getAppVersion: ['app:get-version', []],
+    persistLang: ['app:persist-lang', ['a']],
+    'secureStorage.get': ['secure-storage:get', ['a']],
+    'secureStorage.set': ['secure-storage:set', ['a', 'b']],
+    'secureStorage.delete': ['secure-storage:delete', ['a']],
+    readSidecarTags: ['images:read-sidecar-tags', ['a']],
+    writeSidecarTags: ['images:write-sidecar-tags', ['a']],
+    trashFiles: ['shell:trash-files', ['a']],
+    restoreTrashed: ['shell:restore-trashed', ['a']],
+    beginFolderPick: ['folder:begin-pick', []],
+    takePickedFolderPath: ['folder:take-picked-dir', ['a']],
+    openExternal: ['shell:open-external', ['a']],
+    checkForUpdate: ['updates:check', []],
+};
+dice('la tabella dei canali copre esattamente i metodi che usano un canale',
+    Object.keys(ATTESI).sort(), [...esitoDi.keys()].filter((k) => k !== 'getPathForFile').sort());
+for (const [chiave, { canali, argomenti }] of esitoDi) {
+    if (!ATTESI[chiave]) continue;
+    const [canale, argomentiAttesi] = ATTESI[chiave];
+    dice(`${chiave} usa il canale ${canale} e passa ${JSON.stringify(argomentiAttesi)}`,
+        [[canale], [argomentiAttesi]], [canali, argomenti]);
 }
 
 // ITALIANO: le chiavi esposte sono esattamente quelle dichiarate in src/electron.d.ts.
