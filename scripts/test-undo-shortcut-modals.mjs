@@ -58,10 +58,13 @@ const chiuse = () => ({
     selectedImageId: null, isTrashOpen: false, isGlobalTagManagerOpen: false, isTagSuggestionsOpen: false,
 });
 const NOMI = Object.keys(chiuse());
-const premi = (stato, { fuoco = 'BODY', maiuscolo = false } = {}) => {
+const premi = (stato, { fuoco = 'BODY', maiuscolo = false, tipo, modificabile } = {}) => {
     const chiamate = [];
+    const attivo = { tagName: fuoco };
+    if (tipo !== undefined) attivo.type = tipo;
+    if (modificabile !== undefined) attivo.isContentEditable = modificabile;
     const f = new Function('document', 'handleUndo', 'handleRedo', ...NOMI, ...REGOLE, js + '\nreturn handleKeyDown;')(
-        { activeElement: { tagName: fuoco } }, () => chiamate.push('annulla'), () => chiamate.push('ripeti'), ...NOMI.map(n => stato[n]),
+        { activeElement: attivo }, () => chiamate.push('annulla'), () => chiamate.push('ripeti'), ...NOMI.map(n => stato[n]),
         ...REGOLE.map(n => R[n]));
     f({ ctrlKey: true, shiftKey: maiuscolo, key: maiuscolo ? 'Z' : 'z', code: 'KeyZ', preventDefault() { } });
     return chiamate;
@@ -89,5 +92,22 @@ dice('visualizzatore aperto: Ctrl+Z annulla la modifica dei tag della foto', ['a
 dice('cestino aperto: Ctrl+Z annulla', ['annulla'], premi(con({ isTrashOpen: true })));
 dice('gestione dei tag del progetto aperta: Ctrl+Z riporta un tag tolto da tutte le foto', ['annulla'], premi(con({ isGlobalTagManagerOpen: true })));
 dice('mentre si scrive in una casella, Ctrl+Z resta della casella', [], premi(chiuse(), { fuoco: 'INPUT' }));
+for (const tipo of ['text', 'search', 'number', 'password', 'email', 'url', '']) {
+    dice(`casella di tipo "${tipo}": Ctrl+Z e Ctrl+Shift+Z restano della casella`, [[], []],
+        [premi(chiuse(), { fuoco: 'INPUT', tipo }), premi(chiuse(), { fuoco: 'INPUT', tipo, maiuscolo: true })]);
+}
+dice('area di testo: Ctrl+Z resta dell\'area', [], premi(chiuse(), { fuoco: 'TEXTAREA' }));
+dice('elemento modificabile (contenteditable): Ctrl+Z resta suo', [], premi(chiuse(), { fuoco: 'DIV', modificabile: true }));
+
+// ITALIANO: dopo aver trascinato il cursore dello zoom (galleria o cestino) il fuoco resta su un
+//           <input type="range">, che non ha testo da annullare: Ctrl+Z non faceva niente, senza dire perche'.
+// ENGLISH: after dragging the zoom slider (gallery or trash) the focus stays on an <input type="range">,
+//          which has no text to undo: Ctrl+Z did nothing, without saying why.
+console.log('\n--- fuoco su un controllo senza testo (cursore dello zoom, casella di spunta) ---');
+for (const tipo of ['range', 'checkbox', 'radio', 'button', 'color', 'file']) {
+    dice(`input di tipo "${tipo}": Ctrl+Z annulla, Ctrl+Shift+Z ripete`, [['annulla'], ['ripeti']],
+        [premi(chiuse(), { fuoco: 'INPUT', tipo }), premi(chiuse(), { fuoco: 'INPUT', tipo, maiuscolo: true })]);
+}
+dice('cursore dello zoom con una finestra aperta sopra: niente, come prima', [], premi(con({ isTagEditorOpen: true }), { fuoco: 'INPUT', tipo: 'range' }));
 
 process.exit(esito());

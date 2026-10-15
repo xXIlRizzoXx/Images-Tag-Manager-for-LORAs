@@ -115,7 +115,7 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
     'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
     'setSelectedForBulk', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef', 'uniqueTagsIgnoringCase',
-    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore'];
+    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione',
     ...(visualizzatore ? ['effettoVisualizzatore'] : [])].join(', ') + ' };');
@@ -190,7 +190,7 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
-        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore));
+        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' }));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();

@@ -106,6 +106,21 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
     );
 };
 
+// ITALIANO: quanto resta un avviso. 4 secondi bastano per "Tag copiati", non per un avviso di 59
+//           parole che dice cosa fare (foto su chiavetta che non escono dal cestino): il tempo cresce
+//           con il testo (60 ms a carattere, 150 per gli ideogrammi cinesi e giapponesi), un errore
+//           resta almeno 8 secondi, e nessuno oltre 30 (la X chiude subito).
+// ENGLISH: how long a notice stays. 4 seconds are enough for "Tags copied", not for a 59-word notice
+//          that says what to do (photos on a USB stick that cannot leave the trash): the time grows
+//          with the text (60 ms per character, 150 for Chinese and Japanese ideographs), an error
+//          stays at least 8 seconds, and none over 30 (the X closes at once).
+const durataAvviso = (message: any, type: any): number => {
+    const testo = String(message ?? '');
+    const ideogrammi = (testo.match(/[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/g) || []).length;
+    const lettura = (testo.length - ideogrammi) * 60 + ideogrammi * 150;
+    return Math.min(30000, Math.max(type === 'error' ? 8000 : 4000, lettura));
+};
+
 // ITALIANO: Messaggio a comparsa (notifica) in basso a destra
 // ENGLISH: Pop-up message (notification) at the bottom right
 export const Toast = ({ message, type, onClose, id }: any) => {
@@ -121,7 +136,9 @@ export const Toast = ({ message, type, onClose, id }: any) => {
     //          the message never went away. The close function used is always the latest one.
     const chiudiRef = useRef(onClose);
     useEffect(() => { chiudiRef.current = onClose; });
-    useEffect(() => { const timer = setTimeout(() => chiudiRef.current(), 4000); return () => clearTimeout(timer); }, [message, type, id]);
+    // ITALIANO: la durata dipende da testo e tipo (vedi durataAvviso), con le stesse dipendenze.
+    // ENGLISH: the duration depends on text and type (see durataAvviso), with the same dependencies.
+    useEffect(() => { const timer = setTimeout(() => chiudiRef.current(), durataAvviso(message, type)); return () => clearTimeout(timer); }, [message, type, id]);
     const bgColor = type === 'error' ? 'bg-red-600' : 'bg-emerald-500';
     const infoColor = type === 'info' ? 'bg-blue-600' : bgColor;
     return (

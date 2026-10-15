@@ -117,6 +117,23 @@ console.log('\n--- X della finestra mentre un\'esportazione scrive ---');
     b.chiudi();
     await attendi();
     dice('con modifiche: la prima X non apre la finestra a tre scelte', false, b.finestra.isOpen);
+    // ITALIANO: durante "Salva modifiche" ci sono sempre modifiche (le foto risultano salvate solo alla
+    //           fine): la seconda X apriva la finestra a tre scelte, e il suo "Salva e chiudi" diceva
+    //           di riprovare dopo. L'avviso promette di chiudere: le modifiche sono gia' nel backup.
+    // ENGLISH: during "Save changes" there are always edits (the photos count as saved only at the
+    //          end): the second X opened the three-choice dialog, whose "Save and close" said to try
+    //          again later. The notice promises to close: the edits are already in the backup.
+    dice('con modifiche: una seconda X chiude comunque, come dice l\'avviso', false, b.chiudi());
+    await attendi();
+    dice('...senza aprire la finestra a tre scelte, e il backup anti-crash ha le modifiche', [false, true],
+        [b.finestra.isOpen, String(b.archivio.get('tagBackup') || '').includes('nuovo')]);
+    const c = app({ immagini: [foto('a.png', ['x', 'nuovo'], ['x'])], scrittura: true });
+    c.refs.tagEditorDirtyRef.current = true;
+    c.chiudi();
+    await attendi();
+    dice('bozza dell\'editor non salvata: la seconda X si ferma per la bozza (non va persa)', true, c.chiudi());
+    await attendi();
+    dice('...con l\'avviso dell\'editor', testo('tagEditorUnsavedOnWindowClose'), (c.notifiche[1] || [])[0]);
 }
 
 console.log('\n--- "Salva e chiudi" mentre un\'esportazione scrive ---');

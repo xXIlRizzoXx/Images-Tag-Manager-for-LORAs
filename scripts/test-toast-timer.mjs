@@ -211,8 +211,35 @@ dice('lo STESSO messaggio di nuovo dopo 3 s (copia premuto due volte): sparisce 
 dice('e cosi\' anche mentre l\'utente scrive: sparisce a 7 s', 7000,
     await prova([[0, copiati], [3000, copiati], ...ogni(1000, 12000, b => b.digita())]));
 
+// ITALIANO: gli avvisi lunghi che dicono cosa fare (es. foto su chiavetta USB che non escono dal
+//           cestino: 59 parole in inglese, di piu' in altre lingue) sparivano dopo 4 secondi come
+//           "Tag copiati", senza poterli rileggere. Ora il tempo cresce con la lunghezza del testo e
+//           un errore resta almeno 8 secondi; c'e' sempre un tetto, e la X chiude subito.
+// ENGLISH: long notices that say what to do (e.g. photos on a USB stick that cannot leave the trash:
+//          59 words in English, more in other languages) went away after 4 seconds like "Tags
+//          copied", with no way to read them again. Now the time grows with the length of the text
+//          and an error stays at least 8 seconds; there is always a cap, and the X closes at once.
+const lingue = (await (async () => {
+    const u = await esbuild.build({ entryPoints: [path.join(radice, 'src/constants.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' });
+    return import('data:text/javascript;base64,' + Buffer.from(u.outputFiles[0].text).toString('base64'));
+})()).translations;
+console.log('\n--- avvisi lunghi e errori ---');
+for (const l of ['en', 'it', 'zh', 'ru']) {
+    const lungo = lingue[l].deletePartial.replace('{done}', '0').replace('{failed}', '3') + ' ' + lingue[l].deleteNoRecycleBin;
+    const via = await prova([[0, b => b.notifica(lungo, 'error')]], 40000);
+    dice(`${l}: l'errore delle foto su chiavetta (${lungo.length} caratteri) c'e' ancora a 4 s e a 12 s, sparisce entro 30 s`,
+        [true, true], [via !== null && via > 12000, via !== null && via <= 30000]);
+}
+{
+    const via = await prova([[0, b => b.notifica(lingue.en.zipPhotoUnreadable.replace('{names}', 'a.png'), 'info')]], 40000);
+    dice('un avviso informativo lungo (foto illeggibile nell\'archivio) resta piu\' di 4 s', true, via !== null && via > 8000);
+    const breve = await prova([[0, b => b.notifica('AI Error: x', 'error')]]);
+    dice('un errore breve resta almeno 8 s', true, breve !== null && breve >= 8000);
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 dice('senza altro in corso: sparisce a 4 s', 4000, await prova([[0, copiati]]));
+dice('un avviso informativo breve: sparisce a 4 s', 4000, await prova([[0, b => b.notifica('Action undone', 'info')]]));
 const nuove = app.match(/setToast\(\{ show: true[^\n]*\}\)/g) || [];
 dice('ogni notifica nuova in App.tsx porta il suo id (almeno 3 punti: showNotification, Ctrl+Z, Ctrl+Shift+Z)', [true, true],
     [nuove.length >= 3, nuove.every(n => /\bid: /.test(n))]);

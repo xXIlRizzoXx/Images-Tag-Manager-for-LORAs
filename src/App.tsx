@@ -38,7 +38,7 @@ import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
-import { isLetterShortcut } from './utils/shortcuts';
+import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
 import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, addPhotosToHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
@@ -874,6 +874,15 @@ export default function App() {
                 setTimeout(() => { setIsTagEditorOpen(true); showNotification(t.tagEditorUnsavedOnWindowClose, 'info'); }, 0);
                 return;
             }
+            // ITALIANO: seconda X durante una scrittura o un ripristino: si chiude, come promettono i due
+            //           avvisi. Durante "Salva modifiche" le foto risultano salvate solo alla fine, quindi
+            //           qui c'erano sempre modifiche: si apriva la finestra a tre scelte e il suo "Salva e
+            //           chiudi" diceva di riprovare dopo. Le modifiche sono gia' nel backup (sopra).
+            // ENGLISH: second X during a write or a restore: it closes, as both notices promise. During
+            //          "Save changes" the photos count as saved only at the end, so there were always
+            //          edits here: the three-choice dialog opened and its "Save and close" said to try
+            //          again later. The edits are already in the backup (above).
+            if (isSavingRef.current || ripristinoInCorsoRef.current) return;
             if (!modificheNonSalvate(lista, globalTriggersRef.current)) return;
             e.preventDefault();
             // ITALIANO: come chiede la guida di Electron: returnValue esplicito, non solo preventDefault.
@@ -949,7 +958,11 @@ export default function App() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+            // ITALIANO: solo i campi dove si scrive testo tengono Ctrl+Z per se' (vedi isTextEditingElement):
+            //           il cursore dello zoom no, e dopo averlo trascinato Ctrl+Z restava muto.
+            // ENGLISH: only fields where text is typed keep Ctrl+Z for themselves (see isTextEditingElement):
+            //          the zoom slider does not, and after dragging it Ctrl+Z stayed silent.
+            if (isTextEditingElement(document.activeElement as any)) {
                 return;
             }
             // ITALIANO: con una finestra aperta SOPRA il progetto, Ctrl+Z non lo tocca: nell'editor
@@ -3390,7 +3403,14 @@ export default function App() {
     // ENGLISH: Returns TRUE when the save succeeded, FALSE when it failed or was aborted.
     //          Needed by "Save and close": if saving fails the project must NOT be closed,
     //          otherwise the tags would be lost.
-    // ITALIANO: `fraseNonScritte` = la frase sulle foto lasciate fuori da handleSaveChanges perche' il
+    // ITALIANO: l'avviso del .txt svuotato (Kohya si ferma) dell'ultimo salvataggio, '' se non c'e'.
+    //           "Salva e chiudi" lo rimostra dopo la chiusura: c'e' un solo posto per gli avvisi e il
+    //           verde "Progetto chiuso", arrivato nello stesso istante, lo copriva sempre.
+    // ENGLISH: the emptied-.txt warning (Kohya stops) of the last save, '' when there is none. "Save
+    //          and close" shows it again after the close: there is a single slot for notices and the
+    //          green "Project closed", arriving in the same instant, always covered it.
+    const avvisoSalvataggioRef = useRef('');
+    // ITALIANO: `fraseNonScritte` =la frase sulle foto lasciate fuori da handleSaveChanges perche' il
     //           loro .txt non si e' potuto leggere (vedi txtNonLettoInVigore): va nello stesso avviso.
     // ENGLISH: `fraseNonScritte` = the sentence on the photos handleSaveChanges left out because their
     //          .txt could not be read (see txtNonLettoInVigore): it goes into the same notice.
@@ -3646,7 +3666,11 @@ export default function App() {
         if (frasi.length === 0) frasi.push(t.successSaveChanges);
         // ITALIANO: un .txt svuotato ferma Kohya: lo si dice, senza bloccare niente.
         // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
-        if (svuotate > 0) frasi.push(svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate)));
+        const fraseSvuotate = svuotate === 0 ? '' : svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate));
+        if (fraseSvuotate) frasi.push(fraseSvuotate);
+        // ITALIANO: "Salva e chiudi" la rimostra dopo "Progetto chiuso" (vedi avvisoSalvataggioRef).
+        // ENGLISH: "Save and close" shows it again after "Project closed" (see avvisoSalvataggioRef).
+        avvisoSalvataggioRef.current = fraseSvuotate;
         if (fraseNonScritte) frasi.push(fraseNonScritte);
         const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0 && !fraseNonScritte;
         if (riuscito) soundManager.chime();
@@ -4232,6 +4256,7 @@ export default function App() {
             return;
         }
         setSaveCloseDialog({ isOpen: true, isSaving: true });
+        avvisoSalvataggioRef.current = '';
         let saved = false;
         try {
             saved = await handleSaveChanges();
@@ -4250,6 +4275,11 @@ export default function App() {
         }
         setSaveCloseDialog({ isOpen: false, isSaving: false });
         closeProjectNow();
+        // ITALIANO: il salvataggio ha svuotato dei .txt: l'avviso resta a schermo invece di "Progetto
+        //           chiuso" (vedi avvisoSalvataggioRef). Il progetto chiuso si vede gia'.
+        // ENGLISH: the save emptied some .txt files: the warning stays on screen instead of "Project
+        //          closed" (see avvisoSalvataggioRef). The closed project is already in view.
+        if (avvisoSalvataggioRef.current) showNotification(avvisoSalvataggioRef.current, 'info');
         chiudiFinestraSeRichiesto();
     };
 
@@ -4288,7 +4318,17 @@ export default function App() {
             // ENGLISH: Merge against LIVE tags (via imagesRef), not the pre-request snapshot:
             //          tags edited manually while waiting are not lost
             const live = imagesRef.current.find(i => i.id === imageId);
-            const baseTags: string[] = live ? live.tags : img.tags;
+            // ITALIANO: la foto non c'e' piu' (chiusa con la X, "Chiudi progetto", Reset) mentre Google
+            //           rispondeva: il risultato si scarta, come fa "Tagga tutte" (removedMidRequest).
+            //           Prima comparivano il suono e il verde "Tag generati: N" senza nessun tag messo.
+            // ENGLISH: the photo is gone (closed with the X, "Close project", Reset) while Google was
+            //          answering: the result is dropped, as "Auto-tag all" does (removedMidRequest).
+            //          The chime and the green "Tags generated: N" used to appear with no tag applied.
+            if (!live) {
+                console.log('[AI] single: photo removed during the request, result discarded');
+                return 0;
+            }
+            const baseTags: string[] = live.tags;
             const merged = [...new Set([...baseTags, ...tags])];
             // ITALIANO: si contano solo i tag che la foto riceve davvero (vedi countNewTagsIgnoringCase).
             // ENGLISH: only the tags the photo really gets are counted (see countNewTagsIgnoringCase).

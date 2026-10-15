@@ -68,11 +68,11 @@ const salva = async (foto, { t = lingue.en, finestra = {} } = {}) => {
     const r = { notifiche: [], salvate: [] };
     let stato = foto.map(f => ({ ...f }));
     const f = new Function('setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
-        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'document', 'URL', 'Blob', 'setTimeout', 'isUndoRedoAction',
+        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'document', 'URL', 'Blob', 'setTimeout', 'isUndoRedoAction', 'avvisoSalvataggioRef',
         jsSalva + '\nreturn performSave;')(() => { }, () => { }, (m, tipo) => r.notifiche.push([m, tipo]), t, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         finestra, (agg) => { stato = typeof agg === 'function' ? agg(stato) : agg; }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName,
         P.sidecarTagFileName, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } },
-        { createObjectURL: () => 'blob:finto', revokeObjectURL() { } }, Blob, (fn) => { fn(); return 0; }, { current: false });
+        { createObjectURL: () => 'blob:finto', revokeObjectURL() { } }, Blob, (fn) => { fn(); return 0; }, { current: false }, { current: '' });
     r.ok = await f(foto);
     r.salvate = stato.filter(i => JSON.stringify(i.tags) === JSON.stringify(i.originalTags)).map(i => i.id);
     r.ultimo = r.notifiche[r.notifiche.length - 1] || null;

@@ -102,6 +102,11 @@ console.log('\n--- X della finestra mentre "Annulla lo svuotamento" riprende i f
     dice('con modifiche: anche li\' la prima X si ferma', true, b.chiudi());
     await attendi();
     dice('...con l\'avviso del ripristino, non la finestra a tre scelte', [false, [[testo('closeWhileRestoring'), 'info']]], [b.finestra.isOpen, b.notifiche]);
+    // ITALIANO: l'avviso promette che una seconda X chiude: con modifiche apriva la finestra a tre scelte.
+    // ENGLISH: the notice promises that a second X closes: with edits it opened the three-choice dialog.
+    dice('con modifiche: una seconda X chiude comunque, come dice l\'avviso', false, b.chiudi());
+    await attendi();
+    dice('...senza aprire la finestra a tre scelte', false, b.finestra.isOpen);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

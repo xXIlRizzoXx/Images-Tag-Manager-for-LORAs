@@ -61,7 +61,7 @@ const jsCancella = await ritaglia('src/App.tsx', '    const deleteImageFilesForG
 const jsLightbox = await ritaglia('src/components/Lightbox.tsx', '    const handleSaveSingleTxt = async () => {');
 // ITALIANO: i nomi che i tre testi possono usare, presi dai moduli veri.
 // ENGLISH: the names the three texts may use, taken from the real modules.
-const aiuti = { buildTagFileName: P.buildTagFileName, sanitizeFileName: P.sanitizeFileName, sidecarTagFileName: P.sidecarTagFileName, isUndoRedoAction: { current: false } };
+const aiuti = { buildTagFileName: P.buildTagFileName, sanitizeFileName: P.sanitizeFileName, sidecarTagFileName: P.sidecarTagFileName, isUndoRedoAction: { current: false }, avvisoSalvataggioRef: { current: '' } };
 const nomiAiuti = Object.keys(aiuti);
 const muto = { log() { }, warn() { }, error() { } };
 

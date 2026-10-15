@@ -29,3 +29,21 @@ export const isLetterShortcut = (e: { key?: string; code?: string; altKey?: bool
     if (/^[a-z]$/.test(tasto)) return tasto === letter.toLowerCase();
     return !e.altKey && e.code === 'Key' + letter.toUpperCase();
 };
+
+// ITALIANO: il fuoco e' in un campo dove si scrive testo? Li' Ctrl+Z annulla il testo e la scorciatoia
+//   del progetto si fa da parte. Un <input> che non scrive testo (il cursore dello zoom "range", una
+//   casella di spunta, un pulsante) non ha niente da annullare: dopo aver trascinato lo zoom Ctrl+Z
+//   restava muto finche' non si cliccava altrove. Un <input> senza tipo vale come testo.
+// ENGLISH: is the focus in a field where text is typed? There Ctrl+Z undoes the text and the
+//   project's shortcut steps aside. An <input> that types no text (the "range" zoom slider, a
+//   checkbox, a button) has nothing to undo: after dragging the zoom Ctrl+Z stayed silent until a
+//   click elsewhere. An <input> with no type counts as text.
+const INPUT_SENZA_TESTO = new Set(['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image']);
+export const isTextEditingElement = (el: { tagName?: string; type?: string; isContentEditable?: boolean } | null | undefined): boolean => {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = String(el.tagName || '').toUpperCase();
+    if (tag === 'TEXTAREA') return true;
+    if (tag !== 'INPUT') return false;
+    return !INPUT_SENZA_TESTO.has(String(el.type || '').toLowerCase());
+};
