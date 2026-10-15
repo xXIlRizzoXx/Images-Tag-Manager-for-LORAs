@@ -14,7 +14,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli } from './services/geminiService';
+import type { ModelloChiave, StatoModello } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -68,6 +69,23 @@ const APP_LANGUAGES = [
     { code: 'ru', label: 'Русский', flag: 'ru' },
 ];
 const LANG_CODES = APP_LANGUAGES.map(l => l.code);
+
+// ITALIANO: i gruppi della tendina dei modelli dopo "Prova tutti i modelli", nell'ordine in cui
+//           si mostrano. `spento` = si vedono ma non si possono scegliere.
+// ENGLISH: the model dropdown's groups after "Test all models", in display order. `spento` =
+//          shown but not selectable.
+const GRUPPI_MODELLI: ReadonlyArray<{
+    stato: StatoModello | 'daProvare';
+    etichetta: 'aiGroupUsable' | 'aiGroupRetry' | 'aiGroupUntested' | 'aiGroupPaid' | 'aiGroupNoAccess' | 'aiGroupNotSuitable';
+    spento: boolean;
+}> = [
+    { stato: 'utilizzabile', etichetta: 'aiGroupUsable', spento: false },
+    { stato: 'occupato', etichetta: 'aiGroupRetry', spento: false },
+    { stato: 'daProvare', etichetta: 'aiGroupUntested', spento: false },
+    { stato: 'aPagamento', etichetta: 'aiGroupPaid', spento: false },
+    { stato: 'senzaAccesso', etichetta: 'aiGroupNoAccess', spento: true },
+    { stato: 'nonAdatto', etichetta: 'aiGroupNotSuitable', spento: true },
+];
 
 // ITALIANO: Lingua iniziale: quella già scelta, altrimenti quella del sistema operativo,
 //           altrimenti inglese (così un PC tedesco parte in tedesco).
@@ -1230,6 +1248,41 @@ export default function App() {
     const aiEnabledRef = useRef(aiEnabled);
     aiEnabledRef.current = aiEnabled;
 
+    // ITALIANO: TUTTI I MODELLI DELLA CHIAVE, PROVATI. L'esito della prova vale per UNA chiave:
+    //           con un'altra chiave i modelli utilizzabili possono essere diversi. Per questo si
+    //           salva con un'impronta della chiave (16 cifre del suo SHA-256, mai la chiave) e lo
+    //           si mostra solo se l'impronta e' quella della chiave di adesso.
+    // ENGLISH: ALL THE KEY'S MODELS, PROBED. The probe's outcome holds for ONE key: with another
+    //          key the usable models may differ. So it is saved with a fingerprint of the key (16
+    //          digits of its SHA-256, never the key itself) and shown only when the fingerprint is
+    //          the current key's.
+    type ProvaSalvata = { impronta: string; il: number; modelli: ModelloChiave[] };
+    const [modelliChiave, setModelliChiave] = useState<ProvaSalvata | null>(() => {
+        try {
+            const g = JSON.parse(localStorage.getItem('aiModelliChiave') || 'null');
+            return g && typeof g.impronta === 'string' && Array.isArray(g.modelli) ? g : null;
+        } catch (_) { return null; }
+    });
+    const [improntaChiave, setImprontaChiave] = useState('');
+    const [provaModelliStato, setProvaModelliStato] = useState<{ fatti: number; totale: number } | null>(null);
+    const provaModelliRef = useRef<AbortController | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        if (!geminiApiKey || !globalThis.crypto?.subtle) { setImprontaChiave(''); return undefined; }
+        globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(geminiApiKey)).then(h => {
+            if (!vivo) return;
+            setImprontaChiave(Array.from(new Uint8Array(h)).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join(''));
+        }).catch(() => { if (vivo) setImprontaChiave(''); });
+        return () => { vivo = false; };
+    }, [geminiApiKey]);
+    const modelliProvati: ModelloChiave[] | null = modelliChiave && improntaChiave && modelliChiave.impronta === improntaChiave
+        ? modelliChiave.modelli : null;
+    // ITALIANO: l'esito della prova per il modello in uso: quando c'e', vale piu' di quanto si
+    //           indovina dal nome (un "pro" che risponde non e' "a pagamento" per questa chiave).
+    // ENGLISH: the probe outcome for the model in use: when present it beats the guess from the
+    //          name (a "pro" that answers is not "paid" for this key).
+    const statoModelloInUso: StatoModello | undefined = modelliProvati?.find(m => m.id === aiModel)?.stato;
+
     // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
     //           ("scegliendo un modello preciso, resta fisso quello") e prima non era vero: nel
     //           codice non c'era nessun blocco, e il controllo del giorno dopo scavalcava la
@@ -1438,6 +1491,54 @@ export default function App() {
         }
     };
 
+
+    // ITALIANO: "Prova tutti i modelli": parte solo a mano, con l'AI accesa e la chiave salvata
+    //           (con l'AI spenta non si parla con Google). Spegnere l'AI a meta' ferma la prova.
+    //           Non gira insieme al controllo del modello: si contenderebbero le chiamate.
+    // ENGLISH: "Test all models": starts only by hand, with the AI on and a key saved (with the
+    //          AI off Google is not contacted). Switching the AI off halfway stops the test. It
+    //          does not run together with the model check: they would compete for calls.
+    const provaModelliChiave = async () => {
+        if (provaModelliRef.current || controlloModelloRef.current) return;
+        if (!aiEnabledRef.current || !geminiApiKey || !improntaChiave) return;
+        const ctrl = new AbortController();
+        provaModelliRef.current = ctrl;
+        const impronta = improntaChiave;
+        setProvaModelliStato({ fatti: 0, totale: 0 });
+        const salva = (modelli: ModelloChiave[]) => {
+            const v: ProvaSalvata = { impronta, il: Date.now(), modelli };
+            setModelliChiave(v);
+            try { localStorage.setItem('aiModelliChiave', JSON.stringify(v)); } catch (_) { }
+        };
+        try {
+            const r = await provaTuttiIModelli(geminiApiKey, (modelli, fatti) => {
+                if (!aiEnabledRef.current) { ctrl.abort(); return; }
+                setProvaModelliStato({ fatti, totale: modelli.length });
+                salva(modelli);
+            }, ctrl.signal);
+            if (!aiEnabledRef.current) return;
+            const tot = String(r.modelli.length);
+            if (r.esito === 'fatto') {
+                const ok = r.modelli.filter(m => m.stato === 'utilizzabile').length;
+                showNotification(t.aiProbeDone.replace('{ok}', String(ok)).replace('{tot}', tot), ok > 0 ? 'success' : 'info');
+            } else if (r.esito === 'fermato') {
+                if (r.modelli.length > 0) {
+                    const provati = r.modelli.filter(m => m.stato).length;
+                    showNotification(t.aiProbeStopped.replace('{n}', String(provati)).replace('{tot}', tot), 'info');
+                }
+            } else if (r.esito === 'nessunModello') showNotification(t.aiProbeNoneFound, 'error');
+            else if (r.esito === 'chiaveNonValida') showNotification(t.aiModelCheckKeyInvalid, 'error');
+            else if (r.esito === 'progettoRifiutato') showNotification(t.aiModelCheckProjectRefused, 'error');
+            else if (r.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
+            else showNotification(t.aiModelCheckFailed, 'error');
+        } finally {
+            provaModelliRef.current = null;
+            setProvaModelliStato(null);
+        }
+    };
+    // ITALIANO: con l'AI spenta una prova in corso si ferma subito, anche fra una chiamata e l'altra.
+    // ENGLISH: with the AI switched off a running test stops at once, even between two calls.
+    useEffect(() => { if (!aiEnabled) provaModelliRef.current?.abort(); }, [aiEnabled]);
 
     useEffect(() => {
         if (!aiEnabled || !geminiApiKey) return;
@@ -5673,7 +5774,31 @@ export default function App() {
                                                             className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
                                                         >
                                                             <option value="__auto__">{t.aiModelAutomatic.replace('{a}', aiModel)}</option>
-                                                            {elencoModelli.map(m => {
+                                                            {/* ITALIANO: dopo "Prova tutti i modelli" la tendina mostra i modelli VERI della
+                                                                          chiave, a gruppi secondo l'esito; quelli senza accesso o non
+                                                                          adatti si vedono ma non si scelgono (resta sceglibile solo se e'
+                                                                          gia' quello in uso, altrimenti la tendina resterebbe vuota).
+                                                                ENGLISH: after "Test all models" the dropdown shows the key's REAL models,
+                                                                         grouped by outcome; those with no access or not suitable are
+                                                                         shown but cannot be picked (unless already in use, or the
+                                                                         dropdown would sit blank). */}
+                                                            {modelliProvati && GRUPPI_MODELLI.map(g => {
+                                                                const voci = modelliProvati.filter(m => (m.stato ?? 'daProvare') === g.stato);
+                                                                if (voci.length === 0) return null;
+                                                                return (
+                                                                    <optgroup key={g.stato} label={t[g.etichetta]}>
+                                                                        {voci.map(m => (
+                                                                            <option key={m.id} value={m.id} disabled={g.spento && m.id !== aiModel}>
+                                                                                {modelliProvati.filter(x => x.label === m.label).length > 1 ? m.id : m.label}
+                                                                            </option>
+                                                                        ))}
+                                                                    </optgroup>
+                                                                );
+                                                            })}
+                                                            {modelliProvati && !modelliProvati.some(m => m.id === aiModel) && (
+                                                                <option value={aiModel}>{aiModel}</option>
+                                                            )}
+                                                            {!modelliProvati && elencoModelli.map(m => {
                                                                 // ITALIANO: 'unknown' (flash-lite, senza versione): nessun simbolo, invece di
                                                                 //           promettere un piano gratuito che il modello puo' non avere.
                                                                 // ENGLISH: 'unknown' (flash-lite, no version): no badge, rather than promising
@@ -5686,13 +5811,19 @@ export default function App() {
                                                                 );
                                                             })}
                                                         </select>
-                                                        {getModelTier(aiModel) === 'limited' && (
+                                                        {(statoModelloInUso === 'senzaAccesso' || statoModelloInUso === 'nonAdatto') && (
+                                                            <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-red-900/30 text-red-300 border border-red-800/50' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                                                                <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                                                                <span>{t.aiModelNotWorkingWarning}</span>
+                                                            </div>
+                                                        )}
+                                                        {getModelTier(aiModel) === 'limited' && (statoModelloInUso === undefined || statoModelloInUso === 'utilizzabile' || statoModelloInUso === 'occupato') && (
                                                             <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-blue-900/30 text-blue-300 border border-blue-800/50' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
                                                                 <AlertTriangle size={11} className="shrink-0 mt-0.5" />
                                                                 <span>{t.aiModelLimitedWarning || 'Free tier limitato (rate limit più bassi). Per uso intenso serve billing attivo.'}</span>
                                                             </div>
                                                         )}
-                                                        {getModelTier(aiModel) === 'paid' && (
+                                                        {(statoModelloInUso === 'aPagamento' || (statoModelloInUso === undefined && getModelTier(aiModel) === 'paid')) && (
                                                             <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-amber-900/30 text-amber-300 border border-amber-800/50' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                                                                 <AlertTriangle size={11} className="shrink-0 mt-0.5" />
                                                                 <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
@@ -5707,12 +5838,37 @@ export default function App() {
                                                             </span>
                                                             <button
                                                                 onClick={() => controllaModello(false, true)}
-                                                                disabled={controlloModelloInCorso || !geminiApiKey}
+                                                                disabled={controlloModelloInCorso || provaModelliStato !== null || !geminiApiKey}
                                                                 className={`text-[10px] px-2 py-1 rounded-md border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
                                                             >
                                                                 {controlloModelloInCorso ? '…' : t.aiModelCheckNow}
                                                             </button>
                                                         </div>
+                                                        <div className="flex items-center justify-between gap-2 mt-1">
+                                                            <span className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                                {provaModelliStato
+                                                                    ? (provaModelliStato.totale === 0
+                                                                        ? t.aiProbeListing
+                                                                        : t.aiProbeProgress.replace('{n}', String(provaModelliStato.fatti)).replace('{tot}', String(provaModelliStato.totale)))
+                                                                    : modelliProvati && modelliChiave
+                                                                        ? t.aiProbeSummary
+                                                                            .replace('{quando}', new Date(modelliChiave.il).toLocaleDateString(lang))
+                                                                            .replace('{ok}', String(modelliProvati.filter(m => m.stato === 'utilizzabile').length))
+                                                                            .replace('{pag}', String(modelliProvati.filter(m => m.stato === 'aPagamento').length))
+                                                                            .replace('{no}', String(modelliProvati.filter(m => m.stato === 'senzaAccesso').length))
+                                                                            .replace('{na}', String(modelliProvati.filter(m => m.stato === 'nonAdatto').length))
+                                                                            .replace('{occ}', String(modelliProvati.filter(m => m.stato === 'occupato' || !m.stato).length))
+                                                                        : ''}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => (provaModelliStato ? provaModelliRef.current?.abort() : provaModelliChiave())}
+                                                                disabled={!provaModelliStato && (controlloModelloInCorso || !geminiApiKey || !improntaChiave)}
+                                                                className={`text-[10px] px-2 py-1 rounded-md border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                                                            >
+                                                                {provaModelliStato ? t.aiProbeStop : t.aiProbeAll}
+                                                            </button>
+                                                        </div>
+                                                        <p className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>{t.aiProbeHint}</p>
                                                     </div>
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">

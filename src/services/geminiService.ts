@@ -344,7 +344,9 @@ export type GeminiErrorKind = 'invalid_key' | 'billing_required' | 'rate_limit' 
 //          Google Cloud project (Gemini API turned off, project suspended, permission denied).
 //          The kind stays the same (the model check already calls it "project refused"); it lets
 //          the screens avoid saying "billing required" to someone who only has to enable the API.
-export type GeminiErrore = { kind: GeminiErrorKind; message: string; quotaGiorno?: boolean; progetto?: boolean };
+// ITALIANO: `senzaGratuito` = 429 con limite 0: il modello non ha un piano gratuito su questa chiave.
+// ENGLISH: `senzaGratuito` = 429 with limit 0: the model has no free tier on this key.
+export type GeminiErrore = { kind: GeminiErrorKind; message: string; quotaGiorno?: boolean; progetto?: boolean; senzaGratuito?: boolean };
 export const classifyGeminiError = (err: any): GeminiErrore => {
     const msg = String(err?.message || err || '');
     if (err?.geminiKind === 'blocked') return { kind: 'blocked', message: msg };
@@ -377,7 +379,7 @@ export const classifyGeminiError = (err: any): GeminiErrore => {
     const senzaStato = stato === undefined;
     const limite = (): GeminiErrore => {
         const senzaGratuito = /limit:\s*0(?![\d.])/i.test(msg) || /quotaValue[^0-9]{0,6}0(?![\d.])/.test(msg);
-        if (senzaGratuito) return { kind: 'model_unavailable', message: msg };
+        if (senzaGratuito) return { kind: 'model_unavailable', message: msg, senzaGratuito: true };
         // ITALIANO: la quota superata e' del giorno (quotaId "...PerDay...") e non del minuto.
         // ENGLISH: the quota hit is the daily one (quotaId "...PerDay...") and not the per-minute one.
         return { kind: 'rate_limit', message: msg, quotaGiorno: /PerDay/i.test(msg) };
@@ -746,4 +748,160 @@ export const aggiornaModelloAutomatico = async (
         };
     }
     return { ...fermo(sovraccarico ? 'occupato' : 'nessunoValido', candidati), disponibili: candidati };
+};
+
+/* ITALIANO: TUTTI I MODELLI DELLA CHIAVE, PROVATI UNO PER UNO
+   La scelta automatica guarda solo la linea flash stabile. Qui invece si chiede a Google
+   l'elenco COMPLETO dei modelli che la chiave puo' chiamare e si prova ognuno con lo stesso
+   lavoro del tagging (un'immagine di un pixel, risposta in JSON). L'esito dice all'utente cosa
+   puo' scegliere davvero, invece di indovinarlo dal nome:
+   - 'utilizzabile': ha risposto;
+   - 'aPagamento': Google chiede la fatturazione, o il piano gratuito ha limite 0;
+   - 'senzaAccesso': il modello non esiste per questa chiave o non e' permesso;
+   - 'nonAdatto': risponde, ma non a questo lavoro (niente immagini o niente JSON);
+   - 'occupato': troppe richieste o Google sovraccarico: non dice niente, si riprova poi.
+   Se la chiave e' rifiutata, il progetto e' spento o la rete non risponde, la prova si ferma
+   tutta: ogni modello darebbe la stessa risposta, e non sarebbe colpa sua.
+
+   ENGLISH: ALL THE KEY'S MODELS, PROBED ONE BY ONE
+   The automatic choice only looks at the stable flash line. Here instead Google is asked for
+   the FULL list of models the key can call, and each is probed with the tagging's own job (a
+   one-pixel image, a JSON answer). The outcome tells the user what they can really pick,
+   instead of guessing it from the name (the states are listed above). If the key is refused,
+   the project is off or the network does not answer, the whole round stops: every model would
+   give the same answer, and it would not be the model's fault. */
+
+export type StatoModello = 'utilizzabile' | 'aPagamento' | 'senzaAccesso' | 'nonAdatto' | 'occupato';
+export type ModelloChiave = { id: string; label: string; versione: number[]; stato?: StatoModello };
+
+// ITALIANO: modelli che fanno un altro mestiere e non possono leggere una foto e scriverne i tag:
+//           provarli costerebbe solo chiamate. Anteprime, sperimentali, pro e lite restano.
+// ENGLISH: models doing a different job, unable to read a photo and write its tags: probing them
+//          would only cost calls. Previews, experiments, pro and lite stay.
+const MODELLI_ALTRO_MESTIERE = ['tts', 'audio', 'embedding', 'embed', 'imagen', 'veo', 'live', 'aqa', 'robotics', 'computer-use', 'image'];
+const MODELLI_CHIAVE_MAX = 60;
+const PAUSA_FRA_PROVE_MS = 1200;
+
+export const scegliModelliChiave = (grezzi: any[]): ModelloChiave[] => {
+    const buoni: ModelloChiave[] = [];
+    const visti = new Set<string>();
+    for (const m of Array.isArray(grezzi) ? grezzi : []) {
+        const pieno = String((m && m.name) || '');
+        const id = pieno.startsWith('models/') ? pieno.slice(7) : pieno;
+        if (!/^gemini-[a-z0-9.-]+$/i.test(id) || visti.has(id)) continue;
+        const azioni = (m && Array.isArray(m.supportedActions)) ? m.supportedActions : [];
+        if (azioni.length > 0 && !azioni.includes('generateContent')) continue;
+        const minuscolo = id.toLowerCase();
+        if (MODELLI_ALTRO_MESTIERE.some(p => minuscolo.includes(p))) continue;
+        visti.add(id);
+        buoni.push({ id, label: String((m && m.displayName) || id), versione: versioneDi(id) });
+        if (buoni.length >= MODELLI_CHIAVE_MAX) break;
+    }
+    buoni.sort((a, b) => confrontaVersioni(b.versione, a.versione) || a.id.localeCompare(b.id));
+    return buoni;
+};
+
+// ITALIANO: da un errore della prova allo stato del modello, oppure al motivo per fermare tutto.
+// ENGLISH: from a probe error to the model's state, or to the reason for stopping everything.
+export type FermaProva = 'chiaveNonValida' | 'progettoRifiutato' | 'nonRaggiungibile';
+export const statoDaErrore = (err: any): { stato?: StatoModello; ferma?: FermaProva } => {
+    const e = classifyGeminiError(err);
+    if (e.kind === 'invalid_key') return { ferma: 'chiaveNonValida' };
+    if (e.kind === 'billing_required') return e.progetto ? { ferma: 'progettoRifiutato' } : { stato: 'aPagamento' };
+    if (e.kind === 'model_unavailable') return { stato: e.senzaGratuito ? 'aPagamento' : 'senzaAccesso' };
+    if (e.kind === 'rate_limit' || e.kind === 'busy') return { stato: 'occupato' };
+    if (e.kind === 'blocked') return { stato: 'nonAdatto' };
+    // ITALIANO: uno stato HTTP 4xx che non e' nessuno dei casi sopra (400 INVALID_ARGUMENT: niente
+    //           immagini o niente JSON) e' il modello che non fa questo lavoro. Senza stato e' la rete.
+    // ENGLISH: a 4xx HTTP status that is none of the cases above (400 INVALID_ARGUMENT: no images
+    //          or no JSON) is the model not doing this job. With no status it is the network.
+    const stato = typeof err?.status === 'number' ? err.status : undefined;
+    if (stato !== undefined && stato >= 400 && stato < 500) return { stato: 'nonAdatto' };
+    return { ferma: 'nonRaggiungibile' };
+};
+
+export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal): Promise<{ stato?: StatoModello; ferma?: FermaProva }> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const risposta = await ai.models.generateContent({
+            model: id,
+            contents: {
+                parts: [
+                    { inlineData: { data: PIXEL_PNG, mimeType: 'image/png' } },
+                    { text: 'Reply with the JSON array ["ok"] and nothing else.' },
+                ],
+            },
+            config: {
+                abortSignal: buildAbortSignal(segnale, PROVA_TIMEOUT_MS),
+                responseMimeType: 'application/json',
+                responseSchema: { type: Type.ARRAY, items: { type: Type.STRING } },
+            },
+        });
+        return { stato: risposta.text ? 'utilizzabile' : 'nonAdatto' };
+    } catch (err: any) {
+        // ITALIANO: una fermata chiesta dall'utente non e' un esito del modello.
+        // ENGLISH: a stop asked by the user is not an outcome of the model.
+        if (segnale?.aborted) return {};
+        return statoDaErrore(err);
+    }
+};
+
+export type EsitoProvaModelli = {
+    esito: 'fatto' | 'fermato' | 'occupato' | 'nessunModello' | FermaProva;
+    modelli: ModelloChiave[];
+};
+
+// ITALIANO: il giro completo: elenco, poi una prova alla volta con una pausa fra l'una e l'altra
+//           (il piano gratuito conta le richieste al minuto). `avanzamento` riceve l'elenco dopo
+//           ogni prova; `segnale` ferma il giro, e i modelli non provati restano senza stato.
+// ENGLISH: the whole round: list, then one probe at a time with a pause in between (the free
+//          tier counts requests per minute). `avanzamento` receives the list after every probe;
+//          `segnale` stops the round, and the models not probed are left with no state.
+export const provaTuttiIModelli = async (
+    apiKey: string,
+    avanzamento?: (modelli: ModelloChiave[], fatti: number) => void,
+    segnale?: AbortSignal,
+    pausaMs: number = PAUSA_FRA_PROVE_MS,
+): Promise<EsitoProvaModelli> => {
+    if (!apiKey || typeof apiKey !== 'string') return { esito: 'nonRaggiungibile', modelli: [] };
+    let modelli: ModelloChiave[];
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const pagine = await ai.models.list({
+            config: { queryBase: true, pageSize: 200, abortSignal: buildAbortSignal(segnale, VERIFY_TIMEOUT_MS) },
+        });
+        const grezzi: any[] = [];
+        for await (const m of pagine) {
+            grezzi.push(m);
+            if (grezzi.length >= MODELLI_MAX) break;
+        }
+        modelli = scegliModelliChiave(grezzi);
+    } catch (err) {
+        if (segnale?.aborted) return { esito: 'fermato', modelli: [] };
+        console.warn('[AI] Elenco dei modelli non ottenuto:', err);
+        const { ferma, stato } = statoDaErrore(err);
+        if (ferma) return { esito: ferma, modelli: [] };
+        // ITALIANO: "troppe richieste" o Google sovraccarico sull'elenco: si riprova piu' tardi.
+        // ENGLISH: "too many requests" or Google overloaded on the list: try again later.
+        return { esito: stato === 'occupato' ? 'occupato' : 'nonRaggiungibile', modelli: [] };
+    }
+    if (modelli.length === 0) return { esito: 'nessunModello', modelli: [] };
+    avanzamento?.(modelli.map(m => ({ ...m })), 0);
+
+    for (let i = 0; i < modelli.length; i++) {
+        if (segnale?.aborted) return { esito: 'fermato', modelli };
+        if (i > 0 && pausaMs > 0) {
+            await new Promise<void>(fatto => {
+                const t = setTimeout(fatto, pausaMs);
+                segnale?.addEventListener('abort', () => { clearTimeout(t); fatto(); }, { once: true });
+            });
+            if (segnale?.aborted) return { esito: 'fermato', modelli };
+        }
+        const r = await provaModelloChiave(apiKey, modelli[i].id, segnale);
+        if (segnale?.aborted) return { esito: 'fermato', modelli };
+        if (r.ferma) return { esito: r.ferma, modelli };
+        modelli = modelli.map((m, j) => (j === i ? { ...m, stato: r.stato } : m));
+        avanzamento?.(modelli.map(m => ({ ...m })), i + 1);
+    }
+    return { esito: 'fatto', modelli };
 };
