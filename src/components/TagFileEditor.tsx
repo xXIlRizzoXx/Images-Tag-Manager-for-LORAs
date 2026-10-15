@@ -27,11 +27,31 @@ import { uniqueTagsIgnoringCase, hasTagIgnoringCase } from '../utils/tagCase';
 // ENGLISH: size cap for files opened in the editor (same as the photo sidecars).
 const EDITOR_MAX_BYTES = 1024 * 1024;
 
+// ITALIANO: un testo che comincia come un JSON vero: un oggetto ({ seguito da " o }) o un elenco di
+//           testi (["... oppure []). Serve a distinguere un JSON rotto da un .txt di tag che inizia
+//           con una parentesi, come "[artist name], 1girl," o "{best quality}, 1girl,".
+// ENGLISH: a text that starts like real JSON: an object ({ followed by " or }) or a list of strings
+//          (["... or []). Tells broken JSON apart from a tag .txt that starts with a bracket, such
+//          as "[artist name], 1girl," or "{best quality}, 1girl,".
+const SEMBRA_JSON = /^\s*(\{\s*["}]|\[\s*["\]])/;
+
 export const parseTagFile = (text: string, fileName: string): string[] => {
-    const isJson = fileName.toLowerCase().endsWith('.json') || /^\s*[[{]/.test(text);
+    // ITALIANO: un .json e' sempre JSON. Un altro nome lo e' solo se il testo si legge come JSON:
+    //           Salva ordina i tag e mette "[artist name]" o "{best quality}" in testa, e quel .txt
+    //           finiva in JSON.parse e non si apriva piu'. Un JSON chiaramente rotto resta un errore.
+    // ENGLISH: a .json is always JSON. Any other name is JSON only when the text parses as JSON:
+    //          Save sorts the tags and puts "[artist name]" or "{best quality}" first, and that .txt
+    //          went to JSON.parse and could not be opened. Clearly broken JSON stays an error.
+    let isJson = fileName.toLowerCase().endsWith('.json');
+    let parsed: any = undefined;
+    if (isJson) {
+        parsed = JSON.parse(text);
+    } else if (/^\s*[[{]/.test(text)) {
+        try { parsed = JSON.parse(text); isJson = true; }
+        catch (err) { if (SEMBRA_JSON.test(text)) throw err; }
+    }
     let raw: unknown[] = [];
     if (isJson) {
-        const parsed = JSON.parse(text);
         if (Array.isArray(parsed)) raw = parsed;
         else if (parsed && Array.isArray(parsed.tags)) raw = [...(parsed.globalTriggers || []), ...parsed.tags];
         else throw new Error('JSON senza elenco di tag');
@@ -337,7 +357,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         //          to, and since closing now restores tags from savedTagsRef, that edit vanished
         //          silently.
         const istantanea = tags;
-        const contenuto = serializeTagFile(istantanea, nome, triggersRef.current);
+        // ITALIANO: un elenco vuoto non si scrive mai (Salva e Salva come sono spenti, e ora anche
+        //           "Salva e chiudi"): prima quest'ultimo scriveva un .txt vuoto sopra quello della
+        //           foto, con l'avviso verde, e Kohya si ferma su un .txt vuoto.
+        // ENGLISH: an empty list is never written (Save and Save as are off, and now "Save and
+        //          close" too): the latter used to write an empty .txt over the photo's one, with the
+        //          green notice, and Kohya stops on an empty .txt.
+        if (istantanea.length === 0) return false;
+        const contenuto =serializeTagFile(istantanea, nome, triggersRef.current);
         // ITALIANO: "modificato" si spegne solo se nel frattempo nulla e' cambiato.
         // ENGLISH: the "modified" flag clears only if nothing changed meanwhile.
         const concludiSalvataggio = () => {
@@ -600,7 +627,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                         <div className="flex flex-wrap justify-end gap-2">
                             <button onClick={() => setChiusuraFile(false)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
                             <button onClick={() => { setChiusuraFile(false); azzera(); soundManager.pop(); }} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.closeWithoutSaving}</button>
-                            <button onClick={salvaEChiudiFile} disabled={rileggendo} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
+                            <button onClick={salvaEChiudiFile} disabled={tags.length === 0 || rileggendo} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
                                 <Save size={14} /> {t.saveAndClose}
                             </button>
                         </div>

@@ -31,6 +31,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const [zoomOrigin, setZoomOrigin] = useState('center');
     const [highResUrl, setHighResUrl] = useState<string | null>(null);
     const [isHighResLoaded, setIsHighResLoaded] = useState(false);
+    // ITALIANO: l'indirizzo HD che il programma non ha saputo mostrare (TIFF, HEIC, file rovinato).
+    //           Senza, la rotella "Caricamento HD..." restava per sempre: arriva "errore", non "caricata".
+    // ENGLISH: the HD address the app could not display (TIFF, HEIC, damaged file). Without it the
+    //          "Loading HD..." spinner stayed forever: "error" arrives, not "load".
+    const [hdErroreUrl, setHdErroreUrl] = useState<string | null>(null);
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
     const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
 
@@ -329,9 +334,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 setZoomOrigin(`${((e.clientX - left) / width) * 100}% ${((e.clientY - top) / height) * 100}%`);
                             }
                         }}>
-                            {!isHighResLoaded && <div className="absolute inset-0 flex flex-col items-center justify-center z-10"><div className="absolute inset-0 bg-cover bg-center filter blur-lg opacity-40 scale-110" style={{ backgroundImage: `url(${image.thumb})` }} /><div className={`relative ${isDarkMode ? 'bg-black/60 border-white/10' : 'bg-white/60 border-gray-200'} p-4 rounded-2xl backdrop-blur-md text-center border shadow-xl`}><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div><span className={`${isDarkMode ? 'text-white' : 'text-gray-800'} mt-3 block text-sm font-semibold tracking-wider`}>{t.loadingHD}</span></div></div>}
+                            {/* ITALIANO: se l'immagine HD da' errore la rotella lascia il posto alla frase "non si puo' mostrare". */}
+                            {/* ENGLISH: if the HD image fails the spinner gives way to the "cannot display" sentence. */}
+                            {!isHighResLoaded && <div className="absolute inset-0 flex flex-col items-center justify-center z-10"><div className="absolute inset-0 bg-cover bg-center filter blur-lg opacity-40 scale-110" style={{ backgroundImage: `url(${image.thumb})` }} /><div className={`relative ${isDarkMode ? 'bg-black/60 border-white/10' : 'bg-white/60 border-gray-200'} p-4 rounded-2xl backdrop-blur-md text-center border shadow-xl`}>{highResUrl && hdErroreUrl === highResUrl ? <span className={`${isDarkMode ? 'text-white' : 'text-gray-800'} block max-w-xs text-sm font-semibold`}>{t.imageUnreadable}</span> : <><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div><span className={`${isDarkMode ? 'text-white' : 'text-gray-800'} mt-3 block text-sm font-semibold tracking-wider`}>{t.loadingHD}</span></>}</div></div>}
                             <div className="w-full h-full" style={{ backgroundImage: `url(${highResUrl})`, backgroundPosition: zoomOrigin, backgroundSize: zoomLevel === 2 ? '350%' : zoomLevel === 1 ? '200%' : 'contain', backgroundRepeat: 'no-repeat', transition: 'background-size 0.3s', opacity: isHighResLoaded ? 1 : 0 }} />
-                            {highResUrl && <img src={highResUrl} onLoad={() => setIsHighResLoaded(true)} className="hidden" alt="HD" /> }
+                            {highResUrl && <img src={highResUrl} onLoad={() => setIsHighResLoaded(true)} onError={() => setHdErroreUrl(highResUrl)} className="hidden" alt="HD" /> }
                         </div>
                     </div>
                 </div>

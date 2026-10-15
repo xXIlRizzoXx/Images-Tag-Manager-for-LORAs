@@ -3384,10 +3384,20 @@ export default function App() {
             if (text.startsWith('[')) {
                 try { elenco = JSON.parse(text); } catch (_) { elenco = undefined; }
             }
+            // ITALIANO: lo stesso per "{": l'export TXT di un progetto con "{best quality}" comincia
+            //           con quella graffa (l'ordine alfabetico la mette prima delle lettere) e non si
+            //           reimportava. Si legge come TXT, salvo un JSON chiaramente rotto ('{"tags": [').
+            // ENGLISH: the same for "{": the TXT export of a project with "{best quality}" starts with
+            //          that brace (alphabetical order puts it before letters) and could not be imported
+            //          back. It is read as TXT, except clearly broken JSON ('{"tags": [').
+            let oggetto: any = undefined;
+            if (text.startsWith('{')) {
+                try { oggetto = JSON.parse(text); } catch (err) { if (/^\{\s*["}]/.test(text)) throw err; }
+            }
             if (Array.isArray(elenco)) {
                 tags = elenco;
-            } else if (text.startsWith('{')) {
-                const data = JSON.parse(text);
+            } else if (oggetto !== undefined) {
+                const data = oggetto;
                 if (Array.isArray(data.tags)) tags = data.tags;
                 if (Array.isArray(data.globalTriggers)) triggers = data.globalTriggers;
             } else {
