@@ -76,7 +76,12 @@ const ESCLUSIONE = {
     pt: ['Além desta verificação', 'no máximo uma vez por dia'],
     ru: ['Кроме этой проверки', 'не чаще раза в день'],
 };
-const aggiornamentiDaSoli = /if \(updateCheckChoice !== 'on'\) return\b[^;]*;[\s\S]{0,400}?checkForUpdate\(/.test(app);
+// ITALIANO: l'effetto del controllo aggiornamenti, cercato fino alla sua riga delle dipendenze senza
+//           limite di lunghezza (un commento lungo lo spegneva in silenzio, come l'effetto dei modelli).
+// ENGLISH: the update-check effect, searched up to its own dependency line with no length limit (a
+//          long comment silently switched it off, like the model-check effect).
+const effettoAgg = app.match(/if \(updateCheckChoice !== 'on'\) return\b[^;]*;[\s\S]*?\}, \[updateCheckChoice, showLangPicker\]\);/);
+const aggiornamentiDaSoli = !!effettoAgg && /checkForUpdate\(/.test(effettoAgg[0]);
 console.log(aggiornamentiDaSoli
     ? 'Con l\'interruttore acceso il programma si collega da solo anche a GitHub: la frase su Google deve escluderlo.'
     : 'Nessun controllo automatico degli aggiornamenti trovato.');
@@ -89,6 +94,11 @@ dice('la frase c\'e\' in tutte e nove le lingue', 9, frasi.size);
 //          switched off every per-language check and the test stayed green with 1 check. If one
 //          day the automatic model check really goes away, remove this line.
 dice('premessa: trovato l\'effetto d\'avvio che controlla i modelli da solo', true, controlloDaSolo);
+// ITALIANO: stessa premessa per il controllo automatico degli aggiornamenti: senza, i nove controlli
+//           "esclude GitHub" si saltavano in silenzio. Se quel controllo sparisce davvero, si toglie.
+// ENGLISH: same premise for the automatic update check: without it, the nine "excludes GitHub"
+//          checks were skipped silently. If that check really goes away, remove this line.
+dice('premessa: trovato il controllo automatico degli aggiornamenti', true, aggiornamentiDaSoli);
 if (controlloDaSolo) {
     for (const [codice, frase] of frasi) {
         dice(`[${codice}] la frase nomina Google`, true, frase.includes('Google'));
