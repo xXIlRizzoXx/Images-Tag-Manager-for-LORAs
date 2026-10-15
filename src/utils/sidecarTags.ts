@@ -231,8 +231,9 @@ export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txt
 //           suo ricordo del disco e' ancora quello, contano solo i tag messi apposta su di lei, non
 //           le trigger word. Prima una trigger scritta dopo l'import, o tolta dopo averla messa
 //           prima, la faceva risultare modificata, e "Salva" scriveva la sola trigger (o un file
-//           vuoto) SOPRA il .txt vero mai letto. Quando il suo .txt viene scritto (Salva, il
-//           visualizzatore, l'editor dei file di tag) originalTags diventa un array nuovo, anche
+//           vuoto) SOPRA il .txt vero mai letto. "Salva" non lo scrive mai (lo lascia fuori e lo
+//           dice); quando lo scrivono il visualizzatore o l'editor dei file di tag, originalTags
+//           diventa un array nuovo, anche
 //           con lo stesso contenuto, e la regola torna quella di sempre, anche dopo un Ctrl+Z (vedi
 //           txtNonLettoInVigore e withLiveOriginalTags).
 // ENGLISH: does this photo have edits "Save" must write? Usually it is enough that the tags differ
@@ -241,8 +242,9 @@ export const tagDiImport = (globalTriggers: string[], sidecarTags: string[], txt
 //          (only the triggers of that time): while its disk record is still that one, only the tags
 //          put on it on purpose count, not the trigger words. A trigger typed after the import, or
 //          removed after setting it before, used to make it count as modified, and "Save" wrote the
-//          trigger alone (or an empty file) OVER the real .txt that was never read. Once its .txt is
-//          written (Save, the viewer, the tag file editor) originalTags becomes a new array, even
+//          trigger alone (or an empty file) OVER the real .txt that was never read. "Save" never
+//          writes it (it leaves it out and says so); once the viewer or the tag file editor writes
+//          it, originalTags becomes a new array, even
 //          with the same content, and the usual rule applies again, after a Ctrl+Z too (see
 //          txtNonLettoInVigore and withLiveOriginalTags).
 export const fotoDaSalvare = (img: any, triggers: string[] = []): boolean => {

@@ -162,7 +162,11 @@ const scaduta = (s: any, ora: number): boolean => typeof s.visto === 'number' &&
 //   read at import does not enter for a trigger alone. Triggers do not last from one session to the
 //   next: taken back from the backup, that trigger became a tag of its own and "Save" wrote it over the
 //   real file.
-export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = []): { folder: string; sources: SorgenteBackup[] } | null => {
+// ITALIANO: `lottiSessione` = i lotti di import entrati in memoria in questa sessione (vedi
+//   scriviBackupSubito e sorgentiDaTenere); null = nessuno noto, come prima.
+// ENGLISH: `lottiSessione` = the import batches that entered memory in this session (see
+//   scriviBackupSubito and sorgentiDaTenere); null = none known, as before.
+export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = [], lottiSessione: Set<string> | null = null): { folder: string; sources: SorgenteBackup[] } | null => {
     const ora = Date.now();
     const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number }>();
     const lottoDi = (lotto: string, cartella: string) => {
@@ -212,7 +216,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     const sources: SorgenteBackup[] = conFirma
         .filter(l => l.voci > 0 && firme.get(l.firma) === 1)
         .map(l => ({ signature: l.firma, data: l.data, visto: ora, ...(l.lotto ? { lotto: l.lotto } : {}) }));
-    sources.unshift(...sorgentiDaTenere(precedente, aperte, new Set([...lotti.keys()].filter(Boolean)), ora));
+    sources.unshift(...sorgentiDaTenere(precedente, aperte, new Set([...lotti.keys()].filter(Boolean)), ora, lottiSessione));
     return sources.length > 0 ? { folder: cartellaCorrente, sources } : null;
 };
 
@@ -235,7 +239,17 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
 //   folder" the key is only the folder name + the file name, and two folders called "img" with the
 //   usual 0001.png... deleted each other's edits to recover. An expired source is dropped too
 //   (DURATA_SORGENTE_MS); one with no `visto` (written before this rule) starts counting now.
-const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiAperti: Set<string>, ora: number): SorgenteBackup[] => {
+// ITALIANO: cade anche una sorgente scritta da un import di QUESTA sessione (`lottiSessione`) che in
+//   memoria non c'e' piu': le sue foto le ha tolte l'utente (Ctrl+Z oltre l'import), non un crash.
+//   Prima restava, e alla riapertura della cartella tornavano come "recuperate" le modifiche
+//   annullate, o la trigger di allora come tag di ogni foto. Le sorgenti di sessioni precedenti (il
+//   recupero dopo un crash) non sono fra questi lotti e restano.
+// ENGLISH: a source written by an import of THIS session (`lottiSessione`) that is no longer in
+//   memory is dropped too: its photos were removed by the user (Ctrl+Z past the import), not by a
+//   crash. It used to stay, and on reopening the folder the undone edits came back as "recovered",
+//   or that time's trigger as a tag on every photo. The sources of earlier sessions (the recovery
+//   after a crash) are not among these batches and stay.
+const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiAperti: Set<string>, ora: number, lottiSessione: Set<string> | null = null): SorgenteBackup[] => {
     if (!precedente) return [];
     let parsed: any = null;
     try { parsed = JSON.parse(precedente); } catch (_) { return []; }
@@ -243,7 +257,7 @@ const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiA
     const tenute: SorgenteBackup[] = [];
     for (const s of parsed.sources) {
         if (!s || typeof s.signature !== 'string' || aperte.has(s.signature) || !s.data || typeof s.data !== 'object') continue;
-        if (typeof s.lotto === 'string' && lottiAperti.has(s.lotto)) continue;
+        if (typeof s.lotto === 'string' && (lottiAperti.has(s.lotto) || (lottiSessione !== null && lottiSessione.has(s.lotto)))) continue;
         if (scaduta(s, ora)) continue;
         const data: Record<string, VoceBackup> = {};
         for (const [chiave, v] of Object.entries(s.data as Record<string, any>)) {
@@ -364,6 +378,14 @@ export const tagDaRipristinare = (entry: any, orderedTags: string[], originalTag
     //          backup equal to the disk, apart from the trigger, is not a recovery.
     const unite = uniqueTagsIgnoringCase([...globalTriggers, ...backupTags], globalTriggers);
     const differs = JSON.stringify([...unite].sort()) !== JSON.stringify([...orderedTags].sort());
-    if (!differs || backupTags.length === 0) return null;
+    // ITALIANO: una lista vuota non si applica solo nelle voci della versione precedente, dove voleva
+    //           dire "foto senza tag" (quel backup aveva TUTTE le foto). In questa versione il backup
+    //           ha solo le foto con modifiche: la lista vuota e' una foto a cui l'utente ha tolto tutti
+    //           i tag, e torna come le altre. Prima tornava coi vecchi tag senza una parola.
+    // ENGLISH: an empty list is not applied only in the previous version's entries, where it meant
+    //          "untagged photo" (that backup held EVERY photo). In this version the backup holds only
+    //          the edited photos: an empty list is a photo the user removed every tag from, and it
+    //          comes back like the others. It used to come back with its old tags without a word.
+    if (!differs || (vecchiaVersione && backupTags.length === 0)) return null;
     return unite;
 };

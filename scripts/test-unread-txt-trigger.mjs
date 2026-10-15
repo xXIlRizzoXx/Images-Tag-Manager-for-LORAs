@@ -60,7 +60,7 @@ const NOMI = ['globalTriggers', 'globalTriggersRef', 'images', 'setImages', 'set
     'setImportSummary', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'nuovoIdFoto', 'backupDellImport',
     'localStorage', 'makeFolderKeyer', 'makeBackupKeyer', 'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport',
     'tagDaRipristinare', 'asDirHandle', 'anteprimeProgettoRef', 'soundManager', 'avvisoImport', 't', 'showNotification',
-    'folderInputRef', 'console', 'performSave', 'fotoDaSalvare', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'importAttiviRef', 'txtNonLettoInVigore'];
+    'folderInputRef', 'console', 'performSave', 'fotoDaSalvare', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'importAttiviRef', 'txtNonLettoInVigore', 'progettoGenRef'];
 const fabbrica = new Function(...NOMI,
     (await ritaglia('    const processImportData = async (')) + '\n' + (await ritaglia('    const handleGlobalTagsChange = (')) + '\n' +
     (await ritaglia('    const handleSaveChanges = async ')) + '\n' + (await ritaglia('    const handleCloseProject = () => {')) +
@@ -90,7 +90,7 @@ const creaApp = async (prima, txtB = bloccato('b.txt')) => {
             B.tagDaRipristinare, () => null, { current: new Set() }, { chime() { } }, N.avvisoImport, t,
             (m) => stato.notifiche.push(m), { current: null }, { log() { }, warn() { }, error() { } },
             async (lista) => { stato.scritte = lista.map(i => i.file.name); return true; }, G.fotoDaSalvare,
-            (d) => { if (d && d.isOpen) stato.finestra = 'tre scelte'; }, (d) => { if (d && d.isOpen) stato.finestra = 'conferma semplice'; }, () => { }, { current: 0 }, S.txtNonLettoInVigore);
+            (d) => { if (d && d.isOpen) stato.finestra = 'tre scelte'; }, (d) => { if (d && d.isOpen) stato.finestra = 'conferma semplice'; }, () => { }, { current: 0 }, S.txtNonLettoInVigore, { current: 0 });
     };
     await render().processImportData([{ name: 'b.png' }, { name: 'c.png' }], [txtB, leggibile('c.txt', 'blue sky,')]);
     const app = {
@@ -148,7 +148,7 @@ console.log('\n--- il backup anti-crash usa la stessa regola ---');
     G.scriviBackupSubito(archivio, app.stato.images, [], 'dataset', app.stato.trigger);
     dice('un tag messo apposta: entra, come prima', ['b.png', 'c.png'], chiavi().sort());
     const righe = sorgente.split('\n').filter(r => r.includes('scriviBackupSubito(localStorage,'));
-    dice('in App.tsx le due scritture del backup passano le trigger attive', [2, true], [righe.length, righe.every(r => r.includes('globalTriggersRef.current)'))]);
+    dice('in App.tsx le due scritture del backup passano le trigger attive', [2, true], [righe.length, righe.every(r => r.includes('globalTriggersRef.current, lottiSessioneRef.current)'))]);
 }
 
 // ITALIANO: il visualizzatore scrive il .txt della foto: si esegue la riga VERA di updateOriginalTags.

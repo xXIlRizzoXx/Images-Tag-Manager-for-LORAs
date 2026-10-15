@@ -59,6 +59,14 @@ console.log('\n--- .txt non letto, poi un tag aggiunto a tutte le foto, poi Salv
     dice('Salva scrive solo il .txt letto, non quello mai letto', ['c.txt'], scritti(app));
     dice('l\'avviso nomina la foto rimasta fuori', true, ultima(app)[0].includes('b.png'));
     dice('...e non e\' un avviso di successo', 'info', ultima(app)[1]);
+    // ITALIANO: l'avviso non comincia con "Modifiche salvate con successo!" per poi dire che una foto
+    //           non e' stata salvata: dice quanti file sono stati scritti, poi quale foto e' rimasta fuori.
+    // ENGLISH: the notice does not open with "Changes saved successfully!" and then say a photo was not
+    //          saved: it says how many files were written, then which photo was left out.
+    dice('...e non dice "Modifiche salvate con successo!"', false, ultima(app)[0].includes(t.successSaveChanges));
+    dice('...ma quanti .txt ha scritto (1), prima della foto rimasta fuori', true,
+        typeof t.saveWrittenCount === 'string' && ultima(app)[0].startsWith(t.saveWrittenCount.replace('{n}', '1') + ' ')
+        && ultima(app)[0].includes(t.saveUnreadTxtOne.replace('{names}', 'b.png')));
     dice('Salva risponde "non tutto salvato": "Salva e chiudi" non chiude il progetto', false, ok);
     dice('la foto resta da salvare', ['masterpiece'], app.fotoCon('b').tags);
 }

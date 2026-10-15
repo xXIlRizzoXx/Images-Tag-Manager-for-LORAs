@@ -33,9 +33,19 @@ export const modificheNonSalvate = (images: any[], triggers: string[] = []): boo
 //           (vedi fotoDaSalvare), che non devono entrare nel backup per una trigger.
 // ENGLISH: `triggers` = the active trigger words: needed by the rule for photos whose .txt was not
 //          read (see fotoDaSalvare), which must not enter the backup because of a trigger.
-export const scriviBackupSubito = (storage: Storage, images: any[], chiuse: Iterable<FotoChiusa>, cartella: string, triggers: string[] = []): void => {
+// ITALIANO: `lottiSessione` = i lotti di import entrati in memoria in QUESTA sessione (App.tsx ne
+//           tiene uno per tutta la vita della pagina): qui si aggiungono quelli delle foto di adesso.
+//           Una sorgente salvata con uno di questi lotti, che in memoria non c'e' piu', l'ha buttata
+//           via l'utente (Ctrl+Z oltre l'import), non un crash: cade (vedi sorgentiDaTenere).
+// ENGLISH: `lottiSessione` = the import batches that entered memory in THIS session (App.tsx keeps
+//          one for the page's whole life): the batches of the current photos are added here. A
+//          stored source with one of these batches that is no longer in memory was thrown away by
+//          the user (Ctrl+Z past the import), not by a crash: it is dropped (see sorgentiDaTenere).
+export const scriviBackupSubito = (storage: Storage, images: any[], chiuse: Iterable<FotoChiusa>, cartella: string, triggers: string[] = [], lottiSessione: Set<string> | null = null): void => {
     try {
-        const backup = costruisciBackup(images, chiuse, cartella, storage.getItem('tagBackup'), triggers);
+        const sessione = lottiSessione instanceof Set ? lottiSessione : null;
+        if (sessione) for (const img of images) if (img && img.lottoImport) sessione.add(String(img.lottoImport));
+        const backup = costruisciBackup(images, chiuse, cartella, storage.getItem('tagBackup'), triggers, sessione);
         if (!backup) storage.removeItem('tagBackup');
         else storage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), ...backup }));
     } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }

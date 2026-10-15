@@ -46,7 +46,7 @@ const { dice, esito } = creaControlli();
 // ITALIANO: l'effetto vero che scrive il backup, dalla sua riga useEffect alla riga delle dipendenze.
 // ENGLISH: the real effect writing the backup, from its useEffect line to its dependency line.
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-const iScrive = sorgente.indexOf('scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);');
+const iScrive = sorgente.indexOf('scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current');
 const iInizio = iScrive < 0 ? -1 : sorgente.lastIndexOf('    useEffect(() => {', iScrive);
 const iFine = iScrive < 0 ? -1 : sorgente.indexOf('    }, [images, dirHandle]);', iScrive);
 if (iInizio < 0 || iFine < 0) { console.log('NO  l\'effetto del backup non trovato in src/App.tsx'); process.exit(1); }

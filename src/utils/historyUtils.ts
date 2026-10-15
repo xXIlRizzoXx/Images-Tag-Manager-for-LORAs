@@ -37,9 +37,21 @@ export const purgeIdsFromHistory = <T extends { id: string }>(history: T[][], id
 //   files were back in the folder, and a photo whose .txt had not come back also lost the tags
 //   that existed only in memory. Empty steps (the gallery before the import) stay empty. The
 //   number of steps does not change; the history passed in is left untouched.
-export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[]): T[][] =>
-    history.map(passo => {
-        if (passo.length === 0) return passo;
+// ITALIANO: `indiceAttuale` = il passo che e' a schermo. I passi vuoti dal secondo fino a lui
+//   ricevono le foto anche loro: sono vuoti solo perche' lo svuotamento ne ha tolto TUTTE le foto
+//   del progetto. Senza, ogni passo restava vuoto, le foto tornate non entravano in nessuno e, dopo
+//   "Ripristina tutto", un Ctrl+Z svuotava la galleria mentre i loro file erano di nuovo nella
+//   cartella. Il primo passo (la galleria vuota di prima dell'import) resta vuoto, e un Ctrl+Z fin
+//   li' toglie le foto come sempre quando si annulla l'import.
+// ENGLISH: `indiceAttuale` = the step on screen. The empty steps from the second one up to it
+//   receive the photos too: they are empty only because the emptying took out EVERY photo of the
+//   project. Without it, every step stayed empty, the returned photos entered none and, after
+//   "Restore all", a Ctrl+Z emptied the gallery while their files were back in the folder. The first
+//   step (the empty gallery before the import) stays empty, and a Ctrl+Z back to it takes the photos
+//   out as undoing the import always does.
+export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[], indiceAttuale = -1): T[][] =>
+    history.map((passo, indice) => {
+        if (passo.length === 0 && !(indice > 0 && indice <= indiceAttuale)) return passo;
         const presenti = new Set(passo.map(foto => foto.id));
         const mancanti = photos.filter(foto => !presenti.has(foto.id));
         return mancanti.length > 0 ? [...passo, ...mancanti] : passo;

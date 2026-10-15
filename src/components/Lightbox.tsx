@@ -284,7 +284,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                           su monitor larghi (prima si fermava a 1920px lasciando fasce vuote).
                 ENGLISH: No width cap: the window fills the whole screen even on wide monitors
                          (it used to stop at 1920px, leaving empty bands). */}
-            <div className="w-full h-full mx-auto flex gap-4 lg:gap-6" onClick={e => e.stopPropagation()}>
+            <div className="w-full h-full mx-auto flex gap-4 lg:gap-6 relative" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 flex flex-col items-center gap-6 h-full min-w-0 relative">
                     <div className="absolute top-0 left-0 flex gap-2 z-[110]">
                         <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>

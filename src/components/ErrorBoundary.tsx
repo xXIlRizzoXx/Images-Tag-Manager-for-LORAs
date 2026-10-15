@@ -23,10 +23,16 @@ import { translations } from '../constants';
 //          the app (which has just crashed). So it reads the saved language directly,
 //          falling back to English if missing or unreadable. The texts used to be
 //          hardcoded in Italian, showing up in Italian even in a Japanese or Russian UI.
-const getStrings = () => {
+// ITALIANO: il tipo e' quello del blocco inglese: senza, `s` era any e una chiave scritta male
+//           (s.errorBoundaryTitel) passava il compilatore e il controllo delle lingue, e il testo
+//           usciva vuoto in tutte le lingue.
+// ENGLISH: the type is the English block's: without it `s` was any and a misspelled key
+//          (s.errorBoundaryTitel) passed the compiler and the language check, and the text came out
+//          blank in every language.
+const getStrings = (): typeof translations.en => {
     try {
         const lang = localStorage.getItem('lang') || 'en';
-        return (translations as any)[lang] || translations.en;
+        return ((translations as any)[lang] || translations.en) as typeof translations.en;
     } catch (_) {
         return translations.en;
     }

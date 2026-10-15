@@ -758,12 +758,19 @@ export default function App() {
     //          changes will be lost") brought the discarded edits back on the next load as
     //          "recovered".
     const backupConFotoRef = useRef(false);
+    // ITALIANO: i lotti di import entrati in memoria in questa sessione (li aggiunge scriviBackupSubito):
+    //           la sorgente di uno di loro che in memoria non c'e' piu' l'ha tolta un Ctrl+Z oltre
+    //           l'import, non un crash, e lascia il backup (vedi sorgentiDaTenere).
+    // ENGLISH: the import batches that entered memory in this session (scriviBackupSubito adds them):
+    //          the source of one of them that is no longer in memory was removed by a Ctrl+Z past the
+    //          import, not by a crash, and leaves the backup (see sorgentiDaTenere).
+    const lottiSessioneRef = useRef<Set<string>>(new Set());
     useEffect(() => {
         if (images.length > 0) backupConFotoRef.current = true;
         else if (!backupConFotoRef.current) return undefined;
         const handle = setTimeout(() => {
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);
+            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current);
         }, 1000);
         return () => clearTimeout(handle);
     }, [images, dirHandle]);
@@ -846,7 +853,7 @@ export default function App() {
             const conFoto = lista.length > 0 || backupConFotoRef.current;
             if (!conFoto && !editorSporco) return;
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-            if (conFoto) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current);
+            if (conFoto) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current);
             if (!(window as any).electronAPI) return;
             // ITALIANO: una scrittura in corso (vedi isSavingRef): la prima X si ferma e avvisa.
             // ENGLISH: a write in progress (see isSavingRef): the first X stops and warns.
@@ -2175,7 +2182,7 @@ export default function App() {
                     const presenti = new Set(prev.map(i => i.id));
                     return [...prev, ...rientrate.filter((f: any) => !presenti.has(f.id))];
                 });
-                setHistory(prev => addPhotosToHistory(prev, rientrate));
+                setHistory(prev => addPhotosToHistory(prev, rientrate, historyIndex));
             }
             // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
             //           per quelle e sparisce quando non c'e' piu' niente da ripescare.
@@ -2575,6 +2582,9 @@ export default function App() {
         if (importAttiviRef.current === 0) setImportProgress(0);
         importAttiviRef.current++;
         setIsImporting(true);
+        // ITALIANO: il progetto in cui l'import e' partito (vedi progettoGenRef e il controllo prima di setImages).
+        // ENGLISH: the project the import started in (see progettoGenRef and the check before setImages).
+        const progetto = progettoGenRef.current;
         let skippedTxtCount = 0;
         // ITALIANO: i nomi dei .txt saltati: l'avviso di fine import dice i primi (vedi avvisoImport).
         // ENGLISH: the names of the skipped .txt files: the end-of-import notice names the first ones (see avvisoImport).
@@ -2804,6 +2814,19 @@ export default function App() {
             //           Reset premuto durante l'import non deve liberare quelle che stanno arrivando.
             // ENGLISH: thumbnails are recorded here, the moment they enter the project: a Reset pressed
             //          during the import must not release the ones on their way in.
+            // ITALIANO: Reset o Chiudi progetto premuti mentre si generavano le miniature: le foto non
+            //           entrano nel progetto nuovo. Prima ci finivano, con la trigger del progetto nuovo
+            //           e la cartella di quello chiuso, e un Salva scriveva quella trigger nei .txt della
+            //           cartella chiusa. Le miniature si liberano; il finally spegne la striscia.
+            // ENGLISH: Reset or Close project pressed while the thumbnails were being made: the photos
+            //          do not enter the new project. They used to, with the new project's trigger and the
+            //          closed one's folder, and a Save wrote that trigger into the closed folder's .txt
+            //          files. The thumbnails are released; the finally switches the strip off.
+            if (progetto !== progettoGenRef.current) {
+                newImages.forEach(img => { if (img.thumb) URL.revokeObjectURL(img.thumb); });
+                console.warn('[Import] Progetto chiuso o azzerato durante l\'import: foto non aggiunte / project closed or reset during the import: photos not added.');
+                return;
+            }
             newImages.forEach(img => { if (img.thumb) anteprimeProgettoRef.current.add(img.thumb); });
             setImages(prev => {
                 const combined = [...prev, ...newImages];
@@ -3720,7 +3743,11 @@ export default function App() {
             frasi.push(t.saveSameFileTwice.replace('{names}', nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
         }
         if (scaricate > 0) frasi.push(scaricate === 1 ? t.saveDownloadedOne : t.saveDownloadedMany.replace('{n}', String(scaricate)));
-        if (frasi.length === 0) frasi.push(t.successSaveChanges);
+        // ITALIANO: con delle foto lasciate fuori (fraseNonScritte) non si dice "salvate con
+        //           successo" per poi dire che una non lo e': si dice quanti file sono stati scritti.
+        // ENGLISH: with photos left out (fraseNonScritte) it does not say "saved successfully" and
+        //          then that one was not: it says how many files were written.
+        if (frasi.length === 0) frasi.push(fraseNonScritte ? t.saveWrittenCount.replace('{n}', String(savedIds.size)) : t.successSaveChanges);
         // ITALIANO: un .txt svuotato ferma Kohya: lo si dice, senza bloccare niente.
         // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
         const fraseSvuotate = svuotate === 0 ? '' : svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate));
@@ -3744,10 +3771,13 @@ export default function App() {
         //           ha escluse dal dataset). Salvo solo le foto attive con modifiche.
         // ENGLISH: do NOT save trashed photos: their .txt must not be written to disk (the user
         //          excluded them from the dataset). Save only active photos with changes.
-        // ITALIANO: una foto col .txt non letto all'import si salva solo per i tag messi apposta su
-        //           di lei, non per una trigger (vedi fotoDaSalvare).
-        // ENGLISH: a photo whose .txt was not read at import is saved only for the tags put on it on
-        //          purpose, not for a trigger (see fotoDaSalvare).
+        // ITALIANO: una foto col .txt non letto all'import conta come modificata solo per i tag messi
+        //           apposta su di lei, non per una trigger (vedi fotoDaSalvare); anche allora Salva la
+        //           lascia fuori (vedi nonScritte qui sotto): il suo .txt lo sostituiscono solo il
+        //           visualizzatore e l'editor dei file di tag.
+        // ENGLISH: a photo whose .txt was not read at import counts as modified only for the tags put
+        //          on it on purpose, not for a trigger (see fotoDaSalvare); even then Save leaves it out
+        //          (see nonScritte below): only the viewer and the tag file editor replace its .txt.
         const modifiedImages = images.filter(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
         if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
         // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import non si scrive: cosa contiene
@@ -3787,7 +3817,11 @@ export default function App() {
         return (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace('.', ',') + ' ' + unita[i];
     };
 
-    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean, rinomina: boolean): Promise<boolean> => {
+    // ITALIANO: `fraseNonLette` = la frase sulle foto lasciate fuori da handleExportAll perche' il
+    //           loro .txt non si e' potuto leggere all'import ('' se nessuna): va nell'avviso finale.
+    // ENGLISH: `fraseNonLette` = the sentence on the photos handleExportAll left out because their
+    //          .txt could not be read at import ('' if none): it goes into the final notice.
+    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean, rinomina: boolean, fraseNonLette = ''): Promise<boolean> => {
         setIsSaving(true); setImportProgress(0);
         try {
             showNotification(t.zipProcessing, "info");
@@ -4007,10 +4041,13 @@ export default function App() {
             // ENGLISH: and the untagged photos, in a whole sentence that is right for 1 too.
             const avvisoSenzaTag = senzaTag === 0 ? ''
                 : ' ' + (senzaTag === 1 ? t.zipUntaggedOne : t.zipUntaggedMany.replace('{n}', String(senzaTag)));
+            // ITALIANO: e le foto lasciate fuori perche' il loro .txt non si e' letto (vedi handleExportAll).
+            // ENGLISH: and the photos left out because their .txt was not read (see handleExportAll).
+            const avvisoNonLette = fraseNonLette ? ' ' + fraseNonLette : '';
             if (collisionCount > 0) {
-                showNotification(`${t.zipSuccess}${avvisoSenzaTag} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
-            } else if (senzaTag > 0) {
-                showNotification(t.zipSuccess + avvisoSenzaTag, "info");
+                showNotification(`${t.zipSuccess}${avvisoSenzaTag}${avvisoNonLette} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
+            } else if (senzaTag > 0 || avvisoNonLette) {
+                showNotification(t.zipSuccess + avvisoSenzaTag + avvisoNonLette, "info");
             } else {
                 showNotification(t.zipSuccess, "success");
             }
@@ -4061,11 +4098,27 @@ export default function App() {
         // ENGLISH: a save or an export is already writing: the progress bar belongs to it, and a
         //          second operation would hide it halfway (the button is disabled).
         if (isSaving) return;
-        const attive = applySort(images.filter(img => !img.isTrashed), sortOrder);
+        // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import (vedi txtNonLettoInVigore)
+        //           resta fuori, immagine e .txt: in memoria ha solo le trigger di allora, non i suoi
+        //           tag veri. Entrava con la sola trigger come didascalia (estratto nella cartella, quel
+        //           .txt sostituiva il vero) o senza .txt come "senza tag", sotto un avviso di successo.
+        //           L'avviso finale la nomina (fraseNonLette), come fa "Salva Modifiche".
+        // ENGLISH: a photo whose .txt could not be read at import (see txtNonLettoInVigore) stays out,
+        //          image and .txt: in memory it has only that time's triggers, not its real tags. It went
+        //          in with the trigger alone as its caption (extracted into the folder, that .txt replaced
+        //          the real one) or with no .txt as "untagged", under a success notice. The final notice
+        //          names it (fraseNonLette), as "Save Changes" does.
+        const nonCestinate = images.filter(img => !img.isTrashed);
+        const nonLette = nonCestinate.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
+        const primiNonLette = nonLette.slice(0, 3).join(', ') + (nonLette.length > 3 ? '…' : '');
+        const fraseNonLette = nonLette.length === 0 ? ''
+            : nonLette.length === 1 ? t.exportUnreadTxtOne.replace('{names}', primiNonLette)
+            : t.exportUnreadTxtMany.replace('{n}', String(nonLette.length)).replace('{names}', primiNonLette);
+        const attive = applySort(nonCestinate.filter(img => !txtNonLettoInVigore(img)), sortOrder);
         const imagesWithTags = attive.filter(img => img.tags && img.tags.length > 0);
 
         if (attive.length === 0) {
-            return showNotification(t.errorNoTagsToExport, "info");
+            return showNotification(fraseNonLette || t.errorNoTagsToExport, "info");
         }
 
         // ITALIANO: si chiede PRIMA cosa mettere dentro, con numero di file e peso delle due
@@ -4077,6 +4130,7 @@ export default function App() {
         setExportChoice({
             imgs: imagesWithTags,
             tutte: attive,
+            fraseNonLette,
             riepilogo: {
                 soloTag: { file: imagesWithTags.length, peso: formatoPeso(pesoTag) },
                 conImmagini: { file: imagesWithTags.length + attive.length, peso: formatoPeso(pesoTag + pesoFoto) },
@@ -4093,8 +4147,9 @@ export default function App() {
         setExportChoice(null);
         if (!scelta) return undefined;
         const lista = conImmagini ? scelta.tutte : scelta.imgs;
-        if (!lista || lista.length === 0) { showNotification(t.errorNoTagsToExport, "info"); return undefined; }
-        return exportAllAsZip(lista, conImmagini, rinomina);
+        const fraseNonLette = String(scelta.fraseNonLette || '');
+        if (!lista || lista.length === 0) { showNotification(fraseNonLette ? t.errorNoTagsToExport + ' ' + fraseNonLette : t.errorNoTagsToExport, "info"); return undefined; }
+        return exportAllAsZip(lista, conImmagini, rinomina, fraseNonLette);
     };
 
     // ITALIANO: useCallback (dip. solo dalle trigger word): identita' stabile mentre si modificano i

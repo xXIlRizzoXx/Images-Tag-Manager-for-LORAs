@@ -111,11 +111,23 @@ export const TagSuggestionsPanel: React.FC<TagSuggestionsPanelProps> = ({ isOpen
         transition: isResizing ? 'none' : 'width 0.3s ease-in-out',
     };
 
+    // ITALIANO: nel visualizzatore, sotto i 1024 px, il pannello sta SOPRA la foto, appoggiato alla
+    //           colonna dei tag (w-64 + gap-4 = 17rem dal bordo destro), e non arriva al bordo
+    //           sinistro (la X della foto resta libera). Era una terza colonna da 320 px (fino a 900 se
+    //           allargato in galleria): con la finestra a meta' schermo alla foto restavano pochi pixel
+    //           o niente, e i suoi pulsanti finivano sopra la colonna dei tag. Da 1024 px in su resta
+    //           una colonna, come in galleria.
+    // ENGLISH: in the viewer, below 1024 px, the panel sits OVER the photo, against the tag column
+    //          (w-64 + gap-4 = 17rem from the right edge), and stops short of the left edge (the
+    //          photo's X stays free). It was a third 320 px column (up to 900 if widened in the
+    //          gallery): with the window at half the screen the photo got a few pixels or none, and
+    //          its buttons ended up over the tag column. From 1024 px up it stays a column, as in the
+    //          gallery.
     return (
         <div
             ref={panelRef}
             style={containerStyle}
-            className={`flex flex-col h-full shrink-0 relative overflow-hidden ${isOpen ? (isLightbox ? 'rounded-2xl border shadow-xl' : 'border-l') : (isLightbox ? 'border-0' : 'border-l-0')} ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}
+            className={`flex flex-col h-full shrink-0 relative overflow-hidden ${isLightbox ? 'max-lg:absolute max-lg:inset-y-0 max-lg:right-[17rem] max-lg:z-[120] max-lg:max-w-[calc(100%_-_20.5rem)]' : ''} ${isOpen ? (isLightbox ? 'rounded-2xl border shadow-xl' : 'border-l') : (isLightbox ? 'border-0' : 'border-l-0')} ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}
         >
             {isOpen && (
                 <div
@@ -130,7 +142,7 @@ export const TagSuggestionsPanel: React.FC<TagSuggestionsPanelProps> = ({ isOpen
                     </div>
                 </div>
             )}
-            <div style={{ width: `${panelWidth}px` }} className="flex flex-col h-full">
+            <div style={{ width: `${panelWidth}px` }} className={`flex flex-col h-full ${isLightbox ? 'max-lg:max-w-full' : ''}`}>
                 <div className={`p-4 border-b flex justify-between items-center shrink-0 ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'}`}>
                     <h2 className={`text-lg font-bold flex items-center gap-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
                         <Tags size={20} className="text-cyan-500" />

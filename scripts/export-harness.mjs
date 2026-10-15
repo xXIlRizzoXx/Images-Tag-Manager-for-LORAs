@@ -35,6 +35,9 @@ const carica = async (rel) => {
 export const lingue = (await carica('src/constants.ts')).translations;
 export const t = lingue.en;
 const P = await carica('src/utils/pathUtils.ts');
+// ITALIANO: la regola delle foto col .txt non letto all'import (l'esportazione le lascia fuori).
+// ENGLISH: the rule for photos whose .txt was not read at import (the export leaves them out).
+const S = await carica('src/utils/sidecarTags.ts');
 // ITALIANO: il modulo nuovo puo' non esserci ancora (codice di prima): allora resta vuoto.
 // ENGLISH: the new module may not exist yet (previous code): then it stays empty.
 let Z = {};
@@ -182,14 +185,14 @@ export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc'
     };
     const nomi = ['images', 't', 'showNotification', 'setIsSaving', 'setImportProgress', 'getOrderedTagString', 'soundManager', 'window', 'document', 'URL', 'console',
         'setExportChoice', 'exportChoice', 'JSZip', 'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'scriviZip', 'ERRORE_LETTURA_ZIP',
-        'applySort', 'sortOrder', 'isSaving'];
+        'applySort', 'sortOrder', 'isSaving', 'txtNonLettoInVigore'];
     const costruisci = (exportChoice) => new Function(...nomi,
         pezzi.formatoPeso + '\n' + pezzi.exportAllAsZip + '\n' + pezzi.handleExportAll + '\n' + pezzi.avviaExport +
         '\nreturn { exportAllAsZip, handleExportAll, avviaExport: typeof avviaExport === "function" ? avviaExport : null };')(
         images, t, (m, tipo) => r.notifiche.push([m, tipo]), () => { }, () => { }, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         { chime() { }, pop() { } }, finestra, documento, url, { log() { }, warn() { }, error() { } },
         (v) => { r.scelta = v; }, exportChoice, JSZip, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, Z.scriviZip, Z.ERRORE_LETTURA_ZIP,
-        applySort, ordine, false);
+        applySort, ordine, false, S.txtNonLettoInVigore);
     r.apri = () => { costruisci(null).handleExportAll(); return r; };
     r.conferma = async (conImmagini, rinomina = false) => {
         const f = costruisci(r.scelta);

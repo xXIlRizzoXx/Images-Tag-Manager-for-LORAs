@@ -57,7 +57,7 @@ const NOMI = ['globalTriggers', 'globalTriggersRef', 'images', 'setImages', 'set
     'setImportSummary', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'nuovoIdFoto', 'backupDellImport',
     'localStorage', 'makeFolderKeyer', 'makeBackupKeyer', 'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport',
     'tagDaRipristinare', 'asDirHandle', 'anteprimeProgettoRef', 'soundManager', 'avvisoImport', 't', 'showNotification',
-    'folderInputRef', 'console', 'importAttiviRef'];
+    'folderInputRef', 'console', 'importAttiviRef', 'progettoGenRef'];
 const fabbrica = new Function(...NOMI,
     (await ritaglia('    const processImportData = async (')) + '\n' + (await ritaglia('    const handleGlobalTagsChange = (')) +
     '\nreturn { processImportData, handleGlobalTagsChange };');
@@ -85,7 +85,7 @@ const importaCambiando = async (prima, dopo) => {
             { getItem: () => null }, S.makeFolderKeyer, () => (f) => 'dataset\x1f' + f.name, 1024 * 1024, S.parseSidecarText,
             async () => { await cancello; return { url: 'blob:finto', width: 1, height: 1 }; }, S.tagDiImport,
             B.tagDaRipristinare, () => null, { current: new Set() }, { chime() { } }, N.avvisoImport, t, () => { },
-            { current: null }, { log() { }, warn() { }, error() { } }, { current: 0 });
+            { current: null }, { log() { }, warn() { }, error() { } }, { current: 0 }, { current: 0 });
     };
     const txt = (name, testo) => ({ name, size: testo.length, lastModified: 0, text: async () => testo });
     const inCorso = render().processImportData([{ name: 'b.png' }, { name: 'c.png' }], [txt('b.txt', 'red hat,'), txt('c.txt', 'blue sky,')]);

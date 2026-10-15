@@ -51,6 +51,48 @@ dice('si mostra a ogni larghezza (classe "flex" senza prefisso)', true, classi.i
 dice('ha una larghezza anche sotto i 1024 px, piu\' stretta di quella grande', true,
     classi.some(c => /^w-(48|52|56|60|64|72)$/.test(c)) && classi.includes('lg:w-80'));
 
+// ITALIANO: il pannello dei tag suggeriti, aperto sotto i 1024 px, era una terza colonna larga
+//           320 px (fino a 900 se allargato in galleria): con la finestra a meta' di uno schermo da
+//           1366 px alla foto restavano 43 px (o zero) e i suoi pulsanti X, cestino e contatore
+//           finivano sopra la colonna dei tag. Sotto i 1024 px ora sta SOPRA la foto, appoggiato alla
+//           colonna dei tag, e non arriva al bordo sinistro (la X della foto resta libera).
+// ENGLISH: the suggested tags panel, opened below 1024 px, was a third column 320 px wide (up to 900
+//          if widened in the gallery): with the window at half of a 1366 px screen the photo got
+//          43 px (or zero) and its X, trash and counter buttons ended up over the tag column. Below
+//          1024 px it now sits OVER the photo, against the tag column, and stops short of the left
+//          edge (the photo's X stays free).
+console.log('\n--- i tag suggeriti aperti sotto i 1024 px ---');
+const pannello = fs.readFileSync(path.join(radice, 'src/components/TagSuggestionsPanel.tsx'), 'utf8');
+const iRadice = pannello.indexOf('ref={panelRef}');
+const rigaRadice = iRadice < 0 ? '' : pannello.slice(iRadice, pannello.indexOf('>', pannello.indexOf('className=', iRadice)));
+// ITALIANO: le classi che il pannello ha SOLO nel visualizzatore (il ramo `isLightbox ? '...'`).
+// ENGLISH: the classes the panel has ONLY in the viewer (the `isLightbox ? '...'` branch).
+const soloVisualizzatore = [...rigaRadice.matchAll(/isLightbox \? '([^']*)'/g)].map(m => m[1]).join(' ').split(/\s+/).filter(Boolean);
+const rigaContenitore = sorgente.split('\n').find(r => r.includes('<div className="w-full h-full mx-auto flex')) || '';
+const classiContenitore = (rigaContenitore.match(/className="([^"]*)"/) || ['', ''])[1].split(/\s+/);
+dice('sotto i 1024 px il pannello del visualizzatore esce dalla fila (max-lg:absolute) e copre l\'altezza', true,
+    soloVisualizzatore.includes('max-lg:absolute') && soloVisualizzatore.includes('max-lg:inset-y-0'));
+dice('...dentro il contenitore del visualizzatore (relative)', true, classiContenitore.includes('relative'));
+// ITALIANO: si appoggia alla colonna dei tag: distanza da destra = larghezza della colonna (w-64)
+//           + lo spazio fra le colonne (gap-4), in rem (1 unita' Tailwind = 0.25rem).
+// ENGLISH: it rests against the tag column: distance from the right = the column's width (w-64) +
+//          the gap between columns (gap-4), in rem (1 Tailwind unit = 0.25rem).
+const unita = (re, lista) => { const c = lista.find(x => re.test(x)); return c ? Number(re.exec(c)[1]) * 0.25 : NaN; };
+const attesa = unita(/^w-(\d+)$/, classi) + unita(/^gap-(\d+)$/, classiContenitore);
+dice(`...accanto alla colonna dei tag (max-lg:right-[${attesa}rem])`, true, soloVisualizzatore.includes(`max-lg:right-[${attesa}rem]`));
+const tetto = soloVisualizzatore.find(c => /^max-lg:max-w-\[calc\(100%_-_[\d.]+rem\)\]$/.test(c)) || '';
+const margine = Number((/_-_([\d.]+)rem/.exec(tetto) || [])[1]);
+dice('...e non arriva al bordo sinistro: resta posto per la X della foto (almeno 3 rem)', true, margine - attesa >= 3);
+dice('...e il contenuto del pannello si stringe con lui (la sua X resta visibile)', true,
+    /isLightbox \? 'max-lg:max-w-full'/.test(pannello.slice(pannello.indexOf('style={{ width: `${panelWidth}px` }}') - 10, pannello.indexOf('style={{ width: `${panelWidth}px` }}') + 200)));
+// ITALIANO: la foto, con il pannello aperto, a 683 px (meta' di 1366): prima 651 - 16 - 256 - 16 - 320 = 43 px.
+// ENGLISH: the photo, with the panel open, at 683 px (half of 1366): before 651 - 16 - 256 - 16 - 320 = 43 px.
+const fotoA683 = 683 - 32 - attesa * 16 - (soloVisualizzatore.includes('max-lg:absolute') ? 0 : 16 + 320);
+dice('a 683 px con il pannello aperto la foto tiene almeno 300 px', true, fotoA683 >= 300);
+// ITALIANO: in galleria (isLightbox falso) il pannello resta una colonna come prima.
+// ENGLISH: in the gallery (isLightbox false) the panel stays a column as before.
+dice('in galleria nessuna classe max-lg: (resta una colonna)', [], [...rigaRadice.matchAll(/: '([^']*)'/g)].map(m => m[1]).join(' ').split(/\s+/).filter(c => c.startsWith('max-lg:')));
+
 console.log('\n--- quello che NON deve cambiare: dentro la colonna ci sono ancora ---');
 dice('"Genera tag con AI" (handleAITagClick)', true, corpo.includes('onClick={handleAITagClick}'));
 dice('i tag della foto e gli altri del progetto', true, corpo.includes('t.lbAppliedTitle') && corpo.includes('t.lbAvailableTitle'));

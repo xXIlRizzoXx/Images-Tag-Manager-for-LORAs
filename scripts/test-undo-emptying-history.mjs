@@ -18,7 +18,7 @@
    The REAL code taken from src/App.tsx is run (see trash-harness.mjs).
    Usage:  node scripts/test-undo-emptying-history.mjs      (exits with code 1 if anything is off) */
 
-import { creaApp, apiFinta, foto, t } from './trash-harness.mjs';
+import { creaApp, apiFinta, foto, t, cronologia } from './trash-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
 
 const { dice, esito } = creaControlli();
@@ -66,6 +66,74 @@ console.log('\n--- lo stesso, ma il .txt di A non e\' tornato ---');
     await app.attendi();
     dice('Ctrl+Z NON toglie A: i suoi tag, che stanno solo in memoria, restano', [['B', 'A(cestino)'], ['tag A']], [app.vista(), tagDi(app, 'A')]);
     dice('...e A resta da salvare', [], (app.stato.images.find(i => i.id === 'A') || {}).originalTags);
+}
+
+console.log('\n--- il cestino svuotato aveva TUTTE le foto del progetto: Annulla lo svuotamento, Ripristina tutto, Ctrl+Z ---');
+{
+    // ITALIANO: si parte dalla galleria vuota di prima dell'import, poi l'import di A e B. Svuotato
+    //           il cestino, ogni passo della cronologia era vuoto e le foto tornate non entravano in
+    //           nessuno: dopo "Ripristina tutto" un Ctrl+Z svuotava la galleria, con i loro file
+    //           di nuovo nella cartella.
+    // ENGLISH: it starts from the empty gallery before the import, then the import of A and B. With
+    //          the trash emptied, every history step was empty and the returned photos entered none:
+    //          after "Restore all" a Ctrl+Z emptied the gallery, with their files back in the folder.
+    const app = creaApp([], { api: apiFinta() });
+    app.modifica(() => [foto('A', { cestinata: false }), foto('B', { cestinata: false })]);
+    await app.attendi();
+    app.cestina('A');
+    await app.attendi();
+    app.cestina('B');
+    await app.attendi();
+    await app.render().handleEmptyTrash();
+    await app.attendi();
+    dice('premessa: svuotato il cestino la galleria e\' vuota', [], app.vista());
+    await app.render().annullaSvuotamento();
+    await app.attendi();
+    dice('dopo l\'annullamento A e B sono nel cestino dell\'app', ['A(cestino)', 'B(cestino)'], app.vista());
+    dice('il passo a schermo descrive lo schermo (A e B nel cestino dell\'app)', ['A', 'B'],
+        (app.stato.history[app.stato.historyIndex] || []).map(i => i.id));
+    app.render().handleRestoreAll();
+    await app.attendi();
+    dice('"Ripristina tutto" le riporta in galleria', ['A', 'B'], app.vista());
+    app.render().handleUndo();
+    await app.attendi();
+    dice('Ctrl+Z annulla "Ripristina tutto": tornano nel cestino dell\'app, la galleria NON si svuota', ['A(cestino)', 'B(cestino)'], app.vista());
+    app.render().handleRedo();
+    await app.attendi();
+    dice('Ctrl+Shift+Z rifa\' "Ripristina tutto"', ['A', 'B'], app.vista());
+    // ITALIANO: i passi "cestina A" e "cestina B" li ha tolti lo svuotamento: andando ancora indietro
+    //           si arriva alla galleria di prima dell'import, come in ogni progetto, e Ctrl+Shift+Z
+    //           le riporta.
+    // ENGLISH: the "trash A" and "trash B" steps were removed by the emptying: going further back
+    //          reaches the gallery before the import, as in any project, and Ctrl+Shift+Z brings
+    //          them back.
+    app.render().handleUndo();
+    await app.attendi();
+    app.render().handleUndo();
+    await app.attendi();
+    dice('due Ctrl+Z: la galleria di prima dell\'import, come annullando l\'import', [], app.vista());
+    app.render().handleRedo();
+    await app.attendi();
+    dice('...e Ctrl+Shift+Z le riporta nel cestino dell\'app', ['A(cestino)', 'B(cestino)'], app.vista());
+}
+{
+    // ITALIANO: la regola pura: i passi vuoti dal secondo fino a quello attuale ricevono le foto; il
+    //           primo (la galleria di prima dell'import) e quelli dopo l'attuale restano vuoti; quelli
+    //           pieni le ricevono come prima.
+    // ENGLISH: the pure rule: the empty steps from the second up to the current one receive the
+    //          photos; the first one (the gallery before the import) and those after the current one
+    //          stay empty; the non-empty ones receive them as before.
+    const P = { id: 'P' };
+    const X = { id: 'X' };
+    const h = [[], [X], [], []];
+    const dopo = cronologia.addPhotosToHistory(h, [P], 2);
+    dice('passo attuale vuoto: riceve la foto; il passo 0 e quello dopo restano vuoti; il passo pieno la riceve',
+        [[], ['X', 'P'], ['P'], []], dopo.map(s => s.map(f => f.id)));
+    dice('tutti i passi vuoti (cestino con tutte le foto): ricevono la foto tutti tranne il primo', [[], ['P'], ['P'], ['P']],
+        cronologia.addPhotosToHistory([[], [], [], []], [P], 3).map(s => s.map(f => f.id)));
+    dice('senza indice del passo attuale: i passi vuoti restano vuoti, come prima', [[], ['X', 'P'], [], []],
+        cronologia.addPhotosToHistory(h, [P]).map(s => s.map(f => f.id)));
+    dice('la cronologia passata non si tocca', [[], ['X'], [], []], h.map(s => s.map(f => f.id)));
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
