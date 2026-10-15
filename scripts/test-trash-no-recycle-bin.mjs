@@ -9,7 +9,9 @@
    aprire, quindi non lo blocca nessuno e si risponde 'rifiutato' (prima era 'errore', e la foto
    non usciva mai dal cestino dell'app). Un file bloccato da un altro programma resta 'errore', anche
    quando il programma lascia leggere e scrivere ma non cancellare (Python open(), PIL); se il
-   blocco era solo di un attimo, il secondo tentativo lo manda nel Cestino.
+   blocco era solo di un attimo, il secondo tentativo lo manda nel Cestino. Una foto con
+   l'attributo "sola lettura" non si apre mai in scrittura: per lei decide solo la prova del
+   permesso di cancellare (prima restava 'errore' a ogni tentativo).
    Il Cestino di Windows e' un finto; anche la cartella $RECYCLE.BIN e' finta (quella vera non si
    guarda mai).
    Uso:  node scripts/test-trash-no-recycle-bin.mjs      (esce con codice 1 se qualcosa non torna)
@@ -25,7 +27,8 @@
    answer is 'rifiutato' (it used to be 'errore', and the photo never left the app's trash). A file
    locked by another program stays 'errore', also when that program allows read and write but not
    delete (Python open(), PIL); if the lock lasted only a moment, the second try sends it to the
-   Recycle Bin.
+   Recycle Bin. A photo with the "read-only" attribute never opens for writing: for it only the
+   delete-access probe decides (it used to stay 'errore' on every try).
    The Windows Recycle Bin is a fake; the $RECYCLE.BIN folder is fake too (the real one is never
    looked at).
    Usage:  node scripts/test-trash-no-recycle-bin.mjs      (exits with code 1 if anything is off) */
@@ -90,7 +93,14 @@ try {
     const attimo = path.join(cartella, 'attimo.png');
     const altraLibera = path.join(cartella, 'altra-libera.txt');
     const soloCancellazione = path.join(cartella, 'tenuta-da-python.png');
-    for (const f of [foto, testo, bloccata, libera, spento, attimo, altraLibera, soloCancellazione]) fs.writeFileSync(f, 'x');
+    const soloLettura = path.join(cartella, 'sola-lettura.png');
+    const soloLetturaTenuta = path.join(cartella, 'sola-lettura-tenuta.png');
+    for (const f of [foto, testo, bloccata, libera, spento, attimo, altraLibera, soloCancellazione, soloLettura, soloLetturaTenuta]) fs.writeFileSync(f, 'x');
+    // ITALIANO: l'attributo "sola lettura" di Windows (fotocamere con la protezione, file copiati da
+    //           un CD): aprirli in scrittura da' EPERM anche se nessuno li blocca.
+    // ENGLISH: the Windows "read-only" attribute (cameras with the protect flag, files copied from a
+    //          CD): opening them for writing gives EPERM even though nobody is locking them.
+    for (const f of [soloLettura, soloLetturaTenuta]) fs.chmodSync(f, 0o444);
 
     console.log('\n--- chiavetta USB: il Cestino non c\'e\' ---');
     rifiutaCestino.add(foto);
@@ -124,6 +134,19 @@ try {
     dice('il file resta sul disco, con il suo contenuto', [true, 'x'], [fs.existsSync(spento), fs.readFileSync(spento, 'utf8')]);
     dice('...anche dopo la prova del permesso di cancellare (rinominato su se\' stesso, davvero)', ['cestino-spento.png'], rinominati);
 
+    console.log('\n--- disco con il Cestino spento: una foto con l\'attributo "sola lettura" ---');
+    rifiutaCestino.add(soloLettura);
+    rinominati.length = 0;
+    r = await cestina([soloLettura]);
+    dice('nessuno la blocca: "rifiutato", cosi\' l\'app offre la seconda conferma (prima "errore" a ogni tentativo)', [['rifiutato'], true, 0, 0], [r.results, r.ok, r.trashed, r.failed]);
+    dice('...la prova del permesso di cancellare c\'e\' stata (rinominata su se\' stessa, davvero)', ['sola-lettura.png'], rinominati);
+    dice('il file resta sul disco, con il suo contenuto e ancora in sola lettura', [true, 'x', 0], [fs.existsSync(soloLettura), fs.readFileSync(soloLettura, 'utf8'), fs.statSync(soloLettura).mode & 0o200]);
+    rifiutaCestino.add(soloLetturaTenuta);
+    bloccatiCancellazione.add(soloLetturaTenuta);
+    r = await cestina([soloLetturaTenuta]);
+    dice('in sola lettura E tenuta aperta da un programma: resta "errore"', [['errore'], false, 0, 1], [r.results, r.ok, r.trashed, r.failed]);
+    dice('il file resta sul disco', true, fs.existsSync(soloLetturaTenuta));
+
     console.log('\n--- un blocco di un attimo: il secondo tentativo va nel Cestino ---');
     rifiutaCestino.add(attimo);
     sblocca.add(attimo);
@@ -147,6 +170,9 @@ try {
     fs.statSync = statVero;
     fs.openSync = openVero;
     fs.renameSync = renameVero;
+    for (const f of ['sola-lettura.png', 'sola-lettura-tenuta.png']) {
+        try { fs.chmodSync(path.join(cartella, f), 0o666); } catch (_) { /* gia' tolto */ }
+    }
     fs.rmSync(cartella, { recursive: true, force: true });
 }
 process.exit(codice);

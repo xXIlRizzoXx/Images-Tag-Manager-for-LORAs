@@ -538,6 +538,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             //           cancellare, quindi fallisce (EBUSY) anche con un programma che lo tiene
             //           aperto lasciando leggere e scrivere ma non cancellare (Python open(), PIL);
             //           su un file libero non cambia niente. Anche quell'errore resta 'errore'.
+            //           Un file con l'attributo "sola lettura" (fotocamere con la protezione, file
+            //           copiati da un CD) non si apre MAI in scrittura (EPERM), anche se nessuno lo
+            //           blocca: per lui si salta l'apertura e decide solo la rinomina, che riesce
+            //           sui file in sola lettura e fallisce (EBUSY) se un programma lo tiene aperto.
             //           Nota: aprire un file "solo online" di OneDrive lo scarica; succede solo dopo
             //           che il Cestino lo ha gia' rifiutato.
             // ENGLISH: a disk with the Recycle Bin TURNED OFF ("don't move files to the Recycle Bin"),
@@ -553,11 +557,20 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
             //          it fails (EBUSY) also when a program holds it open allowing read and write but
             //          not delete (Python open(), PIL); on a free file it changes nothing. That error
             //          stays 'errore' too.
+            //          A file with the "read-only" attribute (cameras with the protect flag, files
+            //          copied from a CD) NEVER opens for writing (EPERM), even when nobody locks it:
+            //          for it the open is skipped and only the rename decides, which succeeds on
+            //          read-only files and fails (EBUSY) when a program holds it open.
             //          Note: opening an online-only OneDrive file downloads it; this only happens after
             //          the Recycle Bin has already refused it.
             if (ancoraLi && !diRete) {
                 let siApre = false;
-                try { fs.closeSync(fs.openSync(raw, 'r+')); fs.renameSync(raw, raw); siApre = true; } catch (_) { siApre = false; }
+                try {
+                    const soloLettura = (fs.statSync(raw).mode & 0o200) === 0;
+                    if (!soloLettura) fs.closeSync(fs.openSync(raw, 'r+'));
+                    fs.renameSync(raw, raw);
+                    siApre = true;
+                } catch (_) { siApre = false; }
                 if (siApre) {
                     try {
                         await shell.trashItem(raw);
@@ -1156,15 +1169,28 @@ function createMainWindow() {
        programma con l'immagine. Con il menu disattivato non si tornava indietro: progetto,
        cestino e cronologia persi. La pagina dell'app viene caricata con loadFile, che NON
        emette will-navigate, quindi qui possiamo bloccare tutto senza effetti collaterali.
+       Unica eccezione: la pagina che ricarica se stessa. Il pulsante "Ricarica" della
+       schermata di errore chiama window.location.reload(), che e' una navigazione chiesta
+       dalla pagina verso lo STESSO indirizzo: bloccata, nell'app installata il pulsante non
+       faceva niente. Passa solo l'indirizzo identico a quello gia' caricato; un indirizzo
+       malformato viene bloccato.
        ENGLISH: Block ANY navigation away from the app.
        Every "file:" URL used to be allowed, not just the app's own page: dropping a photo on
        the window made Chromium navigate to it, replacing the program with the image. With the
        menu disabled there was no way back: project, trash and undo history all lost. The app's
        page is loaded via loadFile, which does NOT emit will-navigate, so blocking everything
-       here is safe. */
-    mainWindow.webContents.on('will-navigate', (event, url) => {
-        const target = new URL(url);
-        const allowedDevHost = isDev && target.host === 'localhost:3000';
+       here is safe.
+       Only exception: the page reloading itself. The error screen's "Reload" button calls
+       window.location.reload(), a navigation started by the page towards the SAME address:
+       blocked, in the installed app the button did nothing. Only the address identical to the
+       one already loaded goes through; a malformed address is blocked. */
+    const contenutiPrincipali = mainWindow.webContents;
+    contenutiPrincipali.on('will-navigate', (event, url) => {
+        let paginaCorrente = '';
+        try { paginaCorrente = contenutiPrincipali.getURL(); } catch (_) { paginaCorrente = ''; }
+        if (paginaCorrente && url === paginaCorrente) return;
+        let allowedDevHost = false;
+        try { allowedDevHost = isDev && new URL(url).host === 'localhost:3000'; } catch (_) { allowedDevHost = false; }
         if (!allowedDevHost) {
             event.preventDefault();
         }
