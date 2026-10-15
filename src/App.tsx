@@ -17,7 +17,7 @@ import { eseguiStrumentoMcp, fotoPerMcp } from './utils/mcpBridge';
 import type { RispostaMcp } from './utils/mcpBridge';
 import type { McpStatus, McpRichiesta } from './electron';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli, ultimeGenerazioni } from './services/geminiService';
 import type { ModelloChiave, StatoModello } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
@@ -1279,7 +1279,7 @@ export default function App() {
         return () => { vivo = false; };
     }, [geminiApiKey]);
     const modelliProvati: ModelloChiave[] | null = modelliChiave && improntaChiave && modelliChiave.impronta === improntaChiave
-        ? modelliChiave.modelli : null;
+        ? ultimeGenerazioni(modelliChiave.modelli) : null;
     // ITALIANO: l'esito della prova per il modello in uso: quando c'e', vale piu' di quanto si
     //           indovina dal nome (un "pro" che risponde non e' "a pagamento" per questa chiave).
     // ENGLISH: the probe outcome for the model in use: when present it beats the guess from the

@@ -529,7 +529,11 @@ const MODELLI_ESCLUSI = [
     'live', 'aqa', 'learnlm', 'veo', 'robotics', 'computer-use', 'dialog', 'native',
 ];
 
-const PROVA_TIMEOUT_MS = 25_000;
+// ITALIANO: i modelli recenti "ragionano" prima di rispondere: una prova vera dura decine di
+//           secondi. Con 25 s scadeva anche su un modello sano.
+// ENGLISH: recent models "think" before answering: a real probe takes tens of seconds. With 25 s
+//          it ran out even on a healthy model.
+const PROVA_TIMEOUT_MS = 60_000;
 const MODELLI_MAX = 400;
 const PROVE_MAX = 3;
 
@@ -801,10 +805,35 @@ export const scegliModelliChiave = (grezzi: any[]): ModelloChiave[] => {
         if (MODELLI_ALTRO_MESTIERE.some(p => minuscolo.includes(p))) continue;
         visti.add(id);
         buoni.push({ id, label: String((m && m.displayName) || id), versione: versioneDi(id) });
-        if (buoni.length >= MODELLI_CHIAVE_MAX) break;
     }
     buoni.sort((a, b) => confrontaVersioni(b.versione, a.versione) || a.id.localeCompare(b.id));
-    return buoni;
+    // ITALIANO: il tetto si applica DOPO l'ordine e il filtro: prima tagliava nell'ordine di Google
+    //           e poteva buttare via proprio i modelli piu' recenti.
+    // ENGLISH: the cap applies AFTER sorting and filtering: before, it cut in Google's order and
+    //          could throw away the newest models themselves.
+    return ultimeGenerazioni(buoni).slice(0, MODELLI_CHIAVE_MAX);
+};
+
+// ITALIANO: si tengono solo i modelli delle ultime GENERAZIONI_TENUTE versioni, contando anche le
+//           minori: con 4, 3.8, 3.7, 3.6... restano 4, 3.8 e 3.7, con tutte le loro varianti (flash,
+//           lite, pro). Gli alias senza numero ("gemini-flash-latest") escono. Quando Google
+//           pubblica una versione nuova, la piu' vecchia delle tre esce da sola. Vale per la prova
+//           e per l'esito gia' salvato.
+// ENGLISH: only the models of the latest GENERAZIONI_TENUTE versions are kept, minor ones included:
+//          with 4, 3.8, 3.7, 3.6... 4, 3.8 and 3.7 stay, with all their variants (flash, lite, pro).
+//          Aliases with no number ("gemini-flash-latest") go. When Google publishes a new version,
+//          the oldest of the three leaves on its own. It applies to the probe and to the saved outcome.
+export const GENERAZIONI_TENUTE = 3;
+export const ultimeGenerazioni = <T extends { versione?: number[] }>(modelli: T[], quante: number = GENERAZIONI_TENUTE): T[] => {
+    const numero = (m: T): number[] => (Array.isArray(m.versione) ? m.versione : []);
+    const tenute: string[] = [];
+    const versioni = modelli.map(numero).filter(v => v.length > 0).sort((a, b) => confrontaVersioni(b, a));
+    for (const v of versioni) {
+        const chiave = v.join('.');
+        if (!tenute.includes(chiave)) tenute.push(chiave);
+        if (tenute.length >= quante) break;
+    }
+    return modelli.filter(m => numero(m).length > 0 && tenute.includes(numero(m).join('.')));
 };
 
 // ITALIANO: da un errore della prova allo stato del modello, oppure al motivo per fermare tutto.
@@ -826,7 +855,8 @@ export const statoDaErrore = (err: any): { stato?: StatoModello; ferma?: FermaPr
     return { ferma: 'nonRaggiungibile' };
 };
 
-export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal): Promise<{ stato?: StatoModello; ferma?: FermaProva }> => {
+export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal, tempoMs: number = PROVA_TIMEOUT_MS): Promise<{ stato?: StatoModello; ferma?: FermaProva }> => {
+    const tempo = AbortSignal.timeout(tempoMs);
     try {
         const ai = new GoogleGenAI({ apiKey });
         const risposta = await ai.models.generateContent({
@@ -838,7 +868,7 @@ export const provaModelloChiave = async (apiKey: string, id: string, segnale?: A
                 ],
             },
             config: {
-                abortSignal: buildAbortSignal(segnale, PROVA_TIMEOUT_MS),
+                abortSignal: segnale ? AbortSignal.any([segnale, tempo]) : tempo,
                 responseMimeType: 'application/json',
                 responseSchema: { type: Type.ARRAY, items: { type: Type.STRING } },
             },
@@ -848,6 +878,11 @@ export const provaModelloChiave = async (apiKey: string, id: string, segnale?: A
         // ITALIANO: una fermata chiesta dall'utente non e' un esito del modello.
         // ENGLISH: a stop asked by the user is not an outcome of the model.
         if (segnale?.aborted) return {};
+        // ITALIANO: un modello che non risponde in tempo e' "da riprovare", non "rete assente":
+        //           prima fermava tutto il giro, anche se gli altri modelli avevano risposto.
+        // ENGLISH: a model that does not answer in time is "try again", not "no network": before,
+        //          it stopped the whole round, even though the other models had answered.
+        if (tempo.aborted) return { stato: 'occupato' };
         return statoDaErrore(err);
     }
 };
@@ -868,6 +903,7 @@ export const provaTuttiIModelli = async (
     avanzamento?: (modelli: ModelloChiave[], fatti: number) => void,
     segnale?: AbortSignal,
     pausaMs: number = PAUSA_FRA_PROVE_MS,
+    tempoMs: number = PROVA_TIMEOUT_MS,
 ): Promise<EsitoProvaModelli> => {
     if (!apiKey || typeof apiKey !== 'string') return { esito: 'nonRaggiungibile', modelli: [] };
     let modelli: ModelloChiave[];
@@ -903,7 +939,7 @@ export const provaTuttiIModelli = async (
             });
             if (segnale?.aborted) return { esito: 'fermato', modelli };
         }
-        const r = await provaModelloChiave(apiKey, modelli[i].id, segnale);
+        const r = await provaModelloChiave(apiKey, modelli[i].id, segnale, tempoMs);
         if (segnale?.aborted) return { esito: 'fermato', modelli };
         if (r.ferma) return { esito: r.ferma, modelli };
         modelli = modelli.map((m, j) => (j === i ? { ...m, stato: r.stato } : m));

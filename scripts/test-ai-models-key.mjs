@@ -79,11 +79,11 @@ const CHIAVE = 'AIzaFINTA-0123456789-abcdefghij';
 // =============================================================================
 console.log('\n--- l\'elenco: tutti i modelli che possono leggere una foto, non solo i flash ---');
 {
-    const grezzi = ['gemini-3.8-flash', 'gemini-3.1-pro', 'gemini-3-flash-preview', 'gemini-3.5-flash-lite', 'gemini-3.8-flash-tts',
+    const grezzi = ['gemini-3.8-flash', 'gemini-3.1-pro', 'gemini-3.5-flash-preview', 'gemini-3.5-flash-lite', 'gemini-3.8-flash-tts',
         'gemini-3.1-flash-image', 'gemini-embedding-001', 'gemini-3.8-live', 'imagen-4.0', 'gemma-3-27b-it', 'gemini-3.8-flash'].map(n => M(n));
     grezzi.push(M('gemini-solo-conteggio', ['countTokens']));
     const ids = S.scegliModelliChiave(grezzi).map(m => m.id);
-    dice('restano pro, preview e lite, non solo i flash', true, ['gemini-3.1-pro', 'gemini-3-flash-preview', 'gemini-3.5-flash-lite'].every(id => ids.includes(id)));
+    dice('restano pro, preview e lite, non solo i flash', true, ['gemini-3.1-pro', 'gemini-3.5-flash-preview', 'gemini-3.5-flash-lite'].every(id => ids.includes(id)));
     dice('fuori voce, immagini, embedding, live, imagen, gemma, e chi non genera contenuti', [],
         ids.filter(id => /tts|image|embedding|live|imagen|gemma|conteggio/.test(id)));
     dice('niente doppioni', ids.length, new Set(ids).size);
@@ -105,11 +105,11 @@ dice('rete assente = si ferma TUTTO', { ferma: 'nonRaggiungibile' }, S.statoDaEr
 console.log('\n--- il giro completo ---');
 {
     const g = google({
-        modelli: ['gemini-3.8-flash', 'gemini-3.1-pro', 'gemini-3-flash-preview', 'gemini-2.0-flash-001', 'gemini-3.5-flash-lite'].map(n => M(n)),
+        modelli: ['gemini-3.8-flash', 'gemini-3.1-pro', 'gemini-3.8-flash-preview', 'gemini-3.1-flash-001', 'gemini-3.5-flash-lite'].map(n => M(n)),
         generate: async (p) => {
             if (p.model === 'gemini-3.1-pro') throw ERR.senzaGratuito();
-            if (p.model === 'gemini-3-flash-preview') throw ERR.nonTrovato();
-            if (p.model === 'gemini-2.0-flash-001') throw ERR.argomento();
+            if (p.model === 'gemini-3.8-flash-preview') throw ERR.nonTrovato();
+            if (p.model === 'gemini-3.1-flash-001') throw ERR.argomento();
             if (p.model === 'gemini-3.5-flash-lite') throw ERR.fretta();
             return { text: '["ok"]' };
         },
@@ -119,8 +119,8 @@ console.log('\n--- il giro completo ---');
     const stati = Object.fromEntries(r.modelli.map(m => [m.id, m.stato]));
     dice('esito: fatto', 'fatto', r.esito);
     dice('ogni modello col suo stato', {
-        'gemini-3.8-flash': 'utilizzabile', 'gemini-3.5-flash-lite': 'occupato', 'gemini-3.1-pro': 'aPagamento',
-        'gemini-3-flash-preview': 'senzaAccesso', 'gemini-2.0-flash-001': 'nonAdatto',
+        'gemini-3.8-flash': 'utilizzabile', 'gemini-3.8-flash-preview': 'senzaAccesso', 'gemini-3.5-flash-lite': 'occupato',
+        'gemini-3.1-flash-001': 'nonAdatto', 'gemini-3.1-pro': 'aPagamento',
     }, stati);
     dice('l\'avanzamento arriva prima di ogni prova e dopo ognuna', [0, 1, 2, 3, 4, 5], passi);
     dice('una sola richiesta di elenco e una prova per modello', 6, g.chiamate.length);
@@ -149,7 +149,7 @@ console.log('\n--- il giro completo ---');
     // ITALIANO: fermata a meta: dopo la seconda prova l'utente preme "Ferma la prova".
     // ENGLISH: stopped halfway: after the second probe the user presses "Stop the test".
     const ctrl = new AbortController();
-    const g = google({ modelli: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'].map(n => M(n)) });
+    const g = google({ modelli: ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.7-flash', 'gemini-3.6-flash'].map(n => M(n)) });
     const r = await S.provaTuttiIModelli(CHIAVE, (_m, n) => { if (n === 2) ctrl.abort(); }, ctrl.signal, 0);
     dice('fermata: esito fermato', 'fermato', r.esito);
     dice('...i due provati restano, gli altri senza stato', ['utilizzabile', 'utilizzabile', undefined, undefined], r.modelli.map(m => m.stato));
