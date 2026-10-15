@@ -2574,7 +2574,7 @@ export const translations = {
         aiProbeStopped: "テストを止めました。テスト済みのモデル: {n} / {tot}。残りはまだテストしていません。",
         aiProbeNoneFound: "このキーで写真を読めるモデルを、Google は1つも示しませんでした。",
         aiGroupUsable: "使用可能",
-        aiGroupRetry: "再試行待ち（Google が混雑・応答が遅い）",
+        aiGroupRetry: "再試行待ち（Google が混雑しているか応答が遅い）",
         aiGroupUntested: "未テスト",
         aiGroupPaid: "有料（課金が必要）",
         aiGroupNoAccess: "このキーではアクセス不可",
