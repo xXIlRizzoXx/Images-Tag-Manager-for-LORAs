@@ -57,7 +57,18 @@ for (const rel of caricati) dice(`il programma carica ${rel}: e' nel pacchetto`,
 // ENGLISH: every file git tracks in electron/ and public/ must stay in the package.
 const seguiti = execFileSync('git', ['ls-files', 'electron', 'public'], { cwd: radice, encoding: 'utf8' }).split('\n').map((s) => s.trim()).filter(Boolean);
 dice('premessa: git segue almeno 4 file in electron/', true, seguiti.filter((s) => s.startsWith('electron/')).length >= 4);
-for (const rel of seguiti) dice(`${rel} (seguito da git) e' nel pacchetto`, true, spedito(rel));
+// ITALIANO: il sorgente del server MCP non si spedisce com'e': entra impacchettato (con la libreria
+//           MCP e zod) in electron/mcp-server.cjs, che invece deve esserci (npm run build:mcp).
+// ENGLISH: the MCP server source is not shipped as is: it goes in bundled (with the MCP library and
+//          zod) as electron/mcp-server.cjs, which instead must be there (npm run build:mcp).
+const SORGENTI_IMPACCHETTATI = { 'electron/mcp-server.src.mjs': 'electron/mcp-server.cjs' };
+for (const rel of seguiti) {
+    if (SORGENTI_IMPACCHETTATI[rel]) {
+        dice(`${rel} entra impacchettato come ${SORGENTI_IMPACCHETTATI[rel]}`, [false, true], [spedito(rel), spedito(SORGENTI_IMPACCHETTATI[rel])]);
+        continue;
+    }
+    dice(`${rel} (seguito da git) e' nel pacchetto`, true, spedito(rel));
+}
 dice('dist/index.html e\' nel pacchetto', true, spedito('dist/index.html'));
 dice('dist/assets/index.js e\' nel pacchetto', true, spedito('dist/assets/index.js'));
 

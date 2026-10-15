@@ -1285,6 +1285,12 @@ export default function App() {
     // ENGLISH: the probe outcome for the model in use: when present it beats the guess from the
     //          name (a "pro" that answers is not "paid" for this key).
     const statoModelloInUso: StatoModello | undefined = modelliProvati?.find(m => m.id === aiModel)?.stato;
+    // ITALIANO: aspetto delle schede nelle Impostazioni AI e MCP (solo stile, niente logica).
+    // ENGLISH: look of the cards in the AI and MCP settings (style only, no logic).
+    const schedaAi = `flex flex-col gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-gray-800/50 border-gray-700/70' : 'bg-white border-purple-100 shadow-sm'}`;
+    const titoloSchedaAi = `flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-300' : 'text-purple-700'}`;
+    const pulsanteSchedaAi = `flex items-center justify-center gap-1.5 text-[10px] font-medium px-2 py-1.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-600 text-gray-200 bg-gray-700/40 hover:bg-gray-700' : 'border-purple-200 text-purple-800 bg-purple-50/60 hover:bg-purple-100'}`;
+    const notaSchedaAi = `text-[9.5px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`;
 
     // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
     //           ("scegliendo un modello preciso, resta fisso quello") e prima non era vero: nel
@@ -5740,14 +5746,17 @@ export default function App() {
                                                 <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (!v && aiAbortControllerRef.current) handleCancelAITagging(); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
                                             </div>
                                             {aiEnabled && (
-                                                <div className={`flex flex-col gap-2 p-2 rounded-lg text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/50 text-gray-600'}`}>
-                                                    <p className="leading-relaxed">{t.aiCloudInfo || ''}</p>
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="font-medium text-[11px]">{t.aiKeyLabel || 'API Key Gemini'}</label>
+                                                <div className={`flex flex-col gap-2.5 p-2 rounded-xl text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/60 text-gray-600'}`}>
+                                                    <p className={`flex items-start gap-1.5 leading-relaxed px-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                                        <Globe size={11} className="shrink-0 mt-0.5 text-purple-400" />
+                                                        <span>{t.aiCloudInfo || ''}</span>
+                                                    </p>
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><KeyRound size={12} />{t.aiKeyLabel || 'API Key Gemini'}</div>
                                                         <div className="flex items-center gap-1">
                                                             <button
                                                                 onClick={() => setIsApiKeyDialogOpen(true)}
-                                                                className={`flex-1 flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-mono transition-colors border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                                                                className={`flex-1 flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg text-[10.5px] font-mono transition-colors border ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-200 hover:border-purple-500/60' : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-purple-300'}`}
                                                             >
                                                                 <span className="truncate">{geminiApiKey ? `${'•'.repeat(8)}${geminiApiKey.slice(-4)}` : (t.aiKeyMissing || 'Click to enter your key')}</span>
                                                                 <KeyRound size={11} className="shrink-0" />
@@ -5777,7 +5786,7 @@ export default function App() {
                                                         {/* ENGLISH: Expandable guide button */}
                                                         <button
                                                             onClick={() => setIsApiKeyGuideOpen(v => !v)}
-                                                            className={`mt-1 flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-bold transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-300 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+                                                            className={`flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-lg text-[10px] font-semibold transition-colors ${isDarkMode ? 'text-indigo-300 hover:bg-indigo-900/40' : 'text-indigo-700 hover:bg-indigo-50'}`}
                                                         >
                                                             <span className="flex items-center gap-1.5">
                                                                 <BookOpen size={11} />
@@ -5824,8 +5833,8 @@ export default function App() {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="font-medium text-[11px]">{t.aiModelLabel || 'Modello'}</label>
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><Sparkles size={12} />{t.aiModelLabel || 'Modello'}</div>
                                                         <select
                                                             value={aiModelloFissato ? aiModel : '__auto__'}
                                                             onChange={(e) => {
@@ -5840,7 +5849,7 @@ export default function App() {
                                                                     setAiModelloFissato(true);
                                                                 }
                                                             }}
-                                                            className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
+                                                            className={`w-full text-[11px] font-medium rounded-lg border px-2.5 py-2 outline-none cursor-pointer transition-colors focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-100 hover:border-purple-500/60' : 'bg-gray-50 border-gray-200 text-gray-800 hover:border-purple-300'}`}
                                                         >
                                                             <option value="__auto__">{t.aiModelAutomatic.replace('{a}', aiModel)}</option>
                                                             {/* ITALIANO: dopo "Prova tutti i modelli" la tendina mostra i modelli VERI della
@@ -5898,51 +5907,59 @@ export default function App() {
                                                                 <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
                                                             </div>
                                                         )}
-                                                        <p className={`text-[10px] leading-snug mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>{t.aiModelAutoHint}</p>
-                                                        <div className="flex items-center justify-between gap-2 mt-1">
-                                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                        <div className={`flex flex-col gap-0.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                            <span>
                                                                 {modelloControllatoIl > 0
                                                                     ? t.aiModelCheckedOn.replace('{quando}', new Date(modelloControllatoIl).toLocaleDateString(lang))
                                                                     : t.aiModelCheckedNever}
                                                             </span>
+                                                            {(provaModelliStato || (modelliProvati && modelliChiave)) && (
+                                                                <span className={`leading-snug ${provaModelliStato ? (isDarkMode ? 'text-purple-300 font-medium' : 'text-purple-700 font-medium') : ''}`}>
+                                                                    {provaModelliStato
+                                                                        ? (provaModelliStato.totale === 0
+                                                                            ? t.aiProbeListing
+                                                                            : t.aiProbeProgress.replace('{n}', String(provaModelliStato.fatti)).replace('{tot}', String(provaModelliStato.totale)))
+                                                                        : modelliProvati && modelliChiave
+                                                                            ? t.aiProbeSummary
+                                                                                .replace('{quando}', new Date(modelliChiave.il).toLocaleDateString(lang))
+                                                                                .replace('{ok}', String(modelliProvati.filter(m => m.stato === 'utilizzabile').length))
+                                                                                .replace('{pag}', String(modelliProvati.filter(m => m.stato === 'aPagamento').length))
+                                                                                .replace('{no}', String(modelliProvati.filter(m => m.stato === 'senzaAccesso').length))
+                                                                                .replace('{na}', String(modelliProvati.filter(m => m.stato === 'nonAdatto').length))
+                                                                                .replace('{occ}', String(modelliProvati.filter(m => m.stato === 'occupato' || !m.stato).length))
+                                                                            : ''}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-1.5">
                                                             <button
                                                                 onClick={() => controllaModello(false, true)}
                                                                 disabled={controlloModelloInCorso || provaModelliStato !== null || !geminiApiKey}
-                                                                className={`text-[10px] px-2 py-1 rounded-md border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                                                                className={pulsanteSchedaAi}
                                                             >
-                                                                {controlloModelloInCorso ? '…' : t.aiModelCheckNow}
+                                                                {controlloModelloInCorso ? <Loader2 size={11} className="animate-spin shrink-0" /> : <RefreshCw size={11} className="shrink-0" />}
+                                                                <span>{t.aiModelCheckNow}</span>
                                                             </button>
-                                                        </div>
-                                                        <div className="flex items-center justify-between gap-2 mt-1">
-                                                            <span className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                                                                {provaModelliStato
-                                                                    ? (provaModelliStato.totale === 0
-                                                                        ? t.aiProbeListing
-                                                                        : t.aiProbeProgress.replace('{n}', String(provaModelliStato.fatti)).replace('{tot}', String(provaModelliStato.totale)))
-                                                                    : modelliProvati && modelliChiave
-                                                                        ? t.aiProbeSummary
-                                                                            .replace('{quando}', new Date(modelliChiave.il).toLocaleDateString(lang))
-                                                                            .replace('{ok}', String(modelliProvati.filter(m => m.stato === 'utilizzabile').length))
-                                                                            .replace('{pag}', String(modelliProvati.filter(m => m.stato === 'aPagamento').length))
-                                                                            .replace('{no}', String(modelliProvati.filter(m => m.stato === 'senzaAccesso').length))
-                                                                            .replace('{na}', String(modelliProvati.filter(m => m.stato === 'nonAdatto').length))
-                                                                            .replace('{occ}', String(modelliProvati.filter(m => m.stato === 'occupato' || !m.stato).length))
-                                                                        : ''}
-                                                            </span>
                                                             <button
                                                                 onClick={() => (provaModelliStato ? provaModelliRef.current?.abort() : provaModelliChiave())}
                                                                 disabled={!provaModelliStato && (controlloModelloInCorso || !geminiApiKey || !improntaChiave)}
-                                                                className={`text-[10px] px-2 py-1 rounded-md border transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                                                                className={pulsanteSchedaAi}
                                                             >
-                                                                {provaModelliStato ? t.aiProbeStop : t.aiProbeAll}
+                                                                {provaModelliStato ? <Loader2 size={11} className="animate-spin shrink-0" /> : <Wand2 size={11} className="shrink-0" />}
+                                                                <span>{provaModelliStato ? t.aiProbeStop : t.aiProbeAll}</span>
                                                             </button>
                                                         </div>
-                                                        <p className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>{t.aiProbeHint}</p>
+                                                        <div className={`flex flex-col gap-1 pt-2 border-t ${isDarkMode ? 'border-gray-700/60' : 'border-purple-100'}`}>
+                                                            <p className={notaSchedaAi}>{t.aiModelAutoHint}</p>
+                                                            <p className={notaSchedaAi}>{t.aiProbeHint}</p>
+                                                        </div>
                                                     </div>
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><Wand2 size={12} />{t.aiCardTagging}</div>
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">
                                                             <span>{t.aiMaxTags || 'Max tags'}</span>
-                                                            <span className="font-bold tabular-nums">{aiMaxTags}</span>
+                                                            <span className={`font-bold tabular-nums text-[10px] px-1.5 py-0.5 rounded-md ${isDarkMode ? 'bg-purple-900/50 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>{aiMaxTags}</span>
                                                         </label>
                                                         <input
                                                             type="range"
@@ -5955,7 +5972,7 @@ export default function App() {
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">
                                                             <span>{t.aiRpmLabel || 'Velocità (req/min)'}</span>
-                                                            <span className="font-bold tabular-nums">{aiRpm}</span>
+                                                            <span className={`font-bold tabular-nums text-[10px] px-1.5 py-0.5 rounded-md ${isDarkMode ? 'bg-purple-900/50 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>{aiRpm}</span>
                                                         </label>
                                                         <input
                                                             type="range"
@@ -5983,9 +6000,10 @@ export default function App() {
                                                             className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 min-h-[60px] resize-none ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
                                                         />
                                                     </div>
-                                                    <p className={`text-[9px] italic mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                                                    <p className={`${notaSchedaAi} italic pt-2 border-t ${isDarkMode ? 'border-gray-700/60' : 'border-purple-100'}`}>
                                                         {t.aiModelLegend}
                                                     </p>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -6002,7 +6020,7 @@ export default function App() {
                                                     <AppleToggle checked={!!mcpStato?.acceso} onChange={(v: boolean) => { cambiaMcp(v); }} colorClass="bg-emerald-500" />
                                                 )}
                                             </div>
-                                            <div className={`flex flex-col gap-2 p-2 rounded-lg text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-emerald-50/50 text-gray-600'}`}>
+                                            <div className={`flex flex-col gap-2 p-2.5 rounded-xl text-[10px] border ${isDarkMode ? 'bg-gray-800/50 border-gray-700/70 text-gray-400' : 'bg-white border-emerald-100 shadow-sm text-gray-600'}`}>
                                                 <p className="leading-relaxed">{window.electronAPI?.mcp ? t.mcpHint : t.mcpOnlyDesktop}</p>
                                                 {mcpStato?.errore === 'porta' && <p className="text-red-500 leading-snug">{t.mcpErrPort.replace('{porta}', String(mcpStato.porta))}</p>}
                                                 {mcpStato?.errore === 'avvio' && <p className="text-red-500 leading-snug">{t.mcpErrStart}</p>}
@@ -6013,7 +6031,7 @@ export default function App() {
                                                         <div className="flex flex-col gap-1">
                                                             <label className="font-medium text-[11px]">{t.mcpToken}</label>
                                                             <div className="flex items-center gap-1">
-                                                                <code className={`flex-1 min-w-0 truncate rounded-md border px-2 py-1 font-mono ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}>
+                                                                <code className={`flex-1 min-w-0 truncate rounded-lg border px-2.5 py-1.5 font-mono ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
                                                                     {mcpCodiceVisibile ? mcpStato.codice : '•'.repeat(16)}
                                                                 </code>
                                                                 <button onClick={() => setMcpCodiceVisibile(v => !v)} title={mcpCodiceVisibile ? t.mcpHide : t.mcpShow} aria-label={mcpCodiceVisibile ? t.mcpHide : t.mcpShow}
@@ -6032,12 +6050,12 @@ export default function App() {
                                                         </div>
                                                         {(['claudeCode', 'desktop', 'cursor'] as const).map(tipo => (
                                                             <button key={tipo} onClick={() => copiaMcp(configMcp(tipo))}
-                                                                className={`flex items-center gap-1.5 text-left text-[10px] px-2 py-1 rounded-md border transition-colors ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
+                                                                className={`${pulsanteSchedaAi} !justify-start text-left`}>
                                                                 <Copy size={11} className="shrink-0"/>
                                                                 {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
                                                             </button>
                                                         ))}
-                                                        <p className="leading-snug italic">{t.mcpDesktopNote}</p>
+                                                        <p className={`${notaSchedaAi} italic pt-2 border-t ${isDarkMode ? 'border-gray-700/60' : 'border-emerald-100'}`}>{t.mcpDesktopNote}</p>
                                                     </>
                                                 )}
                                             </div>
