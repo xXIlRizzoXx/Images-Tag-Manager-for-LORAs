@@ -1268,6 +1268,13 @@ export default function App() {
     });
     const [improntaChiave, setImprontaChiave] = useState('');
     const [provaModelliStato, setProvaModelliStato] = useState<{ fatti: number; totale: number } | null>(null);
+    // ITALIANO: la parte "Avanzate" delle Impostazioni AI (controlli dei modelli e Come tagga) e'
+    //           chiusa di serie: in vista restano solo chiave e modello. Si apre da sola mentre una
+    //           prova o un controllo e' in corso, cosi' l'avanzamento si vede.
+    // ENGLISH: the "Advanced" part of the AI settings (model checks and How it tags) is closed by
+    //          default: only key and model stay in view. It opens by itself while a probe or a check
+    //          is running, so the progress shows.
+    const [aiAvanzate, setAiAvanzate] = useState(false);
     const provaModelliRef = useRef<AbortController | null>(null);
     useEffect(() => {
         let vivo = true;
@@ -5907,6 +5914,7 @@ export default function App() {
                                                                 <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
                                                             </div>
                                                         )}
+                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (<>
                                                         <div className={`flex flex-col gap-0.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                             <span>
                                                                 {modelloControllatoIl > 0
@@ -5954,7 +5962,17 @@ export default function App() {
                                                             <p className={notaSchedaAi}>{t.aiModelAutoHint}</p>
                                                             <p className={notaSchedaAi}>{t.aiProbeHint}</p>
                                                         </div>
+                                                        </>)}
                                                     </div>
+                                                    <button
+                                                        onClick={() => setAiAvanzate(v => !v)}
+                                                        aria-expanded={aiAvanzate || provaModelliStato !== null || controlloModelloInCorso}
+                                                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${isDarkMode ? 'text-purple-300 hover:bg-gray-800/70' : 'text-purple-700 hover:bg-purple-50'}`}
+                                                    >
+                                                        <span>{t.aiAdvanced}</span>
+                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                                    </button>
+                                                    {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (
                                                     <div className={schedaAi}>
                                                         <div className={titoloSchedaAi}><Wand2 size={12} />{t.aiCardTagging}</div>
                                                     <div className="flex flex-col gap-1">
@@ -6005,6 +6023,7 @@ export default function App() {
                                                         {t.aiModelLegend}
                                                     </p>
                                                     </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
