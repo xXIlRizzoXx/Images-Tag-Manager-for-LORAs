@@ -51,7 +51,12 @@ for (let i = sezione.indexOf(`{${APERTA} && (`); i >= 0; i = sezione.indexOf(`{$
     blocchi.push([i, chiusura < 0 ? sezione.length : chiusura]);
 }
 const dentro = (pezzo) => { const p = sezione.indexOf(pezzo); return p >= 0 && blocchi.some(([a, b]) => p > a && p < b); };
-dice('ci sono due blocchi che si aprono con "Avanzate" (controlli e Come tagga)', 2, blocchi.length);
+// ITALIANO: dalla 2.0.1 un blocco solo, SOTTO il pulsante: i controlli dei modelli e Come tagga.
+// ENGLISH: since 2.0.1 a single block, BELOW the button: the model checks and How it tags.
+dice('un solo blocco si apre con "Avanzate" (controlli dei modelli e Come tagga)', 1, blocchi.length);
+dice('il pulsante "Avanzate" sta sopra a "Controlla ora" e a Come tagga', [true, true],
+    [sezione.indexOf('{t.aiAdvanced}') >= 0 && sezione.indexOf('{t.aiAdvanced}') < sezione.indexOf('{t.aiModelCheckNow}'),
+     sezione.indexOf('{t.aiAdvanced}') >= 0 && sezione.indexOf('{t.aiAdvanced}') < sezione.indexOf('{t.aiCardTagging}')]);
 dice('"Controlla ora" sta dentro "Avanzate"', true, dentro('{t.aiModelCheckNow}'));
 dice('"Prova i modelli recenti" sta dentro "Avanzate"', true, dentro('t.aiProbeAll'));
 dice('il riepilogo e l\'avanzamento della prova stanno dentro "Avanzate"', true, dentro('t.aiProbeSummary') && dentro('t.aiProbeProgress'));

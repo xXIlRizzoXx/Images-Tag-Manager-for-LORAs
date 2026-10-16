@@ -230,6 +230,26 @@ const applySort = (list: any[], order: string): any[] => {
 //          pass through a large folder kept re-laying out and the scrollbar jumped. The value comes
 //          from the grid (see the container's style), not as a prop: passing it as a prop would
 //          re-render EVERY memoised card while dragging the zoom slider, which today is pure CSS.
+// ITALIANO: una foto che Chromium non sa disegnare (TIFF, HEIC, file rovinato) ha 0x0 e la sua
+//           "miniatura" e' un indirizzo che non si apre: la galleria mostrava l'icona dell'immagine
+//           rotta. Al suo posto un riquadro con l'estensione del file e una frase.
+// ENGLISH: a photo Chromium cannot draw (TIFF, HEIC, damaged file) is 0x0 and its "thumbnail" is an
+//          address that does not open: the gallery showed the broken-image icon. In its place a box
+//          with the file's extension and a sentence.
+const senzaAnteprima = (img: any): boolean => !!img && img.width === 0 && img.height === 0;
+const AnteprimaNonDisponibile = ({ img, isDarkMode, t }: any) => {
+    const nome = String(img?.file?.name || '');
+    const punto = nome.lastIndexOf('.');
+    const estensione = punto > 0 ? nome.slice(punto + 1).toUpperCase() : '';
+    return (
+        <div className={`w-full h-full min-h-[120px] flex flex-col items-center justify-center gap-1.5 p-3 text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <ImageIcon size={28} strokeWidth={1.5} />
+            {estensione && <span className="text-xs font-bold tracking-wider">{estensione}</span>}
+            <span className="text-[11px] leading-snug">{t.thumbUnavailable}</span>
+        </div>
+    );
+};
+
 const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
     // ITALIANO: foto piccola, o che il programma non sa mostrare (0x0): vedi qualityWarningText.
     // ENGLISH: a small photo, or one the program cannot display (0x0): see qualityWarningText.
@@ -238,7 +258,9 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
     return (
         <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto var(--card-h, 320px)' }}>
             <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
-                <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${isSelected ? 'opacity-80' : ''}`} />
+                {senzaAnteprima(img)
+                    ? <AnteprimaNonDisponibile img={img} isDarkMode={isDarkMode} t={t} />
+                    : <img src={img.thumb} alt="Preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} group-hover:scale-[1.02] transition-transform duration-500 ${isSelected ? 'opacity-80' : ''}`} />}
 
                 {lowQuality && (
                     <div className="absolute top-2 right-2 z-30 group/alert">
@@ -3756,7 +3778,11 @@ export default function App() {
     //           loro .txt non si e' potuto leggere (vedi txtNonLettoInVigore): va nello stesso avviso.
     // ENGLISH: `fraseNonScritte` = the sentence on the photos handleSaveChanges left out because their
     //          .txt could not be read (see txtNonLettoInVigore): it goes into the same notice.
-    const performSave = async (imagesToSave: any[], fraseNonScritte = ''): Promise<boolean> => {
+    // ITALIANO: `blocca` = le foto lasciate fuori erano modifiche vere: "Salva e chiudi" non chiude.
+    //           Falso quando la frase nomina solo foto che avevano in piu' la sola trigger.
+    // ENGLISH: `blocca` = the photos left out were real edits: "Save and close" does not close.
+    //          False when the sentence only names photos whose only extra was the trigger.
+    const performSave = async (imagesToSave: any[], fraseNonScritte = '', blocca = !!fraseNonScritte): Promise<boolean> => {
         // ITALIANO: Ogni immagine viene riscritta nella SUA cartella (img.dirHandle), non in una
         //           cartella globale: con due cartelle aperte insieme i tag finivano nel posto
         //           sbagliato. Le immagini senza cartella (caricate come file singoli) proseguono
@@ -4018,7 +4044,7 @@ export default function App() {
         // ENGLISH: "Save and close" shows it again after "Project closed" (see avvisoSalvataggioRef).
         avvisoSalvataggioRef.current = fraseSvuotate;
         if (fraseNonScritte) frasi.push(fraseNonScritte);
-        const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0 && !fraseNonScritte;
+        const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0 && !blocca;
         if (riuscito) soundManager.chime();
         showNotification(frasi.join(' '), (failedNames.length > 0 || doppie.length > 0) ? "error" : (scaricate > 0 || svuotate > 0 || fraseNonScritte) ? "info" : "success");
         return riuscito;
@@ -4041,7 +4067,15 @@ export default function App() {
         //          on it on purpose, not for a trigger (see fotoDaSalvare); even then Save leaves it out
         //          (see nonScritte below): only the viewer and the tag file editor replace its .txt.
         const modifiedImages = images.filter(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
-        if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
+        // ITALIANO: le foto col .txt non letto che hanno in piu' solo la trigger: non contano come da
+        //           salvare (fotoDaSalvare) e non si scrivono, ma prima "Salva" diceva "salvate con
+        //           successo" senza dire che a loro la trigger non e' arrivata (visto dal vivo).
+        // ENGLISH: the photos with an unread .txt whose only extra is the trigger: they do not count as
+        //          to be saved (fotoDaSalvare) and are not written, but "Save" used to say "saved
+        //          successfully" without saying the trigger did not reach them (seen live).
+        const soloTrigger = images.filter(img => !img.isTrashed && txtNonLettoInVigore(img) && !modifiedImages.includes(img)
+            && JSON.stringify(img.tags || []) !== JSON.stringify(img.originalTags || [])).map(img => img.file.name);
+        if (modifiedImages.length === 0 && soloTrigger.length === 0) { showNotification(t.noChanges, "info"); return true; }
         // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import non si scrive: cosa contiene
         //           non si sa, e un tag aggiunto a tutte, un Incolla o l'AI lo sostituivano coi soli tag
         //           nuovi (vedi txtNonLettoInVigore). Resta da salvare, l'avviso la nomina, e si torna
@@ -4050,14 +4084,15 @@ export default function App() {
         //          unknown, and a tag added to all photos, a Paste or the AI replaced it with the new
         //          tags alone (see txtNonLettoInVigore). It stays unsaved, the notice names it, and
         //          FALSE is returned: "Save and close" does not close. To replace it on purpose: the viewer.
-        const nonScritte = modifiedImages.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
+        const modificheNonScritte = modifiedImages.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
+        const nonScritte = [...modificheNonScritte, ...soloTrigger];
         const daScrivere = modifiedImages.filter(img => !txtNonLettoInVigore(img));
         const primi = nonScritte.slice(0, 3).join(', ') + (nonScritte.length > 3 ? '…' : '');
         const fraseNonScritte = nonScritte.length === 0 ? ''
             : nonScritte.length === 1 ? t.saveUnreadTxtOne.replace('{names}', primi)
             : t.saveUnreadTxtMany.replace('{n}', String(nonScritte.length)).replace('{names}', primi);
-        if (daScrivere.length === 0) { showNotification(fraseNonScritte, "info"); return false; }
-        return performSave(daScrivere, fraseNonScritte);
+        if (daScrivere.length === 0) { showNotification(fraseNonScritte, "info"); return modificheNonScritte.length === 0; }
+        return performSave(daScrivere, fraseNonScritte, modificheNonScritte.length > 0);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
@@ -5475,8 +5510,12 @@ export default function App() {
             <SaveBeforeCloseDialog
                 isOpen={saveCloseDialog.isOpen}
                 isSaving={saveCloseDialog.isSaving}
-                title={t.closeAllTitle}
-                message={t.closeAllUnsavedMsg}
+                // ITALIANO: dalla X della finestra si chiude il PROGRAMMA, non solo il progetto: lo dicono
+                //           titolo e testo (prima diceva "Chiudere il progetto attuale?", visto dal vivo).
+                // ENGLISH: from the window's X the PROGRAM closes, not just the project: title and text say so
+                //          (it used to say "Close the current project?", seen live).
+                title={chiusuraFinestraRef.current ? t.closeAppTitle : t.closeAllTitle}
+                message={chiusuraFinestraRef.current ? t.closeAppUnsavedMsg : t.closeAllUnsavedMsg}
                 onSave={handleSaveAndCloseProject}
                 onDiscard={handleDiscardAndClose}
                 onCancel={handleCancelClose}
@@ -5696,7 +5735,9 @@ export default function App() {
                                         {sortedTrashedImages.map(img => (
                                             <div key={img.id} className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full`}>
                                                 <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}}>
-                                                    <img src={img.thumb} alt="Trash preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} opacity-70`} />
+                                                    {senzaAnteprima(img)
+                                                        ? <AnteprimaNonDisponibile img={img} isDarkMode={isDarkMode} t={t} />
+                                                        : <img src={img.thumb} alt="Trash preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} opacity-70`} />}
                                                     
                                                     {qualityWarningText(t, img.width, img.height) !== null && (
                                                         <div className="absolute top-2 right-2 z-30 group/alert">
@@ -6013,7 +6054,22 @@ export default function App() {
                                                                 <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
                                                             </div>
                                                         )}
-                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (<>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setAiAvanzate(v => !v)}
+                                                        aria-expanded={aiAvanzate || provaModelliStato !== null || controlloModelloInCorso}
+                                                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${isDarkMode ? 'text-purple-300 hover:bg-gray-800/70' : 'text-purple-700 hover:bg-purple-50'}`}
+                                                    >
+                                                        <span>{t.aiAdvanced}</span>
+                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                                    </button>
+                                                    {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (<>
+                                                    {/* ITALIANO: il pulsante "Avanzate" sta sopra a TUTTO quello che apre: prima i controlli dei modelli
+                                                                  (erano dentro la scheda Modello, sopra il pulsante), poi Come tagga.
+                                                        ENGLISH: the "Advanced" button sits above EVERYTHING it opens: first the model checks (they
+                                                                 were inside the Model card, above the button), then How it tags. */}
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><RefreshCw size={12} />{t.aiCardModelChecks}</div>
                                                         <div className={`flex flex-col gap-0.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                             <span>
                                                                 {modelloControllatoIl > 0
@@ -6057,17 +6113,7 @@ export default function App() {
                                                                 <span>{provaModelliStato ? t.aiProbeStop : t.aiProbeAll}</span>
                                                             </button>
                                                         </div>
-                                                        </>)}
                                                     </div>
-                                                    <button
-                                                        onClick={() => setAiAvanzate(v => !v)}
-                                                        aria-expanded={aiAvanzate || provaModelliStato !== null || controlloModelloInCorso}
-                                                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${isDarkMode ? 'text-purple-300 hover:bg-gray-800/70' : 'text-purple-700 hover:bg-purple-50'}`}
-                                                    >
-                                                        <span>{t.aiAdvanced}</span>
-                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                                                    </button>
-                                                    {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (
                                                     <div className={schedaAi}>
                                                         <div className={titoloSchedaAi}><Wand2 size={12} />{t.aiCardTagging}<span className="ml-auto">{tastoAiuto('tagga')}</span></div>
                                                     <div className="flex flex-col gap-1">
@@ -6111,7 +6157,7 @@ export default function App() {
                                                         />
                                                     </div>
                                                     </div>
-                                                    )}
+                                                    </>)}
                                                 </div>
                                             )}
                                         </div>
@@ -6205,8 +6251,8 @@ export default function App() {
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'} my-1`}></div>
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} font-semibold tracking-widest uppercase`}>{t.versionLabel} {appVersion}</span>
-                                            <span className={`text-[9px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'} font-medium italic`}>{t.copyrightLabel} xXIlRizzoXx</span>
+                                            <span className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} font-semibold tracking-widest uppercase`}>{t.versionLabel} {appVersion}</span>
+                                            <span className="text-[9px] text-gray-500 font-medium italic">{t.copyrightLabel} xXIlRizzoXx</span>
                                         </div>
                                     </div>
                                 </div>}
