@@ -18,7 +18,11 @@ trovato altri ritocchi, sistemati: la finestra ora ha una misura minima (1024x60
 dello schermo), il pannello si adatta anche alla finestra stretta, una connessione appesa ferma la
 prova invece di farla durare un'ora, e il costo delle prove con la fatturazione attiva è scritto
 onestamente. I testi nuovi sono stati ricontrollati nelle 9 lingue. Prove automatiche: 156 file,
-tutte verdi. Resta da provare sul programma vero la versione con tutte le riparazioni.
+tutte verdi. Provata il 16 ottobre sul programma vero, con la build finale: la scelta automatica
+è passata da sola al modello più nuovo (3.8), la prova dei modelli è arrivata in fondo senza
+segnare per sbaglio nessun modello come non adatto, e un client MCP vero ha letto le foto, ne ha
+cambiato i tag e il disco è rimasto intatto finché non si è premuto "Salva Modifiche". Le
+Impostazioni AI ora mostrano solo chiave e modello: il resto sta in "Avanzate".
 Novità 2.0.0 (traguardo 107, 15 ottobre 2026): **secondo grande ciclo di controllo chiuso, e la
 versione diventa 2.0.0.** Tre giri completi su tutto il programma, con lo stesso metodo del ciclo
 precedente: 122 problemi segnalati, 106 confermati da verificatori indipendenti, **99 riparati in
