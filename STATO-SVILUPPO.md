@@ -1,7 +1,24 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 15 ottobre 2026
+**Ultimo aggiornamento:** 16 ottobre 2026
 **Versione attuale:** 2.0.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 2.0.0 (traguardo 108, 15-16 ottobre 2026): **due funzioni nuove per l'AI, provate sul
+programma vero e ricontrollate.** (1) **Prova i modelli recenti**: nelle Impostazioni un pulsante
+prova, con un'immagine minuscola, i modelli delle ultime tre versioni di Gemini che Google elenca
+per la chiave, e li divide nella tendina in utilizzabili, a pagamento, senza accesso, non adatti
+e da riprovare. (2) **Server MCP**: spento di serie, ascolta solo su questo computer e chiede un
+codice segreto; permette a un'AI che si usa già (Claude Code, Claude Desktop, Cursor...) di vedere
+le foto aperte e cambiarne i tag, ma non salva mai: i .txt si scrivono solo con "Salva Modifiche".
+Le Impostazioni AI e MCP sono divise in schede. Le prove sul programma vero hanno trovato tre
+difetti seri, tutti riparati: l'immagine di prova dei modelli era un file rotto e Google rifiutava
+ogni modello (per questo anche la scelta automatica non passava mai a un modello più nuovo); con
+l'AI accesa il pannello Impostazioni usciva dallo schermo; un modello lento fermava tutta la prova
+come se mancasse la rete. Due revisori indipendenti hanno poi ricontrollato le riparazioni e
+trovato altri ritocchi, sistemati: la finestra ora ha una misura minima (1024x600, mai più grande
+dello schermo), il pannello si adatta anche alla finestra stretta, una connessione appesa ferma la
+prova invece di farla durare un'ora, e il costo delle prove con la fatturazione attiva è scritto
+onestamente. I testi nuovi sono stati ricontrollati nelle 9 lingue. Prove automatiche: 156 file,
+tutte verdi. Resta da provare sul programma vero la versione con tutte le riparazioni.
 Novità 2.0.0 (traguardo 107, 15 ottobre 2026): **secondo grande ciclo di controllo chiuso, e la
 versione diventa 2.0.0.** Tre giri completi su tutto il programma, con lo stesso metodo del ciclo
 precedente: 122 problemi segnalati, 106 confermati da verificatori indipendenti, **99 riparati in
