@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-const { app, BrowserWindow, ipcMain, net, safeStorage, session, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net, safeStorage, session, Menu, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -1239,10 +1239,28 @@ function createSplashWindow() {
     splashWindow.on('closed', () => { splashWindow = null; });
 }
 
+// ITALIANO: misura minima della finestra. Sotto i 1024 px di larghezza i tre riquadri in alto
+//           (carica, trigger, pulsanti) vanno uno sotto l'altro e la grafica si scompone; sotto i
+//           600 px di altezza la galleria quasi sparisce. Mai piu' grande dell'area utile dello
+//           schermo: su un portatile piccolo con lo zoom di Windows (1366x768 al 125% = ~1093x566)
+//           un minimo piu' alto farebbe uscire la finestra dai bordi.
+// ENGLISH: minimum window size. Below 1024 px wide the three top panels (load, triggers, buttons)
+//          stack and the layout falls apart; below 600 px tall the gallery nearly vanishes. Never
+//          larger than the screen work area: on a small laptop with Windows scaling (1366x768 at
+//          125% = ~1093x566) a higher minimum would push the window off the screen.
+const FINESTRA_MIN_LARGHEZZA = 1024;
+const FINESTRA_MIN_ALTEZZA = 600;
+const misuraMinima = () => {
+    let area = { width: FINESTRA_MIN_LARGHEZZA, height: FINESTRA_MIN_ALTEZZA };
+    try { area = screen.getPrimaryDisplay().workAreaSize; } catch (_) { }
+    return { minWidth: Math.min(FINESTRA_MIN_LARGHEZZA, area.width), minHeight: Math.min(FINESTRA_MIN_ALTEZZA, area.height) };
+};
+
 function createMainWindow() {
     mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
+        ...misuraMinima(),
         title: `Images Tag Manager for LORAs v${appVersion}`,
         show: false,
         autoHideMenuBar: true,

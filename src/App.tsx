@@ -1409,13 +1409,13 @@ export default function App() {
             tieniElenco(esito.disponibili);
             if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'progettoRifiutato' && esito.esito !== 'occupato') segnaControllo();
 
-            // ITALIANO: mentre Google rispondeva (qualche secondo: elenco e fino a tre prove)
+            // ITALIANO: mentre Google rispondeva (da pochi secondi a qualche minuto: elenco e fino a tre prove da 60 s)
             //           l'utente ha scelto a mano un modello preciso, ed e' ancora bloccato: vale
             //           la sua scelta. Il risultato si mette da parte senza dire niente (l'elenco
             //           della tendina e' gia' aggiornato). Prima lo si applicava lo stesso: la
             //           scelta spariva, il blocco cadeva e l'avviso diceva "Prima:" col modello
             //           di prima della scelta. Se invece e' tornato su Automatico, il risultato vale.
-            // ENGLISH: while Google was answering (a few seconds: the list and up to three probes)
+            // ENGLISH: while Google was answering (seconds to a few minutes: the list and up to three 60 s probes)
             //          the user picked a specific model by hand, and it is still locked: their
             //          choice stands. The result is set aside without a word (the dropdown list is
             //          already refreshed). It used to be applied anyway: the choice vanished, the
@@ -5702,7 +5702,7 @@ export default function App() {
                             <div className="relative" ref={settingsRef}>
                                 <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}><span className="font-semibold text-sm hidden sm:inline-block">{t.settings}</span><Settings size={20} className={isSettingsOpen ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} /></button>
                                 
-                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-80 max-h-[calc(100vh-7rem)] overflow-y-auto overscroll-contain ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
+                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-80 max-h-[calc(100vh-13rem)] md:max-h-[calc(100vh-8.5rem)] overflow-y-auto overscroll-contain ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
                                     <h3 className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} uppercase mb-4 tracking-wider`}>{t.settings}</h3>
                                     <div className="flex flex-col gap-4">
                                         <div className="flex items-center justify-between">
@@ -6072,7 +6072,7 @@ export default function App() {
                                                     <img src={flagUriForLang(lang)} alt={lang} className="w-5 h-5 rounded-full object-cover" />
                                                     <span className="text-xs font-medium uppercase">{lang}</span>
                                                 </div>
-                                                <div className={`absolute right-0 top-full mt-1 w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                                <div className={`absolute right-0 bottom-full w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 hidden group-hover:block ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                                                     {APP_LANGUAGES.map((l) => (
                                                         <div 
                                                             key={l.code} 
