@@ -48,6 +48,12 @@ It runs entirely on your machine and sends **no telemetry**. AI tagging is **opt
 
 <img src="docs/img/features/12-ai.jpg" alt="Optional AI: Gemini writes the first draft, off by default, with your own encrypted API key" width="100%" />
 
+<img src="docs/img/features/16-ai-models.jpg" alt="Model test: tries the latest three Gemini versions with a tiny image and sorts them in the model menu" width="100%" />
+
+<img src="docs/img/features/17-mcp.jpg" alt="MCP server: Claude Code, Claude Desktop, Cursor or any MCP client can see the open photos and change their tags, without ever saving" width="100%" />
+
+<img src="docs/img/features/18-help.jpg" alt="Help where you need it: a question-mark button next to every Settings section opens its explanation" width="100%" />
+
 <img src="docs/img/features/13-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />
 
 <img src="docs/img/features/14-light-theme.jpg" alt="Light and dark theme, chosen by hand rather than following Windows" width="100%" />

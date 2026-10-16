@@ -2,6 +2,13 @@
 
 **Ultimo aggiornamento:** 16 ottobre 2026
 **Versione attuale:** 2.0.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 2.0.0 (traguardo 109, 16 ottobre 2026): **pagina del progetto rifatta per la 2.0.0.** Tutte
+le schermate del README sono state rifatte con l'interfaccia di oggi (prima si vedeva ancora il vecchio
+tasto "Export All (.zip)"), e ci sono tre schede nuove: la prova dei modelli recenti, il server MCP
+e i tasti "?" delle Impostazioni. Le Impostazioni AI e MCP sono fotografate con una chiave e un
+esito della prova dimostrativi, con la rete bloccata: per farle non è partita nessuna chiamata a
+Google. La finestra non si stringe più sotto 1040x600 e, a quella misura, la fascia in alto resta
+su due righe: provato sul programma vero con la build finale del 16 ottobre.
 Novità 2.0.0 (traguardo 108, 15-16 ottobre 2026): **due funzioni nuove per l'AI, provate sul
 programma vero e ricontrollate.** (1) **Prova i modelli recenti**: nelle Impostazioni un pulsante
 prova, con un'immagine minuscola, i modelli delle ultime tre versioni di Gemini che Google elenca
@@ -17,7 +24,7 @@ come se mancasse la rete. Due revisori indipendenti hanno poi ricontrollato le r
 trovato altri ritocchi, sistemati: la finestra ora ha una misura minima (1040x600, mai più grande
 dello schermo), il pannello si adatta anche alla finestra stretta, una connessione appesa ferma la
 prova invece di farla durare un'ora, e il costo delle prove con la fatturazione attiva è scritto
-onestamente. I testi nuovi sono stati ricontrollati nelle 9 lingue. Prove automatiche: 156 file,
+onestamente. I testi nuovi sono stati ricontrollati nelle 9 lingue. Prove automatiche: 159 file,
 tutte verdi. Provata il 16 ottobre sul programma vero, con la build finale: la scelta automatica
 è passata da sola al modello più nuovo (3.8), la prova dei modelli è arrivata in fondo senza
 segnare per sbaglio nessun modello come non adatto, e un client MCP vero ha letto le foto, ne ha
