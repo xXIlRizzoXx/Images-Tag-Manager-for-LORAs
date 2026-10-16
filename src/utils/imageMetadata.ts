@@ -110,12 +110,12 @@ const minimalExifSegment = (orientation: number): number[] => [
     0x00, 0x00, 0x00, 0x00,                         // nessun altro IFD / no next IFD
 ];
 
-// ITALIANO: JPEG. Restano APP0 (JFIF), il profilo colore (APP2 ICC_PROFILE), APP14 (Adobe, serve a
+// ITALIANO: JPEG. Restano APP0 solo se JFIF, il profilo colore (APP2 ICC_PROFILE), APP14 (Adobe, serve a
 //           decodificare i colori) e tutte le parti dell'immagine; via APP1 (Exif, XMP), gli altri
 //           APPn (Photoshop/IPTC, C2PA, dati dei produttori) e i commenti, anche fra una scansione e
 //           l'altra di un JPEG progressivo. Quello che segue la fine dell'immagine (foto secondarie,
 //           video delle "foto in movimento", dati dei produttori) non si manda.
-// ENGLISH: JPEG. Kept: APP0 (JFIF), the colour profile (APP2 ICC_PROFILE), APP14 (Adobe, needed to
+// ENGLISH: JPEG. Kept: APP0 only if JFIF, the colour profile (APP2 ICC_PROFILE), APP14 (Adobe, needed to
 //          decode the colours) and every part of the image; removed: APP1 (Exif, XMP), the other
 //          APPn (Photoshop/IPTC, C2PA, maker data) and comments, also between the scans of a
 //          progressive JPEG. What follows the end of the image (secondary pictures, the video of
@@ -147,6 +147,10 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
             }
         } else if (m === 0xE2) {
             if (ascii(b, i + 4, 12) === 'ICC_PROFILE\0') out.push(b.subarray(i, end));
+        } else if (m === 0xE0) {
+            // ITALIANO: solo JFIF; via JFXX (miniatura), CIFF (proprietario e numero di serie), AVI1...
+            // ENGLISH: JFIF only; JFXX (thumbnail), CIFF (owner and serial number), AVI1... removed.
+            if (ascii(b, i + 4, 5) === 'JFIF\0') out.push(b.subarray(i, end));
         } else if (m === 0xFE || (isApp && m !== 0xE0 && m !== 0xEE)) {
             // via / removed
         } else {
