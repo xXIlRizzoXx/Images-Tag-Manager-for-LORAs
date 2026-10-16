@@ -74,4 +74,16 @@ for (const l of Object.keys(lingue)) {
 console.log('\n--- dopo un errore grave resta a schermo l\'errore ---');
 dice('fermato da una chiave sbagliata: nessun riepilogo sopra l\'errore', [], prova(lingue.en, false, { ok: 0, err: 0, skip: 0, tag: 0 }, true));
 
+// ITALIANO: la frase delle foto con dati nascosti si aggiunge in coda: dopo un punto a larghezza
+//           piena (cinese, giapponese) senza spazio, altrove con uno spazio.
+// ENGLISH: the hidden-data sentence is appended: after a full-width full stop (Chinese, Japanese)
+//          with no space, elsewhere with one space.
+console.log('\n--- foto non mandate per i dati nascosti, in coda al riepilogo ---');
+for (const l of ['zh', 'ja', 'en']) {
+    const t = lingue[l];
+    const [[m]] = prova(t, false, { ...DUE, nonPulibili: 1 });
+    const atteso = riempi(t.aiBatchDone, DUE) + (l === 'en' ? ' ' : '') + t.aiBatchHiddenData.replace('{n}', '1');
+    dice(`${l}: la frase segue il riepilogo ${l === 'en' ? 'con uno spazio' : 'senza spazio'}`, atteso, m);
+}
+
 process.exit(esito());

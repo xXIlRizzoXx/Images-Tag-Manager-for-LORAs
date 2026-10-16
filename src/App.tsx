@@ -5090,8 +5090,11 @@ export default function App() {
             const modello = cancelled
                 ? (t.aiBatchCancelled || 'AI tagging cancelled. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.')
                 : (t.aiBatchDone || 'AI tagging finished. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.');
-            const summary = modello.replace('{ok}', String(okCount)).replace('{err}', String(errorCount)).replace('{skip}', String(skippedCount)).replace('{n}', String(totalTagsAdded))
-                + (nonPulibiliCount > 0 ? ' ' + t.aiBatchHiddenData.replace('{n}', String(nonPulibiliCount)) : '');
+            const base = modello.replace('{ok}', String(okCount)).replace('{err}', String(errorCount)).replace('{skip}', String(skippedCount)).replace('{n}', String(totalTagsAdded));
+            // ITALIANO: dopo un punto a larghezza piena (cinese, giapponese) niente spazio fra le due frasi.
+            // ENGLISH: after a full-width full stop (Chinese, Japanese) no space between the two sentences.
+            const summary = base + (nonPulibiliCount > 0
+                ? (/[。！？]$/.test(base) ? '' : ' ') + t.aiBatchHiddenData.replace('{n}', String(nonPulibiliCount)) : '');
             if (!fatalAbort) showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;

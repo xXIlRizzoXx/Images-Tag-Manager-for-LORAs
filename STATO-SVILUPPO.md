@@ -1,7 +1,24 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 16 ottobre 2026
-**Versione attuale:** 2.0.0, pubblicata su GitHub il 16 ottobre 2026 (installer e portable). Da qui riparte la regola del +0.0.1: la prossima modifica farà 2.0.1.
+**Versione attuale:** 2.0.1 in lavorazione (non ancora costruita né pubblicata). La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+Novità 2.0.1 (traguardo 110, 16 ottobre 2026): **sistemato tutto quello che era rimasto aperto.**
+I 9 difetti minori lasciati dal secondo ciclo di controllo: una foto HEIC i cui dati nascosti (come
+la posizione GPS) stanno in un posto che il programma non sa pulire non parte più verso Google, e un
+messaggio lo dice; una foto ritoccata in un altro programma dopo l'apertura si
+tagga con l'AI, perché viene riletta dalla sua cartella; Ctrl+Z su una trigger word che le foto hanno
+già annulla solo quella; le foto con lo stesso nome (a.png e a.jpg) non perdono più il loro .txt in
+comune in quattro casi rari di cestino e annullamento. In più: i 4 ritocchi visti nelle prove dal vivo
+(miniatura dei TIFF non più rotta, il salvataggio dice quando un .txt non letto è stato lasciato
+com'era, la X della finestra parla di chiudere il programma, la versione si legge meglio), in
+"Avanzate" il pulsante sta sopra a tutto quello che apre, francese e spagnolo scrivono "trigger
+words" come le altre lingue, e le voci piccole del quaderno: riaprendo la stessa cartella le foto non
+si caricano più in doppio, l'editor dei file di tag non perde il testo scritto e non confermato, i
+tag delle foto nel cestino non finiscono più nell'export dei tag del progetto, il programma concede
+alla pagina solo i due permessi che usa, il logo pesa 415 KB invece di 3 MB, e il README consiglia
+una copia dei file e spiega cosa fare se un antivirus blocca il programma. Le foto .heic aperte con
+"Carica immagini" ora leggono e scrivono il loro .txt. Ogni correzione ha la sua prova automatica,
+vista fallire sul codice di prima: le prove sono passate da 159 a 173 file, tutte verdi.
 Novità 2.0.0 (traguardo 109, 16 ottobre 2026): **pagina del progetto rifatta per la 2.0.0.** Tutte
 le schermate del README sono state rifatte con l'interfaccia di oggi (prima si vedeva ancora il vecchio
 tasto "Export All (.zip)"), e ci sono tre schede nuove: la prova dei modelli recenti, il server MCP
