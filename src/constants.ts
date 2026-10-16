@@ -724,7 +724,7 @@ export const translations = {
         mcpEditedNotice: "Photos whose tags were changed by an external AI: {n}. They are not saved yet: review them and press \"Save Changes\".",
         aiCardTagging: "How it tags",
         aiAdvanced: "Advanced",
-        helpButton: "Explanation",
+        helpButton: "Help",
         aiModelCheckBusy: "Google is asking to slow down: the check will be repeated later. The current one stays.",
         aiModelLimitedWarning: "Limited free tier (lower rate limits). Heavy use needs billing enabled.",
         aiSkipTagged: "Skip already-tagged photos",

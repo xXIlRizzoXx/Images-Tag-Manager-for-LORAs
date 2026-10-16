@@ -1322,8 +1322,8 @@ export default function App() {
         <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setAiuto(quale); }}
-            title={t.helpButton}
-            aria-label={t.helpButton}
+            title={`${t.helpButton} — ${testiAiuto[quale].titolo}`}
+            aria-label={`${t.helpButton} — ${testiAiuto[quale].titolo}`}
             className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold leading-none border shrink-0 transition-colors ${isDarkMode ? 'border-gray-600 text-gray-400 hover:text-white hover:border-gray-400' : 'border-gray-300 text-gray-500 hover:text-gray-900 hover:border-gray-500'}`}
         >?</button>
     );

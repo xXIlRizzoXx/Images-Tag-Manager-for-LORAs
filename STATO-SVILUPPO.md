@@ -22,7 +22,9 @@ tutte verdi. Provata il 16 ottobre sul programma vero, con la build finale: la s
 è passata da sola al modello più nuovo (3.8), la prova dei modelli è arrivata in fondo senza
 segnare per sbaglio nessun modello come non adatto, e un client MCP vero ha letto le foto, ne ha
 cambiato i tag e il disco è rimasto intatto finché non si è premuto "Salva Modifiche". Le
-Impostazioni AI ora mostrano solo chiave e modello: il resto sta in "Avanzate".
+Impostazioni AI ora mostrano solo chiave e modello: il resto sta in "Avanzate". Le spiegazioni
+lunghe non riempiono più il pannello: ogni sezione ha un tasto "?" che le apre in una finestra
+(quella di MCP si apre da sola la prima volta che lo si accende).
 Novità 2.0.0 (traguardo 107, 15 ottobre 2026): **secondo grande ciclo di controllo chiuso, e la
 versione diventa 2.0.0.** Tre giri completi su tutto il programma, con lo stesso metodo del ciclo
 precedente: 122 problemi segnalati, 106 confermati da verificatori indipendenti, **99 riparati in
