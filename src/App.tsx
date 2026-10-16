@@ -77,6 +77,10 @@ const LANG_CODES = APP_LANGUAGES.map(l => l.code);
 //           si mostrano. `spento` = si vedono ma non si possono scegliere.
 // ENGLISH: the model dropdown's groups after "Test recent models", in display order. `spento` =
 //          shown but not selectable.
+// ITALIANO: le sezioni delle Impostazioni che hanno un tasto "?" con la spiegazione.
+// ENGLISH: the Settings sections that have a "?" button with the explanation.
+type AiutoImpostazioni = 'aggiornamenti' | 'ai' | 'modello' | 'tagga' | 'mcp';
+
 const GRUPPI_MODELLI: ReadonlyArray<{
     stato: StatoModello | 'daProvare';
     etichetta: 'aiGroupUsable' | 'aiGroupRetry' | 'aiGroupUntested' | 'aiGroupPaid' | 'aiGroupNoAccess' | 'aiGroupNotSuitable';
@@ -1275,6 +1279,20 @@ export default function App() {
     //          default: only key and model stay in view. It opens by itself while a probe or a check
     //          is running, so the progress shows.
     const [aiAvanzate, setAiAvanzate] = useState(false);
+    // ITALIANO: le spiegazioni lunghe delle Impostazioni non stanno piu' nel pannello: un tasto "?"
+    //           accanto a ogni sezione le apre in una finestra. `aiutoRef` serve a non chiudere il
+    //           pannello quando si clicca dentro la finestra (che sta fuori dal pannello).
+    // ENGLISH: the long Settings explanations no longer sit in the panel: a "?" button next to each
+    //          section opens them in a window. `aiutoRef` keeps the panel open when clicking inside
+    //          the window (which lives outside the panel).
+    const [aiuto, setAiuto] = useState<AiutoImpostazioni | null>(null);
+    const aiutoRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!aiuto) return undefined;
+        const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setAiuto(null); } };
+        window.addEventListener('keydown', esc, true);
+        return () => window.removeEventListener('keydown', esc, true);
+    }, [aiuto]);
     const provaModelliRef = useRef<AbortController | null>(null);
     useEffect(() => {
         let vivo = true;
@@ -1298,6 +1316,26 @@ export default function App() {
     const titoloSchedaAi = `flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-300' : 'text-purple-700'}`;
     const pulsanteSchedaAi = `flex items-center justify-center gap-1.5 text-[10px] font-medium px-2 py-1.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-600 text-gray-200 bg-gray-700/40 hover:bg-gray-700' : 'border-purple-200 text-purple-800 bg-purple-50/60 hover:bg-purple-100'}`;
     const notaSchedaAi = `text-[9.5px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`;
+    // ITALIANO: il tasto "?" che apre la spiegazione di una sezione delle Impostazioni.
+    // ENGLISH: the "?" button that opens the explanation of a Settings section.
+    const tastoAiuto = (quale: AiutoImpostazioni) => (
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setAiuto(quale); }}
+            title={t.helpButton}
+            aria-label={t.helpButton}
+            className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold leading-none border shrink-0 transition-colors ${isDarkMode ? 'border-gray-600 text-gray-400 hover:text-white hover:border-gray-400' : 'border-gray-300 text-gray-500 hover:text-gray-900 hover:border-gray-500'}`}
+        >?</button>
+    );
+    // ITALIANO: cosa dice la finestra di ogni sezione: i testi che prima stavano nel pannello.
+    // ENGLISH: what each section's window says: the texts that used to sit in the panel.
+    const testiAiuto: Record<AiutoImpostazioni, { titolo: string; testi: string[] }> = {
+        aggiornamenti: { titolo: t.updateCheckLabel, testi: [t.updateCheckHint] },
+        ai: { titolo: t.aiSettings, testi: [t.aiCloudInfo, t.aiBetaHint] },
+        modello: { titolo: t.aiModelLabel, testi: [t.aiModelAutoHint, t.aiProbeHint, t.aiModelLegend] },
+        tagga: { titolo: t.aiCardTagging, testi: [t.aiRpmHint, t.aiSkipTaggedHint] },
+        mcp: { titolo: t.mcpTitle, testi: [t.mcpHint, t.mcpDesktopNote] },
+    };
 
     // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
     //           ("scegliendo un modello preciso, resta fisso quello") e prima non era vero: nel
@@ -5151,6 +5189,7 @@ export default function App() {
     }, []);
     useEffect(() => {
         function handleClickOutside(event: any) {
+            if (aiutoRef.current && aiutoRef.current.contains(event.target)) return;
             if (settingsRef.current && !settingsRef.current.contains(event.target)) setIsSettingsOpen(false);
         }
         document.addEventListener("mousedown", handleClickOutside);
@@ -5474,7 +5513,32 @@ export default function App() {
             {/* ITALIANO: accept solo immagini = nel selettore i file di testo NON si vedono */}
             {/* ENGLISH: images-only accept = text files are NOT shown in the picker */}
             <input type="file" accept="image/*" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
-            
+
+            {/* ITALIANO: la finestra con la spiegazione di una sezione delle Impostazioni (tasto "?").
+                          Si chiude con Chiudi, con Esc o cliccando fuori; il pannello resta aperto.
+                ENGLISH: the window with the explanation of a Settings section ("?" button). It closes
+                         with Close, Esc or a click outside; the panel stays open. */}
+            {aiuto && (
+                <div ref={aiutoRef} role="dialog" aria-modal="true" aria-labelledby="aiuto-titolo"
+                    onMouseDown={(e) => { if (e.target === e.currentTarget) setAiuto(null); }}
+                    className={`fixed inset-0 z-[450] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/70' : 'bg-gray-900/40'} backdrop-blur-sm animate-in fade-in`}>
+                    <div className={`w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl shadow-2xl border overflow-hidden ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                        <div className={`flex items-center justify-between gap-3 px-5 py-3 border-b ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+                            <h3 id="aiuto-titolo" className="text-sm font-bold">{testiAiuto[aiuto].titolo}</h3>
+                            <button onClick={() => setAiuto(null)} title={t.close} aria-label={t.close}
+                                className={`p-1 rounded-lg ${isDarkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><X size={16} /></button>
+                        </div>
+                        <div className="flex flex-col gap-3 px-5 py-4 overflow-y-auto text-[13px] leading-relaxed">
+                            {testiAiuto[aiuto].testi.filter(Boolean).map((testo, i) => <p key={i}>{testo}</p>)}
+                        </div>
+                        <div className={`flex justify-end px-5 py-3 border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+                            <button onClick={() => setAiuto(null)} autoFocus
+                                className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">{t.close}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {isTrashOpen && (
                 <div className={`fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
                     <div className={`w-full max-w-5xl h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
@@ -5719,10 +5783,9 @@ export default function App() {
                                         {apiElectron && typeof apiElectron.checkForUpdate === 'function' && (
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center justify-between">
-                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{t.updateCheckLabel}</div>
+                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{t.updateCheckLabel}{tastoAiuto('aggiornamenti')}</div>
                                                     <AppleToggle checked={updateCheckChoice === 'on'} onChange={(v: boolean) => rispondiAggiornamenti(v ? 'on' : 'off')} colorClass="bg-indigo-500" />
                                                 </div>
-                                                <p className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.updateCheckHint}</p>
                                             </div>
                                         )}
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
@@ -5747,6 +5810,7 @@ export default function App() {
                                                     >
                                                         {t.aiBeta || 'Beta'}
                                                     </span>
+                                                    {tastoAiuto('ai')}
                                                 </div>
                                                 {/* ITALIANO: spegnere l'AI ferma anche la taggatura in blocco in corso, come Annulla: prima le foto continuavano a partire verso Google con l'AI "spenta" */}
                                                 {/* ENGLISH: switching the AI off also stops the running bulk tagging, like Cancel: photos used to keep going to Google with the AI "off" */}
@@ -5841,7 +5905,7 @@ export default function App() {
                                                         )}
                                                     </div>
                                                     <div className={schedaAi}>
-                                                        <div className={titoloSchedaAi}><Sparkles size={12} />{t.aiModelLabel || 'Modello'}</div>
+                                                        <div className={titoloSchedaAi}><Sparkles size={12} />{t.aiModelLabel || 'Modello'}<span className="ml-auto">{tastoAiuto('modello')}</span></div>
                                                         <select
                                                             value={aiModelloFissato ? aiModel : '__auto__'}
                                                             onChange={(e) => {
@@ -5958,10 +6022,6 @@ export default function App() {
                                                                 <span>{provaModelliStato ? t.aiProbeStop : t.aiProbeAll}</span>
                                                             </button>
                                                         </div>
-                                                        <div className={`flex flex-col gap-1 pt-2 border-t ${isDarkMode ? 'border-gray-700/60' : 'border-purple-100'}`}>
-                                                            <p className={notaSchedaAi}>{t.aiModelAutoHint}</p>
-                                                            <p className={notaSchedaAi}>{t.aiProbeHint}</p>
-                                                        </div>
                                                         </>)}
                                                     </div>
                                                     <button
@@ -5974,7 +6034,7 @@ export default function App() {
                                                     </button>
                                                     {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (
                                                     <div className={schedaAi}>
-                                                        <div className={titoloSchedaAi}><Wand2 size={12} />{t.aiCardTagging}</div>
+                                                        <div className={titoloSchedaAi}><Wand2 size={12} />{t.aiCardTagging}<span className="ml-auto">{tastoAiuto('tagga')}</span></div>
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">
                                                             <span>{t.aiMaxTags || 'Max tags'}</span>
@@ -6000,13 +6060,9 @@ export default function App() {
                                                             onChange={(e) => setAiRpm(parseInt(e.target.value, 10))}
                                                             className="w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
                                                         />
-                                                        <p className="text-[9px] italic opacity-80">{t.aiRpmHint || 'Free tier: max 15. Più alto = più veloce ma rischio rate-limit.'}</p>
                                                     </div>
-                                                    <div className={`flex items-start justify-between gap-3 px-2 py-1.5 rounded-md ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-100/70'}`}>
-                                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                                            <span className="font-medium text-[11px]">{t.aiSkipTagged || 'Salta foto già taggate'}</span>
-                                                            <span className="text-[9px] italic opacity-75 leading-snug">{t.aiSkipTaggedHint || 'Se attivo, le immagini che hanno già almeno un tag vengono saltate durante "Tagga tutte con AI".'}</span>
-                                                        </div>
+                                                    <div className={`flex items-center justify-between gap-3 px-2 py-1.5 rounded-md ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-100/70'}`}>
+                                                        <span className="font-medium text-[11px] min-w-0">{t.aiSkipTagged || 'Salta foto già taggate'}</span>
                                                         <AppleToggle checked={aiSkipTagged} onChange={(v: boolean) => setAiSkipTagged(v)} colorClass="bg-purple-500" />
                                                     </div>
                                                     <div className="flex flex-col gap-1">
@@ -6019,9 +6075,6 @@ export default function App() {
                                                             className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 min-h-[60px] resize-none ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
                                                         />
                                                     </div>
-                                                    <p className={`${notaSchedaAi} italic pt-2 border-t ${isDarkMode ? 'border-gray-700/60' : 'border-purple-100'}`}>
-                                                        {t.aiModelLegend}
-                                                    </p>
                                                     </div>
                                                     )}
                                                 </div>
@@ -6035,13 +6088,22 @@ export default function App() {
                                                 <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
                                                     <Plug size={16} className="text-emerald-500"/>
                                                     {t.mcpTitle}
+                                                    {tastoAiuto('mcp')}
                                                 </div>
                                                 {window.electronAPI?.mcp && (
-                                                    <AppleToggle checked={!!mcpStato?.acceso} onChange={(v: boolean) => { cambiaMcp(v); }} colorClass="bg-emerald-500" />
+                                                    <AppleToggle checked={!!mcpStato?.acceso} onChange={(v: boolean) => {
+                                                        cambiaMcp(v);
+                                                        // ITALIANO: la prima volta che lo si accende la spiegazione si apre da sola: dice
+                                                        //           anche che un'AI in cloud manda le foto ai suoi server.
+                                                        // ENGLISH: the first time it is switched on the explanation opens by itself: it
+                                                        //          also says a cloud AI sends the photos to its own servers.
+                                                        if (v) { try { if (localStorage.getItem('mcpSpiegazioneVista') !== '1') { localStorage.setItem('mcpSpiegazioneVista', '1'); setAiuto('mcp'); } } catch (_) { setAiuto('mcp'); } }
+                                                    }} colorClass="bg-emerald-500" />
                                                 )}
                                             </div>
+                                            {(!window.electronAPI?.mcp || !!mcpStato?.errore || !!(mcpStato?.acceso && mcpStato.attivo)) && (
                                             <div className={`flex flex-col gap-2 p-2.5 rounded-xl text-[10px] border ${isDarkMode ? 'bg-gray-800/50 border-gray-700/70 text-gray-400' : 'bg-white border-emerald-100 shadow-sm text-gray-600'}`}>
-                                                <p className="leading-relaxed">{window.electronAPI?.mcp ? t.mcpHint : t.mcpOnlyDesktop}</p>
+                                                {!window.electronAPI?.mcp && <p className="leading-relaxed">{t.mcpOnlyDesktop}</p>}
                                                 {mcpStato?.errore === 'porta' && <p className="text-red-500 leading-snug">{t.mcpErrPort.replace('{porta}', String(mcpStato.porta))}</p>}
                                                 {mcpStato?.errore === 'avvio' && <p className="text-red-500 leading-snug">{t.mcpErrStart}</p>}
                                                 {mcpStato?.errore === 'salvataggio' && <p className="text-red-500 leading-snug">{t.mcpErrSave}</p>}
@@ -6075,10 +6137,10 @@ export default function App() {
                                                                 {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
                                                             </button>
                                                         ))}
-                                                        <p className={`${notaSchedaAi} italic pt-2 border-t ${isDarkMode ? 'border-gray-700/60' : 'border-emerald-100'}`}>{t.mcpDesktopNote}</p>
                                                     </>
                                                 )}
                                             </div>
+                                            )}
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
                                         <div className="flex items-center justify-between">

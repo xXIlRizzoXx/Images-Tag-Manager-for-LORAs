@@ -36,7 +36,7 @@ dice('"Avanzate" e\' chiusa di serie', true, /const \[aiAvanzate, setAiAvanzate\
 // ITALIANO: tutto cio' che sta tra l'inizio della scheda Modello e la fine delle Impostazioni AI.
 // ENGLISH: everything between the start of the Model card and the end of the AI settings.
 const inizio = app.indexOf('{t.aiModelLabel');
-const fine = app.indexOf('{t.aiModelLegend}', inizio);
+const fine = app.indexOf('{t.mcpTitle}', inizio);
 const sezione = inizio > 0 && fine > inizio ? app.slice(inizio, fine) : '';
 dice('la sezione Modello / Come tagga si trova', true, sezione.length > 0);
 
@@ -55,7 +55,9 @@ dice('ci sono due blocchi che si aprono con "Avanzate" (controlli e Come tagga)'
 dice('"Controlla ora" sta dentro "Avanzate"', true, dentro('{t.aiModelCheckNow}'));
 dice('"Prova i modelli recenti" sta dentro "Avanzate"', true, dentro('t.aiProbeAll'));
 dice('il riepilogo e l\'avanzamento della prova stanno dentro "Avanzate"', true, dentro('t.aiProbeSummary') && dentro('t.aiProbeProgress'));
-dice('le due spiegazioni lunghe stanno dentro "Avanzate"', true, dentro('{t.aiModelAutoHint}') && dentro('{t.aiProbeHint}'));
+// ITALIANO: dal 16/10/2026 le spiegazioni lunghe non stanno piu' nel pannello ma nella finestra del tasto "?".
+// ENGLISH: since 16/10/2026 the long explanations no longer sit in the panel but in the "?" button window.
+dice('le spiegazioni lunghe non stanno piu\' nel pannello', [], ['{t.aiModelAutoHint}', '{t.aiProbeHint}', '{t.aiModelLegend}', '{t.aiRpmHint', '{t.aiSkipTaggedHint'].filter(p => sezione.includes(p)));
 dice('la scheda Come tagga sta dentro "Avanzate"', true, dentro('{t.aiCardTagging}') && dentro('{t.aiMaxTags') && dentro('{t.aiCustomPromptLabel'));
 dice('la tendina del modello resta sempre in vista', false, dentro('value={aiModelloFissato ? aiModel : \'__auto__\'}'));
 dice('l\'avviso "questo modello non funziona" resta sempre in vista', false, dentro('{t.aiModelNotWorkingWarning}'));
