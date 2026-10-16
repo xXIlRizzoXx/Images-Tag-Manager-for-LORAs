@@ -1,7 +1,7 @@
 /* ITALIANO: PROVA DEL CONTROLLO DEI MODELLI CON L'AI SPENTA
    Il README promette che il programma parla con Google solo con l'AI accesa. Ma la riparazione del
    modello (dopo "modello non disponibile" su una foto) partiva anche se nel frattempo l'AI era stata
-   spenta: elenco dei modelli, fino a tre prove con un'immagine di un pixel, poi il cambio di modello
+   spenta: elenco dei modelli, fino a tre prove con un'immagine minuscola, poi il cambio di modello
    e un avviso, tutto con l'AI spenta. E il controllo di avvio, se l'AI si spegneva mentre girava,
    andava avanti e poteva cambiare il modello. La regola: con l'AI spenta il controllo non parte, e
    se l'AI si spegne mentre Google risponde il controllo si ferma senza cambiare niente e senza
@@ -13,7 +13,7 @@
    ENGLISH: TEST OF THE MODEL CHECK WITH THE AI SWITCHED OFF
    The README promises the program talks to Google only with the AI switched on. But the model repair
    (after "model unavailable" on one photo) started even if the AI had been switched off meanwhile:
-   the model list, up to three probes with a one-pixel image, then a model switch and a notice, all
+   the model list, up to three probes with a tiny image, then a model switch and a notice, all
    with the AI off. And the startup check, if the AI was switched off while it ran, went on and could
    switch the model. The rule: with the AI off the check does not start, and if the AI is switched
    off while Google answers the check stops without changing anything and without notices.

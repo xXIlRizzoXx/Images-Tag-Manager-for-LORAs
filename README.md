@@ -18,7 +18,7 @@
 
 You point it at a folder, it reads every image together with its `.txt` tag file, and it lets you edit those tags — one photo at a time or hundreds at once — then writes them straight back to disk in the same format.
 
-It runs entirely on your machine and sends **no telemetry**. Cloud AI tagging is **optional and off by default**: images reach Google only if you switch the AI on and supply your own API key.
+It runs entirely on your machine and sends **no telemetry**. AI tagging is **optional and off by default**: images reach Google only if you switch the AI on and supply your own API key, and reach another AI only if you switch on the MCP server and connect that AI yourself.
 
 ---
 
@@ -78,12 +78,25 @@ If you want it, get a free key at [Google AI Studio](https://aistudio.google.com
 
 The model is picked for you: on **Automatic** the app uses the newest model of Google's free line, tries it before switching and tells you when it changes. To do that, with the AI on it checks Google's list of models at most once a day. Prefer one model? Choose it in Settings and it stays fixed, unless Google retires it or takes it off the free tier: then the app switches to the newest free model that works, tells you, and goes back to Automatic. The default pace (14 requests a minute) stays inside Google's free tier; the Speed slider can go faster if your key allows more.
 
+Not sure which models your key can really use? **Test recent models** tries, with a tiny image, the models of the latest three Gemini versions that Google lists for your key, and sorts them in the model menu: usable, paid, no access, not suitable for tagging photos, or to retry later. It can take several minutes (up to a minute for each slow model) and you can stop it halfway. On the free tier it costs nothing; with billing enabled, tests of paid models are charged, usually less than one US cent each and a few cents for models that think at length.
+
+---
+
+## 🔌 Tagging with an AI you already use (MCP)
+
+Settings has a built-in **MCP server**, **off by default**. Switch it on and an AI assistant on your computer (Claude Code, Claude Desktop, Cursor or any other MCP client) can list the open photos, look at them and change their tags, instead of Gemini.
+
+*   It listens **only on your own computer** (`127.0.0.1`), never on the network, and asks for a **secret token**; **Create a new token** locks out every AI connected with the old one.
+*   The AI sees only the photos open in the app. Each photo it looks at is a copy at most 1024 px on its longest side, redrawn so that the hidden details of the file (GPS position, camera serial number, author) do not go with it. What it sees then goes wherever that AI goes: an assistant that runs in the cloud sends it to its own servers.
+*   **It never saves.** Tags changed by the AI show up in the app as unsaved changes: review them, and the `.txt` files are written only when you press **Save Changes**.
+*   Settings gives you the ready-made command or configuration to copy for Claude Code, Claude Desktop and the others. Claude Desktop connects through the small `mcp-remote` program, which it downloads from the internet by itself the first time.
+
 ---
 
 ## 🔒 Privacy
 
 *   **No telemetry, no accounts, no auto-update.** The app can tell you when a new version is out, but only if you want it to: it asks you once, the check stays off unless you say yes, and then at startup it reads only the latest version number from GitHub.
-*   **Only two addresses are ever contacted**: Google, and only with the AI switched on; GitHub, and only if you said yes to the version check. The app's window can reach nothing but Google, and the version check is the only other connection the program makes.
+*   **Only two addresses are ever contacted**: Google, and only with the AI switched on; GitHub, and only if you said yes to the version check. The app's window can reach nothing but Google, and the version check is the only other connection the program makes. The MCP server, if you switch it on, only accepts connections from programs on your own computer; what those programs do with the photos is up to them.
 *   **Your API key is never stored in clear text** and is not inside the download.
 *   **Your files stay yours**: images and `.txt` are read where they are and rewritten only when you save. **Move to Trash** only sets a photo aside in the app's own trash: its files stay in your folder. They go to the Windows Recycle Bin when you press **Empty Trash** (or **Delete from Disk** on a single photo in the trash), and **Undo the emptying** puts the last emptying back while the project is still open and the Recycle Bin still has the files. Network folders and removable drives (USB sticks, SD cards) usually have no Recycle Bin, some disks have it turned off (or too small for a photo), and sometimes the app cannot tell where a file sits on disk: then it asks a second time, says the removal is final, and only deletes if you confirm. That second step works through the folder opened with **Load Folder**: photos loaded one by one or dragged in from such a drive stay in the app's trash, and the app tells you to open their folder with **Load Folder** or to delete them in File Explorer.
 
