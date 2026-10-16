@@ -146,7 +146,7 @@
         ${EndIf}
         ${NSD_CreateCheckbox} 0 0 100% 12u "$(CLEAN_INSTALL_CHECK)"
         Pop $CleanInstallCheckbox
-        ${NSD_CreateLabel} 0 20u 100% 100u "$(CLEAN_INSTALL_DESC)"
+        ${NSD_CreateLabel} 0 20u 100% 118u "$(CLEAN_INSTALL_DESC)"
         Pop $0
         nsDialogs::Show
       !endif
