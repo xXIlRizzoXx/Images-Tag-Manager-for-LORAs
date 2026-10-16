@@ -225,8 +225,8 @@ console.log('\n--- modifica B, "Salva" (il visualizzatore), cestina A, Svuota ce
     //          updateOriginalTags is run.
     const riga = sorgenteApp.split('\n').find(r => r.startsWith('    const updateOriginalTags = '));
     dice('premessa: trovato updateOriginalTags in src/App.tsx', true, !!riga);
-    const salvaB = (app) => new Function('isUndoRedoAction', 'setImages',
-        esbuild.transformSync(riga || '', { loader: 'ts' }).code + '\nreturn updateOriginalTags;')(app.refs.isUndoRedoAction, app.modifica)('B', ['modificato']);
+    const salvaB = (app) => new Function('isUndoRedoAction', 'setImages', 'gemelliDelTxt',
+        esbuild.transformSync(riga || '', { loader: 'ts' }).code + '\nreturn updateOriginalTags;')(app.refs.isUndoRedoAction, app.modifica, async () => () => { })('B', ['modificato']);
     const app = creaApp(['A', 'B'].map(id => foto(id, { cestinata: false })), { api: apiFinta() });
     app.modifica(prev => prev.map(i => (i.id === 'B' ? { ...i, tags: ['modificato'] } : i)));
     await app.attendi();

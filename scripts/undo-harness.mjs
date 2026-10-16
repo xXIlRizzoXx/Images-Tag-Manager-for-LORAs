@@ -105,7 +105,12 @@ const disco = sorgente.includes(RIGA_DISCO) ? effetto('    }, [images]);', RIGA_
 const RIGA_SELEZIONE = '            const fotoNelProgetto = new Set(';
 const selezione = sorgente.includes(RIGA_SELEZIONE) ? effetto('    }, [images]);', RIGA_SELEZIONE) : '';
 
-const testi = [...Object.values(PEZZI), 'const effettoCronologia = ' + testoCronologia + ';'];
+// ITALIANO: le gemelle dello stesso .txt (gemelliDelTxt), usate da performSave e updateOriginalTags:
+//           il codice di prima non le aveva, e allora non c'e'.
+// ENGLISH: the twins of the same .txt (gemelliDelTxt), used by performSave and updateOriginalTags:
+//          the previous code did not have it, and then it is not there.
+const gemelli = ritaglia('    const gemelliDelTxt = async ');
+const testi = [...Object.values(PEZZI), gemelli, 'const effettoCronologia = ' + testoCronologia + ';'];
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
 testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
 testi.push('const effettoSelezione = ' + (selezione || '() => { }') + ';');

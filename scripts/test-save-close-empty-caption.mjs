@@ -67,9 +67,9 @@ const app = ({ dalla = 'progetto' } = {}) => {
     const avvisoSalvataggioRef = { current: '' };
     const showNotification = (m, tipo) => a.notifiche.push([m, tipo]);
     a.performSave = new Function('setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
-        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef',
+        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef', 'gemelliDelTxt',
         jsSalva + '\nreturn performSave;')(() => { }, () => { }, showNotification, t, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
-        {}, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, avvisoSalvataggioRef);
+        {}, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, avvisoSalvataggioRef, async () => () => { });
     a.salva = async () => true;
     const f = new Function('isSavingRef', 'showNotification', 't', 'setSaveCloseDialog', 'handleSaveChanges', 'closeProjectNow', 'console',
         'chiusuraFinestraRef', 'permettiChiusuraRef', 'window', 'avvisoSalvataggioRef', jsChiudi + '\nreturn handleSaveAndCloseProject;')(

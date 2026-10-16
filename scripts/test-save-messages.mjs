@@ -70,9 +70,9 @@ const cartellaBuona = () => ({ getFileHandle: async () => ({ createWritable: asy
 const salva = async (t, foto, finestra = {}) => {
     const r = { notifiche: [] };
     const f = new Function('setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
-        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'document', 'URL', 'Blob', 'setTimeout', 'isUndoRedoAction', 'avvisoSalvataggioRef',
+        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'document', 'URL', 'Blob', 'setTimeout', 'isUndoRedoAction', 'avvisoSalvataggioRef', 'gemelliDelTxt',
         jsSalva + '\nreturn performSave;')(() => { }, () => { }, (m, tipo) => r.notifiche.push([m, tipo]), t, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
-        finestra, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, documento, url, Blob, subito, { current: false }, { current: '' });
+        finestra, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, documento, url, Blob, subito, { current: false }, { current: '' }, async () => () => { });
     r.ok = await f(foto);
     r.ultimo = r.notifiche[r.notifiche.length - 1] || null;
     return r;

@@ -159,11 +159,11 @@ console.log('\n--- il backup anti-crash usa la stessa regola ---');
 // ENGLISH: the viewer writes the photo's .txt: the REAL line of updateOriginalTags is run.
 const rigaVisualizzatore = sorgente.split('\n').find(r => r.startsWith('    const updateOriginalTags = '));
 if (!rigaVisualizzatore) { console.log('NO  updateOriginalTags non trovato in src/App.tsx'); process.exit(1); }
-const fabbricaVisualizzatore = new Function('isUndoRedoAction', 'setImages',
+const fabbricaVisualizzatore = new Function('isUndoRedoAction', 'setImages', 'gemelliDelTxt',
     (await esbuild.transform(rigaVisualizzatore, { loader: 'ts' })).code + '\nreturn updateOriginalTags;');
-const salvaDalVisualizzatore = (app, nome, tags) => {
+const salvaDalVisualizzatore = async (app, nome, tags) => {
     app.modifica(nome, tags);
-    fabbricaVisualizzatore({ current: false }, (fn) => { app.stato.images = typeof fn === 'function' ? fn(app.stato.images) : fn; })(app.foto(nome).id, tags);
+    await fabbricaVisualizzatore({ current: false }, (fn) => { app.stato.images = typeof fn === 'function' ? fn(app.stato.images) : fn; }, async () => () => { })(app.foto(nome).id, tags);
 };
 
 console.log('\n--- .txt scritto davvero con lo stesso contenuto dell\'import: la regola di sempre torna ---');
@@ -175,8 +175,8 @@ console.log('\n--- .txt scritto davvero con lo stesso contenuto dell\'import: la
     //          "ohwx," (equal to the import's record), then the trigger becomes "sks": b.txt must be
     //          rewritten like the others, not left with "ohwx" without a notice.
     const app = await creaApp(['ohwx']);
-    salvaDalVisualizzatore(app, 'b.png', ['ohwx', 'cat']);
-    salvaDalVisualizzatore(app, 'b.png', ['ohwx']);
+    await salvaDalVisualizzatore(app, 'b.png', ['ohwx', 'cat']);
+    await salvaDalVisualizzatore(app, 'b.png', ['ohwx']);
     app.trigger(['sks']);
     dice('la X della finestra la conta fra le modifiche non salvate', true, G.modificheNonSalvate([app.foto('b.png')], app.stato.trigger));
     dice('"Salva" scrive anche b.txt con la trigger nuova', ['b.png', 'c.png'], await app.salva());
@@ -187,7 +187,7 @@ console.log('\n--- .txt scritto davvero con lo stesso contenuto dell\'import: la
     // ENGLISH: no trigger: the viewer empties b.txt (equal to the import's record, []), then "dog"
     //          is added on the card: "Save" writes it.
     const app = await creaApp([]);
-    salvaDalVisualizzatore(app, 'b.png', []);
+    await salvaDalVisualizzatore(app, 'b.png', []);
     app.modifica('b.png', ['dog']);
     dice('b.txt svuotato dal visualizzatore, poi "dog": "Salva" lo scrive', ['b.png'], await app.salva());
 }
@@ -204,8 +204,8 @@ console.log('\n--- .txt scritto davvero con lo stesso contenuto dell\'import: la
     // ENGLISH: Ctrl+Z back to the import step after the writes: the .txt stays known.
     const app = await creaApp(['ohwx']);
     const passoImport = app.stato.images;
-    salvaDalVisualizzatore(app, 'b.png', ['ohwx', 'cat']);
-    salvaDalVisualizzatore(app, 'b.png', ['ohwx']);
+    await salvaDalVisualizzatore(app, 'b.png', ['ohwx', 'cat']);
+    await salvaDalVisualizzatore(app, 'b.png', ['ohwx']);
     const disco = new Map(app.stato.images.map(i => [i.id, i.originalTags]));
     app.stato.images = H.withLiveOriginalTags(passoImport, disco);
     app.trigger(['sks']);
