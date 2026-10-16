@@ -14,7 +14,7 @@ difetti seri, tutti riparati: l'immagine di prova dei modelli era un file rotto 
 ogni modello (per questo anche la scelta automatica non passava mai a un modello più nuovo); con
 l'AI accesa il pannello Impostazioni usciva dallo schermo; un modello lento fermava tutta la prova
 come se mancasse la rete. Due revisori indipendenti hanno poi ricontrollato le riparazioni e
-trovato altri ritocchi, sistemati: la finestra ora ha una misura minima (1024x600, mai più grande
+trovato altri ritocchi, sistemati: la finestra ora ha una misura minima (1040x600, mai più grande
 dello schermo), il pannello si adatta anche alla finestra stretta, una connessione appesa ferma la
 prova invece di farla durare un'ora, e il costo delle prove con la fatturazione attiva è scritto
 onestamente. I testi nuovi sono stati ricontrollati nelle 9 lingue. Prove automatiche: 156 file,

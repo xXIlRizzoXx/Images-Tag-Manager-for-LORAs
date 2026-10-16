@@ -35,14 +35,15 @@ const crea = (screen) => new Function('screen', `${pezzo}\nreturn misuraMinima;`
 const schermo = (width, height) => ({ getPrimaryDisplay: () => ({ workAreaSize: { width, height } }) });
 
 if (pezzo) {
-    dice('schermo grande (1920x1032): minimo 1024x600', { minWidth: 1024, minHeight: 600 }, crea(schermo(1920, 1032))());
-    dice('portatile 1366x768 al 125% (~1093x566): l\'altezza minima scende a 566', { minWidth: 1024, minHeight: 566 }, crea(schermo(1093, 566))());
+    dice('schermo grande (1920x1032): minimo 1040x600', { minWidth: 1040, minHeight: 600 }, crea(schermo(1920, 1032))());
+    dice('portatile 1366x768 al 125% (~1093x566): l\'altezza minima scende a 566', { minWidth: 1040, minHeight: 566 }, crea(schermo(1093, 566))());
     dice('schermo piu\' stretto di 1024 (853x672): la larghezza minima scende a 853', { minWidth: 853, minHeight: 600 }, crea(schermo(853, 672))());
-    dice('se lo schermo non si legge, resta 1024x600 senza errori', { minWidth: 1024, minHeight: 600 },
+    dice('se lo schermo non si legge, resta 1040x600 senza errori', { minWidth: 1040, minHeight: 600 },
         crea({ getPrimaryDisplay: () => { throw new Error('non pronto'); } })());
 }
 dice('la finestra principale usa la misura minima', true, /new BrowserWindow\(\{\s*width: 1280,\s*height: 800,\s*\.\.\.misuraMinima\(\),/.test(main));
 dice('screen viene importato da electron', true, /const \{[^}]*\bscreen\b[^}]*\} = require\('electron'\);/.test(main));
+dice('il minimo lascia alla pagina almeno 1024 px dentro i bordi (soglia lg)', true, /const FINESTRA_MIN_LARGHEZZA = (\d+);/.test(main) && Number(/const FINESTRA_MIN_LARGHEZZA = (\d+);/.exec(main)[1]) >= 1024 + 16);
 const pronto = main.indexOf('app.whenReady()');
 const chiamate = [...main.matchAll(/\n\s+createMainWindow\(\);/g)].map(m => m.index);
 dice('la finestra si crea solo dopo app.whenReady (serve a screen)', true, pronto > 0 && chiamate.length > 0 && chiamate.every(i => i > pronto));

@@ -1248,7 +1248,11 @@ function createSplashWindow() {
 //          stack and the layout falls apart; below 600 px tall the gallery nearly vanishes. Never
 //          larger than the screen work area: on a small laptop with Windows scaling (1366x768 at
 //          125% = ~1093x566) a higher minimum would push the window off the screen.
-const FINESTRA_MIN_LARGHEZZA = 1024;
+// ITALIANO: 1040 e non 1024: il minimo vale per la finestra intera, bordi compresi, e dentro la
+//           pagina resta ~16 px piu' stretta: a 1024 scendeva sotto la soglia lg (visto dal vivo).
+// ENGLISH: 1040 and not 1024: the minimum applies to the whole window, borders included, and the
+//          page inside stays ~16 px narrower: at 1024 it fell below the lg threshold (seen live).
+const FINESTRA_MIN_LARGHEZZA = 1040;
 const FINESTRA_MIN_ALTEZZA = 600;
 const misuraMinima = () => {
     let area = { width: FINESTRA_MIN_LARGHEZZA, height: FINESTRA_MIN_ALTEZZA };
