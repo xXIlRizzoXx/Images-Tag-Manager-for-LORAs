@@ -19,6 +19,7 @@ type TestiAvviso = {
     importRestoredFromBackup: string;
     importTxtSkipped: string;
     importTxtSkippedNames: string;
+    importAlreadyOpen?: string;
 };
 
 // ITALIANO: Il messaggio e' fatto di FRASI INTERE, tradotte, unite da " · ". Prima alle foto
@@ -45,7 +46,7 @@ type TestiAvviso = {
 //   no way to find out which they were.
 export const avvisoImport = (
     t: TestiAvviso,
-    n: { caricate: number; ripristinate: number; saltati: number; accorciati: number; nomiSaltati?: string[] },
+    n: { caricate: number; ripristinate: number; saltati: number; accorciati: number; nomiSaltati?: string[]; giaAperte?: number },
 ): { testo: string; tipo: 'success' | 'error' | 'info' } => {
     const parti = [n.accorciati > 0
         ? t.importTxtShortened.replace('{n}', String(n.accorciati))
@@ -54,5 +55,8 @@ export const avvisoImport = (
     if (n.saltati > 0) parti.push(t.importTxtSkipped.replace('{n}', String(n.saltati)));
     const nomi = n.saltati > 0 && Array.isArray(n.nomiSaltati) ? n.nomiSaltati.filter(Boolean) : [];
     if (nomi.length > 0) parti.push(t.importTxtSkippedNames.replace('{names}', nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
+    // ITALIANO: le foto gia' aperte, non aggiunte una seconda volta (vedi src/utils/alreadyOpen.ts).
+    // ENGLISH: the photos already open, not added a second time (see src/utils/alreadyOpen.ts).
+    if ((n.giaAperte || 0) > 0 && t.importAlreadyOpen) parti.push(t.importAlreadyOpen.replace('{n}', String(n.giaAperte)));
     return { testo: parti.join(' · '), tipo: n.accorciati > 0 ? 'error' : n.saltati > 0 ? 'info' : 'success' };
 };

@@ -124,7 +124,7 @@ console.log('\n--- l\'editor dice ad App quando ha modifiche ---');
 {
     const editor = fs.readFileSync(path.join(radice, 'src/components/TagFileEditor.tsx'), 'utf8');
     dice('TagFileEditor riceve onDirtyChange', true, /export const TagFileEditor = \(\{[^}]*\bonDirtyChange\b/.test(editor));
-    dice('...e lo chiama da un effetto su `dirty`', true, /useEffect\(\(\) => \{[^}]*onDirtyChange\(dirty\)[\s\S]{0,200}?\}, \[dirty, onDirtyChange\]\)/.test(editor));
+    dice('...e lo chiama da un effetto su `dirty`', true, /useEffect\(\(\) => \{[^}]*onDirtyChange\(dirty\b[^)]*\)[\s\S]{0,200}?\}, \[dirty, (inputValue, )?onDirtyChange\]\)/.test(editor));
     dice('App gli passa la funzione che aggiorna tagEditorDirtyRef', true, /<TagFileEditor[\s\S]{0,400}?onDirtyChange=\{segnaEditorSporco\}/.test(sorgente)
         && /const segnaEditorSporco = useCallback\(\(sporco: boolean\) => \{ tagEditorDirtyRef\.current = sporco; \}, \[\]\);/.test(sorgente));
 }

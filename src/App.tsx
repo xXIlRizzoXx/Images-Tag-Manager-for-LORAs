@@ -50,6 +50,7 @@ import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, h
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
 import { fileDiAdesso } from './utils/freshFile';
+import { fileGiaAperti } from './utils/alreadyOpen';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
@@ -1050,7 +1051,11 @@ export default function App() {
         isApiKeyDialogOpen, isStatsOpen, exportChoice, updateAskOpen, updateFound]);
 
     const allUniqueTags = useMemo(() => {
-        const imgTags = images.flatMap(img => img.tags);
+        // ITALIANO: solo le foto in galleria: una foto nel cestino non porta piu' il suo vocabolario
+        //           nell'elenco del progetto e nel suo export.
+        // ENGLISH: only the photos in the gallery: a photo in the trash no longer brings its vocabulary
+        //          into the project list and its export.
+        const imgTags = images.filter(img => !img.isTrashed).flatMap(img => img.tags);
         return [...new Set([...imgTags, ...customProjectTags])].sort((a, b) => a.localeCompare(b));
     }, [images, customProjectTags]);
 
@@ -2842,7 +2847,28 @@ export default function App() {
     //          The caps on tag count and length live with the reading, in sidecarTags.
     const TXT_MAX_BYTES = 1024 * 1024;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null) => {
+    // ITALIANO: "Importa" del riepilogo: le foto gia' aperte nel progetto (stesso percorso su disco)
+    //           non entrano una seconda volta; l'avviso di fine import dice quante erano.
+    // ENGLISH: the summary's "Import": the photos already open in the project (same path on disk) do
+    //          not enter a second time; the end-of-import notice says how many they were.
+    const confermaImport = () => {
+        const d = importSummary.pendingData;
+        if (!d) return;
+        const apiLocale = (window as any).electronAPI;
+        const percorsoDi = (f: any): string => (d.pathOf && d.pathOf.get(f))
+            || (apiLocale && typeof apiLocale.getPathForFile === 'function' ? apiLocale.getPathForFile(f) : '') || '';
+        const doppi = fileGiaAperti(d.imgFiles, percorsoDi, imagesRef.current.map(img => percorsiSuDisco(img).imgPath));
+        const nuove = doppi.size > 0 ? d.imgFiles.filter((f: any) => !doppi.has(f)) : d.imgFiles;
+        if (nuove.length === 0) {
+            setImportSummary({ isOpen: false, summary: null, pendingData: null });
+            if (folderInputRef.current) folderInputRef.current.value = '';
+            showNotification(t.importAlreadyOpen.replace('{n}', String(doppi.size)), 'info');
+            return;
+        }
+        processImportData(nuove, d.txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size);
+    };
+
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -3115,7 +3141,7 @@ export default function App() {
             //          drop the cut part from disk. The warning takes the import message's place (only
             //          one stays on screen): the loaded photos show anyway. Photos recovered from the
             //          backup and skipped .txt files are told in whole sentences (avvisoImport).
-            const avviso = avvisoImport(t, { caricate: newImages.length, ripristinate: restoredCount, saltati: skippedTxtCount, accorciati: shortenedTxtCount, nomiSaltati });
+            const avviso = avvisoImport(t, { caricate: newImages.length, ripristinate: restoredCount, saltati: skippedTxtCount, accorciati: shortenedTxtCount, nomiSaltati, giaAperte });
             showNotification(avviso.testo, avviso.tipo);
         } catch (error: any) {
             console.error('[Import] Failed', error);
@@ -4519,7 +4545,7 @@ export default function App() {
     //          were no longer visible.
     const toggleSelectAll = () => {
         const visibleIds = displayedImages.map(img => img.id);
-        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedForBulk.includes(id));
+        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedForBulkSet.has(id));
         setSelectedForBulk(prev => {
             const visibleSet = new Set(visibleIds);
             const hiddenSelected = prev.filter(id => !visibleSet.has(id));
@@ -5522,7 +5548,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf, importSummary.pendingData.cartellaRelOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={confermaImport} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -6373,8 +6399,10 @@ export default function App() {
                                     </button>
                                 </div>
                                 {isGlobalAITagging && (() => {
-                                    const errSuffix = globalAIProgress.errors > 0 ? ` · ✗ ${globalAIProgress.errors}` : '';
-                                    const skipSuffix = globalAIProgress.skipped > 0 ? ` · ⊘ ${globalAIProgress.skipped}` : '';
+                                    // ITALIANO: parole, non simboli (✗, ⊘) che nessuna lingua spiegava: come nel riepilogo finale.
+                                    // ENGLISH: words, not symbols (✗, ⊘) no language explained: as in the final summary.
+                                    const errSuffix = globalAIProgress.errors > 0 ? ` · ${t.aiProgressFailed.replace('{n}', String(globalAIProgress.errors))}` : '';
+                                    const skipSuffix = globalAIProgress.skipped > 0 ? ` · ${t.aiProgressSkipped.replace('{n}', String(globalAIProgress.skipped))}` : '';
                                     const label = `${t.aiTaggingInProgress || 'Tagging…'} ${globalAIProgress.done}/${globalAIProgress.total}${errSuffix}${skipSuffix}`;
                                     const pct = globalAIProgress.total > 0 ? Math.round((globalAIProgress.done / globalAIProgress.total) * 100) : 0;
                                     return (
@@ -6486,7 +6514,9 @@ export default function App() {
                             {/* ITALIANO: Seleziona / deseleziona + INVERTI le foto visibili (filtrate) */}
                             {/* ENGLISH: Select / deselect + INVERT the visible (filtered) photos */}
                             {displayedImages.length > 0 && (() => {
-                                const allSelected = displayedImages.every(img => selectedForBulk.includes(img.id));
+                                // ITALIANO: gira a ogni disegno: con l'insieme e' una ricerca per foto, non una scansione della selezione.
+                                // ENGLISH: runs on every render: with the set it is one lookup per photo, not a scan of the selection.
+                                const allSelected = displayedImages.every(img => selectedForBulkSet.has(img.id));
                                 return (
                                     <div className="flex items-center gap-1.5 shrink-0">
                                         <button onClick={toggleSelectAll} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${allSelected ? 'bg-indigo-500 border-indigo-500 text-white' : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}`}>

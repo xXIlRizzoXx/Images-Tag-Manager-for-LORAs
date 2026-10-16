@@ -1190,6 +1190,10 @@ const applyContentSecurityPolicy = (sess) => {
     });
 };
 
+// ITALIANO: i soli permessi che la pagina chiede (vedi setPermissionRequestHandler).
+// ENGLISH: the only permissions the page asks for (see setPermissionRequestHandler).
+const PERMESSI_USATI = new Set(['fileSystem', 'clipboard-sanitized-write']);
+
 function resolveIconPath() {
     const ico = path.join(__dirname, '../public/icon.ico');
     if (process.platform === 'win32' && fs.existsSync(ico)) return ico;
@@ -1453,21 +1457,25 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
     applyContentSecurityPolicy(session.defaultSession);
 
-    // ITALIANO: qui passa il percorso della cartella scelta (vedi rememberPickedDir). Concedere
-    //           sempre il permesso riproduce ESATTAMENTE il comportamento di prima: senza handler
-    //           registrato Electron concede da solo. Questo non e' il posto per stringere i
-    //           permessi — sarebbe un cambiamento a se', da provare a parte.
-    // ENGLISH: this is where the picked folder's path arrives (see rememberPickedDir). Always
-    //          granting reproduces EXACTLY the previous behaviour: with no handler registered
-    //          Electron grants by itself. This is not the place to tighten permissions - that
-    //          would be a separate change, to be tested on its own.
+    // ITALIANO: qui passa il percorso della cartella scelta (vedi rememberPickedDir). Si concedono
+    //           SOLO i permessi che la pagina usa: le finestre di file e cartelle (fileSystem) e la
+    //           copia negli appunti (clipboard-sanitized-write, i tasti "Copia" di MCP). Prima si
+    //           concedeva tutto (fotocamera, microfono, posizione, notifiche...): una pagina
+    //           compromessa li avrebbe avuti senza chiedere. Un permesso negato si annota.
+    // ENGLISH: this is where the picked folder's path arrives (see rememberPickedDir). ONLY the
+    //          permissions the page uses are granted: the file and folder dialogs (fileSystem) and
+    //          copying to the clipboard (clipboard-sanitized-write, MCP's "Copy" buttons). Everything
+    //          used to be granted (camera, microphone, location, notifications...): a compromised page
+    //          would have had them without asking. A denied permission is logged.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
         if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
-        callback(true);
+        const concesso = PERMESSI_USATI.has(permission);
+        if (!concesso) console.warn('[Permessi] negato:', permission);
+        callback(concesso);
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
         if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
-        return true;
+        return PERMESSI_USATI.has(permission);
     });
     // ITALIANO: Nessuna barra dei menù di default in produzione
     // ENGLISH: No default menu bar in production
@@ -1495,8 +1503,19 @@ app.on('window-all-closed', () => {
 
 // ITALIANO: Difesa in profondità — vietiamo qualunque tentativo di creare webview
 // ENGLISH: Defense in depth — forbid any attempt to create webview tags
+// ITALIANO: e per OGNI finestra (anche la schermata di avvio e quelle che un giorno si aggiungeranno)
+//           niente navigazioni e niente finestre nuove: la principale ha regole sue (ricarica di se'
+//           stessa, link esterni nel browser) e le imposta lei; qui resta la regola per tutte le altre.
+// ENGLISH: and for EVERY window (the splash screen too, and any added one day) no navigation and no
+//          new windows: the main one has its own rules (reloading itself, external links in the
+//          browser) and sets them itself; the rule for all the others stays here.
 app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (event) => {
+        event.preventDefault();
+    });
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.on('will-navigate', (event) => {
+        if (mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents) return;
         event.preventDefault();
     });
 });

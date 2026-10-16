@@ -8,6 +8,8 @@
   [![Vite](https://img.shields.io/badge/Vite-6-646CFF.svg)](https://vitejs.dev/)
   [![Electron](https://img.shields.io/badge/Electron-Hardened-47848F.svg)](https://www.electronjs.org/)
   [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38B2AC.svg)](https://tailwindcss.com/)
+
+  <sub>The screenshots on this page show a sample dataset used only to illustrate the interface; the characters depicted belong to their respective rights holders.</sub>
 </div>
 
 ---
@@ -69,10 +71,14 @@ Plus: NSFW `+18` badges, ZIP / JSON / TXT export, copy & paste tags between phot
 Grab the latest **portable** or **installer** build from the [Releases](../../releases) page. No Node.js, no setup — the portable one just runs.
 
 > The build is **not code-signed** (a certificate costs hundreds of euros a year), so Windows SmartScreen may say *"unknown publisher"*. That is expected: click **More info → Run anyway**. The installer explains this on its welcome page.
+>
+> Some antivirus programs (Avast, for example) may stop an unknown program the first time it runs, and Windows then says *"Windows cannot access the specified device, path, or file"*. Add the downloaded file to the antivirus exceptions (or restore it from its quarantine) and run it again.
 
 ### Where your data lives
 
 Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to the executable, in both the portable and the installed version. **Your images and `.txt` files are never copied there**: they stay where they are, and are only rewritten when you press Save.
+
+> **Tip:** the first time you work on a folder, keep a copy of its images and `.txt` files. The app only rewrites them when you press Save, but a backup costs nothing.
 
 ---
 
@@ -82,7 +88,7 @@ The AI is **optional and off by default** — with it off, none of your images o
 
 If you want it, get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into Settings. The app checks the key works before saving it, then keeps it **encrypted with Windows' own data protection**, tied to your Windows account, in the app's folder under %APPDATA%: it is never stored in plain text. Only the images you actually ask it to tag are sent, and you can stop a batch halfway. Only the picture itself goes: the hidden details a photo file carries (GPS position, camera serial number, author's name, editing history) are removed first. JPEG, PNG, WebP and HEIC photos are sent in their own format, and GIF, BMP, AVIF and the other formats the app can convert are sent as a PNG copy of their pixels (a JPEG copy when the PNG would be too big). TIFF and SVG files (and damaged ones) cannot be converted, so they are never sent and cannot be tagged with AI.
 
-The model is picked for you: on **Automatic** the app uses the newest model of Google's free line, tries it before switching and tells you when it changes. To do that, with the AI on it checks Google's list of models at most once a day. Prefer one model? Choose it in Settings and it stays fixed, unless Google retires it or takes it off the free tier: then the app switches to the newest free model that works, tells you, and goes back to Automatic. The default pace (14 requests a minute) stays inside Google's free tier; the Speed slider can go faster if your key allows more.
+The model is picked for you: on **Automatic** the app uses the newest model of Google's free line, tries it before switching and tells you when it changes. To do that, with the AI on it checks Google's list of models at most once a day. Prefer one model? Choose it in Settings and it stays fixed, unless Google retires it or takes it off the free tier: then the app switches to the newest free model that works, tells you, and goes back to Automatic. The default pace (14 requests a minute) stays inside Google's free tier. The Speed slider goes up to 60 a minute: use it only if your key allows that much, because on the free tier Google refuses the requests over its limit (an error, not a bill) and those photos stay untagged.
 
 Not sure which models your key can really use? **Test recent models** (under **Advanced**, together with the tagging options) tries, with a tiny image, the models of the latest three Gemini versions that Google lists for your key, and sorts them in the model menu: usable, paid, no access, not suitable for tagging photos, or to retry later. It can take several minutes (up to a minute for each slow model) and you can stop it halfway. On the free tier it costs nothing; with billing enabled, tests of paid models are charged, usually less than one US cent each and a few cents for models that think at length.
 
@@ -135,5 +141,3 @@ Developed and designed by **xXIlRizzoXx**. Released under the [MIT License](LICE
   <sub><b>Made in Italy</b> &nbsp;·&nbsp; built with the help of <a href="https://claude.com/claude-code">Claude Code</a></sub>
   <br /><br />
 </div>
-
-The screenshots on this page show a sample dataset used only to illustrate the interface; the characters depicted belong to their respective rights holders.

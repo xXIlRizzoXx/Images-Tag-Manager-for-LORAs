@@ -39,3 +39,7 @@ _to_delete/
 
 # MCP server bundle, rebuilt by npm run build:mcp
 electron/mcp-server.cjs
+
+# Civitai cover work images, rebuilt by scripts/make-cover-civitai.mjs on every run
+docs/img/civitai-cover-anteprima.jpg
+docs/img/civitai-cover-controllo.jpg
