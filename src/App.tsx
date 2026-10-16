@@ -6088,6 +6088,7 @@ export default function App() {
                                                 <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
                                                     <Plug size={16} className="text-emerald-500"/>
                                                     {t.mcpTitle}
+                                                    <span title={t.aiBetaHint} className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider leading-none ${isDarkMode ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'}`}>{t.aiBeta}</span>
                                                     {tastoAiuto('mcp')}
                                                 </div>
                                                 {window.electronAPI?.mcp && (
@@ -6199,13 +6200,19 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* ITALIANO: lg:items-stretch = i tre riquadri si allungano tutti alla STESSA altezza (quella
-                                  del piu' alto), cosi' il riquadro di sinistra arriva in basso come quello di destra. */}
-                    {/* ENGLISH: lg:items-stretch = the three panels all stretch to the SAME height (the tallest),
-                                 so the left panel reaches the bottom like the right one. */}
-                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-stretch gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
+                    {/* ITALIANO: dai 1536 px (2xl) i tre riquadri stanno su una riga e si allungano tutti alla STESSA
+                                  altezza (2xl:items-stretch). Fra 1024 e 1535 px (lg, xl) non ci stanno (i pulsanti dei lati
+                                  vogliono 420 px in tedesco, francese, spagnolo e russo): sinistro e destro
+                                  stanno affiancati e quello centrale va sotto, a tutta larghezza (prima, a 1024 px,
+                                  quello centrale restava largo 46 px e i pulsanti uscivano dal bordo). */}
+                    {/* ENGLISH: from 1536 px (2xl) the three panels sit on one row and all stretch to the SAME
+                                 height (2xl:items-stretch). Between 1024 and 1535 px (lg, xl) they do not fit (the side
+                                 buttons need 420 px in German, French, Spanish and Russian): left and
+                                 right sit side by side and the middle one goes below, full width (before, at 1024 px
+                                 the middle one was 46 px wide and the buttons ran out of it). */}
+                    <div className={`p-4 md:p-5 flex flex-col lg:grid lg:grid-cols-2 2xl:flex 2xl:flex-row 2xl:items-stretch gap-6 lg:gap-4 2xl:gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
-                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`w-full 2xl:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: "Carica Cartella" e "Carica immagini" affiancati, stesso colore (blu). */}
                             {/* ENGLISH: "Load Folder" and "Load images" side by side, same colour (blue). */}
                             <div className="flex gap-2">
@@ -6238,10 +6245,10 @@ export default function App() {
                                       pannelli laterali (bg, bordo, angoli, ombra interna). */}
                         {/* ENGLISH: Centre section wrapped in a panel with the SAME style as the two side
                                      panels (bg, border, rounding, inner shadow). */}
-                        <div className={`flex-1 w-full flex flex-col gap-3 min-w-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`flex-1 w-full flex flex-col gap-3 min-w-0 lg:col-span-2 lg:order-last 2xl:order-none lg:flex-row lg:items-start 2xl:flex-col 2xl:items-stretch ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
-                            <div className="w-full">
+                            <div className="w-full lg:flex-1 lg:min-w-0 2xl:flex-none">
                                 {/* ITALIANO: cap a 120px (con scorrimento interno) cosi' la sezione centrale non
                                               diventa mai piu' alta dei due riquadri laterali: la barra comandi resta bilanciata. */}
                                 {/* ENGLISH: capped at 120px (scrolls inside) so the centre section never grows taller
@@ -6251,7 +6258,7 @@ export default function App() {
 
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
                             {/* ENGLISH: Toolbar with Suggested Tags + AI Auto-Tag (if enabled) */}
-                            <div className={`p-2 rounded-xl border ${isDarkMode ? 'bg-gray-950/40 border-gray-700/40' : 'bg-gray-50 border-gray-100'} flex flex-col gap-2 w-full`}>
+                            <div className={`lg:w-[380px] lg:shrink-0 2xl:w-auto p-2 rounded-xl border ${isDarkMode ? 'bg-gray-950/40 border-gray-700/40' : 'bg-gray-50 border-gray-100'} flex flex-col gap-2 w-full`}>
                                 <div className="flex items-center justify-center gap-3 flex-wrap">
                                     {aiEnabled && (
                                         <button
@@ -6307,7 +6314,7 @@ export default function App() {
                             </div>
                         </div>
                         
-                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`w-full 2xl:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             <div className="flex gap-2">
                                 {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
                                 {/* ENGLISH: Button to view all project tags */}
