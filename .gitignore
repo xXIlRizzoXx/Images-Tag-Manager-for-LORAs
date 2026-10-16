@@ -10,6 +10,9 @@ build/*
 !build/*.ico
 !build/license_*.txt
 dist/
+# ITALIANO: foto vere copiate da scripts/make-readme-shots.mjs; restano se il giro si interrompe.
+# ENGLISH: real photos copied by scripts/make-readme-shots.mjs; left behind if the run is interrupted.
+public/__shots/
 coverage/
 .DS_Store
 *.log
@@ -33,3 +36,6 @@ NOTES.md
 ANALISI-*.md
 Civitai/
 _to_delete/
+
+# MCP server bundle, rebuilt by npm run build:mcp
+electron/mcp-server.cjs

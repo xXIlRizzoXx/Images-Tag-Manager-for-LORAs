@@ -12,10 +12,13 @@
 *******************************************************************************
 *******************************************************************************/
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
-import JSZip from 'jszip';
-import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2 } from 'lucide-react';
+import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2, Plug, Eye, EyeOff } from 'lucide-react';
+import { eseguiStrumentoMcp, fotoPerMcp } from './utils/mcpBridge';
+import type { RispostaMcp } from './utils/mcpBridge';
+import type { McpStatus, McpRichiesta } from './electron';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
-import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, normalizeModelId, getModelTier, classifyGeminiError } from './services/geminiService';
+import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli, ultimeGenerazioni } from './services/geminiService';
+import type { ModelloChiave, StatoModello } from './services/geminiService';
 import { getSecret, setSecret, deleteSecret } from './utils/secureStorage';
 import {
     PieChart as RechartsPieChart,
@@ -35,7 +38,17 @@ import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog, UpdateDialog, ExportChoiceDialog } from './components/ui';
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
-import { sanitizeFileName, buildTagFileName } from './utils/pathUtils';
+import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
+import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
+import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
+import { qualityWarningText } from './utils/imageQuality';
+import { avvisoImport } from './utils/importNotice';
+import { purgeIdsFromHistory, addPhotosToHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
+import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
+import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
@@ -60,6 +73,27 @@ const APP_LANGUAGES = [
 ];
 const LANG_CODES = APP_LANGUAGES.map(l => l.code);
 
+// ITALIANO: i gruppi della tendina dei modelli dopo "Prova i modelli recenti", nell'ordine in cui
+//           si mostrano. `spento` = si vedono ma non si possono scegliere.
+// ENGLISH: the model dropdown's groups after "Test recent models", in display order. `spento` =
+//          shown but not selectable.
+// ITALIANO: le sezioni delle Impostazioni che hanno un tasto "?" con la spiegazione.
+// ENGLISH: the Settings sections that have a "?" button with the explanation.
+type AiutoImpostazioni = 'aggiornamenti' | 'ai' | 'modello' | 'tagga' | 'mcp';
+
+const GRUPPI_MODELLI: ReadonlyArray<{
+    stato: StatoModello | 'daProvare';
+    etichetta: 'aiGroupUsable' | 'aiGroupRetry' | 'aiGroupUntested' | 'aiGroupPaid' | 'aiGroupNoAccess' | 'aiGroupNotSuitable';
+    spento: boolean;
+}> = [
+    { stato: 'utilizzabile', etichetta: 'aiGroupUsable', spento: false },
+    { stato: 'occupato', etichetta: 'aiGroupRetry', spento: false },
+    { stato: 'daProvare', etichetta: 'aiGroupUntested', spento: false },
+    { stato: 'aPagamento', etichetta: 'aiGroupPaid', spento: false },
+    { stato: 'senzaAccesso', etichetta: 'aiGroupNoAccess', spento: true },
+    { stato: 'nonAdatto', etichetta: 'aiGroupNotSuitable', spento: true },
+];
+
 // ITALIANO: Lingua iniziale: quella già scelta, altrimenti quella del sistema operativo,
 //           altrimenti inglese (così un PC tedesco parte in tedesco).
 // ENGLISH: Initial language: the saved choice, else the OS language, else English.
@@ -74,12 +108,6 @@ const detectInitialLang = (): string => {
     } catch (_) { /* ignore */ }
     return 'en';
 };
-
-// ITALIANO: Nome-base di un file, senza estensione (foto.jpg -> foto). Stessa regola usata
-//           storicamente dall'import, estratta qui per usarla in un solo posto.
-// ENGLISH: A file's base name, without extension (photo.jpg -> photo). Same rule the import
-//          has always used, pulled out here so it lives in one place.
-const fileBaseName = (name: string): string => name.split('.').slice(0, -1).join('.');
 
 // ITALIANO: IDENTIFICATIVO INTERNO di ogni foto importata. Prima era
 //   `Math.random().toString(36).substring(7)`: una stringa di 4-6 caratteri che su un import da
@@ -109,41 +137,6 @@ const nuovoIdFoto = (): string => {
     }
 };
 
-// ITALIANO: CHIAVE "CARTELLA + NOME" per abbinare ogni immagine al SUO .txt.
-//   Due foto con lo STESSO nome in sottocartelle diverse (es. 10_viso\img_001.png e
-//   20_corpo\img_001.png, la disposizione tipica dei dataset LoRA) NON devono scambiarsi
-//   i tag. Prima l'abbinamento usava solo il nome-base: la seconda cartella sovrascriveva
-//   la prima e ogni foto con quel nome riceveva i tag della cartella letta per ultima —
-//   poi, al salvataggio, quei tag stranieri finivano scritti sul .txt vero dell'altra foto.
-//   La chiave unisce l'IDENTITA' DELLA CARTELLA al nome-base. La cartella puo' essere:
-//     - un handle (oggetto) dalla scelta cartella  -> gli si assegna un id stabile
-//     - un percorso (stringa) dal caricamento di singole immagini / dal fallback
-//     - assente (nessuna info cartella)            -> un unico spazio, come prima
-// ENGLISH: "FOLDER + NAME" KEY to pair each image with ITS OWN .txt.
-//   Two photos with the SAME name in different subfolders (e.g. 10_face\img_001.png and
-//   20_body\img_001.png, the typical LoRA dataset layout) must NOT swap tags. Matching used
-//   to key on the base name alone: the second folder overwrote the first and every photo
-//   with that name got the last-scanned folder's tags — which the save then wrote onto the
-//   OTHER photo's real .txt. The key joins the FOLDER IDENTITY to the base name. The folder
-//   may be: a handle (object) from the folder picker -> given a stable id; a path (string)
-//   from the individual-image / fallback load; or absent (no folder info) -> one namespace,
-//   exactly as before.
-const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
-    const dirIds = new Map<any, number>();
-    let next = 0;
-    return (file: any): string => {
-        const dir = folderOf ? folderOf.get(file) : null;
-        let ns = '';
-        if (typeof dir === 'string') {
-            ns = dir ? 'p:' + dir : '';
-        } else if (dir) {
-            if (!dirIds.has(dir)) dirIds.set(dir, next++);
-            ns = 'h:' + dirIds.get(dir);
-        }
-        return ns + '' + fileBaseName(file.name);
-    };
-};
-
 // ITALIANO: Chiave del BACKUP anti-crash: cartella + nome del file. Deve restare identica fra
 //           una sessione e l'altra (il backup si rilegge dopo un riavvio), quindi NON puo' usare
 //           i numeri progressivi di makeFolderKeyer, che dipendono dall'ordine di scansione.
@@ -158,7 +151,6 @@ const makeFolderKeyer = (folderOf: Map<any, any> | null | undefined) => {
 //          20_body\img.png, the typical LoRA layout) overwrote each other in the backup: after a
 //          crash one photo's tags were restored onto the OTHER and the first save wrote them into
 //          the wrong .txt.
-const BACKUP_KEY_SEP = '\x1f';
 // ITALIANO: `relPathOf` (quando c'e') porta il percorso RELATIVO completo della sottocartella,
 //           es. "anna_bea/char_anna/10_face". Serve perche' l'handle di una cartella espone solo
 //           il nome FOGLIA: con quello, char_anna\10_face e char_bea\10_face davano la stessa
@@ -238,7 +230,10 @@ const applySort = (list: any[], order: string): any[] => {
 //          from the grid (see the container's style), not as a prop: passing it as a prop would
 //          re-render EVERY memoised card while dragging the zoom slider, which today is pure CSS.
 const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode, lang, t, isSelected, copiedCount, onCardClick, onSelectToggle, onTrash, onClose, onCopy, onPaste, onUpdateTags }: any) {
-    const lowQuality = img.width * img.height < 1048576;
+    // ITALIANO: foto piccola, o che il programma non sa mostrare (0x0): vedi qualityWarningText.
+    // ENGLISH: a small photo, or one the program cannot display (0x0): see qualityWarningText.
+    const qualityWarning = qualityWarningText(t, img.width, img.height);
+    const lowQuality = qualityWarning !== null;
     return (
         <div className={`group ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border flex flex-col h-full ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto var(--card-h, 320px)' }}>
             <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center cursor-pointer ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}} onClick={() => onCardClick(img.id)}>
@@ -250,7 +245,7 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
                             <AlertTriangle size={16} strokeWidth={2.5} />
                         </div>
                         <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                            {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                            {qualityWarning}
                         </div>
                     </div>
                 )}
@@ -317,7 +312,17 @@ export default function App() {
     }, [lang]);
     const [images, setImages] = useState<any[]>([]);
     const [globalTriggers, setGlobalTriggers] = useState<string[]>([]);
-    const [soundEnabled, setSoundEnabled] = useState(true);
+    // ITALIANO: Suoni e tema (piu' sotto) vengono ricordati tra un avvio e l'altro, come la lingua.
+    //           Prima ripartivano sempre accesi e scuri, mentre l'installazione pulita dice di
+    //           cancellarli: vuol dire che sono impostazioni salvate. Senza niente di salvato (o con
+    //           localStorage non disponibile) si parte come prima: suoni accesi, tema scuro.
+    // ENGLISH: Sounds and theme (below) are remembered across launches, like the language. They
+    //          always came back on and dark, while the clean install says it wipes them: that makes
+    //          them saved settings. With nothing saved (or localStorage unavailable) the start is as
+    //          before: sounds on, dark theme.
+    const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+        try { return localStorage.getItem('soundEnabled') !== 'false'; } catch (_) { return true; }
+    });
 
     // ITALIANO: CONTROLLO DELLE VERSIONI NUOVE. Tre stati, non due: 'on', 'off', e NON ANCORA
     //           CHIESTO. Il terzo serve: finche' l'utente non ha risposto il programma non si
@@ -363,8 +368,26 @@ export default function App() {
     //          the Windows Recycle Bin is there, which is the real safety net anyway.
     const [ultimoSvuotamento, setUltimoSvuotamento] = useState<any>(null);
     const [ripristinoInCorso, setRipristinoInCorso] = useState(false);
+    // ITALIANO: lo stesso segnale, sempre aggiornato, per handleEmptyTrash: la finestra di conferma
+    //           ne conserva la versione del momento in cui e' stata aperta, che non lo vedrebbe.
+    // ENGLISH: the same signal, always current, for handleEmptyTrash: the confirm dialog keeps the
+    //          version from the moment it opened, which would not see it.
+    const ripristinoInCorsoRef = useRef(false);
+    // ITALIANO: il numero del progetto aperto: sale a ogni Chiudi progetto e Reset. "Svuota cestino"
+    //           e "Annulla lo svuotamento" durano a lungo e intanto il progetto si puo' chiudere (la
+    //           X del cestino resta libera): finito il lavoro, se il numero e' cambiato non toccano
+    //           niente del progetto di adesso. Prima il tasto "Annulla lo svuotamento" compariva nel
+    //           progetto successivo e ci infilava le foto di quello chiuso, con le anteprime rotte.
+    // ENGLISH: the number of the open project: it goes up on every Close project and Reset. "Empty
+    //          trash" and "Undo the emptying" take long and meanwhile the project can be closed (the
+    //          trash's X stays free): when the job ends, if the number changed it touches nothing of
+    //          the current project. The "Undo the emptying" button used to appear in the next project
+    //          and push the closed project's photos into it, with broken thumbnails.
+    const progettoGenRef = useRef(0);
     const [updateFound, setUpdateFound] = useState<{ versione: string; pagina: string } | null>(null);
-    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+        try { return localStorage.getItem('isDarkMode') !== 'false'; } catch (_) { return true; }
+    });
     const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
     
     const [dirHandle, setDirHandle] = useState<any>(null);
@@ -376,7 +399,7 @@ export default function App() {
     const [viewMode, setViewMode] = useState('square'); 
     const [selectedImageId, setSelectedImageId] = useState<string | null>(null); 
     const [slideDirection, setSlideDirection] = useState('right');
-    const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+    const [toast, setToast] = useState({ show: false, message: '', type: 'info', id: 0 });
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
     // ITALIANO: Finestra a tre scelte mostrata chiudendo il progetto con modifiche non salvate
     // ENGLISH: Three-choice dialog shown when closing the project with unsaved changes
@@ -395,6 +418,11 @@ export default function App() {
     //          stay on screen now that the window no longer closes right away.
     const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    // ITALIANO: quanti import sono in corso (processImportData). Un secondo import puo' partire
+    //           durante il primo: chi finisce prima non deve spegnere la striscia dell'altro.
+    // ENGLISH: how many imports are running (processImportData). A second import can start during
+    //          the first: whichever ends first must not switch off the other's strip.
+    const importAttiviRef = useRef(0);
     const [importProgress, setImportProgress] = useState(0);
     // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
     //           per la percentuale; isSaving decide se mostrarla e con quale etichetta.
@@ -481,7 +509,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('1.2.0');
+    const [appVersion, setAppVersion] = useState<string>('2.0.0');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -495,6 +523,10 @@ export default function App() {
     useEffect(() => { localStorage.setItem('aiCustomPrompt', aiCustomPrompt); }, [aiCustomPrompt]);
     useEffect(() => { localStorage.setItem('aiRpm', String(aiRpm)); }, [aiRpm]);
     useEffect(() => { localStorage.setItem('aiSkipTagged', String(aiSkipTagged)); }, [aiSkipTagged]);
+    // ITALIANO: tema e suoni scelti in Impostazioni (letti all'avvio, vedi soundEnabled).
+    // ENGLISH: theme and sounds picked in Settings (read at start, see soundEnabled).
+    useEffect(() => { try { localStorage.setItem('isDarkMode', String(isDarkMode)); } catch (_) { /* ignore */ } }, [isDarkMode]);
+    useEffect(() => { try { localStorage.setItem('soundEnabled', String(soundEnabled)); } catch (_) { /* ignore */ } }, [soundEnabled]);
 
     // ITALIANO: Carico la API key dallo storage cifrato all'avvio
     // ENGLISH: Load the API key from encrypted storage on mount
@@ -555,11 +587,19 @@ export default function App() {
             aiCancelRequestedRef.current = true;
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
-            await deleteSecret('geminiApiKey');
+            const cancellata = await deleteSecret('geminiApiKey');
             setGeminiApiKey('');
             setIsAIBusy(false);
             setIsGlobalAITagging(false);
             setGlobalAIProgress({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
+            // ITALIANO: la sessione smette comunque di usarla, ma "rimossa" si dice solo se e' vero:
+            //           altrimenti al prossimo avvio la chiave torna, e l'utente lo deve sapere.
+            // ENGLISH: the session stops using it either way, but "removed" is said only when true:
+            //          otherwise the key comes back at the next start, and the user must know.
+            if (!cancellata) {
+                showNotification(t.aiKeyNotRemoved, 'error');
+                return;
+            }
             soundManager.chime();
             showNotification(t.aiKeyCleared || 'API Key removed', 'success');
         } catch (e: any) {
@@ -583,9 +623,54 @@ export default function App() {
     // ITALIANO: Specchio sempre aggiornato di `images` per i loop async (evita snapshot stantii che sovrascrivono le modifiche manuali)
     // ENGLISH: Always-fresh mirror of `images` for async loops (avoids stale snapshots that overwrite manual edits)
     const imagesRef = useRef<any[]>([]);
+    // ITALIANO: le trigger word di ADESSO, per l'import che le legge dopo lunghe attese (le miniature
+    //           di migliaia di foto): la sua copia di globalTriggers e' quella di quando si e' premuto
+    //           Importa. Prima una trigger scritta (o tolta) nel frattempo non arrivava alle foto in
+    //           arrivo, e i loro .txt si salvavano diversi da quello che il riquadro mostrava. Si
+    //           aggiorna a ogni render e subito in handleGlobalTagsChange.
+    // ENGLISH: the CURRENT trigger words, for the import that reads them after long waits (the
+    //          thumbnails of thousands of photos): its copy of globalTriggers is the one from when
+    //          Import was pressed. A trigger typed (or removed) meanwhile used to miss the incoming
+    //          photos, and their .txt files were saved unlike what the box showed. It is updated on
+    //          every render and at once in handleGlobalTagsChange.
+    const globalTriggersRef = useRef<string[]>(globalTriggers);
+    globalTriggersRef.current = globalTriggers;
+    // ITALIANO: Le foto CHIUSE con la "x" (per id): tolte dalla vista ma ancora su disco, quindi
+    //           ancora contate nell'impronta del backup anti-crash (vedi costruisciBackup). Ne
+    //           escono solo quando il file lascia davvero il disco (cestino svuotato, eliminata per
+    //           sempre) e si azzerano con Chiudi progetto e Reset.
+    // ENGLISH: The photos CLOSED with the "x" (by id): out of view but still on disk, so still
+    //          counted in the crash backup's fingerprint (see costruisciBackup). They leave only
+    //          when the file really leaves the disk (trash emptied, deleted for good) and are
+    //          cleared by Close project and Reset.
+    const fotoChiuseRef = useRef<Map<string, FotoChiusa>>(new Map());
+    // ITALIANO: TUTTE le anteprime create per il progetto (import e ricarico dopo un ritocco
+    //           esterno). Le foto chiuse con la X o cancellate per sempre escono dall'elenco ma la
+    //           loro anteprima resta viva (Ctrl+Z le riporta), e alla chiusura nessuno la vedeva
+    //           piu': restava in memoria per tutta la sessione. Chiudi progetto e Reset le liberano
+    //           tutte da qui (vedi liberaAnteprimeProgetto).
+    // ENGLISH: EVERY thumbnail made for the project (import and reload after an outside retouch).
+    //          Photos closed with the X or deleted for good leave the list but their thumbnail stays
+    //          alive (Ctrl+Z brings them back), and on close nobody saw it any more: it stayed in
+    //          memory for the whole session. Close project and Reset release them all from here
+    //          (see liberaAnteprimeProgetto).
+    const anteprimeProgettoRef = useRef<Set<string>>(new Set());
 
     const [history, setHistory] = useState<any[][]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
+    // ITALIANO: le trigger word di ogni passo della cronologia, allo stesso indice del passo. Il
+    //           riquadro delle trigger e le foto cambiano insieme (handleGlobalTagsChange) in un solo
+    //           passo, ma la cronologia ricordava solo le foto: Ctrl+Z toglieva la trigger dalle foto e
+    //           il riquadro continuava a mostrarla (o il contrario, e il .txt non la scriveva piu' per
+    //           prima). Il numero dei passi resta uguale a quello di `history`: si taglia, si aggiunge
+    //           e si accorcia insieme a lei, e le pulizie della cronologia non cambiano i passi.
+    // ENGLISH: the trigger words of every history step, at the same index as the step. The trigger
+    //          box and the photos change together (handleGlobalTagsChange) in one step, but the
+    //          history remembered only the photos: Ctrl+Z took the trigger off the photos while the
+    //          box kept showing it (or the other way round, and the .txt no longer wrote it first).
+    //          The number of steps stays the same as `history`: it is cut, pushed and shortened
+    //          along with it, and the history clean-ups do not change the steps.
+    const triggerHistoryRef = useRef<string[][]>([]);
 
     const handleSuggestedTagClick = (tag: string) => {
         if (selectedImageId) {
@@ -618,10 +703,41 @@ export default function App() {
             if (newHistory.length > 50) newHistory.shift();
             return newHistory;
         });
-        setHistoryIndex(prev => Math.min(prev + 1, 49));
+        // ITALIANO: le trigger di questo passo, con gli stessi tagli della cronologia qui sopra.
+        // ENGLISH: this step's triggers, with the same cuts as the history above.
+        const triggerPassi = triggerHistoryRef.current.slice(0, historyIndex + 1);
+        triggerPassi.push(globalTriggers);
+        if (triggerPassi.length > 50) triggerPassi.shift();
+        triggerHistoryRef.current = triggerPassi;
+        // ITALIANO: l'indice dallo stesso historyIndex dei tagli qui sopra, non da `prev + 1`: React
+        //           in StrictMode (anteprima di sviluppo) ripete l'effetto all'avvio, e con `prev + 1`
+        //           l'indice finiva un passo oltre l'ultimo (il primo Ctrl+Z non faceva niente).
+        // ENGLISH: the index from the same historyIndex as the cuts above, not from `prev + 1`: React
+        //          in StrictMode (development preview) repeats the effect on mount, and with
+        //          `prev + 1` the index ended one step past the last (the first Ctrl+Z did nothing).
+        setHistoryIndex(Math.min(historyIndex + 1, 49));
     }, [images]);
 
     useEffect(() => { imagesRef.current = images; }, [images]);
+
+    // ITALIANO: cosa c'e' su disco per ogni foto (id -> l'ultimo originalTags visto), tenuto FUORI
+    //           dalla cronologia. Ctrl+Z e Ctrl+Shift+Z lo rimettono sulle foto che riportano a
+    //           schermo (vedi withLiveOriginalTags), anche su quelle che in quel momento non erano
+    //           in galleria (Ctrl+Z oltre l'import, foto chiusa con la X): prima tornavano con il
+    //           valore dell'import e risultavano "uguali al disco" dopo un salvataggio. Ogni
+    //           scrittura di originalTags (import, Salva, il visualizzatore, l'editor di tag) passa
+    //           da setImages, quindi da qui. Si svuota con la cronologia (Reset, Chiudi progetto).
+    // ENGLISH: what is on disk for each photo (id -> the last originalTags seen), kept OUTSIDE the
+    //          history. Ctrl+Z and Ctrl+Shift+Z put it on the photos they bring back on screen (see
+    //          withLiveOriginalTags), also on those that were not in the gallery at that moment
+    //          (Ctrl+Z past the import, a photo closed with the X): they used to come back with the
+    //          import's value and count as "same as disk" after a save. Every write of originalTags
+    //          (import, Save, the viewer, the tag editor) goes through setImages, hence through
+    //          here. It is cleared together with the history (Reset, Close project).
+    const discoNotoRef = useRef<Map<string, unknown>>(new Map());
+    useEffect(() => {
+        images.forEach((foto: any) => discoNotoRef.current.set(foto.id, foto.originalTags));
+    }, [images]);
 
     // ITALIANO: PRESTAZIONI — copia "sempre aggiornata" della selezione, per far leggere lo stato ai
     //           gestori della galleria SENZA doverli ricreare ad ogni cambio di selezione (cosi' le
@@ -644,89 +760,271 @@ export default function App() {
         if (selectedForBulk.length === 0 && stagedBulkTags.length > 0) setStagedBulkTags([]);
     }, [selectedForBulk.length, stagedBulkTags.length]);
 
-    // ITALIANO: Backup automatico (debounce 1s) di tag e didascalie in localStorage —
-    //           rete anti-crash: al re-import della cartella le modifiche non salvate vengono ripristinate.
-    //           Non si svuota mai da solo: viene cancellato solo dal Reset progetto.
-    // ENGLISH: Debounced (1s) automatic backup of tags and captions to localStorage —
-    //          crash safety net: re-importing the folder restores unsaved edits.
-    //          Never auto-cleared: only Project Reset removes it.
+    // ITALIANO: Backup automatico (debounce 1s) dei tag in localStorage — rete anti-crash: al
+    //           re-import della cartella le modifiche non salvate vengono ripristinate.
+    //           Contiene SOLO le foto con modifiche non salvate, con un'impronta per ogni cartella
+    //           aperta (le regole e il perche' stanno in costruisciBackup). Quando non resta niente
+    //           da salvare si cancella da solo; Reset lo cancella, Chiudi progetto ne toglie le
+    //           cartelle in memoria e tiene quelle mai riaperte dopo un crash. Con la
+    //           lista vuota all'avvio del programma (nessuna foto ancora entrata) non si tocca: e'
+    //           proprio li' che serve il recupero dopo un crash. Dopo, una lista vuota vuol dire
+    //           che l'utente ha chiuso tutte le foto, e il backup si ricalcola come sempre: prima
+    //           restava, e chiudendo l'ultima foto con la X ("le modifiche andranno perse") le
+    //           modifiche buttate via tornavano al caricamento successivo come "recuperate".
+    // ENGLISH: Debounced (1s) automatic backup of the tags to localStorage — crash safety net:
+    //          re-importing the folder restores unsaved edits.
+    //          It holds ONLY the photos with unsaved edits, with one fingerprint per open folder
+    //          (the rules and the why live in costruisciBackup). When nothing is left unsaved it
+    //          removes itself; Reset removes it, Close project drops the folders in memory from it
+    //          and keeps those never reopened after a crash. With an empty list at program
+    //          start (no photo loaded yet) it is left alone: that is exactly when crash recovery is
+    //          needed. Afterwards an empty list means the user closed every photo, and the backup is
+    //          recomputed as always: it used to stay, and closing the last photo with the X ("the
+    //          changes will be lost") brought the discarded edits back on the next load as
+    //          "recovered".
+    const backupConFotoRef = useRef(false);
+    // ITALIANO: i lotti di import entrati in memoria in questa sessione (li aggiunge scriviBackupSubito):
+    //           la sorgente di uno di loro che in memoria non c'e' piu' l'ha tolta un Ctrl+Z oltre
+    //           l'import, non un crash, e lascia il backup (vedi sorgentiDaTenere).
+    // ENGLISH: the import batches that entered memory in this session (scriviBackupSubito adds them):
+    //          the source of one of them that is no longer in memory was removed by a Ctrl+Z past the
+    //          import, not by a crash, and leaves the backup (see sorgentiDaTenere).
+    const lottiSessioneRef = useRef<Set<string>>(new Set());
     useEffect(() => {
-        if (images.length === 0) return undefined;
+        if (images.length > 0) backupConFotoRef.current = true;
+        else if (!backupConFotoRef.current) return undefined;
         const handle = setTimeout(() => {
-            try {
-                const data: Record<string, { tags: string[] }> = {};
-                for (const img of images) {
-                    if (img.isTrashed) continue;
-                    // ITALIANO: chiave cartella+nome assegnata all'import (vedi makeBackupKeyer):
-                    //           due foto omonime in sottocartelle diverse restano separate.
-                    // ENGLISH: folder+name key assigned at import (see makeBackupKeyer): two
-                    //          same-named photos in different subfolders stay separate.
-                    data[img.backupKey || (BACKUP_KEY_SEP + img.file.name)] = { tags: img.tags };
-                }
-                // ITALIANO: Oltre al nome cartella salviamo una "impronta" del contenuto. Il solo nome
-                //           non basta: i dataset LoRA si chiamano quasi sempre allo stesso modo
-                //           (dataset, img, 10_soggetto), quindi chiudendo l'app su char1\dataset e
-                //           riaprendo char2\dataset i tag del primo venivano ripristinati sul secondo
-                //           e al primo salvataggio finivano su disco, cancellando quelli veri.
-                // ENGLISH: Besides the folder name we store a content "fingerprint". The name alone is
-                //          not enough: LoRA datasets are almost always named the same (dataset, img,
-                //          10_subject), so quitting on char1\dataset and reopening char2\dataset
-                //          restored the first one's tags onto the second, and the first save wrote them
-                //          to disk over the real ones.
-                const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-                // ITALIANO: l'impronta va calcolata sulla STESSA popolazione dell'import (TUTTE le
-                //           immagini, comprese quelle nel cestino — che sono ancora su disco finche'
-                //           non si svuota il cestino — e coi nomi ripetuti). Prima si usavano le sole
-                //           chiavi di `data` (senza cestinate, senza doppioni): bastava cestinare una
-                //           foto e al riavvio il conteggio non combaciava piu', cosi' il recupero
-                //           anti-crash veniva scartato in silenzio e i tag non salvati andavano persi.
-                // ENGLISH: the fingerprint must be computed from the SAME population as the import
-                //          (ALL images, including trashed ones — still on disk until the trash is
-                //          emptied — and with repeated names kept). It used to use only `data`'s keys
-                //          (trash-filtered, de-duplicated): trashing a single photo made the count
-                //          diverge on restart, so the crash recovery was silently discarded and any
-                //          unsaved tags were lost.
-                const signature = folderSignature(folder, images.map(img => img.file.name));
-                localStorage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), folder, signature, data }));
-            } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
+            const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
+            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current);
         }, 1000);
         return () => clearTimeout(handle);
     }, [images, dirHandle]);
 
+    // ITALIANO: CHIUSURA DELLA FINESTRA (X, Alt+F4). "Chiudi progetto" con modifiche non salvate
+    //           chiede Salva e chiudi / Chiudi senza salvare / Annulla; la X invece chiudeva subito,
+    //           e una modifica fatta meno di un secondo prima non finiva nemmeno nel backup (il suo
+    //           timer moriva con la pagina). Ora alla chiusura il backup si scrive SUBITO e, in
+    //           Electron, con modifiche non salvate la chiusura si ferma e compare la STESSA finestra
+    //           a tre scelte: "Chiudi senza salvare" e un "Salva e chiudi" riuscito chiudono poi la
+    //           finestra davvero (chiudiFinestraSeRichiesto). Electron ferma la chiusura in silenzio
+    //           perche' il processo principale non ascolta 'will-prevent-unload'. Nell'anteprima del
+    //           browser non si ferma niente: si scrive solo il backup. Con l'app smontata (schermata
+    //           d'errore) l'ascolto non c'e' piu', e il pulsante che ricarica resta libero.
+    // ENGLISH: CLOSING THE WINDOW (X, Alt+F4). "Close project" with unsaved edits asks Save and
+    //          close / Close without saving / Cancel; the X instead closed at once, and an edit made
+    //          less than a second earlier did not even reach the backup (its timer died with the
+    //          page). Now on close the backup is written AT ONCE and, in Electron, with unsaved edits
+    //          the close stops and the SAME three-choice dialog shows: "Close without saving" and a
+    //          successful "Save and close" then really close the window (chiudiFinestraSeRichiesto).
+    //          Electron stops the close silently because the main process does not listen for
+    //          'will-prevent-unload'. In the browser preview nothing is stopped: only the backup is
+    //          written. With the app unmounted (error screen) the listener is gone, and the button
+    //          that reloads stays free.
+    const permettiChiusuraRef = useRef(false);
+    const chiusuraFinestraRef = useRef(false);
+    // ITALIANO: l'editor dei file di tag ha modifiche non salvate (le segnala lui, onDirtyChange). La
+    //           sua X chiede prima di buttarle; la X della finestra e Alt+F4 invece chiudevano subito
+    //           e la bozza spariva, anche senza nessuna foto aperta. Ora, in Electron, la chiusura si
+    //           ferma, l'editor resta in vista e un avviso dice di salvare o scartare prima. La
+    //           finestra a tre scelte non va bene qui: il suo "Salva e chiudi" non salva l'editor.
+    // ENGLISH: the tag file editor has unsaved edits (it reports them itself, onDirtyChange). Its X
+    //          asks before throwing them away; the window's X and Alt+F4 instead closed at once and
+    //          the draft was gone, with no photo open too. Now, in Electron, the close stops, the
+    //          editor stays in view and a notice says to save or discard first. The three-choice
+    //          dialog does not fit here: its "Save and close" does not save the editor.
+    const tagEditorDirtyRef = useRef(false);
+    const segnaEditorSporco = useCallback((sporco: boolean) => { tagEditorDirtyRef.current = sporco; }, []);
+    const saveCloseDialogRef = useRef(saveCloseDialog);
+    saveCloseDialogRef.current = saveCloseDialog;
+    // ITALIANO: un salvataggio o un'esportazione sta scrivendo (isSaving). La X della finestra
+    //           chiudeva anche a meta' archivio, senza chiedere niente se non c'erano modifiche, e
+    //           l'archivio a meta' andava perso. Ora la PRIMA X durante una scrittura si ferma e
+    //           avvisa; una seconda X chiude comunque (chiusuraInScritturaRef), cosi' un'esportazione
+    //           bloccata non tiene la finestra aperta per sempre. Finita la scrittura si riparte da capo.
+    // ENGLISH: a save or an export is writing (isSaving). The window's X closed even mid-archive,
+    //          asking nothing when there were no edits, and the half-written archive was lost. Now the
+    //          FIRST X during a write stops and warns; a second X closes anyway
+    //          (chiusuraInScritturaRef), so a stuck export does not keep the window open forever. Once
+    //          the write is over it starts again from scratch.
+    const isSavingRef = useRef(isSaving);
+    isSavingRef.current = isSaving;
+    const chiusuraInScritturaRef = useRef(false);
+    if (!isSaving) chiusuraInScritturaRef.current = false;
+    // ITALIANO: lo stesso per "Annulla lo svuotamento" (ripristinoInCorsoRef): riprende prima le
+    //           immagini e poi, con una seconda chiamata, i loro .txt. Chiudendo la finestra in mezzo
+    //           le immagini tornavano nella cartella e i .txt restavano nel Cestino di Windows, senza
+    //           un avviso. La prima X si ferma e avvisa; una seconda X chiude comunque.
+    // ENGLISH: the same for "Undo the emptying" (ripristinoInCorsoRef): it takes the images back
+    //          first and then, with a second call, their .txt files. Closing the window in between
+    //          put the images back in the folder and left the .txt files in the Windows Recycle Bin,
+    //          with no notice. The first X stops and warns; a second X closes anyway.
+    const chiusuraInRipristinoRef = useRef(false);
+    if (!ripristinoInCorso) chiusuraInRipristinoRef.current = false;
+    useEffect(() => {
+        const allaChiusura = (e: BeforeUnloadEvent) => {
+            // ITALIANO: l'utente ha gia' deciso (salvato, o chiuso senza salvare): si chiude e basta.
+            // ENGLISH: the user already decided (saved, or closed without saving): just close.
+            if (permettiChiusuraRef.current) return;
+            const lista = imagesRef.current;
+            const editorSporco = tagEditorDirtyRef.current;
+            // ITALIANO: con l'elenco vuoto il backup si riscrive lo stesso se nella sessione c'erano
+            //           foto (backupConFotoRef, come l'effetto col timer): chiusa l'ultima foto con la X
+            //           e la finestra entro un secondo, il timer moriva con la pagina e le modifiche
+            //           buttate via tornavano come "recuperate". All'avvio (nessuna foto) non si tocca.
+            // ENGLISH: with an empty list the backup is still rewritten when the session had photos
+            //          (backupConFotoRef, as the timer effect does): with the last photo closed with the
+            //          X and the window within a second, the timer died with the page and the discarded
+            //          edits came back as "recovered". At start-up (no photo) it is left alone.
+            const conFoto = lista.length > 0 || backupConFotoRef.current;
+            if (!conFoto && !editorSporco) return;
+            const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
+            if (conFoto) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current);
+            if (!(window as any).electronAPI) return;
+            // ITALIANO: una scrittura in corso (vedi isSavingRef): la prima X si ferma e avvisa.
+            // ENGLISH: a write in progress (see isSavingRef): the first X stops and warns.
+            if (isSavingRef.current && !chiusuraInScritturaRef.current) {
+                e.preventDefault();
+                e.returnValue = false;
+                chiusuraInScritturaRef.current = true;
+                setTimeout(() => showNotification(t.closeWhileWriting, 'info'), 0);
+                return;
+            }
+            // ITALIANO: un "Annulla lo svuotamento" in corso (vedi chiusuraInRipristinoRef).
+            // ENGLISH: an "Undo the emptying" in progress (see chiusuraInRipristinoRef).
+            if (ripristinoInCorsoRef.current && !chiusuraInRipristinoRef.current) {
+                e.preventDefault();
+                e.returnValue = false;
+                chiusuraInRipristinoRef.current = true;
+                setTimeout(() => showNotification(t.closeWhileRestoring, 'info'), 0);
+                return;
+            }
+            // ITALIANO: prima la bozza dell'editor (vedi tagEditorDirtyRef); le foto si chiedono alla X dopo.
+            // ENGLISH: the editor's draft first (see tagEditorDirtyRef); the photos are asked at the next X.
+            if (editorSporco) {
+                e.preventDefault();
+                e.returnValue = false;
+                setTimeout(() => { setIsTagEditorOpen(true); showNotification(t.tagEditorUnsavedOnWindowClose, 'info'); }, 0);
+                return;
+            }
+            // ITALIANO: seconda X durante una scrittura o un ripristino: si chiude, come promettono i due
+            //           avvisi. Durante "Salva modifiche" le foto risultano salvate solo alla fine, quindi
+            //           qui c'erano sempre modifiche: si apriva la finestra a tre scelte e il suo "Salva e
+            //           chiudi" diceva di riprovare dopo. Le modifiche sono gia' nel backup (sopra).
+            // ENGLISH: second X during a write or a restore: it closes, as both notices promise. During
+            //          "Save changes" the photos count as saved only at the end, so there were always
+            //          edits here: the three-choice dialog opened and its "Save and close" said to try
+            //          again later. The edits are already in the backup (above).
+            if (isSavingRef.current || ripristinoInCorsoRef.current) return;
+            if (!modificheNonSalvate(lista, globalTriggersRef.current)) return;
+            e.preventDefault();
+            // ITALIANO: come chiede la guida di Electron: returnValue esplicito, non solo preventDefault.
+            // ENGLISH: as Electron's guide asks: an explicit returnValue, not just preventDefault.
+            e.returnValue = false;
+            chiusuraFinestraRef.current = true;
+            // ITALIANO: l'editor (senza modifiche, a questo punto) si mette via: la finestra a tre
+            //           scelte sta sotto di lui e restava nascosta.
+            // ENGLISH: the editor (with no edits, at this point) is put away: the three-choice dialog
+            //          sits below it and stayed hidden.
+            if (!saveCloseDialogRef.current.isOpen) setTimeout(() => { setIsTagEditorOpen(false); setSaveCloseDialog({ isOpen: true, isSaving: false }); }, 0);
+        };
+        window.addEventListener('beforeunload', allaChiusura);
+        return () => window.removeEventListener('beforeunload', allaChiusura);
+    }, [dirHandle, t]);
+
+    // ITALIANO: dopo "Chiudi senza salvare" o un "Salva e chiudi" riuscito: se la domanda era nata
+    //           dalla X della finestra, la finestra si chiude davvero; se era nata da "Chiudi
+    //           progetto", resta aperta come sempre.
+    // ENGLISH: after "Close without saving" or a successful "Save and close": if the question came
+    //          from the window's X, the window really closes; if it came from "Close project", it
+    //          stays open as always.
+    const chiudiFinestraSeRichiesto = () => {
+        if (!chiusuraFinestraRef.current) return;
+        chiusuraFinestraRef.current = false;
+        permettiChiusuraRef.current = true;
+        window.close();
+    };
+
+    // ITALIANO: Ctrl+Z e Ctrl+Shift+Z rimettono i tag del passo, ma non il ricordo di cosa c'e' su
+    //           disco: quello resta l'ultimo noto (discoNotoRef, vedi withLiveOriginalTags).
+    //           Prima, dopo un salvataggio, annullare riportava indietro anche lui e l'app diceva
+    //           "niente da salvare" mentre il .txt conteneva ancora i tag appena tolti.
+    // ENGLISH: Ctrl+Z and Ctrl+Shift+Z put back the step's tags, but not the record of what is on
+    //          disk: that stays the last known one (discoNotoRef, see withLiveOriginalTags). After
+    //          a save, undoing used to roll it back too, and the app said "nothing to save" while
+    //          the .txt still held the tags just removed.
+    // ITALIANO: si salta al passo piu' vicino DIVERSO da quello attuale (vedi nearestDifferentStep):
+    //           le foto uscite dal disco lasciano passi identici, e un Ctrl+Z li' diceva "Azione
+    //           annullata" senza cambiare niente. Se non c'e' un passo diverso, niente e nessun avviso.
+    // ENGLISH: jump to the nearest step DIFFERENT from the current one (see nearestDifferentStep):
+    //          photos that left the disk leave identical steps, and a Ctrl+Z there said "Action
+    //          undone" without changing anything. With no different step: nothing, and no notice.
+    // ITALIANO: e rimettono anche il riquadro delle trigger com'era in quel passo (triggerHistoryRef),
+    //           tranne quando si torna alla galleria vuota di prima dell'import: una trigger scritta
+    //           prima di importare non deve sparire per questo.
+    // ENGLISH: and they also put the trigger box back as it was at that step (triggerHistoryRef),
+    //          except when going back to the empty gallery from before the import: a trigger typed
+    //          before importing must not vanish because of that.
     const handleUndo = useCallback(() => {
-        if (historyIndex > 0) {
+        const passo = nearestDifferentStep(history, historyIndex, -1);
+        if (passo >= 0) {
             isUndoRedoAction.current = true;
-            setHistoryIndex(prev => prev - 1);
-            setImages(history[historyIndex - 1]);
-            setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info' });
+            setHistoryIndex(passo);
+            setImages(withLiveOriginalTags(history[passo], discoNotoRef.current));
+            const triggerDelPasso = triggerHistoryRef.current[passo];
+            if (triggerDelPasso && history[passo].length > 0) { globalTriggersRef.current = triggerDelPasso; setGlobalTriggers(triggerDelPasso); }
+            setToast({ show: true, message: t.undoSuccess || "Azione annullata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
 
     const handleRedo = useCallback(() => {
-        if (historyIndex < history.length - 1) {
+        const passo = nearestDifferentStep(history, historyIndex, 1);
+        if (passo >= 0) {
             isUndoRedoAction.current = true;
-            setHistoryIndex(prev => prev + 1);
-            setImages(history[historyIndex + 1]);
-            setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info' });
+            setHistoryIndex(passo);
+            setImages(withLiveOriginalTags(history[passo], discoNotoRef.current));
+            const triggerDelPasso = triggerHistoryRef.current[passo];
+            if (triggerDelPasso && history[passo].length > 0) { globalTriggersRef.current = triggerDelPasso; setGlobalTriggers(triggerDelPasso); }
+            setToast({ show: true, message: t.redoSuccess || "Azione ripristinata", type: 'info', id: Date.now() });
         }
     }, [history, historyIndex, t]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+            // ITALIANO: solo i campi dove si scrive testo tengono Ctrl+Z per se' (vedi isTextEditingElement):
+            //           il cursore dello zoom no, e dopo averlo trascinato Ctrl+Z restava muto.
+            // ENGLISH: only fields where text is typed keep Ctrl+Z for themselves (see isTextEditingElement):
+            //          the zoom slider does not, and after dragging it Ctrl+Z stayed silent.
+            if (isTextEditingElement(document.activeElement as any)) {
                 return;
             }
-            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') {
+            // ITALIANO: con una finestra aperta SOPRA il progetto, Ctrl+Z non lo tocca: nell'editor
+            //           di tag (dopo la X su una pillola il fuoco torna alla pagina) annullava in
+            //           silenzio l'ultima modifica del progetto dietro la finestra, e su una conferma
+            //           cambiava le foto prima del "Conferma". Restano attivi galleria, visualizzatore,
+            //           cestino e gestione dei tag del progetto, dove il progetto si vede.
+            // ENGLISH: with a dialog open OVER the project, Ctrl+Z leaves it alone: in the tag editor
+            //          (after the X on a pill the focus goes back to the page) it silently undid the
+            //          project's last edit behind the dialog, and on a confirmation it changed the
+            //          photos before "Confirm". Gallery, viewer, trash and project tag manager keep
+            //          it, as the project is in view there.
+            if (isTagEditorOpen || confirmDialog.isOpen || saveCloseDialog.isOpen || importSummary.isOpen
+                || isApiKeyDialogOpen || isStatsOpen || !!exportChoice || updateAskOpen || !!updateFound) {
+                return;
+            }
+            // ITALIANO: anche con una tastiera non latina (russa: "я"), vedi isLetterShortcut.
+            // ENGLISH: also with a non-Latin keyboard (Russian: "я"), see isLetterShortcut.
+            if (e.ctrlKey && e.shiftKey && isLetterShortcut(e, 'z')) {
                 e.preventDefault();
                 handleRedo();
-            } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+            } else if (e.ctrlKey && isLetterShortcut(e, 'z')) {
                 e.preventDefault();
                 handleUndo();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [handleUndo, handleRedo]);
+    }, [handleUndo, handleRedo, isTagEditorOpen, confirmDialog.isOpen, saveCloseDialog.isOpen, importSummary.isOpen,
+        isApiKeyDialogOpen, isStatsOpen, exportChoice, updateAskOpen, updateFound]);
 
     const allUniqueTags = useMemo(() => {
         const imgTags = images.flatMap(img => img.tags);
@@ -812,7 +1110,49 @@ export default function App() {
         return applySort([...displayedImages, ...fuori], sortOrder);
     }, [displayedImages, images, selectedImageId, sortOrder, trattenuteNelVisualizzatore]);
 
+    // ITALIANO: la foto aperta nel visualizzatore non c'e' piu' o e' nel cestino (Ctrl+Z, Ctrl+Shift+Z
+    //           o un annullamento oltre l'import): il visualizzatore si chiude davvero, come fanno
+    //           "Sposta nel cestino" e la X. Prima spariva ma l'app lo credeva ancora aperto: un tag
+    //           suggerito finiva sulla foto nascosta nel cestino invece che sulle foto selezionate,
+    //           Esc non rispondeva e ripristinando la foto il visualizzatore si riapriva da solo.
+    // ENGLISH: the photo open in the viewer is gone or in the trash (Ctrl+Z, Ctrl+Shift+Z or an undo
+    //          past the import): the viewer really closes, as "Move to trash" and the X do. It used to
+    //          vanish while the app still believed it open: a suggested tag landed on the photo hidden
+    //          in the trash instead of the selected photos, Esc did not answer and restoring the photo
+    //          reopened the viewer by itself.
+    useEffect(() => {
+        if (selectedImageId && !images.some(img => img.id === selectedImageId && !img.isTrashed)) setSelectedImageId(null);
+    }, [selectedImageId, images]);
+
+    // ITALIANO: lo stesso per la selezione in blocco: una foto che non c'e' piu' o che e' nel
+    //           cestino (Ctrl+Z, Ctrl+Shift+Z, un annullamento oltre l'import) esce dalla
+    //           selezione. Prima restava: il pannello la contava ("foto selezionate: 2" con una sola
+    //           a schermo), le pillole "presenti su alcune" mostravano i suoi tag e Conferma diceva
+    //           un numero piu' basso. Le foto nascoste solo dalla ricerca restano selezionate. Se non
+    //           cambia niente si tiene lo stesso elenco, cosi' le card non si ridisegnano.
+    // ENGLISH: the same for the bulk selection: a photo that is gone or in the trash (Ctrl+Z,
+    //          Ctrl+Shift+Z, an undo past the import) leaves the selection. It used to stay: the
+    //          panel counted it ("selected photos: 2" with one on screen), the "on some" pills
+    //          showed its tags and Confirm said a lower number. Photos hidden only by the search
+    //          stay selected. When nothing changes the same list is kept, so the cards are not
+    //          redrawn.
+    useEffect(() => {
+        setSelectedForBulk(prev => {
+            if (prev.length === 0) return prev;
+            const fotoNelProgetto = new Set(images.filter(img => !img.isTrashed).map(img => img.id));
+            const restano = prev.filter(id => fotoNelProgetto.has(id));
+            return restano.length === prev.length ? prev : restano;
+        });
+    }, [images]);
+
     const trashedImages = useMemo(() => images.filter(img => img.isTrashed), [images]);
+    // ITALIANO: le foto del progetto, cioe' quelle fuori dal cestino: il contatore della barra le
+    //           conta cosi' con e senza ricerca, come la galleria e le Statistiche. Senza ricerca
+    //           contava anche le foto nel cestino ("5 immagini aperte" sopra una galleria di 3).
+    // ENGLISH: the project's photos, i.e. those outside the trash: the bar counter counts them this
+    //          way with and without a search, like the gallery and Statistics. Without a search it
+    //          counted the trashed photos too ("5 images opened" above a gallery of 3).
+    const fotoAttive = images.length - trashedImages.length;
 
     // ITALIANO: PRESTAZIONI — selezione come Set per un test O(1) "questa foto e' selezionata?".
     //           Serve alle card memorizzate della galleria (prop booleana isSelected).
@@ -870,19 +1210,508 @@ export default function App() {
         return applySort([...trashedImages], trashSortOrder);
     }, [trashedImages, trashSortOrder]);
 
-    const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type });
+    // ITALIANO: `id` distingue ogni notifica, anche con lo stesso testo: da li' Toast fa ripartire
+    //           i suoi 4 secondi (vedi Toast in components/ui.tsx).
+    // ENGLISH: `id` tells every notification apart, even with the same text: Toast restarts its
+    //          4 seconds from it (see Toast in components/ui.tsx).
+    const showNotification = (message: string, type = 'info') => setToast({ show: true, message, type, id: Date.now() });
 
-    // ITALIANO: "Impronta" di una cartella: nome + quante immagini + la prima e l'ultima in ordine
-    //           alfabetico. Serve a riconoscere che il backup anti-crash appartiene DAVVERO alla
-    //           cartella che si sta aprendo. Col solo nome, due dataset chiamati entrambi "dataset"
-    //           risultavano lo stesso progetto.
-    // ENGLISH: A folder "fingerprint": name + how many images + the alphabetically first and last
-    //          one. It tells whether the crash backup REALLY belongs to the folder being opened.
-    //          With the name alone, two datasets both called "dataset" looked like the same project.
-    const folderSignature = (folderName: string, fileNames: string[]): string => {
-        const sorted = [...fileNames].sort();
-        return `${folderName}|${sorted.length}|${sorted[0] || ''}|${sorted[sorted.length - 1] || ''}`;
+    // ITALIANO: SCELTA AUTOMATICA DEL MODELLO AI
+    //   Quali modelli esistano lo dice Google, non questo file: cosi' il programma non resta
+    //   legato a una sigla che un giorno Google chiude, e chi la usava non si ritrova l'AI
+    //   rotta senza capire perche'. La regola di scelta, e il motivo per cui ogni candidato
+    //   viene PROVATO prima di essere adottato, stanno in geminiService. Qui c'e' solo il
+    //   QUANDO: una volta al giorno all'avvio, e subito quando il modello di adesso risponde
+    //   "non esisto".
+    //   Nota sulla privacy: si parte solo con l'AI accesa E la chiave presente. Chi non usa
+    //   l'AI non fa partire nessun collegamento, e quella promessa resta vera alla lettera.
+    // ENGLISH: AUTOMATIC AI MODEL SELECTION
+    //   Which models exist is Google's word, not this file's: that way the program is not tied
+    //   to an id Google may retire one day, leaving whoever used it with a broken AI and no
+    //   explanation. The selection rule, and why every candidate is PROBED before being
+    //   adopted, live in geminiService. Here there is only the WHEN: once a day at startup,
+    //   and immediately when the current model answers "I do not exist".
+    //   Privacy note: this runs only with AI enabled AND a key present. Whoever does not use
+    //   the AI starts no connection at all, and that promise stays true to the letter.
+    const [modelliDisponibili, setModelliDisponibili] = useState<any[]>(() => {
+        try {
+            const grezzo = JSON.parse(localStorage.getItem('aiModelliTrovati') || '[]');
+            return Array.isArray(grezzo) ? grezzo : [];
+        } catch (_) { return []; }
+    });
+    const [controlloModelloInCorso, setControlloModelloInCorso] = useState(false);
+    const [modelloControllatoIl, setModelloControllatoIl] = useState<number>(() => {
+        const n = parseInt(localStorage.getItem('aiModelloControllatoIl') || '0', 10);
+        return Number.isFinite(n) ? n : 0;
+    });
+    const controlloModelloRef = useRef(false);
+    const [riparaModello, setRiparaModello] = useState(0);
+    // ITALIANO: l'interruttore AI com'e' adesso, letto dal controllo dei modelli prima di partire e
+    //           dopo ogni attesa: con l'AI spenta non si parla con Google (README), e la riparazione
+    //           chiesta da una foto o il controllo di avvio non devono cambiare modello dopo.
+    // ENGLISH: the AI switch as it is now, read by the model check before it starts and after every
+    //          wait: with the AI off Google is not contacted (README), and a repair asked by a photo
+    //          or the startup check must not switch the model afterwards.
+    const aiEnabledRef = useRef(aiEnabled);
+    aiEnabledRef.current = aiEnabled;
+
+    // ITALIANO: TUTTI I MODELLI DELLA CHIAVE, PROVATI. L'esito della prova vale per UNA chiave:
+    //           con un'altra chiave i modelli utilizzabili possono essere diversi. Per questo si
+    //           salva con un'impronta della chiave (16 cifre del suo SHA-256, mai la chiave) e lo
+    //           si mostra solo se l'impronta e' quella della chiave di adesso.
+    // ENGLISH: ALL THE KEY'S MODELS, PROBED. The probe's outcome holds for ONE key: with another
+    //          key the usable models may differ. So it is saved with a fingerprint of the key (16
+    //          digits of its SHA-256, never the key itself) and shown only when the fingerprint is
+    //          the current key's.
+    type ProvaSalvata = { impronta: string; il: number; modelli: ModelloChiave[] };
+    const [modelliChiave, setModelliChiave] = useState<ProvaSalvata | null>(() => {
+        try {
+            const g = JSON.parse(localStorage.getItem('aiModelliChiave') || 'null');
+            return g && typeof g.impronta === 'string' && Array.isArray(g.modelli) ? g : null;
+        } catch (_) { return null; }
+    });
+    const [improntaChiave, setImprontaChiave] = useState('');
+    const [provaModelliStato, setProvaModelliStato] = useState<{ fatti: number; totale: number } | null>(null);
+    // ITALIANO: la parte "Avanzate" delle Impostazioni AI (controlli dei modelli e Come tagga) e'
+    //           chiusa di serie: in vista restano solo chiave e modello. Si apre da sola mentre una
+    //           prova o un controllo e' in corso, cosi' l'avanzamento si vede.
+    // ENGLISH: the "Advanced" part of the AI settings (model checks and How it tags) is closed by
+    //          default: only key and model stay in view. It opens by itself while a probe or a check
+    //          is running, so the progress shows.
+    const [aiAvanzate, setAiAvanzate] = useState(false);
+    // ITALIANO: le spiegazioni lunghe delle Impostazioni non stanno piu' nel pannello: un tasto "?"
+    //           accanto a ogni sezione le apre in una finestra. `aiutoRef` serve a non chiudere il
+    //           pannello quando si clicca dentro la finestra (che sta fuori dal pannello).
+    // ENGLISH: the long Settings explanations no longer sit in the panel: a "?" button next to each
+    //          section opens them in a window. `aiutoRef` keeps the panel open when clicking inside
+    //          the window (which lives outside the panel).
+    const [aiuto, setAiuto] = useState<AiutoImpostazioni | null>(null);
+    const aiutoRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!aiuto) return undefined;
+        const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setAiuto(null); } };
+        window.addEventListener('keydown', esc, true);
+        return () => window.removeEventListener('keydown', esc, true);
+    }, [aiuto]);
+    const provaModelliRef = useRef<AbortController | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        if (!geminiApiKey || !globalThis.crypto?.subtle) { setImprontaChiave(''); return undefined; }
+        globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(geminiApiKey)).then(h => {
+            if (!vivo) return;
+            setImprontaChiave(Array.from(new Uint8Array(h)).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join(''));
+        }).catch(() => { if (vivo) setImprontaChiave(''); });
+        return () => { vivo = false; };
+    }, [geminiApiKey]);
+    const modelliProvati: ModelloChiave[] | null = modelliChiave && improntaChiave && modelliChiave.impronta === improntaChiave
+        ? ultimeGenerazioni(modelliChiave.modelli) : null;
+    // ITALIANO: l'esito della prova per il modello in uso: quando c'e', vale piu' di quanto si
+    //           indovina dal nome (un "pro" che risponde non e' "a pagamento" per questa chiave).
+    // ENGLISH: the probe outcome for the model in use: when present it beats the guess from the
+    //          name (a "pro" that answers is not "paid" for this key).
+    const statoModelloInUso: StatoModello | undefined = modelliProvati?.find(m => m.id === aiModel)?.stato;
+    // ITALIANO: aspetto delle schede nelle Impostazioni AI e MCP (solo stile, niente logica).
+    // ENGLISH: look of the cards in the AI and MCP settings (style only, no logic).
+    const schedaAi = `flex flex-col gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-gray-800/50 border-gray-700/70' : 'bg-white border-purple-100 shadow-sm'}`;
+    const titoloSchedaAi = `flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-purple-300' : 'text-purple-700'}`;
+    const pulsanteSchedaAi = `flex items-center justify-center gap-1.5 text-[10px] font-medium px-2 py-1.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'border-gray-600 text-gray-200 bg-gray-700/40 hover:bg-gray-700' : 'border-purple-200 text-purple-800 bg-purple-50/60 hover:bg-purple-100'}`;
+    const notaSchedaAi = `text-[9.5px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`;
+    // ITALIANO: il tasto "?" che apre la spiegazione di una sezione delle Impostazioni.
+    // ENGLISH: the "?" button that opens the explanation of a Settings section.
+    const tastoAiuto = (quale: AiutoImpostazioni) => (
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setAiuto(quale); }}
+            title={`${t.helpButton} — ${testiAiuto[quale].titolo}`}
+            aria-label={`${t.helpButton} — ${testiAiuto[quale].titolo}`}
+            className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold leading-none border shrink-0 transition-colors ${isDarkMode ? 'border-gray-600 text-gray-400 hover:text-white hover:border-gray-400' : 'border-gray-300 text-gray-500 hover:text-gray-900 hover:border-gray-500'}`}
+        >?</button>
+    );
+    // ITALIANO: cosa dice la finestra di ogni sezione: i testi che prima stavano nel pannello.
+    // ENGLISH: what each section's window says: the texts that used to sit in the panel.
+    const testiAiuto: Record<AiutoImpostazioni, { titolo: string; testi: string[] }> = {
+        aggiornamenti: { titolo: t.updateCheckLabel, testi: [t.updateCheckHint] },
+        ai: { titolo: t.aiSettings, testi: [t.aiCloudInfo, t.aiBetaHint] },
+        modello: { titolo: t.aiModelLabel, testi: [t.aiModelAutoHint, t.aiProbeHint, t.aiModelLegend] },
+        tagga: { titolo: t.aiCardTagging, testi: [t.aiRpmHint, t.aiSkipTaggedHint] },
+        mcp: { titolo: t.mcpTitle, testi: [t.mcpHint, t.mcpDesktopNote] },
     };
+
+    // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
+    //           ("scegliendo un modello preciso, resta fisso quello") e prima non era vero: nel
+    //           codice non c'era nessun blocco, e il controllo del giorno dopo scavalcava la
+    //           scelta senza chiedere. Scegliendo "Automatico" il blocco si toglie.
+    //           Chi arriva dalla 1.2.0 parte da Automatico: e' la scelta che si voleva di serie.
+    // ENGLISH: A MODEL PICKED BY HAND STAYS FIXED. That is what the hint promises ("pick a
+    //          specific model and that one stays fixed") and it used to be false: there was no
+    //          lock in the code, and the next day's check overrode the choice without asking.
+    //          Picking "Automatic" removes the lock. Anyone coming from 1.2.0 starts on
+    //          Automatic: that is the intended default.
+    const [aiModelloFissato, setAiModelloFissato] = useState<boolean>(() => localStorage.getItem('aiModelloFissato') === 'true');
+    // ITALIANO: due ref che il controllo dei modelli legge DOPO le sue attese (lo stato che ha in
+    //           mano e' quello di quando e' partito): il blocco com'e' adesso, e quante volte si e'
+    //           scelto un modello a mano nella tendina.
+    // ENGLISH: two refs the model check reads AFTER its awaits (the state it holds is the one from
+    //          when it started): the lock as it is now, and how many times a model was picked by
+    //          hand in the dropdown.
+    const aiModelloFissatoRef = useRef(aiModelloFissato);
+    const sceltaManualeRef = useRef(0);
+    // ITALIANO: l'ultimo modello scelto a mano nella tendina: dopo le attese il controllo ha in mano
+    //           il modello di quando e' partito, non quello in uso adesso.
+    // ENGLISH: the last model picked by hand in the dropdown: after its awaits the check holds the
+    //          model from when it started, not the one in use now.
+    const ultimaSceltaRef = useRef('');
+    useEffect(() => {
+        aiModelloFissatoRef.current = aiModelloFissato;
+        try { localStorage.setItem('aiModelloFissato', aiModelloFissato ? 'true' : 'false'); } catch (_) { }
+    }, [aiModelloFissato]);
+
+    // ITALIANO: `fissato` si passa esplicitamente quando lo stato sta per cambiare nello stesso
+    //           clic (passaggio ad Automatico): React non l'avrebbe ancora aggiornato, e il
+    //           controllo partirebbe credendo il modello ancora bloccato.
+    // ENGLISH: `fissato` is passed explicitly when the state is about to change in the same
+    //          click (switching to Automatic): React would not have updated it yet, and the
+    //          check would run believing the model still locked.
+    const controllaModello = async (rotto: boolean, dilloComunque: boolean, fissato: boolean = aiModelloFissato) => {
+        // ITALIANO: il ref, non lo stato: due controlli in parallelo sprecherebbero chiamate e
+        //           potrebbero scriversi addosso il modello scelto.
+        // ENGLISH: the ref, not the state: two checks in parallel would waste calls and could
+        //          overwrite each other's chosen model.
+        if (controlloModelloRef.current) return;
+        if (!aiEnabledRef.current) return;
+        if (!geminiApiKey) { if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error'); return; }
+        controlloModelloRef.current = true;
+        setControlloModelloInCorso(true);
+        const scelteAllInizio = sceltaManualeRef.current;
+
+        // ITALIANO: "ultimo controllo" si scrive SOLO quando Google ha dato una risposta vera.
+        //           Prima si scriveva sempre, anche dopo un fallimento: le Impostazioni dicevano
+        //           "controllato oggi" su un controllo mai riuscito, e il tentativo successivo
+        //           aspettava 24 ore.
+        // ENGLISH: "last check" is written ONLY when Google gave a real answer. It used to be
+        //          written every time, even after a failure: Settings said "checked today" for a
+        //          check that never succeeded, and the next attempt waited 24 hours.
+        const segnaControllo = () => {
+            const adesso = Date.now();
+            setModelloControllatoIl(adesso);
+            try { localStorage.setItem('aiModelloControllatoIl', String(adesso)); } catch (_) { }
+        };
+        const tieniElenco = (elenco: any[]) => {
+            if (!elenco || elenco.length === 0) return;
+            setModelliDisponibili(elenco);
+            try { localStorage.setItem('aiModelliTrovati', JSON.stringify(elenco)); } catch (_) { }
+        };
+
+        try {
+            // ITALIANO: modello bloccato e ancora vivo: niente cambi da soli. Si aggiorna solo
+            //           l'elenco nella tendina e, se lo si e' chiesto, si dice se ce n'e' uno piu'
+            //           nuovo. Se invece il modello bloccato non esiste piu' (rotto), si ripara
+            //           comunque: tenere un modello morto non e' rispettare una scelta.
+            // ENGLISH: model locked and still alive: no changes on our own. Only the dropdown
+            //          list is refreshed and, if asked, we say whether a newer one exists. If the
+            //          locked model no longer exists (rotto), it is repaired anyway: keeping a
+            //          dead model is not respecting a choice.
+            if (fissato && !rotto) {
+                const elenco = await elencaModelliRemoti(geminiApiKey);
+                // ITALIANO: l'AI e' stata spenta mentre Google rispondeva: niente avvisi, niente cambi.
+                // ENGLISH: the AI was switched off while Google answered: no notices, no changes.
+                if (!aiEnabledRef.current) return;
+                // ITALIANO: mentre Google rispondeva l'utente e' passato ad Automatico: il controllo
+                //           chiesto da quel clic si e' perso (questo era in corso), quindi lo fa
+                //           questo, proseguendo come Automatico. Prima diceva "ce n'e' uno piu'
+                //           recente", segnava il controllo come fatto, e Automatico restava sul
+                //           modello vecchio fino al giorno dopo.
+                // ENGLISH: while Google was answering the user switched to Automatic: the check that
+                //          click asked for was lost (this one was running), so this one does it,
+                //          going on as Automatic. It used to say "a newer one is available", mark
+                //          the check as done, and Automatic stayed on the old model until the next day.
+                if (aiModelloFissatoRef.current) {
+                    if (elenco.length === 0) {
+                        if (dilloComunque) showNotification(t.aiModelCheckFailed, 'error');
+                        return;
+                    }
+                    tieniElenco(elenco);
+                    segnaControllo();
+                    if (dilloComunque) {
+                        // ITALIANO: "piu' recente" solo se la VERSIONE e' piu' alta. A parita' di
+                        //           versione il flash pieno viene prima del lite nell'elenco: con
+                        //           gemini-3.6-flash-lite bloccato si annunciava gemini-3.6-flash
+                        //           come "piu' recente", ed e' la stessa 3.6.
+                        // ENGLISH: "newer" only if the VERSION is higher. At equal version the full
+                        //          flash comes before the lite in the list: with gemini-3.6-flash-lite
+                        //          locked, gemini-3.6-flash was announced as "newer", and it is the
+                        //          same 3.6.
+                        if (confrontaVersioni(versioneDi(elenco[0].id), versioneDi(aiModel)) > 0) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
+                        else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
+                    }
+                    return;
+                }
+                tieniElenco(elenco);
+            }
+
+            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
+            if (!aiEnabledRef.current) return;
+            tieniElenco(esito.disponibili);
+            if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'progettoRifiutato' && esito.esito !== 'occupato') segnaControllo();
+
+            // ITALIANO: mentre Google rispondeva (da pochi secondi a qualche minuto: elenco e fino a tre prove da 60 s)
+            //           l'utente ha scelto a mano un modello preciso, ed e' ancora bloccato: vale
+            //           la sua scelta. Il risultato si mette da parte senza dire niente (l'elenco
+            //           della tendina e' gia' aggiornato). Prima lo si applicava lo stesso: la
+            //           scelta spariva, il blocco cadeva e l'avviso diceva "Prima:" col modello
+            //           di prima della scelta. Se invece e' tornato su Automatico, il risultato vale.
+            // ENGLISH: while Google was answering (seconds to a few minutes: the list and up to three 60 s probes)
+            //          the user picked a specific model by hand, and it is still locked: their
+            //          choice stands. The result is set aside without a word (the dropdown list is
+            //          already refreshed). It used to be applied anyway: the choice vanished, the
+            //          lock dropped and the notice said "Before:" with the model from before the
+            //          pick. If they went back to Automatic instead, the result stands.
+            if (sceltaManualeRef.current !== scelteAllInizio && aiModelloFissatoRef.current) return;
+
+            // ITALIANO: ...e se e' tornato su Automatico, il modello in uso e' quello scelto a mano
+            //           (ultimaSceltaRef), non quello da cui il controllo e' partito. Prima si
+            //           applicava solo un risultato "cambiato" rispetto alla partenza: partendo gia'
+            //           dal piu' recente la risposta era "invariato", e Automatico restava sul modello
+            //           vecchio scelto a mano fino al controllo del giorno dopo (il "torna su
+            //           Automatico" della tendina, arrivato a controllo in corso, era stato scartato).
+            //           Quando Google ha indicato un modello, si confronta con quello in uso e il
+            //           cambio si annuncia nominando quello davvero sostituito.
+            // ENGLISH: ...and if they went back to Automatic, the model in use is the hand-picked one
+            //          (ultimaSceltaRef), not the one the check started from. Only a result "changed"
+            //          against the start used to be applied: starting from the newest already, the
+            //          answer was "unchanged", and Automatic stayed on the old hand-picked model until
+            //          the next day's check (the dropdown's "back to Automatic", arriving while the
+            //          check was running, had been dropped). When Google named a model, it is compared
+            //          with the one in use and the switch is announced naming the one really replaced.
+            if (sceltaManualeRef.current !== scelteAllInizio
+                && (esito.esito === 'invariato' || esito.esito === 'aggiornato' || esito.esito === 'riparato')) {
+                if (esito.modello !== ultimaSceltaRef.current) {
+                    setAiModel(esito.modello);
+                    setAiModelloFissato(false);
+                    showNotification(t.aiModelSwitched.replace('{da}', ultimaSceltaRef.current).replace('{a}', esito.modello), 'info');
+                } else if (dilloComunque) {
+                    showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
+                }
+                return;
+            }
+
+            if (esito.cambiato) {
+                // ITALIANO: il cambio si annuncia SEMPRE. Un modello nuovo puo' taggare in modo
+                //           diverso, e se sei a meta' di un dataset e' una cosa che devi sapere:
+                //           cambiare di nascosto sarebbe comodo da programmare e sleale da usare.
+                //           Dopo una riparazione il blocco cade: il modello bloccato non c'e' piu'.
+                // ENGLISH: the switch is ALWAYS announced. A new model can tag differently, and
+                //          if you are halfway through a dataset that is something you need to
+                //          know: switching quietly would be easy to code and unfair to use.
+                //          After a repair the lock is dropped: the locked model is gone.
+                setAiModel(esito.modello);
+                setAiModelloFissato(false);
+                const testo = esito.esito === 'riparato' ? t.aiModelRepaired : t.aiModelSwitched;
+                showNotification(testo.replace('{da}', esito.precedente).replace('{a}', esito.modello), 'info');
+            } else if (dilloComunque) {
+                // ITALIANO: il motivo decide la frase: "non raggiungibile", "Google chiede di
+                //           rallentare" e "nessuno passa la prova" sono tre cose diverse, e prima
+                //           dicevano tutte la stessa - sbagliata per due su tre.
+                // ENGLISH: the reason picks the sentence: "unreachable", "Google asks to slow
+                //          down" and "none passes the test" are three different things, and they
+                //          all used to say the same one - wrong for two of the three.
+                if (esito.esito === 'nonRaggiungibile') showNotification(t.aiModelCheckFailed, 'error');
+                else if (esito.esito === 'chiaveNonValida') showNotification(t.aiModelCheckKeyInvalid, 'error');
+                else if (esito.esito === 'progettoRifiutato') showNotification(t.aiModelCheckProjectRefused, 'error');
+                else if (esito.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
+                else if (esito.esito === 'nessunoValido') showNotification(t.aiModelNoneWorking, 'error');
+                else showNotification(t.aiModelUpToDate.replace('{a}', esito.modello), 'success');
+            }
+        } catch (err) {
+            console.warn('[AI] Controllo del modello non riuscito:', err);
+            // ITALIANO: con il modello bloccato l'elenco si chiede da qui: una chiave scaduta o
+            //           revocata non e' "Google non raggiungibile", come nel giro automatico.
+            // ENGLISH: with the model locked the list is asked from here: an expired or revoked
+            //          key is not "Google unreachable", as in the automatic round.
+            // ITALIANO: ...e nemmeno un progetto rifiutato, troppe richieste o Google sovraccarico:
+            //           stesse frasi del giro automatico. "Non raggiungibile" resta per la rete.
+            // ENGLISH: ...nor is a refused project, too many requests or Google overloaded: the same
+            //          sentences as the automatic round. "Unreachable" stays for the network.
+            if (dilloComunque && aiEnabledRef.current) {
+                const { kind } = classifyGeminiError(err);
+                if (kind === 'invalid_key') showNotification(t.aiModelCheckKeyInvalid, 'error');
+                else if (kind === 'billing_required') showNotification(t.aiModelCheckProjectRefused, 'error');
+                else if (kind === 'rate_limit' || kind === 'busy') showNotification(t.aiModelCheckBusy, 'info');
+                else showNotification(t.aiModelCheckFailed, 'error');
+            }
+        } finally {
+            controlloModelloRef.current = false;
+            setControlloModelloInCorso(false);
+        }
+    };
+
+
+    // ITALIANO: "Prova i modelli recenti": parte solo a mano, con l'AI accesa e la chiave salvata
+    //           (con l'AI spenta non si parla con Google). Spegnere l'AI a meta' ferma la prova.
+    //           Non gira insieme al controllo del modello: si contenderebbero le chiamate.
+    // ENGLISH: "Test recent models": starts only by hand, with the AI on and a key saved (with the
+    //          AI off Google is not contacted). Switching the AI off halfway stops the test. It
+    //          does not run together with the model check: they would compete for calls.
+    const provaModelliChiave = async () => {
+        if (provaModelliRef.current || controlloModelloRef.current) return;
+        if (!aiEnabledRef.current || !geminiApiKey || !improntaChiave) return;
+        const ctrl = new AbortController();
+        provaModelliRef.current = ctrl;
+        const impronta = improntaChiave;
+        setProvaModelliStato({ fatti: 0, totale: 0 });
+        const salva = (modelli: ModelloChiave[]) => {
+            const v: ProvaSalvata = { impronta, il: Date.now(), modelli };
+            setModelliChiave(v);
+            try { localStorage.setItem('aiModelliChiave', JSON.stringify(v)); } catch (_) { }
+        };
+        try {
+            const r = await provaTuttiIModelli(geminiApiKey, (modelli, fatti) => {
+                if (!aiEnabledRef.current) { ctrl.abort(); return; }
+                setProvaModelliStato({ fatti, totale: modelli.length });
+                salva(modelli);
+            }, ctrl.signal);
+            if (!aiEnabledRef.current) return;
+            const tot = String(r.modelli.length);
+            if (r.esito === 'fatto') {
+                const ok = r.modelli.filter(m => m.stato === 'utilizzabile').length;
+                showNotification(t.aiProbeDone.replace('{ok}', String(ok)).replace('{tot}', tot), ok > 0 ? 'success' : 'info');
+            } else if (r.esito === 'fermato') {
+                if (r.modelli.length > 0) {
+                    const provati = r.modelli.filter(m => m.stato).length;
+                    showNotification(t.aiProbeStopped.replace('{n}', String(provati)).replace('{tot}', tot), 'info');
+                }
+            } else if (r.esito === 'nessunModello') showNotification(t.aiProbeNoneFound, 'error');
+            else if (r.esito === 'chiaveNonValida') showNotification(t.aiModelCheckKeyInvalid, 'error');
+            else if (r.esito === 'progettoRifiutato') showNotification(t.aiModelCheckProjectRefused, 'error');
+            else if (r.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
+            else showNotification(t.aiModelCheckFailed, 'error');
+        } finally {
+            provaModelliRef.current = null;
+            setProvaModelliStato(null);
+        }
+    };
+    // ITALIANO: SERVER MCP PER LE AI ESTERNE (vedi src/utils/mcpBridge.ts ed electron/mcp-server.src.mjs).
+    //           Le domande arrivano dal processo principale; si risponde con i dati in memoria.
+    //           Le modifiche ai tag aggiornano SUBITO anche imagesRef: un'AI puo' fare piu'
+    //           chiamate insieme, e la seconda deve vedere i tag gia' cambiati dalla prima.
+    // ENGLISH: MCP SERVER FOR EXTERNAL AIs. Questions come from the main process; answers come
+    //          from what is in memory. Tag changes update imagesRef AT ONCE too: an AI may make
+    //          several calls together, and the second must see the tags already changed by the first.
+    const [mcpStato, setMcpStato] = useState<McpStatus | null>(null);
+    const [mcpCodiceVisibile, setMcpCodiceVisibile] = useState(false);
+    const mcpGestoreRef = useRef<(r: McpRichiesta) => void>(() => { });
+    mcpGestoreRef.current = async (r: McpRichiesta) => {
+        let risposta: RispostaMcp;
+        try {
+            risposta = await eseguiStrumentoMcp(String(r.strumento), r.argomenti || {}, {
+                foto: () => imagesRef.current,
+                trigger: () => globalTriggersRef.current,
+                applica: (nuovi) => {
+                    imagesRef.current = imagesRef.current.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img));
+                    setImages(prev => prev.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img)));
+                },
+                immagine: async (id) => fotoPerMcp(imagesRef.current.find(img => img.id === id)?.file),
+            });
+        } catch (e) {
+            console.warn('[MCP] request failed', e);
+            risposta = { errore: 'Images Tag Manager could not answer this request.' };
+        }
+        window.electronAPI?.mcp?.respond(r.id, risposta);
+        if (risposta.cambiate) showNotification(t.mcpEditedNotice.replace('{n}', String(risposta.cambiate)), 'info');
+    };
+    useEffect(() => {
+        const api = window.electronAPI?.mcp;
+        if (!api) return undefined;
+        api.getStatus().then(setMcpStato).catch(() => { });
+        return api.onRequest((r) => { mcpGestoreRef.current(r); });
+    }, []);
+    const cambiaMcp = async (acceso: boolean) => {
+        const api = window.electronAPI?.mcp;
+        if (!api) return;
+        try { setMcpStato(await api.setEnabled(acceso)); } catch (_) { showNotification(t.mcpErrStart, 'error'); }
+    };
+    const nuovoCodiceMcp = async () => {
+        const api = window.electronAPI?.mcp;
+        if (!api) return;
+        try {
+            const s = await api.newToken();
+            setMcpStato(s);
+            showNotification(s.errore === 'salvataggio' ? t.mcpErrSave : t.mcpNewTokenDone, s.errore === 'salvataggio' ? 'error' : 'info');
+        } catch (_) { showNotification(t.mcpErrSave, 'error'); }
+    };
+    const copiaMcp = async (testo: string) => {
+        try { await navigator.clipboard.writeText(testo); showNotification(t.mcpCopied, 'success'); } catch (_) { showNotification(t.mcpCopyFailed, 'error'); }
+    };
+    const indirizzoMcp = mcpStato ? `http://127.0.0.1:${mcpStato.porta}/images-tag-manager` : '';
+    const configMcp = (tipo: 'claudeCode' | 'desktop' | 'cursor'): string => {
+        const codice = mcpStato?.codice || '';
+        if (tipo === 'claudeCode') return `claude mcp add --transport http images-tag-manager ${indirizzoMcp} --header "Authorization: Bearer ${codice}"`;
+        // ITALIANO: Claude Desktop parla solo con programmi locali: mcp-remote fa da ponte. Il codice
+        //           sta in una variabile d'ambiente perche' su Windows gli spazi negli argomenti si rompono.
+        // ENGLISH: Claude Desktop only talks to local programs: mcp-remote bridges. The token sits in an
+        //          environment variable because on Windows spaces inside arguments break.
+        if (tipo === 'desktop') return JSON.stringify({ mcpServers: { 'images-tag-manager': {
+            command: 'npx', args: ['-y', 'mcp-remote', indirizzoMcp, '--allow-http', '--header', 'Authorization:${AUTH_HEADER}'],
+            env: { AUTH_HEADER: `Bearer ${codice}` } } } }, null, 2);
+        return JSON.stringify({ mcpServers: { 'images-tag-manager': { url: indirizzoMcp, headers: { Authorization: `Bearer ${codice}` } } } }, null, 2);
+    };
+
+    // ITALIANO: con l'AI spenta una prova in corso si ferma subito, anche fra una chiamata e l'altra.
+    // ENGLISH: with the AI switched off a running test stops at once, even between two calls.
+    useEffect(() => { if (!aiEnabled) provaModelliRef.current?.abort(); }, [aiEnabled]);
+
+    useEffect(() => {
+        if (!aiEnabled || !geminiApiKey) return;
+        if (Date.now() - modelloControllatoIl < 24 * 60 * 60 * 1000) return;
+        // ITALIANO: "al massimo una volta al giorno" vale anche per i controlli non riusciti
+        //           (Google occupato, rete assente, chiave che non va), che "ultimo controllo" non
+        //           annota: prima ogni avvio, e ogni volta che si riaccendeva l'AI, si ricollegava.
+        //           Il tentativo si annota a parte, cosi' le Impostazioni dicono ancora l'ultimo
+        //           controllo riuscito. "Controlla ora" e la riparazione non passano da qui.
+        // ENGLISH: "at most once a day" holds for failed checks too (Google busy, no network, a key
+        //          that does not work), which "last check" does not record: every launch, and every
+        //          time the AI was switched back on, used to connect again. The attempt is recorded
+        //          apart, so Settings still shows the last successful check. "Check now" and the
+        //          repair do not go through here.
+        const adesso = Date.now();
+        let tentatoIl = 0;
+        try { tentatoIl = parseInt(localStorage.getItem('aiModelloTentatoIl') || '0', 10); } catch (_) { }
+        if (Number.isFinite(tentatoIl) && tentatoIl <= adesso && adesso - tentatoIl < 24 * 60 * 60 * 1000) return;
+        try { localStorage.setItem('aiModelloTentatoIl', String(adesso)); } catch (_) { }
+        controllaModello(false, false);
+    }, [aiEnabled, geminiApiKey]);
+
+    // ITALIANO: il modello di adesso ha appena risposto "non esisto": si cerca subito il
+    //           sostituto, senza aspettare il controllo del giorno dopo. Passa da un contatore
+    //           invece che da una chiamata diretta, cosi' la funzione che tagga non si rifa'
+    //           a ogni battito di questo controllo.
+    // ENGLISH: the current model has just answered "I do not exist": look for the replacement
+    //          right away instead of waiting for tomorrow's check. It goes through a counter
+    //          rather than a direct call, so the tagging function is not rebuilt on every beat
+    //          of this check.
+    useEffect(() => {
+        // ITALIANO: la riparazione dice SEMPRE com'e' andata: chi ha appena visto "modello non
+        //           disponibile' deve sapere se e' stato sostituito o se non c'e' riuscita.
+        // ENGLISH: the repair ALWAYS reports how it went: whoever just saw "model unavailable"
+        //          needs to know whether it was replaced or whether that failed.
+        if (riparaModello > 0) controllaModello(true, true);
+    }, [riparaModello]);
+
+    // ITALIANO: quello che si vede nella tendina. Se Google ha gia' risposto una volta, sono i
+    //           suoi modelli; altrimenti la riserva incorporata. Il modello IN USO ci dev'essere
+    //           sempre, altrimenti la tendina resterebbe vuota proprio mentre lo si sta usando.
+    // ENGLISH: what the dropdown shows. If Google has answered at least once, those are its
+    //          models; otherwise the built-in fallback. The model IN USE must always be there,
+    //          or the dropdown would sit blank precisely while it is being used.
+    const elencoModelli = useMemo(() => {
+        const base = modelliDisponibili.length > 0
+            ? modelliDisponibili.map((m: any) => ({ id: String(m.id), label: String(m.label || m.id), tier: getModelTier(String(m.id)), recommended: false }))
+            : GEMINI_MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier as string, recommended: m.recommended }));
+        if (!base.some(m => m.id === aiModel)) {
+            base.unshift({ id: aiModel, label: aiModel, tier: getModelTier(aiModel), recommended: false });
+        }
+        return base;
+    }, [modelliDisponibili, aiModel]);
 
     const handleDeleteAllTags = () => {
         setConfirmDialog({
@@ -890,7 +1719,17 @@ export default function App() {
             title: t.deleteAllTags,
             message: t.confirmDeleteAllTagsMsg,
             onConfirm: () => {
-                setImages(prev => prev.map(img => ({ ...img, tags: [] })));
+                // ITALIANO: le trigger word restano sulle foto che le avevano. Prima se ne andavano
+                //           anche loro mentre il riquadro delle trigger continuava a mostrarle, e
+                //           niente le rimetteva: i .txt salvati dopo uscivano senza trigger, quelli
+                //           delle foto importate dopo con. Non si svuota il riquadro: questo comando
+                //           toglie i tag delle foto, non le trigger, che restano le prime nei .txt.
+                // ENGLISH: trigger words stay on the photos that had them. They used to go too while
+                //          the trigger box kept showing them, and nothing put them back: .txt files
+                //          saved afterwards came out without the trigger, those of photos imported
+                //          later with it. The box is not emptied: this command removes the photos'
+                //          tags, not the triggers, which stay first in the .txt files.
+                setImages(prev => prev.map(img => ({ ...img, tags: globalTriggers.filter(tg => img.tags.includes(tg)) })));
                 setCustomProjectTags([]);
                 setConfirmDialog(prev => ({ ...prev, isOpen: false }));
                 soundManager.pop();
@@ -908,10 +1747,20 @@ export default function App() {
     };
 
     const handleDeleteTagFromProject = (tagToDelete: string) => {
-        setImages(prev => prev.map(img => ({
-            ...img,
-            tags: img.tags.filter(t => t !== tagToDelete)
-        })));
+        // ITALIANO: la X su una trigger word la toglie anche dal suo riquadro, come toglierla da li'
+        //           a mano (che la toglie da tutte le foto). Prima lasciava le foto ma restava nel
+        //           riquadro: i .txt salvati dopo uscivano senza, le foto importate dopo con.
+        // ENGLISH: the X on a trigger word also takes it out of its box, like removing it there by
+        //          hand (which strips it from every photo). It used to leave the photos but stay in
+        //          the box: .txt files saved afterwards came out without it, photos imported later with.
+        if (globalTriggers.includes(tagToDelete)) {
+            handleGlobalTagsChange(globalTriggers.filter(tg => tg !== tagToDelete));
+        } else {
+            setImages(prev => prev.map(img => ({
+                ...img,
+                tags: img.tags.filter(t => t !== tagToDelete)
+            })));
+        }
         setCustomProjectTags(prev => prev.filter(t => t !== tagToDelete));
         soundManager.click();
     };
@@ -934,6 +1783,9 @@ export default function App() {
             //          brings it back): revoking its preview now would make the photo come back with a
             //          BROKEN image on undo. Like the trash, the preview stays valid and is freed in
             //          bulk on project close/reset.
+            // ITALIANO: il file resta su disco: la foto conta ancora nell'impronta del backup.
+            // ENGLISH: the file stays on disk: the photo still counts in the backup's fingerprint.
+            fotoChiuseRef.current.set(id, { id, name: img.file.name, lotto: String(img.lottoImport || ''), cartella: String(img.cartellaImport || '') });
             setImages(prev => prev.filter(i => i.id !== id));
             setSelectedForBulk(prev => prev.filter(x => x !== id));
             setSelectedImageId(prev => prev === id ? null : prev);
@@ -974,12 +1826,23 @@ export default function App() {
     //          sidecar not yet on disk) I touch NOTHING: better not to sync than to corrupt.
     const handleTagEditorSaved = async (savedName: string, savedTags: string[], savedHandle?: any) => {
         if (!savedHandle || typeof savedHandle.isSameEntry !== 'function') return;
-        const base = savedName.split('.').slice(0, -1).join('.');
+        // ITALIANO: solo un .txt e' il file di tag di una foto. Un img_001.json salvato accanto a
+        //           img_001.png la "allineava" lo stesso (stesso nome, e isSameEntry lo provava il
+        //           .json stesso): la foto risultava salvata mentre il suo .txt restava com'era.
+        // ENGLISH: only a .txt is a photo's tag file. An img_001.json saved next to img_001.png still
+        //          "synced" it (same name, and isSameEntry was proven by the .json itself): the photo
+        //          counted as saved while its .txt stayed as it was.
+        if (!savedName.toLowerCase().endsWith('.txt')) return;
+        // ITALIANO: il nome si confronta SENZA maiuscole, come fa l'import (makeFolderKeyer):
+        //           IMG_001.JPG e img_001.txt sono una coppia. L'identita' vera la prova isSameEntry.
+        // ENGLISH: the name is compared WITHOUT case, as the import does (makeFolderKeyer):
+        //          IMG_001.JPG and img_001.txt are a pair. isSameEntry proves the real identity.
+        const base = savedName.split('.').slice(0, -1).join('.').toLowerCase();
         // ITALIANO: cerco la foto la cui cartella contiene ESATTAMENTE questo file salvato.
         // ENGLISH: find the photo whose folder contains EXACTLY this saved file.
         let matchId: string | null = null;
         for (const img of images) {
-            if (img.file.name.split('.').slice(0, -1).join('.') !== base) continue;
+            if (img.file.name.split('.').slice(0, -1).join('.').toLowerCase() !== base) continue;
             const dir = img.dirHandle;
             if (!dir || typeof dir.getFileHandle !== 'function') continue;
             try {
@@ -987,16 +1850,50 @@ export default function App() {
                 if (await savedHandle.isSameEntry(sidecar)) { matchId = img.id; break; }
             } catch { /* ITALIANO: sidecar assente o non confrontabile: salto, per prudenza */ }
         }
-        if (!matchId) return;
-        setImages(prev => {
-            const ordered = [
-                ...globalTriggers.filter(tag => savedTags.includes(tag)),
-                ...savedTags.filter(tag => !globalTriggers.includes(tag)),
-            ];
-            return prev.map(i =>
-                i.id === matchId ? { ...i, tags: ordered, originalTags: [...ordered] } : i
-            );
-        });
+        if (!matchId) {
+            // ITALIANO: foto SENZA cartella ("Carica immagini", trascinamento): nessun handle da
+            //           confrontare, e prima restavano coi tag vecchi, che il primo "Salva" dopo una
+            //           modifica riscriveva sopra il file dell'editor. In Electron si rilegge il .txt
+            //           di ognuna dal SUO percorso vero (lo stesso canale dell'import): solo se sul
+            //           disco c'e' altro rispetto a originalTags la foto si allinea, come sopra. Una
+            //           foto omonima di un'altra cartella, col suo .txt invariato, non cambia.
+            // ENGLISH: photos WITHOUT a folder ("Load images", drag and drop): no handle to compare,
+            //          and they used to keep the old tags, which the first "Save" after an edit wrote
+            //          over the editor's file. In Electron each one's .txt is read again from ITS real
+            //          path (the same channel as the import): only if the disk holds something other
+            //          than originalTags does the photo sync, as above. A same-named photo from another
+            //          folder, with its .txt unchanged, does not change.
+            const senzaCartella = images.filter(img => !img.dirHandle && img.file.name.split('.').slice(0, -1).join('.').toLowerCase() === base);
+            if (senzaCartella.length === 0) return;
+            const api = (window as any).electronAPI;
+            if (!api || typeof api.readSidecarTags !== 'function' || typeof api.getPathForFile !== 'function') return;
+            const dalDisco = new Map<string, string[]>();
+            for (const img of senzaCartella) {
+                const percorso = api.getPathForFile(img.file) || img.filePath || '';
+                if (!percorso) continue;
+                try {
+                    const letti = await api.readSidecarTags([percorso]);
+                    const s = Array.isArray(letti) ? letti[0] : null;
+                    if (!s || s.skipped || typeof s.content !== 'string' || String(s.name).toLowerCase() !== savedName.toLowerCase()) continue;
+                    const sulDisco = parseSidecarText(s.content).tags;
+                    // ITALIANO: anche uguale, se il .txt all'import non si era letto: ora e' scritto e noto.
+                    // ENGLISH: also when equal, if the .txt was unread at import: it is now written and known.
+                    if (JSON.stringify(sulDisco) !== JSON.stringify(img.originalTags || []) || txtNonLettoInVigore(img)) dalDisco.set(img.id, sulDisco);
+                } catch { /* ITALIANO: .txt non rileggibile: la foto resta com'era / ENGLISH: .txt not readable: the photo stays as it was */ }
+            }
+            if (dalDisco.size === 0) return;
+            setImages(prev => prev.map(i =>
+                dalDisco.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], dalDisco.get(i.id) || [], globalTriggers, i.baseTxtNonLetto) } : i
+            ));
+            return;
+        }
+        // ITALIANO: una trigger word ancora da salvare resta sulla foto (vedi tagDopoEditor): l'editor
+        //           non l'ha mai vista, e prima spariva insieme alla sua scrittura nel .txt.
+        // ENGLISH: a trigger word still to be saved stays on the photo (see tagDopoEditor): the editor
+        //          never saw it, and it used to vanish along with its write into the .txt.
+        setImages(prev => prev.map(i =>
+            i.id === matchId ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], savedTags, globalTriggers, i.baseTxtNonLetto) } : i
+        ));
     };
 
     // ITALIANO: useCallback con identita' STABILE (nessuna dipendenza): cosi' passandolo a tutte le
@@ -1098,9 +1995,9 @@ export default function App() {
     //           andare nel Cestino di Windows (provato il 17 agosto 2026 sull'app vera: "Foto
     //           spostate nel Cestino di Windows: 0"). Ora il percorso lo cattura il processo
     //           principale al momento della scelta e arriva qui come `img.filePath`, quindi il caso
-    //           normale e' 'trashed'. Restano su 'nopath' due situazioni: le cartelle di RETE (per
-    //           le condivisioni di rete Windows non ha proprio un Cestino) e l'anteprima nel
-    //           browser, dove non c'e' il guscio Electron.
+    //           normale e' 'trashed'. Restano su 'nopath' due situazioni: le unita' senza Cestino
+    //           (cartelle di RETE, chiavette USB, schede SD: Windows rifiuta lo spostamento) e
+    //           l'anteprima nel browser, dove non c'e' il guscio Electron.
     // ENGLISH: 'trashed' = in the Windows Recycle Bin, recoverable · 'nopath' = the Recycle Bin is
     //          out of reach because this photo's path on disk is unknown, but its folder is open and
     //          a direct delete would work (PERMANENTLY) · 'failed' = nothing could be done.
@@ -1110,8 +2007,8 @@ export default function App() {
     //          Bin (verified 2026-08-17 on the real app: "Photos moved to the Windows Recycle Bin:
     //          0"). The path is now captured by the main process at pick time and arrives here as
     //          `img.filePath`, so the normal case is 'trashed'. Two situations stay on 'nopath':
-    //          NETWORK folders (Windows has no Recycle Bin at all for network shares) and the
-    //          browser preview, where there is no Electron shell.
+    //          drives with no Recycle Bin (NETWORK folders, USB sticks, SD cards: Windows refuses
+    //          the move) and the browser preview, where there is no Electron shell.
     // ITALIANO: I due percorsi su disco di una foto: l'immagine e il .txt con lo stesso nome.
     //           Sta qui, in un posto solo, perche' lo usano sia chi manda i file nel Cestino di
     //           Windows sia chi ce li ripesca. Se i due calcolassero il nome in modo anche solo
@@ -1129,7 +2026,63 @@ export default function App() {
         return { imgPath, txtPath: imgPath.replace(/\.[^.\\/]+$/, '') + '.txt' };
     };
 
-    const deleteImageFiles = async (img: any): Promise<'trashed' | 'nopath' | 'failed'> => {
+    // ITALIANO: a.png e a.jpg nella stessa cartella usano lo STESSO a.txt: l'import lo da' a tutte
+    //           e due (makeFolderKeyer), Kohya pure, e Salva lo sa. Togliendo solo a.png, a.txt
+    //           deve restare per a.jpg: prima se ne andava con a.png, e a.jpg restava in galleria
+    //           "salvata" ma senza piu' il suo .txt sul disco (per sempre, su chiavette e schede SD).
+    //           Dice se un'ALTRA foto ancora nel progetto (in galleria o nel cestino dell'app) usa
+    //           il .txt di `img`. `giaTolte` sono le foto gia' tolte nella stessa operazione: restano
+    //           in imagesRef fino alla fine del giro, e senza saltarle il .txt non se ne andrebbe
+    //           mai. Cosi' il .txt parte con l'ultima foto che lo usa. In caso di dubbio (errore) il
+    //           .txt resta: un .txt in piu' sul disco e' innocuo, una didascalia persa no.
+    // ENGLISH: a.png and a.jpg in the same folder use the SAME a.txt: the import gives it to both
+    //          (makeFolderKeyer), so does Kohya, and Save knows it. Removing only a.png, a.txt must
+    //          stay for a.jpg: it used to leave with a.png, and a.jpg stayed in the gallery "saved"
+    //          but with no .txt left on disk (for good, on USB sticks and SD cards).
+    //          Tells whether ANOTHER photo still in the project (gallery or app trash) uses the .txt
+    //          of `img`. `giaTolte` are the photos already removed in the same operation: they stay
+    //          in imagesRef until the loop ends, and without skipping them the .txt would never
+    //          leave. So the .txt goes with the last photo that uses it. When in doubt (an error)
+    //          the .txt stays: an extra .txt on disk is harmless, a lost caption is not.
+    const txtUsatoDaAltre = async (img: any, giaTolte?: Set<string>): Promise<boolean> => {
+        try {
+            const nome = sidecarTagFileName(img.file.name).toLowerCase();
+            const mio = percorsiSuDisco(img).txtPath.toLowerCase();
+            for (const altra of imagesRef.current) {
+                if (!altra || altra.id === img.id || (giaTolte && giaTolte.has(altra.id))) continue;
+                if (!altra.file || sidecarTagFileName(altra.file.name).toLowerCase() !== nome) continue;
+                // ITALIANO: con i due percorsi su disco decide il percorso (stessa cartella o no);
+                //           senza (anteprima nel browser) decide la cartella aperta.
+                // ENGLISH: with both paths on disk the path decides (same folder or not); without
+                //          them (browser preview) the open folder decides.
+                const suo = percorsiSuDisco(altra).txtPath.toLowerCase();
+                if (mio && suo) { if (suo === mio) return true; continue; }
+                if (!img.dirHandle || !altra.dirHandle) continue;
+                if (altra.dirHandle === img.dirHandle) return true;
+                if (typeof img.dirHandle.isSameEntry === 'function' && await img.dirHandle.isSameEntry(altra.dirHandle)) return true;
+            }
+            return false;
+        } catch (err) {
+            console.warn('[Cestino] Non so se il .txt serve ad altre foto: lo lascio sul disco.', err);
+            return true;
+        }
+    };
+
+    // ITALIANO: `spostati` (facoltativo) dice cosa e' arrivato DAVVERO nel Cestino di Windows. Il
+    //           canale risponde 'ok' anche per un file che non c'e' (il .txt di una foto senza tag):
+    //           solo il conto `trashed` distingue "spostato" da "non c'era". "Annulla lo
+    //           svuotamento" deve ripescare solo cio' che e' stato spostato, o tirerebbe fuori un
+    //           omonimo lasciato nel Cestino da uno svuotamento vecchio.
+    // ENGLISH: `spostati` (optional) tells what REALLY reached the Windows Recycle Bin. The channel
+    //          answers 'ok' also for a file that is not there (the .txt of a photo with no tags):
+    //          only the `trashed` count tells "moved" from "was not there". "Undo the emptying"
+    //          must fish back only what was moved, or it would pull out a namesake left in the
+    //          Recycle Bin by an older emptying.
+    // ITALIANO: `giaTolte` (facoltativo): le foto gia' tolte nella stessa operazione (vedi
+    //           txtUsatoDaAltre).
+    // ENGLISH: `giaTolte` (optional): the photos already removed in the same operation (see
+    //          txtUsatoDaAltre).
+    const deleteImageFiles = async (img: any, spostati?: { img?: boolean; txt?: boolean }, giaTolte?: Set<string>): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
             return img.dirHandle ? 'nopath' : 'failed';
@@ -1154,22 +2107,46 @@ export default function App() {
             //          already reached the Recycle Bin - and the photo stayed in the app's trash
             //          pointing at a file that was gone. What decides whether the photo leaves the
             //          project is the image; a .txt left behind is a harmless leftover, logged here.
+            // ITALIANO: e il .txt parte SOLO DOPO che l'immagine e' arrivata nel Cestino di Windows.
+            //           Prima partiva comunque: con l'immagine bloccata la foto restava nel cestino
+            //           dell'app ("Non rimosse: 1") ma il suo .txt era gia' sparito dal disco, e
+            //           ripristinandola Salva non trovava niente da riscrivere. La coppia resta unita.
+            // ENGLISH: and the .txt goes ONLY AFTER the image has reached the Windows Recycle Bin.
+            //          It used to go regardless: with the image locked the photo stayed in the app's
+            //          trash ("Not removed: 1") but its .txt had already left the disk, and after a
+            //          restore Save found nothing to rewrite. The pair stays together.
             const resImg = await api.trashFiles([imgPath]);
-            const resTxt = await api.trashFiles([txtPath]);
-            if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
             // ITALIANO: 'rifiutato' vuol dire che il Cestino di Windows non e' applicabile a questo
-            //           file (cartella di rete, o estensione fuori elenco). Non e' un fallimento
-            //           definitivo: si torna 'nopath', cioe' la strada della seconda conferma, che
-            //           puo' comunque cancellare passando dalla cartella aperta. Senza questo, una
-            //           foto su NAS resterebbe per sempre nel cestino dell'app.
+            //           file (cartella di rete, chiavetta, scheda SD, o estensione fuori elenco).
+            //           Con la cartella aperta ("Carica cartella") si torna 'nopath', cioe' la strada
+            //           della seconda conferma, che cancella passando dalla cartella. Senza cartella
+            //           (foto caricate una per una o trascinate) il programma non ha modo di
+            //           cancellarle: si torna 'norecycle', e il messaggio dice perche' e cosa fare,
+            //           invece del solo "Non rimosse: 1" a ogni tentativo.
             // ENGLISH: 'rifiutato' means the Windows Recycle Bin does not apply to this file (network
-            //          folder, or an extension outside the list). That is not a dead end: we return
-            //          'nopath', the second-confirmation road, which can still delete through the
-            //          open folder. Without this, a photo on a NAS would sit in the app's trash
-            //          forever.
+            //          folder, USB stick, SD card, or an extension outside the list). With the folder
+            //          open ("Load Folder") we return 'nopath', the second-confirmation road, which
+            //          deletes through the folder. With no folder (photos loaded one by one or
+            //          dropped in) the program has no way to delete them: we return 'norecycle', and
+            //          the message says why and what to do, instead of a bare "Not removed: 1" on
+            //          every try.
             const esitoImg = resImg && Array.isArray(resImg.results) ? resImg.results[0] : undefined;
-            if (esitoImg === 'ok') return 'trashed';
-            if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'failed';
+            if (esitoImg === 'ok') {
+                if (spostati) spostati.img = !!(resImg && resImg.trashed > 0);
+                // ITALIANO: il .txt serve ancora a un'altra foto del progetto: resta dov'e', e
+                //           "Annulla lo svuotamento" non lo chiede indietro (spostati.txt falso).
+                // ENGLISH: the .txt is still used by another photo of the project: it stays where
+                //          it is, and "Undo the emptying" does not ask it back (spostati.txt false).
+                if (await txtUsatoDaAltre(img, giaTolte)) {
+                    if (spostati) spostati.txt = false;
+                    return 'trashed';
+                }
+                const resTxt = await api.trashFiles([txtPath]);
+                if (spostati) spostati.txt = !!(resTxt && resTxt.trashed > 0);
+                if (resTxt && !resTxt.ok) console.warn('[Cestino] Il file di testo non e\' stato spostato:', txtPath);
+                return 'trashed';
+            }
+            if (esitoImg === 'rifiutato') return img.dirHandle ? 'nopath' : 'norecycle';
             return 'failed';
         } catch (err) {
             console.warn('[Cestino] Spostamento nel Cestino di Windows non riuscito:', err);
@@ -1188,12 +2165,21 @@ export default function App() {
     //          Until this morning this very call ran on its own, silently, whenever the Recycle Bin
     //          was out of reach - that is, always, for folders opened with "Load Folder" - and the
     //          app still announced "Files deleted successfully".
-    const deleteImageFilesForGood = async (img: any): Promise<boolean> => {
+    const deleteImageFilesForGood = async (img: any, giaTolte?: Set<string>): Promise<boolean> => {
         const folder = img.dirHandle;
         if (!folder || typeof folder.removeEntry !== 'function') return false;
         try {
-            await folder.removeEntry(sanitizeFileName(img.file.name));
-            try { await folder.removeEntry(buildTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
+            // ITALIANO: il nome VERO della foto, com'e' nella cartella, e il .txt che l'import le
+            //           abbina (sidecarTagFileName). Col nome "ripulito", "photo..v2.png" diventava
+            //           "photo.v2.png": un'ALTRA foto, se c'era, cancellata per sempre al suo posto.
+            // ENGLISH: the photo's REAL name, as it is in the folder, and the .txt the import pairs
+            //          with it (sidecarTagFileName). With the "cleaned" name, "photo..v2.png" became
+            //          "photo.v2.png": ANOTHER photo, if there was one, deleted for good in its place.
+            await folder.removeEntry(img.file.name);
+            // ITALIANO: il .txt in comune con un'altra foto del progetto resta (vedi txtUsatoDaAltre).
+            // ENGLISH: a .txt shared with another photo of the project stays (see txtUsatoDaAltre).
+            if (await txtUsatoDaAltre(img, giaTolte)) return true;
+            try { await folder.removeEntry(sidecarTagFileName(img.file.name)); } catch (_) { /* il .txt puo' non esserci */ }
             return true;
         } catch (err) {
             console.error('[Cestino] Cancellazione definitiva non riuscita:', img.file.name, err);
@@ -1216,15 +2202,36 @@ export default function App() {
         }
     };
 
-    const handleDeletePermanently = async (id: string) => {
-        const img = images.find(i => i.id === id);
-        if (!img) return;
+    // ITALIANO: libera ogni anteprima annotata per il progetto, anche quelle delle foto che non sono
+    //           piu' nell'elenco, e riparte da zero per il progetto dopo. Liberarne una due volte
+    //           non fa niente.
+    // ENGLISH: releases every thumbnail recorded for the project, including those of photos no
+    //          longer in the list, and starts from zero for the next project. Releasing one twice
+    //          does nothing.
+    const liberaAnteprimeProgetto = () => {
+        releaseThumbnails([...anteprimeProgettoRef.current].map(thumb => ({ thumb })));
+        anteprimeProgettoRef.current.clear();
+    };
 
-        let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
+    const handleDeletePermanently = async (id: string) => {
+        // ITALIANO: la foto com'e' ADESSO, non com'era quando si e' aperta la conferma: se nel
+        //           frattempo e' tornata in galleria (Ctrl+Z), non si tocca.
+        // ENGLISH: the photo as it is NOW, not as it was when the confirmation opened: if it went
+        //          back to the gallery meanwhile (Ctrl+Z), it is left alone.
+        const img = imagesRef.current.find(i => i.id === id);
+        if (!img || !img.isTrashed) return;
+
+        let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
         try {
             esito = await deleteImageFiles(img);
         } catch (error) {
             console.error(error);
+        }
+        // ITALIANO: niente Cestino di Windows e niente cartella aperta: si dice perche' e cosa fare.
+        // ENGLISH: no Windows Recycle Bin and no open folder: say why and what to do.
+        if (esito === 'norecycle') {
+            showNotification(t.deleteNoRecycleBin, 'error');
+            return;
         }
         // ITALIANO: il Cestino di Windows non e' raggiungibile per questa foto: si puo' solo
         //           cancellarla per sempre, e non lo si fa senza chiederlo.
@@ -1245,7 +2252,20 @@ export default function App() {
             return;
         }
 
+        // ITALIANO: il file ha lasciato il disco: non conta piu' nell'impronta del backup, anche se
+        //           era stato chiuso e riportato con Ctrl+Z.
+        // ENGLISH: the file has left the disk: it no longer counts in the backup's fingerprint, even
+        //          if it had been closed and brought back with Ctrl+Z.
+        fotoChiuseRef.current.delete(id);
+        // ITALIANO: e non conta piu' nemmeno nella cronologia: un Ctrl+Z la rimetteva nel cestino
+        //           dell'app mentre il file era nel Cestino di Windows (vedi purgeIdsFromHistory).
+        //           L'uscita della foto non e' un passo da annullare: il file non c'e' piu'.
+        // ENGLISH: nor in the history any more: one Ctrl+Z put it back in the app's trash while the
+        //          file sat in the Windows Recycle Bin (see purgeIdsFromHistory). The photo leaving
+        //          is not a step to undo: the file is gone.
+        isUndoRedoAction.current = true;
         setImages(prev => prev.filter(i => i.id !== id));
+        setHistory(prev => purgeIdsFromHistory(prev, new Set([id])));
         // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
         //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
         // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
@@ -1272,10 +2292,18 @@ export default function App() {
     //   We count the PHOTO, not the file: plenty of photos have no .txt beside them, and a .txt
     //   that never existed is not a failure worth announcing. The image is what decides.
     const annullaSvuotamento = async () => {
-        if (!ultimoSvuotamento || ripristinoInCorso) return;
+        // ITALIANO: non durante uno svuotamento: alla sua fine liberava le anteprime delle foto che
+        //           stavano tornando, e l'annullamento, finendo, cancellava il ricordo del nuovo
+        //           svuotamento. I due tasti sono spenti; questo vale se un clic arriva lo stesso.
+        // ENGLISH: not during an emptying: when it ended it released the thumbnails of the photos
+        //          on their way back, and the undo, on finishing, erased the new emptying's record.
+        //          Both buttons are disabled; this holds if a click gets through anyway.
+        if (!ultimoSvuotamento || ripristinoInCorso || isEmptyingTrash) return;
         const apiLocale = (window as any).electronAPI;
         if (!apiLocale || typeof apiLocale.restoreTrashed !== 'function') return;
         setRipristinoInCorso(true);
+        ripristinoInCorsoRef.current = true;
+        const progetto = progettoGenRef.current;
         try {
             const voci: any[] = ultimoSvuotamento.voci || [];
             // ITALIANO: PRIMA le sole immagini, e i .txt solo dopo, solo per le foto tornate
@@ -1296,31 +2324,100 @@ export default function App() {
             const tornate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'ok');
             const bloccate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'occupato');
             const rimaste = voci.filter((v: any) => perPercorso.get(v.imgPath) !== 'ok');
+            // ITALIANO: 'nonTrovato' = il Cestino di Windows e' stato letto fino in fondo e il file
+            //           non c'e': da li' non tornera' piu'. Tutti gli altri esiti ('fallito',
+            //           'rifiutato', nessuna risposta) dicono solo che questa volta non ci si e'
+            //           riusciti: il file e' ancora nel Cestino e si puo' riprovare.
+            // ENGLISH: 'nonTrovato' = the Windows Recycle Bin was read to the end and the file is not
+            //          there: it will never come back from it. Every other outcome ('fallito',
+            //          'rifiutato', no answer) only says it did not work this time: the file is still
+            //          in the Recycle Bin and a retry is possible.
+            const nonTrovate = voci.filter((v: any) => perPercorso.get(v.imgPath) === 'nonTrovato');
 
             const testi = tornate.map((v: any) => v.txtPath).filter(Boolean);
+            // ITALIANO: le foto la cui immagine e' tornata ma il cui .txt no. I tag sono ancora in
+            //           memoria, ma la foto risultava salvata (tag uguali a originalTags), quindi
+            //           "Salva Modifiche" non riscriveva mai quel .txt e il dataset restava con una
+            //           foto senza didascalia. Conta come non tornato ogni esito che non sia 'ok',
+            //           anche nessuna risposta o una seconda chiamata che si rompe: prima quella
+            //           finiva nel catch e le immagini gia' tornate non rientravano nemmeno nel
+            //           cestino dell'app.
+            // ENGLISH: the photos whose image came back but whose .txt did not. The tags are still in
+            //          memory, but the photo counted as saved (tags equal to originalTags), so "Save
+            //          Changes" never rewrote that .txt and the dataset kept a photo with no caption.
+            //          Every outcome other than 'ok' counts as not back, no answer and a second call
+            //          that breaks too: that one used to land in the catch, and the images already
+            //          back did not even re-enter the app's trash.
+            const senzaTesto = new Set<string>();
             if (testi.length > 0) {
-                const esitoTesti = await apiLocale.restoreTrashed(testi);
-                // ITALIANO: un .txt che non torna non e' una perdita: i tag sono gia' in memoria,
-                //           accanto alla foto, e "Salva modifiche" li riscrive. Si annota e basta.
-                // ENGLISH: a .txt that does not come back is not a loss: the tags are already in
-                //          memory beside the photo and "Save changes" rewrites them. Just log it.
-                if (esitoTesti && Array.isArray(esitoTesti.results)) {
-                    esitoTesti.results.forEach((r: any) => {
-                        if (r && r.esito !== 'ok') console.warn('[Cestino] Il file di testo non e\' tornato:', r.percorso, r.esito);
-                    });
+                let esitoTesti: any = null;
+                try {
+                    esitoTesti = await apiLocale.restoreTrashed(testi);
+                } catch (err) {
+                    console.warn('[Cestino] I file di testo non sono tornati:', err);
                 }
+                const testoPerPercorso = new Map<string, string>();
+                if (esitoTesti && Array.isArray(esitoTesti.results)) {
+                    esitoTesti.results.forEach((r: any) => { if (r && r.percorso) testoPerPercorso.set(r.percorso, String(r.esito || '')); });
+                }
+                tornate.forEach((v: any) => {
+                    if (!v.txtPath || testoPerPercorso.get(v.txtPath) === 'ok') return;
+                    console.warn('[Cestino] Il file di testo non e\' tornato:', v.txtPath, testoPerPercorso.get(v.txtPath) || '(nessuna risposta)');
+                    senzaTesto.add(v.img.id);
+                });
+            }
+
+            // ITALIANO: il progetto e' stato chiuso o azzerato mentre si aspettava il Cestino di
+            //           Windows: i file sono tornati nella loro cartella (immagine e .txt insieme), ma
+            //           le foto non entrano nel progetto di adesso, ne' il suo tasto di annullamento.
+            // ENGLISH: the project was closed or reset while waiting for the Windows Recycle Bin: the
+            //          files are back in their folder (image and .txt together), but the photos do not
+            //          enter the current project, nor does its undo button.
+            if (progetto !== progettoGenRef.current) {
+                console.warn('[Cestino] Annullamento finito dopo la chiusura del progetto: file rimessi su disco, progetto attuale non toccato.');
+                return;
             }
 
             if (tornate.length > 0) {
                 // ITALIANO: tornano nel cestino dell'app, da dove "Ripristina" le riporta in galleria.
                 // ENGLISH: back into the app's trash, from where "Restore" brings them to the gallery.
-                setImages(prev => [...prev, ...tornate.map((v: any) => ({ ...v.img, isTrashed: true }))]);
+                // ITALIANO: mai due volte: una foto che nel progetto c'e' gia' non si aggiunge di
+                //           nuovo, o ci sarebbero due card con lo stesso id.
+                // ENGLISH: never twice: a photo already in the project is not added again, or
+                //          there would be two cards with the same id.
+                // ITALIANO: originalTags vuoto = "sul disco non c'e' il suo .txt": la foto resta da
+                //           salvare, e dopo "Ripristina" (Salva salta le foto nel cestino) "Salva
+                //           Modifiche" lo riscrive dai tag in memoria; il messaggio lo dice.
+                // ENGLISH: empty originalTags = "its .txt is not on disk": the photo stays to be
+                //          saved, and after "Restore" (Save skips trashed photos) "Save Changes"
+                //          rewrites it from the tags in memory; the message says so.
+                // ITALIANO: e il ritorno non e' un passo da annullare, come non lo e' l'uscita (vedi
+                //           addPhotosToHistory): un Ctrl+Z subito dopo le toglieva dall'app mentre i
+                //           loro file erano di nuovo nella cartella.
+                // ENGLISH: and the return is not a step to undo, just as the leaving is not (see
+                //          addPhotosToHistory): a Ctrl+Z right after took them out of the app while
+                //          their files were back in the folder.
+                const rientrate = tornate.map((v: any) => (senzaTesto.has(v.img.id) ? { ...v.img, isTrashed: true, originalTags: [] } : { ...v.img, isTrashed: true }));
+                isUndoRedoAction.current = true;
+                setImages(prev => {
+                    const presenti = new Set(prev.map(i => i.id));
+                    return [...prev, ...rientrate.filter((f: any) => !presenti.has(f.id))];
+                });
+                setHistory(prev => addPhotosToHistory(prev, rientrate, historyIndex));
             }
             // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
             //           per quelle e sparisce quando non c'e' piu' niente da ripescare.
             // ENGLISH: keep only what did NOT come back, so the button stays available for those
             //          and disappears once there is nothing left to fish out.
-            setUltimoSvuotamento(rimaste.length > 0 ? { voci: rimaste } : null);
+            // ITALIANO: e non si tiene cio' che nel Cestino non c'e' piu': prima restava, e il tasto
+            //           rifaceva a ogni clic lo stesso giro a vuoto fino alla chiusura del progetto.
+            //           Le loro anteprime non le mostra piu' nessuno: si liberano.
+            // ENGLISH: and what is no longer in the Recycle Bin is not kept: it used to stay, and the
+            //          button redid the same empty round at every click until the project closed.
+            //          Their thumbnails are shown by nobody any more: they are released.
+            const riprovabili = rimaste.filter((v: any) => perPercorso.get(v.imgPath) !== 'nonTrovato');
+            releaseThumbnails(nonTrovate.map((v: any) => v.img));
+            setUltimoSvuotamento(riprovabili.length > 0 ? { voci: riprovabili } : null);
 
             // ITALIANO: IL MOTIVO CAMBIA IL MESSAGGIO. Dire "non trovate nel Cestino di Windows"
             //           quando il file c'era eccome, e non e' stato rimesso apposta per non
@@ -1334,25 +2431,74 @@ export default function App() {
             //          place and makes a file that is safe look lost. The channel keeps the
             //          distinction; throwing it away here would have been the very defect this
             //          version went round the whole program to remove.
-            if (tornate.length === 0 && bloccate.length > 0) {
+            // ITALIANO: e "non trovato, forse e' stato svuotato" solo se e' vero per TUTTE: quando
+            //           PowerShell viene fermato, e' bloccato o risponde male, i file sono ancora
+            //           nel Cestino di Windows e dirlo svuotato li farebbe credere persi.
+            // ENGLISH: and "not found, it may have been emptied" only when true for ALL of them:
+            //          when PowerShell is stopped, blocked or answers badly, the files are still in
+            //          the Windows Recycle Bin and calling it emptied would make them look lost.
+            // ITALIANO: "c'e' gia' un omonimo" solo se e' il motivo di TUTTE quelle non tornate, come
+            //           nel ramo parziale qui sotto: prima vinceva appena una era bloccata, diceva
+            //           "Foto: 1" su tre e taceva le altre, anche quelle sparite dal Cestino.
+            // ENGLISH: "a namesake is already there" only when it is the reason for ALL those not
+            //          back, as in the partial branch below: it used to win as soon as one was
+            //          blocked, said "Photos: 1" out of three and kept quiet about the others, even
+            //          those gone from the Recycle Bin.
+            // ITALIANO: non e' tornato niente, per motivi diversi (omonimo, sparita dal Cestino,
+            //           non riuscita): una frase con un conto per motivo. Prima si cadeva su
+            //           "Dovrebbero essere ancora li'", falso per quelle sparite dal Cestino di
+            //           Windows, e il motivo dell'omonimo si perdeva.
+            // ENGLISH: nothing came back, for different reasons (namesake, gone from the bin, not
+            //          managed): one sentence with a count per reason. It used to fall to "They
+            //          should still be there", false for those gone from the Windows Recycle Bin,
+            //          and the namesake reason was lost.
+            // ITALIANO: i .txt non tornati si dicono accanto all'esito delle immagini, e il
+            //           messaggio non e' piu' il verde "tutto a posto".
+            // ENGLISH: the .txt files not back are reported next to the images' outcome, and the
+            //          message is no longer the green "all done".
+            const conTesti = (frase: string) => (senzaTesto.size > 0
+                ? [frase, t.undoEmptyTxtNotBack.replace('{n}', String(senzaTesto.size))].join(' · ')
+                : frase);
+            if (tornate.length === 0 && bloccate.length > 0 && bloccate.length === rimaste.length) {
                 showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
-            } else if (tornate.length === 0) {
+            } else if (tornate.length === 0 && nonTrovate.length === rimaste.length) {
                 showNotification(t.undoEmptyNone, 'error');
+            } else if (tornate.length === 0 && (bloccate.length > 0 || nonTrovate.length > 0)) {
+                showNotification(t.undoEmptyMixed.replace('{blocked}', String(bloccate.length)).replace('{gone}', String(nonTrovate.length))
+                    .replace('{failed}', String(rimaste.length - bloccate.length - nonTrovate.length)), 'error');
+            } else if (tornate.length === 0) {
+                showNotification(t.undoEmptyFailed, 'error');
             } else if (bloccate.length > 0 && bloccate.length === rimaste.length) {
-                showNotification(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length)), 'info');
+                showNotification(conTesti(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length))), 'info');
             } else if (rimaste.length > 0) {
-                showNotification(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length)), 'info');
+                showNotification(conTesti(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length))), 'info');
+            } else if (senzaTesto.size > 0) {
+                showNotification(conTesti(t.undoEmptyDone.replace('{n}', String(tornate.length))), 'info');
             } else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
         } catch (err) {
             console.error('[Cestino] Annullamento dello svuotamento non riuscito:', err);
-            showNotification(t.undoEmptyNone, 'error');
+            // ITALIANO: un errore del canale non dice niente del Cestino: i file sono ancora li'.
+            //           Non lo si dice in un progetto aperto dopo: non e' il suo.
+            // ENGLISH: a channel error says nothing about the Recycle Bin: the files are still there.
+            //          It is not said in a project opened afterwards: it is not that project's.
+            if (progetto === progettoGenRef.current) showNotification(t.undoEmptyFailed, 'error');
         } finally {
             setRipristinoInCorso(false);
+            ripristinoInCorsoRef.current = false;
         }
     };
 
     const handleEmptyTrash = async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        // ITALIANO: mentre "Annulla lo svuotamento" ripesca i file non si svuota: il nuovo
+        //           svuotamento liberava le anteprime delle foto che stavano tornando, e
+        //           l'annullamento, finendo, ne cancellava il ricordo. Il tasto e' spento, ma una
+        //           conferma aperta prima arriva lo stesso fin qui: si dice che cosa sta succedendo.
+        // ENGLISH: while "Undo the emptying" is fishing files back nothing is emptied: the new
+        //          emptying released the thumbnails of the photos on their way back, and the undo,
+        //          on finishing, erased its record. The button is off, but a confirmation opened
+        //          earlier still gets here: the user is told what is going on.
+        if (ripristinoInCorsoRef.current) { showNotification(t.undoEmptyWorking, 'info'); return; }
 
         // ITALIANO: si tolgono dal progetto SOLO le foto che sono davvero arrivate nel Cestino di
         //           Windows. Quelle che non ce l'hanno fatta restano nel cestino dell'app, sotto gli
@@ -1371,38 +2517,99 @@ export default function App() {
         //          pressed halfway it put the photos back in the gallery while the loop kept moving
         //          their files to the Recycle Bin, leaving cards pointing at files that are gone.
         //          With this flag set, both buttons are disabled.
+        // ITALIANO: spenti anche "Ripristina" e la X di ogni singola foto, che prima restavano
+        //           attivi durante lo svuotamento.
+        // ENGLISH: the "Restore" and the X of every single photo are disabled too; they used to
+        //          stay live during the emptying.
         setIsEmptyingTrash(true);
+        const progetto = progettoGenRef.current;
         const removedIds = new Set<string>();
         const ripescabili: any[] = [];
         const senzaPercorso: any[] = [];
         let failed = 0;
-        for (const img of trashedImages) {
-            let esito: 'trashed' | 'nopath' | 'failed' = 'failed';
+        // ITALIANO: quante fra le non rimosse sono senza Cestino di Windows e senza cartella aperta.
+        // ENGLISH: how many of the ones not removed have no Windows Recycle Bin and no open folder.
+        let senzaCestino = 0;
+        for (const scelta of trashedImages) {
+            // ITALIANO: l'elenco e' quello del clic su "Svuota"; la foto si guarda com'e' ADESSO.
+            //           Una foto tornata in galleria nel frattempo (Ctrl+Z con la conferma aperta,
+            //           o il suo "Ripristina" durante lo svuotamento) non va nel Cestino di Windows:
+            //           prima ci finiva lo stesso e spariva anche dalla galleria.
+            // ENGLISH: the list is the one from the click on "Empty"; the photo is looked at as it
+            //          is NOW. A photo that went back to the gallery meanwhile (Ctrl+Z with the
+            //          confirmation open, or its own "Restore" during the emptying) does not go to
+            //          the Windows Recycle Bin: it used to go anyway and vanish from the gallery too.
+            const img = imagesRef.current.find(i => i.id === scelta.id);
+            if (!img || !img.isTrashed) continue;
+            let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
             // ITALIANO: i percorsi si prendono PRIMA di spostare il file: dopo, al suo posto non
             //           c'e' piu' niente da cui ricavarli.
             // ENGLISH: take the paths BEFORE moving the file: afterwards nothing is left in its
             //          place to work them out from.
             const percorsi = percorsiSuDisco(img);
+            const spostati: { img?: boolean; txt?: boolean } = {};
             try {
-                esito = await deleteImageFiles(img);
+                esito = await deleteImageFiles(img, spostati, removedIds);
             } catch (error) {
                 console.error("Failed to delete", img.file.name, error);
             }
+            // ITALIANO: si annota solo cio' che e' stato spostato davvero: un .txt che non c'era non
+            //           si chiede indietro (finirebbe accanto alla foto il .txt omonimo di un'altra
+            //           foto, rimasto nel Cestino da prima), e un'immagine gia' sparita dal disco esce
+            //           dal progetto senza poter essere "annullata" in un'immagine vecchia.
+            // ENGLISH: record only what really moved: a .txt that was not there is not asked back (the
+            //          namesake .txt of another photo, left in the bin from before, would land beside
+            //          this photo), and an image already gone from disk leaves the project without
+            //          being "undone" into an old image.
             if (esito === 'trashed') {
                 removedIds.add(img.id);
-                if (percorsi.imgPath) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: percorsi.txtPath });
+                if (percorsi.imgPath && spostati.img) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: spostati.txt ? percorsi.txtPath : '' });
             }
             else if (esito === 'nopath') senzaPercorso.push(img);
-            else failed++;
+            else {
+                failed++;
+                if (esito === 'norecycle') senzaCestino++;
+            }
         }
         setIsEmptyingTrash(false);
+        // ITALIANO: il progetto e' stato chiuso o azzerato durante lo svuotamento: da li' il ciclo
+        //           non ha piu' spostato niente, e cio' che era gia' nel Cestino di Windows ci resta.
+        //           Niente annullamento, messaggi o seconda finestra nel progetto di adesso.
+        // ENGLISH: the project was closed or reset during the emptying: from then on the loop moved
+        //          nothing more, and what already reached the Windows Recycle Bin stays there. No
+        //          undo, messages or second dialog in the current project.
+        if (progetto !== progettoGenRef.current) {
+            console.warn('[Cestino] Svuotamento interrotto dalla chiusura del progetto: file gia\' spostati nel Cestino di Windows:', removedIds.size);
+            return;
+        }
+        // ITALIANO: nel cestino non era rimasto niente da svuotare (tutto ripristinato nel
+        //           frattempo): nessun messaggio di file spostati che non si sono mossi.
+        // ENGLISH: nothing was left in the trash to empty (all restored meanwhile): no message
+        //          about files moved that never moved.
+        if (removedIds.size === 0 && failed === 0 && senzaPercorso.length === 0) return;
         // ITALIANO: cio' che si puo' ancora ripescare dal Cestino di Windows. Senza questo elenco,
         //           dopo lo svuotamento non resterebbe traccia di dove stavano i file, e nel Cestino
         //           di Windows c'e' la roba di tutti: la propria non si riconoscerebbe piu'.
         // ENGLISH: what can still be fished back out of the Windows Recycle Bin. Without this list
         //          nothing would record where the files used to be, and the Windows Recycle Bin
         //          holds everybody's things: ours could no longer be told apart.
-        if (ripescabili.length > 0) setUltimoSvuotamento({ voci: ripescabili });
+        if (ripescabili.length > 0) {
+            // ITALIANO: si annulla solo l'ULTIMO svuotamento: quello prima esce di scena, e le sue
+            //           anteprime - che nessuno mostra piu' - si liberano invece di restare in
+            //           memoria fino alla chiusura.
+            // ENGLISH: only the LAST emptying can be undone: the one before leaves the stage, and
+            //          its thumbnails - shown by nobody any more - are freed instead of sitting in
+            //          memory until the program closes.
+            // ITALIANO: mai l'anteprima di una foto che sta nel progetto: se l'annullamento l'ha
+            //           rimessa nel cestino dell'app, quell'anteprima e' a schermo.
+            // ENGLISH: never the thumbnail of a photo that is in the project: if the undo put it
+            //          back in the app's trash, that thumbnail is on screen.
+            if (ultimoSvuotamento) {
+                const nelProgetto = new Set(imagesRef.current.map(i => i.id));
+                releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img).filter((img: any) => !nelProgetto.has(img.id)));
+            }
+            setUltimoSvuotamento({ voci: ripescabili });
+        }
 
         // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe
         //           comunque un array nuovo, l'effetto che registra la cronologia lo vedrebbe come una
@@ -1411,7 +2618,22 @@ export default function App() {
         // ENGLISH: if not a single photo was removed, do NOT touch `images`: `filter` would still make
         //          a new array, the history effect would read it as a change, and the next Ctrl+Z would
         //          burn itself on an empty step instead of undoing the user's last real tag edit.
-        if (removedIds.size > 0) setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+        // ITALIANO: e quando delle foto escono, escono anche da OGNI passo della cronologia, e la
+        //           loro uscita non diventa un passo: prima un Ctrl+Z dopo lo svuotamento le
+        //           rimetteva nel cestino dell'app mentre i file erano nel Cestino di Windows, e da
+        //           li' Salva scriveva .txt orfani nella cartella. Cosi' anche le anteprime del
+        //           penultimo svuotamento, liberate qui sopra, non restano in nessun passo.
+        // ENGLISH: and when photos leave, they leave EVERY step of the history too, and their
+        //          leaving does not become a step: a Ctrl+Z after emptying used to put them back in
+        //          the app's trash while the files sat in the Windows Recycle Bin, and from there
+        //          Save wrote orphan .txt files into the folder. This way the thumbnails of the
+        //          previous emptying, released above, are not left in any step either.
+        removedIds.forEach(id => fotoChiuseRef.current.delete(id));
+        if (removedIds.size > 0) {
+            isUndoRedoAction.current = true;
+            setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+            setHistory(prev => purgeIdsFromHistory(prev, removedIds));
+        }
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
         // ENGLISH: emptied-trash photos are gone: clear their ids from the bulk selection, otherwise
@@ -1421,12 +2643,16 @@ export default function App() {
         //           la seconda finestra, che dice quante sono, perche', e che non si torna indietro.
         // ENGLISH: for these the Windows Recycle Bin is not available. Nothing is deleted behind the
         //          user's back: the second dialog opens, saying how many, why, and that it is final.
+        // ITALIANO: con loro viaggia il conto di questa prima parte (spostate nel Cestino di Windows,
+        //           non riuscite): prima si perdeva qui, e il messaggio finale non ne diceva niente.
+        // ENGLISH: the count of this first part travels with them (moved to the Windows Recycle
+        //          Bin, failed): it used to be lost here, and the final message said nothing of it.
         if (senzaPercorso.length > 0) {
-            chiediEliminazioneDefinitiva(senzaPercorso);
+            chiediEliminazioneDefinitiva(senzaPercorso, { done: removedIds.size, failed, senzaCestino });
             return;
         }
         if (failed > 0) {
-            showNotification(t.deletePartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+            showNotification(fraseCestinoWindows({ done: removedIds.size, failed, senzaCestino }), 'error');
             return;
         }
         setIsTrashOpen(false);
@@ -1440,53 +2666,130 @@ export default function App() {
     // ENGLISH: the second dialog. It shows only when the Windows Recycle Bin is out of reach, says
     //          how many photos it covers and that the delete is final. On cancel the photos stay
     //          where they are: in the app's trash and on disk.
-    const chiediEliminazioneDefinitiva = (imgs: any[]) => {
+    // ITALIANO: `prima` = com'e' andata la prima parte dello stesso svuotamento, quella del Cestino
+    //           di Windows. Si dice sempre, che si confermi o che si annulli: prima le foto spostate
+    //           sparivano dal cestino dell'app senza una parola, e quelle bloccate non venivano
+    //           nominate.
+    // ENGLISH: `prima` = how the first part of the same emptying went, the Windows Recycle Bin
+    //          one. It is always said, on confirm or on cancel: the moved photos used to vanish from
+    //          the app's trash without a word, and the locked ones were never named.
+    // ITALIANO: `senzaCestino` = quante fra le non rimosse non hanno ne' il Cestino di Windows ne'
+    //           la cartella aperta: per quelle si aggiunge la frase che dice perche' e cosa fare.
+    // ENGLISH: `senzaCestino` = how many of the ones not removed have neither the Windows Recycle
+    //          Bin nor an open folder: for those the sentence saying why and what to do is added.
+    const fraseCestinoWindows = (prima: { done: number; failed: number; senzaCestino?: number }): string => {
+        if (prima.failed > 0) return [t.deletePartial.replace('{done}', String(prima.done)).replace('{failed}', String(prima.failed)),
+            (prima.senzaCestino || 0) > 0 ? t.deleteNoRecycleBin : ''].filter(Boolean).join(' · ');
+        return prima.done > 0 ? t.deleteSuccess : '';
+    };
+
+    const chiediEliminazioneDefinitiva = (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog({
             isOpen: true,
             title: t.deleteForGood,
             message: t.confirmHardDelete.replace('{n}', String(imgs.length)),
-            onConfirm: () => eliminaPerSempre(imgs),
-            onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+            onConfirm: () => eliminaPerSempre(imgs, prima),
+            onCancel: () => {
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                const frase = fraseCestinoWindows(prima);
+                if (frase) showNotification(frase, prima.failed > 0 ? 'error' : 'success');
+            }
         });
     };
 
-    const eliminaPerSempre = async (imgs: any[]) => {
+    const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsEmptyingTrash(true);
+        const progetto = progettoGenRef.current;
         const removedIds = new Set<string>();
         let failed = 0;
-        for (const img of imgs) {
-            if (await deleteImageFilesForGood(img)) removedIds.add(img.id); else failed++;
+        for (const scelta of imgs) {
+            // ITALIANO: come in "Svuota cestino": l'elenco e' quello della finestra, la foto si
+            //           guarda com'e' ADESSO. Una foto tornata in galleria nel frattempo (Ctrl+Z
+            //           mentre le altre si cancellano) non si tocca: prima veniva cancellata per
+            //           sempre lo stesso, e spariva dalla galleria.
+            // ENGLISH: as in "Empty trash": the list is the dialog's, the photo is looked at as it
+            //          is NOW. A photo that went back to the gallery meanwhile (Ctrl+Z while the
+            //          others are being deleted) is not touched: it used to be deleted for good
+            //          anyway, and vanished from the gallery.
+            const img = imagesRef.current.find(i => i.id === scelta.id);
+            if (!img || !img.isTrashed) continue;
+            if (await deleteImageFilesForGood(img, removedIds)) removedIds.add(img.id); else failed++;
         }
         setIsEmptyingTrash(false);
-
-        if (removedIds.size > 0) {
-            setImages(prev => prev.filter(i => !removedIds.has(i.id)));
-            setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
-        }
-        if (failed > 0) {
-            showNotification(t.deleteForGoodPartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed)), 'error');
+        // ITALIANO: come in "Svuota cestino": il progetto e' stato chiuso o azzerato durante la
+        //           cancellazione. Niente messaggio, chiusura della finestra del cestino o passo di
+        //           cronologia nel progetto di adesso: non e' il suo lavoro.
+        // ENGLISH: as in "Empty trash": the project was closed or reset during the delete. No
+        //          message, trash-window close or history step in the current project: it is not
+        //          that project's job.
+        if (progetto !== progettoGenRef.current) {
+            console.warn('[Cestino] Cancellazione definitiva interrotta dalla chiusura del progetto: file gia\' cancellati:', removedIds.size);
             return;
         }
-        setIsTrashOpen(false);
-        showNotification(t.deleteForGoodDone.replace('{done}', String(removedIds.size)), 'success');
+        // ITALIANO: non e' stata cancellata nessuna foto (tutte tornate in galleria): niente
+        //           "eliminate per sempre: 0", si dice solo com'e' andata la prima parte, se c'e'.
+        // ENGLISH: no photo was deleted (all back in the gallery): no "deleted for good: 0", only
+        //          how the first part went is said, if there was one.
+        if (removedIds.size === 0 && failed === 0) {
+            const frase = fraseCestinoWindows(prima);
+            if (frase) showNotification(frase, prima.failed > 0 ? 'error' : 'success');
+            return;
+        }
+
+        if (removedIds.size > 0) {
+            removedIds.forEach(id => fotoChiuseRef.current.delete(id));
+            // ITALIANO: come per lo svuotamento: i file non esistono piu', Ctrl+Z non li riporta.
+            // ENGLISH: as for the emptying: the files no longer exist, Ctrl+Z does not bring them back.
+            isUndoRedoAction.current = true;
+            setImages(prev => prev.filter(i => !removedIds.has(i.id)));
+            setHistory(prev => purgeIdsFromHistory(prev, removedIds));
+            setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
+        }
+        // ITALIANO: un solo messaggio con le due parti, prima il Cestino di Windows e poi questa.
+        //           Se qualcosa e' rimasto nel cestino dell'app (qui o nella prima parte) e' un
+        //           errore e la finestra resta aperta, con quelle foto sotto gli occhi.
+        // ENGLISH: one message with both parts, first the Windows Recycle Bin and then this one. If
+        //          anything stayed in the app's trash (here or in the first part) it is an error and
+        //          the window stays open, with those photos in plain sight.
+        const testo = [fraseCestinoWindows(prima), failed > 0
+            ? t.deleteForGoodPartial.replace('{done}', String(removedIds.size)).replace('{failed}', String(failed))
+            : t.deleteForGoodDone.replace('{done}', String(removedIds.size))].filter(Boolean).join(' · ');
+        if (failed > 0 || prima.failed > 0) {
+            showNotification(testo, 'error');
+            return;
+        }
+        // ITALIANO: la finestra si chiude solo se il cestino e' vuoto davvero: con la X su una sola
+        //           foto le altre restano li'. imagesRef non ha ancora tolto quelle appena
+        //           cancellate, per questo si escludono a mano.
+        // ENGLISH: the window closes only when the trash is really empty: with the X on a single
+        //          photo the others stay there. imagesRef has not dropped the ones just deleted yet,
+        //          hence they are left out by hand.
+        if (!imagesRef.current.some(i => i.isTrashed && !removedIds.has(i.id))) setIsTrashOpen(false);
+        showNotification(testo, 'success');
         soundManager.pop();
     };
 
     const handleRestoreAll = () => {
-        setImages(prev => prev.map(img => ({ ...img, isTrashed: false })));
+        // ITALIANO: si rifanno solo le foto del cestino: le altre restano lo STESSO oggetto, come
+        //           negli altri passi della cronologia. Prima si copiava ogni foto, e dopo uno
+        //           svuotamento il primo Ctrl+Z si fermava su un passo uguale a quello attuale.
+        // ENGLISH: only the trashed photos are rebuilt: the others stay the SAME object, as in the
+        //          other history steps. Every photo used to be copied, and after an emptying the
+        //          first Ctrl+Z stopped on a step equal to the current one.
+        setImages(prev => prev.map(img => (img.isTrashed ? { ...img, isTrashed: false } : img)));
         showNotification(t.allPhotosRestored, "success");
         setIsTrashOpen(false);
         soundManager.pop();
     };
 
-    // ITALIANO: Limiti di sicurezza sull'ingestione dei .txt sidecar (un dataset scaricato è input non fidato)
-    // ENGLISH: Safety caps on sidecar .txt ingestion (a downloaded dataset is untrusted input)
+    // ITALIANO: Limiti di sicurezza sull'ingestione dei .txt sidecar (un dataset scaricato è input non fidato).
+    //           Quelli sul numero e sulla lunghezza dei tag stanno con la lettura, in sidecarTags.
+    // ENGLISH: Safety caps on sidecar .txt ingestion (a downloaded dataset is untrusted input).
+    //          The caps on tag count and length live with the reading, in sidecarTags.
     const TXT_MAX_BYTES = 1024 * 1024;
-    const TXT_MAX_TAGS_PER_FILE = 200;
-    const TXT_TAG_MAX_CHARS = 100;
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -1495,39 +2798,41 @@ export default function App() {
         //          We do NOT clear it when this import has none — "Load images" used to set it to
         //          null, silently degrading every later save into browser downloads.
         if (handle) setDirHandle(handle);
+        // ITALIANO: la barra riparte da zero solo se nessun altro import la sta usando (vedi importAttiviRef).
+        // ENGLISH: the bar restarts from zero only when no other import is using it (see importAttiviRef).
+        if (importAttiviRef.current === 0) setImportProgress(0);
+        importAttiviRef.current++;
         setIsImporting(true);
-        setImportProgress(0);
+        // ITALIANO: il progetto in cui l'import e' partito (vedi progettoGenRef e il controllo prima di setImages).
+        // ENGLISH: the project the import started in (see progettoGenRef and the check before setImages).
+        const progetto = progettoGenRef.current;
         let skippedTxtCount = 0;
+        // ITALIANO: i nomi dei .txt saltati: l'avviso di fine import dice i primi (vedi avvisoImport).
+        // ENGLISH: the names of the skipped .txt files: the end-of-import notice names the first ones (see avvisoImport).
+        const nomiSaltati: string[] = [];
+        let shortenedTxtCount = 0;
         let restoredCount = 0;
         try {
             await new Promise(r => setTimeout(r, 300));
 
             // ITALIANO: Eventuale backup automatico dei tag (recupero post-crash) — vedi effetto 'tagBackup'.
-            //           Lo applichiamo SOLO se l'IMPRONTA coincide (nome cartella + numero di immagini +
-            //           prima e ultima in ordine alfabetico). Prima bastava il nome della cartella, e
-            //           siccome i dataset LoRA si chiamano quasi tutti uguale ("dataset", "img"), i tag
-            //           di un progetto potevano essere ripristinati su un altro e poi scritti su disco.
-            //           I backup vecchi non hanno l'impronta: non vengono applicati, che e' il lato sicuro.
+            //           Lo applichiamo SOLO se l'IMPRONTA di questa cartella coincide (nome cartella +
+            //           numero di immagini + prima e ultima in ordine alfabetico): le regole stanno in
+            //           backupDellImport. Ogni import e' un "lotto": le foto se lo portano dietro, con il
+            //           nome della cartella, cosi' il backup tiene un'impronta per ogni cartella aperta.
             // ENGLISH: Automatic tag backup, if any (post-crash recovery) — see the 'tagBackup' effect.
-            //          Applied ONLY when the FINGERPRINT matches (folder name + image count + first and
-            //          last name alphabetically). The folder name alone used to be enough, and since LoRA
-            //          datasets are nearly all named the same ("dataset", "img"), one project's tags could
-            //          be restored onto another and then written to disk. Older backups carry no
-            //          fingerprint: they are not applied, which is the safe side.
-            let backupMap: Record<string, { tags?: unknown; caption?: unknown }> | null = null;
+            //          Applied ONLY when THIS folder's FINGERPRINT matches (folder name + image count +
+            //          first and last name alphabetically): the rules live in backupDellImport. Every
+            //          import is a "batch": the photos carry it, with the folder's name, so the backup
+            //          keeps one fingerprint per open folder.
             const importFolder = (handle && handle.name) ? String(handle.name) : '';
             const importSignature = folderSignature(importFolder, imgFiles.map(f => f.name));
+            const lottoImport = nuovoIdFoto();
+            let backup: { voci: Record<string, any>; ts: number | null } | null = null;
             try {
-                const raw = localStorage.getItem('tagBackup');
-                if (raw) {
-                    const parsed = JSON.parse(raw);
-                    const backupSignature = parsed && typeof parsed.signature === 'string' ? parsed.signature : '';
-                    const sameFolder = importFolder !== '' && backupSignature !== '' && backupSignature === importSignature;
-                    if (sameFolder && parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object') {
-                        backupMap = parsed.data;
-                    }
-                }
-            } catch (_) { backupMap = null; }
+                backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature);
+            } catch (_) { backup = null; }
+            const backupMap = backup ? backup.voci : null;
 
             // ITALIANO: chiave cartella+nome (vedi makeFolderKeyer): stessa immagine e stesso
             //           .txt SOLO se stanno nella stessa sottocartella.
@@ -1565,6 +2870,16 @@ export default function App() {
                 conteggioFoglia.set(k, (conteggioFoglia.get(k) || 0) + 1);
             }
             const textMap = new Map();
+            // ITALIANO: data di modifica di ogni .txt: serve solo ai backup della versione precedente
+            //           (vedi tagDaRipristinare).
+            // ENGLISH: each .txt's modification date: only needed by the previous version's backups
+            //          (see tagDaRipristinare).
+            const txtMtime = new Map<string, number>();
+            // ITALIANO: i .txt che ci sono ma non si sono potuti leggere: la loro foto non deve
+            //           risultare modificata, o "Salva" ci scriverebbe sopra (vedi tagDiImport).
+            // ENGLISH: the .txt files that exist but could not be read: their photo must not count
+            //          as modified, or "Save" would write over them (see tagDiImport).
+            const txtNonLetti = new Set<string>();
             for (let i = 0; i < txtFiles.length; i++) {
                 try {
                     if (txtFiles[i].size > TXT_MAX_BYTES) {
@@ -1572,19 +2887,25 @@ export default function App() {
                         // ENGLISH: A legit sidecar weighs a few KB: over 1 MB is suspicious, skip it
                         console.warn(`[Import] Skipped oversized .txt (${txtFiles[i].size} bytes):`, txtFiles[i].name);
                         skippedTxtCount++;
+                        nomiSaltati.push(String(txtFiles[i].name || ''));
+                        txtNonLetti.add(folderKeyOf(txtFiles[i]));
                     } else {
                         const text = await txtFiles[i].text();
-                        const parsedTags = text.split(/[,\n\r]+/)
-                            .map((tag: string) => tag.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, TXT_TAG_MAX_CHARS))
-                            .filter((tag: string) => tag.length > 0)
-                            .slice(0, TXT_MAX_TAGS_PER_FILE);
-                        textMap.set(folderKeyOf(txtFiles[i]), [...new Set(parsedTags)]);
+                        const letti = parseSidecarText(text);
+                        if (letti.truncated) {
+                            console.warn('[Import] .txt oltre i limiti, accorciato / over the caps, shortened:', txtFiles[i].name);
+                            shortenedTxtCount++;
+                        }
+                        textMap.set(folderKeyOf(txtFiles[i]), letti.tags);
+                        txtMtime.set(folderKeyOf(txtFiles[i]), Number(txtFiles[i].lastModified) || 0);
                     }
                 } catch (e) {
                     // ITALIANO: File illeggibile (lockato/spostato): si salta, l'import non deve bloccarsi
                     // ENGLISH: Unreadable file (locked/moved): skip it, the import must not get stuck
                     console.warn('[Import] Unreadable .txt skipped:', txtFiles[i]?.name, e);
                     skippedTxtCount++;
+                    nomiSaltati.push(String((txtFiles[i] && txtFiles[i].name) || ''));
+                    if (txtFiles[i]) txtNonLetti.add(folderKeyOf(txtFiles[i]));
                 }
                 setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
             }
@@ -1615,14 +2936,19 @@ export default function App() {
                 await Promise.all(batch);
             }
 
+            // ITALIANO: le trigger di adesso, non quelle di quando si e' premuto Importa (vedi
+            //           globalTriggersRef). Da qui a setImages non c'e' nessuna attesa.
+            // ENGLISH: the current triggers, not those from when Import was pressed (see
+            //          globalTriggersRef). There is no wait from here to setImages.
+            const triggerAttive = globalTriggersRef.current;
             const newImages = [];
             for (let i = 0; i < imgFiles.length; i++) {
                 const thumbData: any = thumbs[i];
-                const combinedTags = [...new Set([...globalTriggers, ...(textMap.get(folderKeyOf(imgFiles[i])) || [])])];
-                const orderedTags = [
-                    ...globalTriggers.filter(t => combinedTags.includes(t)),
-                    ...combinedTags.filter(t => !globalTriggers.includes(t))
-                ];
+                // ITALIANO: tags = trigger attive + .txt; originalTags = solo cio' che e' davvero nel .txt
+                //           (vedi tagDiImport), cosi' "Salva modifiche" scrive la trigger dove manca.
+                // ENGLISH: tags = active triggers + .txt; originalTags = only what is really in the .txt
+                //          (see tagDiImport), so "Save changes" writes the trigger where it is missing.
+                const { tags: orderedTags, originalTags } = tagDiImport(triggerAttive, textMap.get(folderKeyOf(imgFiles[i])) || [], txtNonLetti.has(folderKeyOf(imgFiles[i])));
                 // ITALIANO: Se il backup anti-crash ha tag diversi dai sidecar, ripristina le modifiche non salvate
                 // ENGLISH: If the crash backup differs from the sidecar tags, restore the unsaved edits
                 let finalTags = orderedTags;
@@ -1646,22 +2972,12 @@ export default function App() {
                         entry = backupMap[imgFiles[i].name];
                     }
                 }
-                if (entry) {
-                    if (Array.isArray(entry.tags)) {
-                        const backupTags = (entry.tags as unknown[])
-                            .filter((x): x is string => typeof x === 'string')
-                            .map(x => x.slice(0, TXT_TAG_MAX_CHARS))
-                            .slice(0, 500);
-                        const differs = JSON.stringify([...backupTags].sort()) !== JSON.stringify([...orderedTags].sort());
-                        if (differs && backupTags.length > 0) {
-                            finalTags = [
-                                ...globalTriggers.filter(t => backupTags.includes(t)),
-                                ...backupTags.filter(t => !globalTriggers.includes(t))
-                            ];
-                            restoredCount++;
-                        }
-                    }
+                const ripristinati = tagDaRipristinare(entry, orderedTags, originalTags, triggerAttive, txtMtime.get(folderKeyOf(imgFiles[i])), backup ? backup.ts : null);
+                if (ripristinati) {
+                    finalTags = ripristinati;
+                    restoredCount++;
                 }
+                const discoImport = [...originalTags];
                 newImages.push({
                     id: nuovoIdFoto(),
                     file: imgFiles[i],
@@ -1669,10 +2985,23 @@ export default function App() {
                     width: thumbData?.width || 0,
                     height: thumbData?.height || 0,
                     tags: finalTags,
-                    originalTags: [...orderedTags],
-                    // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash.
-                    // ENGLISH: the key under which this photo is stored in the crash backup.
+                    originalTags: discoImport,
+                    // ITALIANO: il .txt c'e' ma non si e' potuto leggere: i tag di adesso, cosi' le
+                    //           trigger cambiate dopo non lo fanno scrivere (vedi fotoDaSalvare). E'
+                    //           LO STESSO array di originalTags: ogni scrittura del .txt ne mette uno
+                    //           nuovo, e da li' la regola torna quella di sempre (txtNonLettoInVigore).
+                    // ENGLISH: the .txt exists but could not be read: the current tags, so triggers
+                    //          changed later do not get it written (see fotoDaSalvare). It is THE SAME
+                    //          array as originalTags: every write of the .txt puts a new one there,
+                    //          and from then on the usual rule applies (txtNonLettoInVigore).
+                    ...(txtNonLetti.has(folderKeyOf(imgFiles[i])) ? { baseTxtNonLetto: discoImport } : {}),
+                    // ITALIANO: chiave con cui questa foto viene salvata nel backup anti-crash, e il
+                    //           lotto di import con la sua cartella (un'impronta per cartella).
+                    // ENGLISH: the key under which this photo is stored in the crash backup, and the
+                    //          import batch with its folder (one fingerprint per folder).
                     backupKey: chiaveBackup,
+                    lottoImport,
+                    cartellaImport: importFolder,
                     // ITALIANO: percorso VERO del file sul disco, quello che serve a Windows per
                     //           mandarlo nel Cestino. Vuoto quando non si conosce: cartella di rete
                     //           (dove il Cestino di Windows non esiste), oppure fuori da Electron.
@@ -1692,28 +3021,64 @@ export default function App() {
                     //          the first folder's tags into the second one (and emptying the trash
                     //          deleted the wrong files).
                     dirHandle: asDirHandle(folderOf && folderOf.get(imgFiles[i])) || handle || null,
+                    // ITALIANO: la sottocartella della foto rispetto alla cartella scelta con "Carica
+                    //           cartella" (es. "10_face"; "" alla radice o senza cartella). Solo in
+                    //           memoria: serve all'esportazione per rimettere le cartelle Kohya.
+                    // ENGLISH: the photo's subfolder relative to the folder picked with "Load folder"
+                    //          (e.g. "10_face"; "" at the root or with no folder). In memory only: the
+                    //          export uses it to put the Kohya folders back.
+                    cartellaRel: (cartellaRelOf && cartellaRelOf.get(imgFiles[i])) || '',
                 });
             }
 
+            // ITALIANO: le anteprime si annotano qui, nel momento in cui entrano nel progetto: un
+            //           Reset premuto durante l'import non deve liberare quelle che stanno arrivando.
+            // ENGLISH: thumbnails are recorded here, the moment they enter the project: a Reset pressed
+            //          during the import must not release the ones on their way in.
+            // ITALIANO: Reset o Chiudi progetto premuti mentre si generavano le miniature: le foto non
+            //           entrano nel progetto nuovo. Prima ci finivano, con la trigger del progetto nuovo
+            //           e la cartella di quello chiuso, e un Salva scriveva quella trigger nei .txt della
+            //           cartella chiusa. Le miniature si liberano; il finally spegne la striscia.
+            // ENGLISH: Reset or Close project pressed while the thumbnails were being made: the photos
+            //          do not enter the new project. They used to, with the new project's trigger and the
+            //          closed one's folder, and a Save wrote that trigger into the closed folder's .txt
+            //          files. The thumbnails are released; the finally switches the strip off.
+            if (progetto !== progettoGenRef.current) {
+                newImages.forEach(img => { if (img.thumb) URL.revokeObjectURL(img.thumb); });
+                console.warn('[Import] Progetto chiuso o azzerato durante l\'import: foto non aggiunte / project closed or reset during the import: photos not added.');
+                return;
+            }
+            newImages.forEach(img => { if (img.thumb) anteprimeProgettoRef.current.add(img.thumb); });
             setImages(prev => {
                 const combined = [...prev, ...newImages];
                 return combined.sort((a, b) => a.file.name.localeCompare(b.file.name));
             });
             soundManager.chime();
-            const extras = `${restoredCount > 0 ? ` · ↻ ${restoredCount}` : ''}${skippedTxtCount > 0 ? ` · ⊘ ${skippedTxtCount} .txt` : ''}`;
-            showNotification(`${t.successImport.replace('{n}', String(newImages.length))}${extras}`, "success");
+            // ITALIANO: un .txt accorciato perche' fuori misura va detto: al primo salvataggio la parte
+            //           tagliata sparirebbe dal disco. L'avviso prende il posto del messaggio di import
+            //           (a schermo ne resta uno solo): le foto caricate si vedono comunque. Le foto
+            //           recuperate dal backup e i .txt saltati si dicono con frasi intere (avvisoImport).
+            // ENGLISH: a .txt shortened for being over the caps must be reported: the first save would
+            //          drop the cut part from disk. The warning takes the import message's place (only
+            //          one stays on screen): the loaded photos show anyway. Photos recovered from the
+            //          backup and skipped .txt files are told in whole sentences (avvisoImport).
+            const avviso = avvisoImport(t, { caricate: newImages.length, ripristinate: restoredCount, saltati: skippedTxtCount, accorciati: shortenedTxtCount, nomiSaltati });
+            showNotification(avviso.testo, avviso.tipo);
         } catch (error: any) {
             console.error('[Import] Failed', error);
             showNotification(`${t.aiError || 'Error'}: ${String(error?.message || error || '').slice(0, 150)}`, 'error');
         } finally {
             // ITALIANO: Comunque vada, l'UI di import non deve restare bloccata
+            //           (si spegne con l'ULTIMO import in corso, vedi importAttiviRef).
             // ENGLISH: No matter what, the import UI must never stay stuck
-            setIsImporting(false);
+            //          (it goes off with the LAST running import, see importAttiviRef).
+            importAttiviRef.current = Math.max(0, importAttiviRef.current - 1);
+            setIsImporting(importAttiviRef.current > 0);
             if (folderInputRef.current) folderInputRef.current.value = '';
         }
     };
 
-    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null) => {
+    const calculateImportSummary = (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null) => {
         // ITALIANO: stesso abbinamento cartella+nome del vero import, cosi' il conteggio
         //           "con testo / senza testo" e' esatto anche con nomi ripetuti tra sottocartelle.
         // ENGLISH: same folder+name pairing as the real import, so the "with text / without text"
@@ -1739,7 +3104,7 @@ export default function App() {
                 imagesWithText: withText,
                 imagesWithoutText: withoutText
             },
-            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf }
+            pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf }
         });
     };
 
@@ -1753,59 +3118,34 @@ export default function App() {
             //          path and never sends one.
             const api = (window as any).electronAPI;
             try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
+            // ITALIANO: diventa vero appena il selettore ha dato la cartella: da li' in poi un errore
+            //           e' della LETTURA, non del selettore, e il ripiego (il campo nascosto, cioe' un
+            //           secondo selettore) non c'entra: si dice all'utente che la cartella non si legge.
+            // ENGLISH: becomes true as soon as the picker has returned the folder: from then on an
+            //          error belongs to the READ, not to the picker, and the fallback (the hidden input,
+            //          i.e. a second picker) does not apply: the user is told the folder cannot be read.
+            let cartellaScelta = false;
             try {
                 // ITALIANO: l'id fa ricordare al sistema l'ULTIMA cartella usata: la volta dopo
                 //           il selettore si riapre lì. startIn come riserva al primo utilizzo.
                 // ENGLISH: the id makes the system remember the LAST used folder: next time the
                 //          picker reopens there. startIn as a fallback on first use.
                 const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-project', startIn: 'pictures' });
+                cartellaScelta = true;
 
-                const imgFiles: any[] = [];
-                const txtFiles: any[] = [];
-                // ITALIANO: Ogni immagine ricorda la SOTTOCARTELLA in cui si trova, cosi' il suo
-                //           .txt viene riscritto li' dentro e non nella cartella principale.
-                //           I dataset LoRA sono spesso divisi in sottocartelle (es. "10_soggetto").
-                // ENGLISH: Each image remembers the SUBFOLDER it lives in, so its .txt is written
-                //          back there and not into the top folder. LoRA datasets are often split
-                //          into subfolders (e.g. "10_subject").
-                const folderOf = new Map<any, any>();
-                // ITALIANO: percorso RELATIVO completo di ogni file (es. "anna_bea/char_anna/10_face").
-                //           L'handle di una cartella conosce solo il proprio nome, non da dove viene:
-                //           il percorso lo devo costruire io mentre scendo, ed e' cio' che rende
-                //           univoca la chiave del backup anti-crash fra sottocartelle omonime.
-                // ENGLISH: each file's full RELATIVE path (e.g. "anna_bea/char_anna/10_face"). A
-                //          directory handle only knows its own name, not where it came from: the path
-                //          must be built while descending, and it is what makes the crash-backup key
-                //          unique across same-named subfolders.
-                const relPathOf = new Map<any, string>();
-
-                const MAX_DEPTH = 8;
-                const scan = async (dir: any, depth: number, prefix: string) => {
-                    for await (const entry of dir.values()) {
-                        if (entry.kind === 'file') {
-                            const file = await entry.getFile();
-                            if (file.type.startsWith('image/')) {
-                                imgFiles.push(file);
-                                folderOf.set(file, dir);
-                                relPathOf.set(file, prefix);
-                            } else if (file.name.toLowerCase().endsWith('.txt')) {
-                                txtFiles.push(file);
-                                // ITALIANO: registro la cartella anche per il .txt, cosi' viene
-                                //           abbinato SOLO all'immagine della stessa sottocartella.
-                                // ENGLISH: record the folder for the .txt too, so it pairs ONLY with
-                                //          the image in the same subfolder.
-                                folderOf.set(file, dir);
-                                relPathOf.set(file, prefix);
-                            }
-                        } else if (entry.kind === 'directory' && depth < MAX_DEPTH) {
-                            await scan(entry, depth + 1, prefix ? prefix + '/' + entry.name : entry.name);
-                        }
-                    }
-                };
-                await scan(handle, 0, String(handle.name || ''));
+                // ITALIANO: immagini e .txt con la sottocartella di ciascuno; le voci illeggibili si
+                //           saltano e si contano (vedi scanDirectoryHandle).
+                // ENGLISH: images and .txt files with the subfolder of each; unreadable entries are
+                //          skipped and counted (see scanDirectoryHandle).
+                const { imgFiles, txtFiles, folderOf, relPathOf, skipped } = await scanDirectoryHandle(handle);
 
                 if (imgFiles.length === 0) {
-                    return showNotification(t.noImagesTitle, "info");
+                    // ITALIANO: se nessuna immagine e' arrivata e qualcosa non si e' letto, si dice anche
+                    //           quello: le immagini potevano stare proprio nelle voci saltate.
+                    // ENGLISH: if no image arrived and something could not be read, that is said too:
+                    //          the images may have been in the very entries that were skipped.
+                    const saltate = skipped > 0 ? ' ' + t.folderEntriesSkipped.replace('{n}', String(skipped)) : '';
+                    return showNotification(t.noImagesTitle + saltate, "info");
                 }
 
                 // ITALIANO: il percorso della cartella si ritira DOPO la scansione, non prima:
@@ -1858,7 +3198,14 @@ export default function App() {
                     }
                 }
 
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf);
+                // ITALIANO: la sottocartella di ogni foto senza il nome della radice ("" alla radice):
+                //           l'esportazione la rimette nell'archivio (vedi exportAllAsZip).
+                // ENGLISH: each photo's subfolder without the root's name ("" at the root): the
+                //          export puts it back in the archive (see exportAllAsZip).
+                const cartellaRelOf = new Map<any, string>();
+                for (const f of imgFiles) cartellaRelOf.set(f, (relPathOf.get(f) || '').split('/').slice(1).join('/'));
+                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf);
+                if (skipped > 0) showNotification(t.folderEntriesSkipped.replace('{n}', String(skipped)), 'info');
 
             } catch (err: any) {
                 // ITALIANO: scelta annullata o fallita: chiudo comunque la finestra di registrazione
@@ -1868,7 +3215,10 @@ export default function App() {
                 //          (empty list = ask for nothing, just reset), otherwise it would stay open
                 //          collecting folders for the rest of the session.
                 try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
-                if (err.name !== 'AbortError') {
+                if (cartellaScelta) {
+                    console.error('[Import] Cartella scelta non leggibile / picked folder unreadable:', err);
+                    showNotification(t.folderReadError, 'error');
+                } else if (err.name !== 'AbortError') {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
                     if (folderInputRef.current) folderInputRef.current.click();
                 }
@@ -1879,10 +3229,20 @@ export default function App() {
     };
 
     const handleFolderUploadFallback = async (e: any) => {
-        const files = Array.from(e.target.files as FileList);
+        // ITALIANO: senza i file nascosti del Mac (__MACOSX, "._nome"), come "Carica cartella".
+        // ENGLISH: without the Mac hidden files (__MACOSX, "._name"), as in "Load folder".
+        const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name, f.webkitRelativePath));
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
-        if (imgFiles.length === 0) return;
+        // ITALIANO: una cartella senza immagini va detta, come nelle altre strade, e il campo va
+        //           liberato: altrimenti riscegliendo la stessa cartella il browser non avvisa piu'.
+        // ENGLISH: a folder with no images must be reported, as on the other roads, and the input
+        //          freed: otherwise picking the same folder again no longer fires at all.
+        if (imgFiles.length === 0) {
+            showNotification(t.noImagesTitle, 'info');
+            if (folderInputRef.current) folderInputRef.current.value = '';
+            return;
+        }
 
         // ITALIANO: Anche nel fallback (input webkitdirectory) ricostruisco la sottocartella di
         //           ogni file dal suo percorso relativo, cosi' due foto con lo stesso nome in
@@ -1899,8 +3259,12 @@ export default function App() {
         };
         const folderOf = new Map<any, any>();
         [...imgFiles, ...txtFiles].forEach(f => folderOf.set(f, dirOfRelPath(f)));
+        // ITALIANO: come in "Carica cartella": la sottocartella senza il nome della radice.
+        // ENGLISH: as in "Load folder": the subfolder without the root's name.
+        const cartellaRelOf = new Map<any, string>();
+        imgFiles.forEach(f => cartellaRelOf.set(f, dirOfRelPath(f).split(/[\\/]/).slice(1).join('/')));
 
-        calculateImportSummary(imgFiles, txtFiles, null, folderOf);
+        calculateImportSummary(imgFiles, txtFiles, null, folderOf, null, null, cartellaRelOf);
     };
 
     // ITALIANO: Carica SINGOLE immagini (una o piu'), non l'intera cartella. Nel selettore si
@@ -1931,25 +3295,29 @@ export default function App() {
             //           percorso reale. Serve SOLO per abbinare testo e immagine giusti: due foto
             //           con lo stesso nome in cartelle diverse restano separate. Non e' un handle,
             //           quindi non diventa mai destinazione di salvataggio (asDirHandle la scarta).
+            //           Foto e .txt passano per la stessa regola (cartellaImmagine / cartellaTesto):
+            //           alla radice di un'unita' le due forme erano diverse ("E:" contro "E:\").
             // ENGLISH: each file's folder (image or .txt) is a STRING, taken from the real path.
             //          Used ONLY to pair the right text with the right image: two same-named photos
             //          in different folders stay separate. It is not a handle, so it never becomes a
             //          save target (asDirHandle rejects it).
-            const dirOfPath = (p: string): string => {
-                const cut = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
-                return cut > 0 ? p.slice(0, cut) : '';
-            };
+            //          Photo and .txt go through the same rule (cartellaImmagine / cartellaTesto): at
+            //          a drive root the two forms used to differ ("E:" against "E:\").
             const folderOf = new Map<any, any>();
             const paths: string[] = [];
             for (const f of imgFiles) {
                 const p = api.getPathForFile(f);
-                if (p) { paths.push(p); folderOf.set(f, dirOfPath(p)); }
+                if (p) { paths.push(p); folderOf.set(f, cartellaImmagine(p)); }
             }
             if (paths.length === 0) return vuoto;
             const sidecars = await api.readSidecarTags(paths);
             const txtFiles = (sidecars || []).map((s: any) => {
-                const file = new File([s.content], s.name, { type: 'text/plain' });
-                folderOf.set(file, typeof s.dir === 'string' ? s.dir : '');
+                // ITALIANO: un .txt che il processo principale non ha letto diventa un file illeggibile:
+                //           l'import lo conta fra i saltati (vedi fileDaSidecar).
+                // ENGLISH: a .txt the main process did not read becomes an unreadable file: the import
+                //          counts it among the skipped ones (see fileDaSidecar).
+                const file = fileDaSidecar(s);
+                folderOf.set(file, typeof s.dir === 'string' ? cartellaTesto(s.dir) : '');
                 return file;
             });
             return { txtFiles, folderOf };
@@ -1960,7 +3328,9 @@ export default function App() {
     };
 
     const handleImagesUpload = async (e: any) => {
-        const files = Array.from(e.target.files as FileList);
+        // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
+        // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
+        const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name));
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
         // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
@@ -1981,7 +3351,18 @@ export default function App() {
     //          Electron path). In the browser (no Electron, no disk access) I use the .txt files
     //          actually dropped, paired by name.
     const handleDroppedFiles = useCallback(async (fileList: FileList) => {
-        const files = Array.from(fileList || []);
+        // ITALIANO: con l'editor dei file di tag (z 320) o la finestra della API key (z 400) aperti il
+        //           riepilogo dell'importazione (z 300) si apriva SOTTO: il rilascio sembrava ignorato
+        //           e un secondo rilascio sostituiva in silenzio quello in attesa. Si dice di chiudere
+        //           prima la finestra (il messaggio sta sopra tutto).
+        // ENGLISH: with the Tag file editor (z 320) or the API key dialog (z 400) open the import
+        //          summary (z 300) opened UNDER it: the drop looked ignored and a second drop silently
+        //          replaced the pending one. The user is told to close that window first (the message
+        //          sits above everything).
+        if (isTagEditorOpen || isApiKeyDialogOpen) { showNotification(t.dropCloseWindowFirst, 'info'); return; }
+        // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
+        // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
+        const files = Array.from(fileList || []).filter((f: any) => !fileDiMac(f.name));
         const imgFiles = files.filter(f => f.type.startsWith('image/'));
         if (imgFiles.length === 0) { showNotification(t.dropOnlyImages, 'info'); return; }
         const droppedTxt = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
@@ -1990,10 +3371,22 @@ export default function App() {
             calculateImportSummary(imgFiles, diskTxt, null, folderOf);
         } else {
             // ITALIANO: niente sidecar dal disco (browser o nessun .txt accanto): uso quelli trascinati.
+            //           I .txt trascinati si abbinano per nome (folderOf resta null), ma la chiave del
+            //           backup anti-crash porta comunque il percorso vero della foto quando Electron lo
+            //           conosce: col solo nome due serie senza tag con gli stessi nomi si scambiavano le
+            //           modifiche, e ritrascinando le stesse foto dopo un salvataggio le chiavi non
+            //           combaciavano piu'. E' la stessa chiave del ramo qui sopra.
             // ENGLISH: no disk sidecars (browser or no adjacent .txt): use the dropped ones.
-            calculateImportSummary(imgFiles, droppedTxt, null, null);
+            //          The dropped .txt files pair by name (folderOf stays null), but the crash-backup
+            //          key still carries the photo's real path when Electron knows it: with the bare
+            //          name two untagged sets with the same names swapped their edits, and dropping the
+            //          same photos again after a save no longer matched the keys. It is the same key as
+            //          in the branch above.
+            const chiavePercorso = new Map<any, string>();
+            if (folderOf) for (const f of imgFiles) { const d = folderOf.get(f); if (typeof d === 'string' && d) chiavePercorso.set(f, d); }
+            calculateImportSummary(imgFiles, droppedTxt, null, null, chiavePercorso.size > 0 ? chiavePercorso : null);
         }
-    }, [t]);
+    }, [t, isTagEditorOpen, isApiKeyDialogOpen]);
     // ITALIANO: riferimento SEMPRE aggiornato al gestore, cosi' i listener globali (sotto) restano
     //           registrati una volta sola ma chiamano sempre la versione corrente.
     // ENGLISH: an always-current ref to the handler, so the global listeners (below) subscribe once
@@ -2069,7 +3462,10 @@ export default function App() {
                     let thumbData: any = null;
                     try { thumbData = await generateThumbnail(fresh); } catch (_) { /* tengo la vecchia anteprima */ }
                     // ITALIANO: NON revoco la vecchia anteprima (potrebbe essere nella cronologia annulla).
+                    //           Si liberano tutte e due alla chiusura del progetto (anteprimeProgettoRef).
                     // ENGLISH: do NOT revoke the old thumbnail (it may live in the undo history).
+                    //          Both are released when the project closes (anteprimeProgettoRef).
+                    if (thumbData?.url) anteprimeProgettoRef.current.add(thumbData.url);
                     // ITALIANO: questo ricarico NON e' un'azione dell'utente: non deve entrare nella
                     //           cronologia. Prima ci finiva, e allora "Annulla" riportava la foto al
                     //           file VECCHIO invece di annullare l'ultima modifica ai tag; peggio, un
@@ -2077,8 +3473,22 @@ export default function App() {
                     // ENGLISH: this reload is NOT a user action: it must not enter the history. It used
                     //          to, so "Undo" restored the OLD file instead of undoing the last tag edit;
                     //          worse, a background reload discarded any pending "Redo" steps.
+                    // ITALIANO: un oggetto nuovo per ogni oggetto vecchio, uno solo: i passi della
+                    //           cronologia (e la galleria) che avevano la stessa foto continuano ad
+                    //           averla. Prima ogni passo ne riceveva una copia sua, e dopo l'uscita di
+                    //           un'altra foto dal disco Ctrl+Z si fermava su passi rimasti identici.
+                    // ENGLISH: one new object per old object, only one: the history steps (and the
+                    //          gallery) that held the same photo keep sharing it. Every step used to
+                    //          get a copy of its own, and once another photo left the disk Ctrl+Z
+                    //          stopped on steps that had become identical.
+                    const rifatte = new Map<any, any>();
+                    const rifai = (i: any) => {
+                        if (i.id !== id) return i;
+                        if (!rifatte.has(i)) rifatte.set(i, { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height });
+                        return rifatte.get(i);
+                    };
                     isUndoRedoAction.current = true;
-                    setImages(prev => prev.map(i => i.id === id ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height } : i));
+                    setImages(prev => prev.map(rifai));
                     // ITALIANO: il ricarico non e' un'azione annullabile, ma cambia comunque il file
                     //           sottostante. Non bastava saltarne la registrazione: le istantanee gia'
                     //           in cronologia continuavano a contenere il file e l'anteprima VECCHI,
@@ -2091,9 +3501,7 @@ export default function App() {
                     //          an external retouch brought the pre-retouch photo back on screen. I
                     //          refresh the image inside those snapshots too, leaving each step's tags
                     //          untouched (those must stay undoable).
-                    setHistory(prev => prev.map(snap => snap.map((i: any) => i.id === id
-                        ? { ...i, file: fresh, thumb: thumbData?.url || i.thumb, width: thumbData?.width || i.width, height: thumbData?.height || i.height }
-                        : i)));
+                    setHistory(prev => prev.map(snap => snap.map(rifai)));
                     showNotification(t.imageReloaded, 'info');
                 }
             } catch (_) { /* file spostato/illeggibile: ignoro */ }
@@ -2157,7 +3565,12 @@ export default function App() {
                 soundManager.chime();
                 showNotification(t.projectTagsExported, 'success');
             } catch (err: any) {
-                if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.importTagsError, 'error'); }
+                // ITALIANO: qui si SCRIVE: "impossibile salvare il file", non la frase dell'import
+                //           ("impossibile leggere il file dei tag"), che mandava a cercare il guasto
+                //           dalla parte sbagliata.
+                // ENGLISH: this WRITES: "could not save the file", not the import's sentence ("could
+                //          not read the tags file"), which sent the user looking on the wrong side.
+                if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.tagEditorSaveError, 'error'); }
             }
             return;
         }
@@ -2174,16 +3587,38 @@ export default function App() {
         try {
             // ITALIANO: stessi limiti di prudenza dei sidecar: un file legittimo di tag pesa pochi KB.
             //           Oltre 1 MB e' sospetto (JSON gigante/ostile) e potrebbe bloccare l'app: lo
-            //           rifiuto. Poi limito lunghezza e numero dei tag, come nell'import delle foto.
+            //           rifiuto. Poi limito lunghezza e numero dei tag (vedi pulisciTagProgetto).
             // ENGLISH: same safety caps as the sidecars: a legit tag file weighs a few KB. Over 1 MB is
             //          suspicious (huge/hostile JSON) and could freeze the app: reject it. Then clamp
-            //          each tag's length and the total count, like the photo import does.
+            //          each tag's length and the total count (see pulisciTagProgetto).
             if (file.size > 1024 * 1024) { showNotification(t.importTagsError, 'error'); return; }
             const text = (await file.text()).trim();
-            let tags: string[] = [];
-            let triggers: string[] = [];
+            let tags: unknown[] = [];
+            let triggers: unknown[] = [];
+            // ITALIANO: anche un semplice elenco JSON ["a","b"] (lo accetta pure l'editor dei file di
+            //           tag): prima si leggeva come TXT e nella palette entravano '["a"' e '"b"]'.
+            //           Un testo che inizia con "[" ma non e' JSON resta un TXT, come prima.
+            // ENGLISH: a plain JSON list ["a","b"] too (the tag file editor accepts it as well): it
+            //          used to be read as TXT and the palette got '["a"' and '"b"]'. A text that
+            //          starts with "[" but is not JSON stays a TXT, as before.
+            let elenco: unknown = undefined;
+            if (text.startsWith('[')) {
+                try { elenco = JSON.parse(text); } catch (_) { elenco = undefined; }
+            }
+            // ITALIANO: lo stesso per "{": l'export TXT di un progetto con "{best quality}" comincia
+            //           con quella graffa (l'ordine alfabetico la mette prima delle lettere) e non si
+            //           reimportava. Si legge come TXT, salvo un JSON chiaramente rotto ('{"tags": [').
+            // ENGLISH: the same for "{": the TXT export of a project with "{best quality}" starts with
+            //          that brace (alphabetical order puts it before letters) and could not be imported
+            //          back. It is read as TXT, except clearly broken JSON ('{"tags": [').
+            let oggetto: any = undefined;
             if (text.startsWith('{')) {
-                const data = JSON.parse(text);
+                try { oggetto = JSON.parse(text); } catch (err) { if (/^\{\s*["}]/.test(text)) throw err; }
+            }
+            if (Array.isArray(elenco)) {
+                tags = elenco;
+            } else if (oggetto !== undefined) {
+                const data = oggetto;
                 if (Array.isArray(data.tags)) tags = data.tags;
                 if (Array.isArray(data.globalTriggers)) triggers = data.globalTriggers;
             } else {
@@ -2191,20 +3626,31 @@ export default function App() {
                 // ENGLISH: TXT: one tag per line (commas are also accepted as separators).
                 tags = text.split(/[\r\n,]+/);
             }
+            // ITALIANO: i tag sono testo (o numeri). Un elenco di oggetti (tipico di chi esporta
+            //           le frequenze, {"tag":"1girl","count":5}) dava il tag "[object Object]" con
+            //           l'avviso verde: lo si rifiuta come fa l'editor. Le voci null si saltano
+            //           (prima diventavano il tag "null").
+            // ENGLISH: tags are text (or numbers). A list of objects (typical of frequency exports,
+            //          {"tag":"1girl","count":5}) gave the tag "[object Object]" with the green
+            //          notice: it is refused as the editor does. Null entries are skipped (they used
+            //          to become the tag "null").
+            if ([...tags, ...triggers].some(x => x !== null && typeof x === 'object')) { showNotification(t.importTagsError, 'error'); return; }
+            tags = tags.filter(x => x !== null && x !== undefined);
+            triggers = triggers.filter(x => x !== null && x !== undefined);
             // ITALIANO: i trigger del file entrano comunque nella palette del progetto. Ogni tag e'
-            //           ripulito dai caratteri di controllo, tagliato a 100 caratteri, e in tutto se
-            //           ne tengono al massimo 5000.
+            //           ripulito dai caratteri di controllo e tagliato al limite dei .txt (4000
+            //           caratteri: prima 100, e una didascalia in frase tornava monca); in tutto se ne
+            //           tengono al massimo 5000. Se qualcosa si accorcia o resta fuori, lo si dice.
             // ENGLISH: the file's triggers also go into the project palette. Each tag is stripped of
-            //          control chars, clamped to 100 chars, and at most 5000 are kept in total.
-            const clean = [...new Set(
-                [...tags, ...triggers]
-                    .map((s: any) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, 100))
-                    .filter(Boolean)
-            )].slice(0, 5000);
+            //          control chars and clamped to the .txt cap (4000 chars: it used to be 100, and a
+            //          sentence caption came back cut); at most 5000 are kept in total. If anything is
+            //          shortened or left out, it is said.
+            const { tags: clean, truncated } = pulisciTagProgetto([...tags, ...triggers]);
             if (clean.length === 0) { showNotification(t.importTagsError, 'error'); return; }
             setCustomProjectTags(prev => [...new Set([...prev, ...clean])]);
             soundManager.chime();
-            showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
+            if (truncated) showNotification(t.projectTagsImportShortened.replace('{n}', String(clean.length)), 'info');
+            else showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
         } catch (err) {
             showNotification(t.importTagsError, 'error');
         } finally {
@@ -2214,15 +3660,30 @@ export default function App() {
 
     const handleResetProject = () => {
         setConfirmDialog({ isOpen: true, title: t.confirmResetTitle, message: t.confirmResetMsg, onConfirm: () => {
+            // ITALIANO: un progetto nuovo: i lavori del cestino ancora in corso non lo toccano (vedi progettoGenRef).
+            // ENGLISH: a new project: trash jobs still running do not touch it (see progettoGenRef).
+            progettoGenRef.current++;
             // ITALIANO: Ferma un eventuale batch AI in corso e svuota il backup automatico dei tag
             // ENGLISH: Stop any running AI batch and clear the automatic tag backup
             aiCancelRequestedRef.current = true;
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
             try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+            fotoChiuseRef.current.clear();
             releaseThumbnails(images);
+            // ITALIANO: anche quelle delle foto chiuse con la X o cancellate per sempre.
+            // ENGLISH: also those of the photos closed with the X or deleted for good.
+            liberaAnteprimeProgetto();
+            // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
+            //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
+            //           quello chiuso. Le sue anteprime si liberano come tutte le altre.
+            // ENGLISH: undoing the emptying belongs to THIS project: if it survived, the button would
+            //          appear in the next project and push the closed project's photos into it.
+            //          Its thumbnails are freed like all the others.
+            if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
+            setUltimoSvuotamento(null);
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
-            setHistory([]); setHistoryIndex(-1);
+            setHistory([]); setHistoryIndex(-1); discoNotoRef.current.clear();
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
         }, onCancel: () => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} }) });
@@ -2253,7 +3714,18 @@ export default function App() {
     // ENGLISH: Returns TRUE when the save succeeded, FALSE when it failed or was aborted.
     //          Needed by "Save and close": if saving fails the project must NOT be closed,
     //          otherwise the tags would be lost.
-    const performSave = async (imagesToSave: any[]): Promise<boolean> => {
+    // ITALIANO: l'avviso del .txt svuotato (Kohya si ferma) dell'ultimo salvataggio, '' se non c'e'.
+    //           "Salva e chiudi" lo rimostra dopo la chiusura: c'e' un solo posto per gli avvisi e il
+    //           verde "Progetto chiuso", arrivato nello stesso istante, lo copriva sempre.
+    // ENGLISH: the emptied-.txt warning (Kohya stops) of the last save, '' when there is none. "Save
+    //          and close" shows it again after the close: there is a single slot for notices and the
+    //          green "Project closed", arriving in the same instant, always covered it.
+    const avvisoSalvataggioRef = useRef('');
+    // ITALIANO: `fraseNonScritte` =la frase sulle foto lasciate fuori da handleSaveChanges perche' il
+    //           loro .txt non si e' potuto leggere (vedi txtNonLettoInVigore): va nello stesso avviso.
+    // ENGLISH: `fraseNonScritte` = the sentence on the photos handleSaveChanges left out because their
+    //          .txt could not be read (see txtNonLettoInVigore): it goes into the same notice.
+    const performSave = async (imagesToSave: any[], fraseNonScritte = ''): Promise<boolean> => {
         // ITALIANO: Ogni immagine viene riscritta nella SUA cartella (img.dirHandle), non in una
         //           cartella globale: con due cartelle aperte insieme i tag finivano nel posto
         //           sbagliato. Le immagini senza cartella (caricate come file singoli) proseguono
@@ -2266,9 +3738,53 @@ export default function App() {
         const withoutFolder = imagesToSave.filter(img => !img.dirHandle);
         const savedIds = new Set<string>();
         const failedNames: string[] = [];
+        // ITALIANO: le foto offerte come download (anteprima del browser): non sono errori, ma
+        //           nemmeno salvate. E quante hanno ora un .txt vuoto, che ferma Kohya.
+        // ENGLISH: the photos offered as downloads (browser preview): not errors, but not saved
+        //          either. And how many now have an empty .txt, which stops Kohya.
+        let scaricate = 0;
+        let svuotate = 0;
+        // ITALIANO: il .txt che c'e' gia', o null se manca: serve a non CREARE un .txt vuoto.
+        // ENGLISH: the .txt already there, or null if missing: used to never CREATE an empty .txt.
+        const txtEsistente = async (dir: any, nome: string) => {
+            try { return await dir.getFileHandle(nome); }
+            catch (e: any) { if (e && e.name === 'NotFoundError') return null; throw e; }
+        };
         const total = imagesToSave.length;
         let done = 0;
         const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, Math.round((done / total) * 100))); };
+        // ITALIANO: due copie della stessa foto (la stessa cartella aperta due volte) con tag DIVERSI
+        //           finirebbero nello stesso .txt: vinceva l'ultima scritta, e la card dell'altra
+        //           mostrava come salvata una modifica che sul disco non c'era piu'. Non si sceglie
+        //           in silenzio: nessuna delle due si scrive, restano da salvare e l'avviso dice di
+        //           chiuderne una. Due copie con gli stessi tag si salvano come sempre. Lo stesso vale
+        //           per due foto diverse con lo stesso nome (a.png e a.jpg): il .txt e' uno, a.txt.
+        //           `chiave` dice dove finisce il .txt; `stessoPosto` confronta due chiavi uguali.
+        // ENGLISH: two copies of the same photo (the same folder opened twice) with DIFFERENT tags
+        //          would end in the same .txt: the last one written won, and the other one's card
+        //          showed as saved an edit that was no longer on disk. No silent pick: neither is
+        //          written, both stay to be saved and the notice says to close one. Two copies with
+        //          the same tags are saved as always. The same goes for two different photos with the
+        //          same name (a.png and a.jpg): there is one .txt, a.txt.
+        //          `chiave` says where the .txt ends up; `stessoPosto` compares two equal keys.
+        const doppie: string[] = [];
+        const inConflitto = async (lista: any[], chiave: (img: any) => string, stessoPosto: (a: any, b: any) => Promise<boolean>) => {
+            const perChiave = new Map<string, any[][]>();
+            for (const img of lista) {
+                const k = chiave(img);
+                if (!k) continue;
+                const gruppi = perChiave.get(k) || [];
+                let gruppo: any[] | null = null;
+                for (const g of gruppi) if (await stessoPosto(g[0], img)) { gruppo = g; break; }
+                if (gruppo) gruppo.push(img); else gruppi.push([img]);
+                perChiave.set(k, gruppi);
+            }
+            const fuori = new Set<string>();
+            for (const gruppi of perChiave.values()) for (const g of gruppi) {
+                if (g.length > 1 && new Set(g.map(img => getOrderedTagString(img.tags))).size > 1) g.forEach(img => fuori.add(img.id));
+            }
+            return fuori;
+        };
 
         if (total > 0) { setIsSaving(true); setImportProgress(0); }
         try {
@@ -2282,14 +3798,34 @@ export default function App() {
             //          photos unmarked and the rest never attempted.
             if (withFolder.length > 0) {
                 showNotification(t.processingFiles, "info");
+                // ITALIANO: stessa cartella anche da due handle diversi (due "Carica cartella"): isSameEntry.
+                // ENGLISH: the same folder even from two different handles (two "Load folder"): isSameEntry.
+                const doppieCartella = await inConflitto(withFolder, img => sidecarTagFileName(img.file.name).toLowerCase(), async (a, b) => {
+                    if (a.dirHandle === b.dirHandle) return true;
+                    try { return typeof a.dirHandle.isSameEntry === 'function' && await a.dirHandle.isSameEntry(b.dirHandle); } catch { return false; }
+                });
                 for (const img of withFolder) {
+                    if (doppieCartella.has(img.id)) { doppie.push(img.file.name); bump(); continue; }
                     try {
                         const tagString = getOrderedTagString(img.tags);
-                        const fileName = buildTagFileName(img.file.name);
-                        const fileHandle = await img.dirHandle.getFileHandle(fileName, { create: true });
-                        const writable = await fileHandle.createWritable();
-                        await writable.write(tagString);
-                        await writable.close();
+                        // ITALIANO: lo stesso .txt che l'import rilegge e Kohya usa (vedi sidecarTagFileName).
+                        // ENGLISH: the same .txt the import reads back and Kohya uses (see sidecarTagFileName).
+                        const fileName = sidecarTagFileName(img.file.name);
+                        // ITALIANO: una foto senza tag non riceve un .txt NUOVO e vuoto: Kohya si
+                        //           ferma su un .txt vuoto ("caption file is empty"), non su uno che
+                        //           manca (come nell'esportazione). Quello che c'era si svuota davvero.
+                        // ENGLISH: a photo with no tags does not get a NEW empty .txt: Kohya stops on
+                        //          an empty .txt ("caption file is empty"), not on a missing one (as
+                        //          in the export). One that was there is really emptied.
+                        const fileHandle = tagString === ''
+                            ? await txtEsistente(img.dirHandle, fileName)
+                            : await img.dirHandle.getFileHandle(fileName, { create: true });
+                        if (fileHandle) {
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(tagString);
+                            await writable.close();
+                            if (tagString === '') svuotate++;
+                        }
                         savedIds.add(img.id);
                     } catch (err) {
                         console.error('[Salvataggio] impossibile scrivere', img.file.name, err);
@@ -2315,11 +3851,36 @@ export default function App() {
             let remaining = withoutFolder;
             if (remaining.length > 0 && api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
                 showNotification(t.processingFiles, "info");
+                // ITALIANO: la chiave e' il .txt di arrivo (cartella + sidecarTagFileName, come nel processo
+                //           principale), senza maiuscole come Windows: la stessa foto caricata due volte,
+                //           ma anche a.png e a.jpg, finiscono nello stesso a.txt. Prima contava il percorso
+                //           dell'immagine: a.png e a.jpg con tag diversi si scrivevano tutte e due nello
+                //           stesso a.txt, vinceva l'ultima, e risultavano salvate tutte e due.
+                // ENGLISH: the key is the target .txt (folder + sidecarTagFileName, as in the main process),
+                //          case-insensitive like Windows: the same photo loaded twice, but also a.png and
+                //          a.jpg, end in the same a.txt. It used to be the image path: a.png and a.jpg with
+                //          different tags were both written into the same a.txt, the last one won, and both
+                //          counted as saved.
+                const txtDiArrivo = (img: any) => {
+                    const p = String(api.getPathForFile(img.file) || '');
+                    if (!p) return '';
+                    const taglio = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1;
+                    return (p.slice(0, taglio) + sidecarTagFileName(p.slice(taglio))).toLowerCase();
+                };
+                const doppiePercorso = await inConflitto(remaining, txtDiArrivo, async () => true);
+                remaining.forEach(img => { if (doppiePercorso.has(img.id)) doppie.push(img.file.name); });
+                bump(doppiePercorso.size);
+                remaining = remaining.filter(img => !doppiePercorso.has(img.id));
                 const items = remaining.map(img => ({ imagePath: api.getPathForFile(img.file) || '', content: getOrderedTagString(img.tags) }));
                 try {
                     const res = await api.writeSidecarTags(items);
                     const flags: boolean[] = Array.isArray(res && res.results) ? res.results : [];
                     remaining.forEach((img, i) => { if (flags[i]) savedIds.add(img.id); else failedNames.push(img.file.name); });
+                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo: si e' svuotato
+                    //           solo quello di una foto che sul disco aveva dei tag.
+                    // ENGLISH: the main process does not create a new empty .txt: only the one of a
+                    //          photo that had tags on disk was emptied.
+                    svuotate += remaining.filter((img, i) => flags[i] && img.tags.length === 0 && (img.originalTags || []).length > 0).length;
                 } catch (err) {
                     console.error('[Salvataggio] scrittura sidecar fallita', err);
                     remaining.forEach(img => failedNames.push(img.file.name));
@@ -2357,7 +3918,9 @@ export default function App() {
                     // ENGLISH: breathing room between downloads, the browser rejects rapid-fire ones
                     await new Promise(r => setTimeout(r, 300));
                 }
-                remaining.forEach(img => failedNames.push(img.file.name));
+                // ITALIANO: contate a parte: offerte come download, non fallite (vedi il messaggio).
+                // ENGLISH: counted apart: offered as downloads, not failed (see the message).
+                scaricate += remaining.length;
                 remaining = [];
             }
         } finally {
@@ -2369,6 +3932,16 @@ export default function App() {
         // ENGLISH: mark as saved ONLY the files really written, with the SNAPSHOT tags (not the live
         //          ones): a tag added while saving is not counted as already saved.
         if (savedIds.size > 0) {
+            // ITALIANO: segnare i file come salvati non e' un'azione dell'utente: non diventa un
+            //           passo della cronologia (Ctrl+Z non tocca originalTags, vedi
+            //           withLiveOriginalTags). Prima lo era: il primo Ctrl+Z dopo "Salva" diceva
+            //           "Azione annullata" senza cambiare niente, e un salvataggio dopo un Ctrl+Z
+            //           cancellava i passi da rifare.
+            // ENGLISH: marking the files as saved is not a user action: it does not become a history
+            //          step (Ctrl+Z does not touch originalTags, see withLiveOriginalTags). It used to
+            //          be one: the first Ctrl+Z after "Save" said "Action undone" without changing
+            //          anything, and a save after a Ctrl+Z wiped the steps to redo.
+            isUndoRedoAction.current = true;
             setImages(prev => prev.map(img => {
                 if (!savedIds.has(img.id)) return img;
                 const snap = imagesToSave.find(s => s.id === img.id);
@@ -2376,18 +3949,48 @@ export default function App() {
             }));
         }
 
-        if (failedNames.length === 0) {
-            soundManager.chime();
-            showNotification(t.successSaveChanges, "success");
-            return true;
-        }
-        // ITALIANO: qualcosa non e' stato salvato: dico quante si e quante no (coi primi nomi) e torno
+        // ITALIANO: qualcosa non e' stato salvato (o e' stato solo offerto come download): si torna
         //           FALSE, cosi' "Salva e chiudi" NON chiude e NON cancella il backup anti-crash.
-        // ENGLISH: something was not saved: report how many did and did not (with the first names) and
-        //          return FALSE, so "Save and close" does NOT close nor clear the crash backup.
+        //           Il messaggio e' fatto di frasi intere: niente salvato, salvate N su M (coi primi
+        //           nomi), offerte come download. Prima erano pezzi incollati ("Salvataggio
+        //           parziale: 0/5 — non salvate: ..."), "parziale" anche con niente salvato, e i
+        //           download dell'anteprima risultavano un errore.
+        // ENGLISH: something was not saved (or was only offered as a download): return FALSE, so
+        //          "Save and close" does NOT close nor clear the crash backup. The message is made of
+        //          whole sentences: nothing saved, N of M saved (with the first names), offered as
+        //          downloads. It used to be glued pieces ("Partial save: 0/5 — failed: ..."),
+        //          "partial" even with nothing saved, and the preview's downloads showed as an error.
         const primi = failedNames.slice(0, 3).join(', ') + (failedNames.length > 3 ? '…' : '');
-        showNotification(`${t.savePartial} ${savedIds.size}/${total} — ${t.saveFailedList}: ${primi}`, "error");
-        return false;
+        const frasi: string[] = [];
+        if (failedNames.length > 0) {
+            frasi.push(savedIds.size === 0
+                ? t.saveNoneSaved.replace('{names}', primi)
+                : t.saveSomeFailed.replace('{saved}', String(savedIds.size)).replace('{total}', String(total)).replace('{names}', primi));
+        }
+        // ITALIANO: le copie doppie non scritte (vedi inConflitto), un nome per foto.
+        // ENGLISH: the duplicate copies not written (see inConflitto), one name per photo.
+        if (doppie.length > 0) {
+            const nomi = [...new Set(doppie)];
+            frasi.push(t.saveSameFileTwice.replace('{names}', nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
+        }
+        if (scaricate > 0) frasi.push(scaricate === 1 ? t.saveDownloadedOne : t.saveDownloadedMany.replace('{n}', String(scaricate)));
+        // ITALIANO: con delle foto lasciate fuori (fraseNonScritte) non si dice "salvate con
+        //           successo" per poi dire che una non lo e': si dice quanti file sono stati scritti.
+        // ENGLISH: with photos left out (fraseNonScritte) it does not say "saved successfully" and
+        //          then that one was not: it says how many files were written.
+        if (frasi.length === 0) frasi.push(fraseNonScritte ? t.saveWrittenCount.replace('{n}', String(savedIds.size)) : t.successSaveChanges);
+        // ITALIANO: un .txt svuotato ferma Kohya: lo si dice, senza bloccare niente.
+        // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
+        const fraseSvuotate = svuotate === 0 ? '' : svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate));
+        if (fraseSvuotate) frasi.push(fraseSvuotate);
+        // ITALIANO: "Salva e chiudi" la rimostra dopo "Progetto chiuso" (vedi avvisoSalvataggioRef).
+        // ENGLISH: "Save and close" shows it again after "Project closed" (see avvisoSalvataggioRef).
+        avvisoSalvataggioRef.current = fraseSvuotate;
+        if (fraseNonScritte) frasi.push(fraseNonScritte);
+        const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0 && !fraseNonScritte;
+        if (riuscito) soundManager.chime();
+        showNotification(frasi.join(' '), (failedNames.length > 0 || doppie.length > 0) ? "error" : (scaricate > 0 || svuotate > 0 || fraseNonScritte) ? "info" : "success");
+        return riuscito;
     };
 
     // ITALIANO: Salva solo le immagini che hanno subito modifiche
@@ -2399,9 +4002,31 @@ export default function App() {
         //           ha escluse dal dataset). Salvo solo le foto attive con modifiche.
         // ENGLISH: do NOT save trashed photos: their .txt must not be written to disk (the user
         //          excluded them from the dataset). Save only active photos with changes.
-        const modifiedImages = images.filter(img => !img.isTrashed && JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        // ITALIANO: una foto col .txt non letto all'import conta come modificata solo per i tag messi
+        //           apposta su di lei, non per una trigger (vedi fotoDaSalvare); anche allora Salva la
+        //           lascia fuori (vedi nonScritte qui sotto): il suo .txt lo sostituiscono solo il
+        //           visualizzatore e l'editor dei file di tag.
+        // ENGLISH: a photo whose .txt was not read at import counts as modified only for the tags put
+        //          on it on purpose, not for a trigger (see fotoDaSalvare); even then Save leaves it out
+        //          (see nonScritte below): only the viewer and the tag file editor replace its .txt.
+        const modifiedImages = images.filter(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
         if (modifiedImages.length === 0) { showNotification(t.noChanges, "info"); return true; }
-        return performSave(modifiedImages);
+        // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import non si scrive: cosa contiene
+        //           non si sa, e un tag aggiunto a tutte, un Incolla o l'AI lo sostituivano coi soli tag
+        //           nuovi (vedi txtNonLettoInVigore). Resta da salvare, l'avviso la nomina, e si torna
+        //           FALSE: "Salva e chiudi" non chiude. Per sostituirlo apposta: il visualizzatore.
+        // ENGLISH: a photo whose .txt could not be read at import is not written: its content is
+        //          unknown, and a tag added to all photos, a Paste or the AI replaced it with the new
+        //          tags alone (see txtNonLettoInVigore). It stays unsaved, the notice names it, and
+        //          FALSE is returned: "Save and close" does not close. To replace it on purpose: the viewer.
+        const nonScritte = modifiedImages.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
+        const daScrivere = modifiedImages.filter(img => !txtNonLettoInVigore(img));
+        const primi = nonScritte.slice(0, 3).join(', ') + (nonScritte.length > 3 ? '…' : '');
+        const fraseNonScritte = nonScritte.length === 0 ? ''
+            : nonScritte.length === 1 ? t.saveUnreadTxtOne.replace('{names}', primi)
+            : t.saveUnreadTxtMany.replace('{n}', String(nonScritte.length)).replace('{names}', primi);
+        if (daScrivere.length === 0) { showNotification(fraseNonScritte, "info"); return false; }
+        return performSave(daScrivere, fraseNonScritte);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
@@ -2423,22 +4048,58 @@ export default function App() {
         return (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace('.', ',') + ' ' + unita[i];
     };
 
-    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean, rinomina: boolean): Promise<boolean> => {
+    // ITALIANO: `fraseNonLette` = la frase sulle foto lasciate fuori da handleExportAll perche' il
+    //           loro .txt non si e' potuto leggere all'import ('' se nessuna): va nell'avviso finale.
+    // ENGLISH: `fraseNonLette` = the sentence on the photos handleExportAll left out because their
+    //          .txt could not be read at import ('' if none): it goes into the final notice.
+    const exportAllAsZip = async (imagesToExport: any[], conImmagini: boolean, rinomina: boolean, fraseNonLette = ''): Promise<boolean> => {
         setIsSaving(true); setImportProgress(0);
         try {
             showNotification(t.zipProcessing, "info");
-            const zip = new JSZip();
+            // ITALIANO: l'elenco delle voci dell'archivio, in ordine. Qui non si legge niente: ogni
+            //           foto si legge solo quando tocca a lei, a pezzi, mentre si scrive (scriviZip).
+            // ENGLISH: the list of the archive's entries, in order. Nothing is read here: each photo
+            //          is read only when its turn comes, in chunks, while writing (scriviZip).
+            const voci: VoceZip[] = [];
+            // ITALIANO: la foto si rilegge dalla SUA cartella quando tocca a lei. Il file preso
+            //           all'import e' un'istantanea: se nel frattempo la foto e' stata ritoccata in un
+            //           altro programma, Chromium rifiuta di leggerlo (NotReadableError) e tutta
+            //           l'esportazione finiva con un generico "Errore durante la creazione dello ZIP".
+            //           Riletta cosi', nell'archivio va la versione di adesso. Senza cartella ("Carica
+            //           immagini") o se la foto non c'e' piu', resta l'istantanea: se non si legge,
+            //           l'avviso dice quale foto (zipPhotoUnreadable).
+            // ENGLISH: the photo is re-read from ITS folder when its turn comes. The file taken at
+            //          import is a snapshot: if meanwhile the photo was retouched in another program,
+            //          Chromium refuses to read it (NotReadableError) and the whole export ended with a
+            //          generic "Error creating ZIP". Re-read this way, the archive gets today's version.
+            //          With no folder ("Load images") or if the photo is gone, the snapshot stays: if it
+            //          cannot be read, the notice says which photo (zipPhotoUnreadable).
+            const fotoAggiornata = (img: any) => async (): Promise<Blob> => {
+                const dir = img.dirHandle;
+                if (dir && typeof dir.getFileHandle === 'function') {
+                    try { return await (await dir.getFileHandle(img.file.name)).getFile(); }
+                    catch (_) { /* spostata o cancellata: si prova l'istantanea / moved or deleted: try the snapshot */ }
+                }
+                return img.file;
+            };
             // ITALIANO: due foto con lo STESSO nome in sottocartelle diverse (tipico dei dataset LoRA:
-            //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e JSZip
-            //           SOVRASCRIVE l'omonimo: uno dei due .txt spariva in silenzio. Ora, se il nome e'
+            //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e
+            //           l'omonimo SOVRASCRIVEVA l'altro: uno dei due .txt spariva in silenzio. Ora, se il nome e'
             //           gia' occupato, distinguo il file con la sua sottocartella (es. "10_viso/img.txt")
             //           o, se serve, con un suffisso numerico; nessun .txt viene piu' perso, e avviso.
             // ENGLISH: two photos with the SAME name in different subfolders (typical LoRA layout:
             //          10_face\img.png and 20_body\img.png) produced the same archive entry name, and
-            //          JSZip OVERWRITES a same-named entry: one of the two .txt vanished silently. Now,
+            //          the namesake OVERWROTE the other: one of the two .txt vanished silently. Now,
             //          if the name is already taken, I disambiguate the file with its subfolder (e.g.
             //          "10_face/img.txt") or, if needed, a numeric suffix; no .txt is lost, and I warn.
+            // ITALIANO: i nomi si confrontano senza badare alle maiuscole: per Windows A.txt e a.txt
+            //           sono lo stesso file, ed estraendo uno prendeva il posto dell'altro (e Kohya
+            //           abbinava la foto ai tag sbagliati). Il nome nell'archivio resta com'e'.
+            // ENGLISH: names are compared ignoring capitals: to Windows A.txt and a.txt are the same
+            //          file, and on extraction one replaced the other (and Kohya paired the photo with
+            //          the wrong tags). The name in the archive stays as it is.
             const usedNames = new Set<string>();
+            const occupato = (n: string) => usedNames.has(n.toLowerCase());
             let collisionCount = 0;
             // ITALIANO: rinominando, il nome e' il posto in fila: 0001, 0002... Le cifre sono
             //           almeno quattro (e' la convenzione dei dataset LoRA) e diventano di piu'
@@ -2450,34 +4111,73 @@ export default function App() {
             //          cannot happen this way.
             const cifre = Math.max(4, String(imagesToExport.length).length);
             let progressivo = 0;
+            // ITALIANO: quante foto entrano senza .txt perche' non hanno tag: l'avviso finale lo dice,
+            //           altrimenti si addestrerebbero senza descrizione senza che nessuno lo sappia.
+            // ENGLISH: how many photos go in without a .txt because they have no tags: the final
+            //          notice says so, otherwise they would train without a caption unnoticed.
+            let senzaTag = 0;
             imagesToExport.forEach((img) => {
+                // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
+                //           vuoto fa fermare l'addestramento di Kohya ("caption file is empty"), uno
+                //           che manca no. Il suo nome resta comunque occupato, come per le altre.
+                // ENGLISH: an untagged photo (only with "Tags and images") goes in WITHOUT a .txt: an
+                //          empty .txt stops Kohya's training ("caption file is empty"), a missing one
+                //          does not. Its name stays taken all the same, as for the others.
+                const conTag = Array.isArray(img.tags) && img.tags.length > 0;
+                if (conImmagini && !conTag) senzaTag++;
+                // ITALIANO: la foto torna nella sua sottocartella (cartellaRel, da "Carica cartella"):
+                //           10_face/a.txt, 20_body/b.txt. Prima finiva tutto alla radice tranne gli
+                //           omonimi, e sd-scripts (train_data_dir) legge solo le cartelle N_nome: le
+                //           foto alla radice restavano fuori e i numeri di ripetizioni sparivano. Ogni
+                //           pezzo si ripulisce; "", "." e ".." si saltano, cosi' niente esce dall'archivio.
+                // ENGLISH: the photo goes back into its subfolder (cartellaRel, from "Load folder"):
+                //          10_face/a.txt, 20_body/b.txt. Everything used to land at the root except the
+                //          namesakes, and sd-scripts (train_data_dir) only reads N_name folders: the
+                //          root photos were left out and the repeat counts vanished. Every part is
+                //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
+                const sotto = String(img.cartellaRel || '').split(/[\\/]/)
+                    .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
+                // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
+                //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
+                //           Prima l'archivio usciva piatto e le cartelle N_nome sparivano in silenzio.
+                // ENGLISH: when renaming the same holds: the number (unique across the archive, so
+                //          no duplicate names) sits in the photo's subfolder, 10_face/0001.png.
+                //          The archive used to come out flat and the N_name folders vanished silently.
                 if (rinomina) {
                     progressivo++;
-                    const numero = String(progressivo).padStart(cifre, '0');
+                    const numero = (sotto ? sotto + '/' : '') + String(progressivo).padStart(cifre, '0');
                     const nf = String(img.file.name || '');
                     const pt = nf.lastIndexOf('.');
-                    zip.file(numero + '.txt', getOrderedTagString(img.tags));
-                    zip.file(numero + (pt > 0 ? nf.slice(pt) : ''), img.file);
+                    if (conTag) voci.push({ nome: numero + '.txt', dati: getOrderedTagString(img.tags) });
+                    voci.push({ nome: numero + (pt > 0 ? nf.slice(pt) : ''), dati: fotoAggiornata(img), etichetta: nf });
                     return;
                 }
-                const baseName = buildTagFileName(img.file.name);
+                // ITALIANO: il .txt dell'archivio si chiama come quello che l'import abbina alla foto
+                //           (sidecarTagFileName): estratto accanto a "photo..v2.png" deve essere
+                //           "photo..v2.txt", non il nome ripulito "photo.v2.txt", che non si abbinava.
+                // ENGLISH: the archive's .txt is named like the one the import pairs with the photo
+                //          (sidecarTagFileName): extracted next to "photo..v2.png" it must be
+                //          "photo..v2.txt", not the cleaned "photo.v2.txt", which did not pair.
+                const baseName =(sotto ? sotto + '/' : '') + sidecarTagFileName(img.file.name);
                 let name = baseName;
-                if (usedNames.has(name)) {
+                if (occupato(name)) {
                     collisionCount++;
-                    const dir = (img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
-                    if (dir && !usedNames.has(`${dir}/${baseName}`)) {
+                    // ITALIANO: con la sottocartella gia' nel nome resta il suffisso numerico.
+                    // ENGLISH: with the subfolder already in the name, the numeric suffix remains.
+                    const dir = (!sotto && img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
+                    if (dir && !occupato(`${dir}/${baseName}`)) {
                         name = `${dir}/${baseName}`;
                     } else {
                         const dot = baseName.lastIndexOf('.');
                         const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
                         const ext = dot > 0 ? baseName.slice(dot) : '';
                         let n = 2;
-                        while (usedNames.has(`${stem} (${n})${ext}`)) n++;
+                        while (occupato(`${stem} (${n})${ext}`)) n++;
                         name = `${stem} (${n})${ext}`;
                     }
                 }
-                usedNames.add(name);
-                zip.file(name, getOrderedTagString(img.tags));
+                usedNames.add(name.toLowerCase());
+                if (conTag) voci.push({ nome: name, dati: getOrderedTagString(img.tags) });
                 if (conImmagini) {
                     // ITALIANO: la foto prende lo STESSO nome del suo .txt, estensione a parte. Cosi'
                     //           la coppia resta abbinata anche nei casi risolti qui sopra, dove il
@@ -2490,27 +4190,40 @@ export default function App() {
                     const nomeFoto = String(img.file.name || '');
                     const punto = nomeFoto.lastIndexOf('.');
                     const estensione = punto > 0 ? nomeFoto.slice(punto) : '';
-                    zip.file(name.slice(0, -4) + estensione, img.file);
+                    voci.push({ nome: name.slice(0, -4) + estensione, dati: fotoAggiornata(img), etichetta: nomeFoto });
                 }
             });
-            // ITALIANO: SCRITTURA A PEZZI, DIRETTAMENTE SUL DISCO. Prima l'archivio veniva
-            //           costruito tutto in memoria e poi scaricato: con i soli .txt sono pochi KB,
-            //           ma con le foto un dataset da qualche migliaio di immagini fa dieci e passa
-            //           GB, e la finestra muore. Con generateInternalStream i pezzi escono man mano
-            //           e finiscono subito sul file scelto; la pausa a ogni pezzo e' quella che tiene
-            //           bassa la memoria: si riprende solo quando il pezzo precedente e' sul disco,
-            //           altrimenti si accumulerebbe in coda esattamente quello che si voleva evitare.
+            // ITALIANO: SCRITTURA A PEZZI, DIRETTAMENTE SUL DISCO. Con le foto un dataset da qualche
+            //           migliaio di immagini fa dieci e passa GB: non deve passare dalla memoria.
+            //           Prima c'era JSZip, che la promessa non la manteneva: leggeva SUBITO ogni foto
+            //           per intero (mentre la finestra di salvataggio era ancora aperta) e le teneva
+            //           tutte fino alla fine; la pausa sul flusso frenava solo l'uscita, e la finestra
+            //           moriva lo stesso. Ora scriviZip legge ogni foto solo quando tocca a lei, un
+            //           pezzo per volta, e aspetta che il pezzo sia sul disco prima di leggere il
+            //           successivo; oltre i 4 GB scrive lo ZIP64, che JSZip non sapeva fare.
             //           Nessuna compressione: JPEG e PNG sono gia' compressi, comprimerli costa
             //           minuti e guadagna quasi zero (ed e' quello che il codice faceva gia' prima).
-            // ENGLISH: CHUNKED WRITE, STRAIGHT TO DISK. The archive used to be built whole in memory
-            //          and then downloaded: a few KB with .txt alone, but with photos a few thousand
-            //          images make ten-plus GB and the window dies. generateInternalStream emits
-            //          chunks as they are produced and each lands on the chosen file at once; the
-            //          pause on every chunk is what keeps memory low — it resumes only once the
-            //          previous chunk is on disk, otherwise the queue would grow into exactly the
-            //          thing this avoids. No compression: JPEG and PNG are already compressed, so
-            //          compressing them costs minutes for almost nothing (as the code already did).
+            // ENGLISH: CHUNKED WRITE, STRAIGHT TO DISK. With photos, a dataset of a few thousand images
+            //          makes ten-plus GB: it must not go through memory. JSZip used to be here, and it
+            //          did not keep that promise: it read every photo WHOLE right away (while the save
+            //          dialog was still open) and kept them all to the end; the pause on the stream
+            //          only slowed the output, and the window died anyway. Now scriviZip reads each
+            //          photo only when its turn comes, one chunk at a time, and waits for the chunk to
+            //          be on disk before reading the next; past 4 GB it writes ZIP64, which JSZip could
+            //          not do. No compression: JPEG and PNG are already compressed, so compressing
+            //          them costs minutes for almost nothing (as the code already did).
             const nomeSuggerito = conImmagini ? 'dataset.zip' : 'tags_all.zip';
+            // ITALIANO: avanzamento sui byte: quelli dei .txt e delle foto, noti in anticipo.
+            // ENGLISH: progress over bytes: those of the .txt and of the photos, known in advance.
+            const totale = voci.reduce((n, v) => n + (typeof v.dati === 'string' ? v.dati.length : 0), 0)
+                + (conImmagini ? imagesToExport.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0) : 0);
+            let fatto = 0;
+            let ultimo = -1;
+            const avanzamento = (n: number) => {
+                fatto += n;
+                const percento = Math.min(100, Math.round((fatto / Math.max(1, totale)) * 100));
+                if (percento !== ultimo) { ultimo = percento; setImportProgress(percento); }
+            };
             const salvaSuDisco = 'showSaveFilePicker' in window;
             if (salvaSuDisco) {
                 const handle = await (window as any).showSaveFilePicker({
@@ -2520,28 +4233,26 @@ export default function App() {
                 });
                 const writable = await handle.createWritable();
                 try {
-                    await new Promise<void>((risolvi, rifiuta) => {
-                        const flusso = zip.generateInternalStream({ type: 'uint8array', streamFiles: true });
-                        flusso.on('data', (pezzo: any, stato: any) => {
-                            flusso.pause();
-                            writable.write(pezzo).then(() => {
-                                setImportProgress(Math.round(stato.percent));
-                                flusso.resume();
-                            }, rifiuta);
-                        });
-                        flusso.on('error', rifiuta);
-                        flusso.on('end', () => risolvi());
-                        flusso.resume();
-                    });
-                } finally {
-                    await writable.close();
+                    await scriviZip(voci, { write: (pezzo) => writable.write(pezzo) }, { onAvanzamento: avanzamento });
+                } catch (errScrittura) {
+                    // ITALIANO: si butta via, NON si chiude: close() SALVEREBBE il pezzo scritto
+                    //           fin qui, e resterebbe sul disco un dataset.zip troncato che
+                    //           sembra buono. abort() lascia il file di prima com'era.
+                    // ENGLISH: discard it, do NOT close: close() would SAVE the part written so
+                    //          far, leaving a truncated dataset.zip on disk that looks fine.
+                    //          abort() leaves the previous file as it was.
+                    try { await writable.abort(); } catch (_) { }
+                    throw errScrittura;
                 }
+                await writable.close();
             } else {
-                // ITALIANO: riserva per il browser di prova, che non ha la finestra di salvataggio.
-                // ENGLISH: fallback for the preview browser, which has no save picker.
-                const blob = await zip.generateAsync({ type: "blob" }, (metadata) => {
-                    setImportProgress(Math.round(metadata.percent));
-                });
+                // ITALIANO: riserva per i browser senza finestra di salvataggio: l'archivio si
+                //           raccoglie in memoria e si scarica (qui non c'e' un file su cui scrivere).
+                // ENGLISH: fallback for browsers with no save picker: the archive is gathered in
+                //          memory and downloaded (there is no file to write into here).
+                const pezzi: Uint8Array[] = [];
+                await scriviZip(voci, { write: async (pezzo) => { pezzi.push(pezzo); } }, { onAvanzamento: avanzamento });
+                const blob = new Blob(pezzi as BlobPart[], { type: 'application/zip' });
                 const url = URL.createObjectURL(blob);
                 try {
                     const a = document.createElement('a');
@@ -2557,8 +4268,17 @@ export default function App() {
             //           cosi' l'utente sa perche' alcuni .txt hanno un nome diverso dalla loro foto.
             // ENGLISH: if there were duplicate names I say so: all files ARE in the archive (renamed),
             //          so the user knows why some .txt have a different name than their photo.
+            // ITALIANO: e le foto senza tag, con una frase intera giusta anche per 1.
+            // ENGLISH: and the untagged photos, in a whole sentence that is right for 1 too.
+            const avvisoSenzaTag = senzaTag === 0 ? ''
+                : ' ' + (senzaTag === 1 ? t.zipUntaggedOne : t.zipUntaggedMany.replace('{n}', String(senzaTag)));
+            // ITALIANO: e le foto lasciate fuori perche' il loro .txt non si e' letto (vedi handleExportAll).
+            // ENGLISH: and the photos left out because their .txt was not read (see handleExportAll).
+            const avvisoNonLette = fraseNonLette ? ' ' + fraseNonLette : '';
             if (collisionCount > 0) {
-                showNotification(`${t.zipSuccess} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
+                showNotification(`${t.zipSuccess}${avvisoSenzaTag}${avvisoNonLette} — ${t.zipNameCollisionWarn.replace('{n}', String(collisionCount))}`, "info");
+            } else if (senzaTag > 0 || avvisoNonLette) {
+                showNotification(t.zipSuccess + avvisoSenzaTag + avvisoNonLette, "info");
             } else {
                 showNotification(t.zipSuccess, "success");
             }
@@ -2568,7 +4288,10 @@ export default function App() {
             // ENGLISH: dismissing the save dialog is not an error: stay quiet.
             if (err && err.name === 'AbortError') return false;
             console.error(err);
-            showNotification(t.zipError, "error");
+            // ITALIANO: una foto che non si legge si nomina, con cosa fare; il resto resta generico.
+            // ENGLISH: a photo that cannot be read is named, with what to do; the rest stays generic.
+            if (err && err.name === ERRORE_LETTURA_ZIP) showNotification(t.zipPhotoUnreadable.replace('{name}', String(err.voce || '')), "error");
+            else showNotification(t.zipError, "error");
             return false;
         } finally {
             setTimeout(() => { setIsSaving(false); setImportProgress(0); }, 500);
@@ -2585,10 +4308,48 @@ export default function App() {
         // ENGLISH: `!img.isTrashed` — photos in the trash were DISCARDED from the dataset: their
         //          .txt must not land in the exported archive. This guard was missing here, the one
         //          spot that did not filter the trash (save, gallery and stats all do).
-        const imagesWithTags = images.filter(img => !img.isTrashed && img.tags && img.tags.length > 0);
+        // ITALIANO: due elenchi. "Solo i tag" prende le foto CON tag (una foto senza tag non ha un
+        //           .txt da mettere); "Tag e immagini" prende TUTTE le foto attive. Prima anche lui
+        //           prendeva solo quelle con tag: le foto ancora senza tag sparivano dal dataset
+        //           esportato, con "archivio creato" come unico messaggio, e se nessuna aveva tag
+        //           l'esportazione si rifiutava del tutto.
+        // ENGLISH: two lists. "Tags only" takes the photos WITH tags (an untagged photo has no .txt
+        //          to put in); "Tags and images" takes ALL active photos. It used to take only the
+        //          tagged ones too: the still-untagged photos vanished from the exported dataset,
+        //          with "archive created" as the only message, and if none had tags the export
+        //          refused altogether.
+        // ITALIANO: in fila come nella galleria ("Ordina per"): e' l'ordine che "Rinomina in
+        //           sequenza" promette per 0001, 0002... Prima restava quello in memoria (A-Z
+        //           dall'import, con in fondo le foto tornate annullando lo svuotamento del cestino).
+        // ENGLISH: lined up as in the gallery ("Sort by"): the order "Rename in sequence" promises
+        //          for 0001, 0002... It used to stay the in-memory one (A-Z from the import, with the
+        //          photos brought back by undoing the trash emptying at the end).
+        // ITALIANO: un salvataggio o un'esportazione sta gia' scrivendo: la barra di avanzamento e'
+        //           sua, e una seconda operazione la nasconderebbe a meta' (il tasto e' disattivato).
+        // ENGLISH: a save or an export is already writing: the progress bar belongs to it, and a
+        //          second operation would hide it halfway (the button is disabled).
+        if (isSaving) return;
+        // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import (vedi txtNonLettoInVigore)
+        //           resta fuori, immagine e .txt: in memoria ha solo le trigger di allora, non i suoi
+        //           tag veri. Entrava con la sola trigger come didascalia (estratto nella cartella, quel
+        //           .txt sostituiva il vero) o senza .txt come "senza tag", sotto un avviso di successo.
+        //           L'avviso finale la nomina (fraseNonLette), come fa "Salva Modifiche".
+        // ENGLISH: a photo whose .txt could not be read at import (see txtNonLettoInVigore) stays out,
+        //          image and .txt: in memory it has only that time's triggers, not its real tags. It went
+        //          in with the trigger alone as its caption (extracted into the folder, that .txt replaced
+        //          the real one) or with no .txt as "untagged", under a success notice. The final notice
+        //          names it (fraseNonLette), as "Save Changes" does.
+        const nonCestinate = images.filter(img => !img.isTrashed);
+        const nonLette = nonCestinate.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
+        const primiNonLette = nonLette.slice(0, 3).join(', ') + (nonLette.length > 3 ? '…' : '');
+        const fraseNonLette = nonLette.length === 0 ? ''
+            : nonLette.length === 1 ? t.exportUnreadTxtOne.replace('{names}', primiNonLette)
+            : t.exportUnreadTxtMany.replace('{n}', String(nonLette.length)).replace('{names}', primiNonLette);
+        const attive = applySort(nonCestinate.filter(img => !txtNonLettoInVigore(img)), sortOrder);
+        const imagesWithTags = attive.filter(img => img.tags && img.tags.length > 0);
 
-        if (imagesWithTags.length === 0) {
-            return showNotification(t.errorNoTagsToExport, "info");
+        if (attive.length === 0) {
+            return showNotification(fraseNonLette || t.errorNoTagsToExport, "info");
         }
 
         // ITALIANO: si chiede PRIMA cosa mettere dentro, con numero di file e peso delle due
@@ -2596,14 +4357,30 @@ export default function App() {
         // ENGLISH: ask FIRST what goes in, with the file count and size of both roads already
         //          worked out: the gap between them is KB against GB.
         const pesoTag = imagesWithTags.reduce((n, img) => n + new Blob([getOrderedTagString(img.tags)]).size, 0);
-        const pesoFoto = imagesWithTags.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0);
+        const pesoFoto = attive.reduce((n, img) => n + (img.file && img.file.size ? img.file.size : 0), 0);
         setExportChoice({
             imgs: imagesWithTags,
+            tutte: attive,
+            fraseNonLette,
             riepilogo: {
                 soloTag: { file: imagesWithTags.length, peso: formatoPeso(pesoTag) },
-                conImmagini: { file: imagesWithTags.length * 2, peso: formatoPeso(pesoTag + pesoFoto) },
+                conImmagini: { file: imagesWithTags.length + attive.length, peso: formatoPeso(pesoTag + pesoFoto) },
             },
         });
+    };
+
+    // ITALIANO: "Esporta" nella finestra di scelta: ogni strada col suo elenco (vedi handleExportAll).
+    //           "Solo i tag" senza nessuna foto con tag non ha niente da mettere: lo si dice.
+    // ENGLISH: "Export" in the choice dialog: each road with its own list (see handleExportAll).
+    //          "Tags only" with no tagged photo has nothing to put in: say so.
+    const avviaExport = (conImmagini: boolean, rinomina: boolean) => {
+        const scelta = exportChoice;
+        setExportChoice(null);
+        if (!scelta) return undefined;
+        const lista = conImmagini ? scelta.tutte : scelta.imgs;
+        const fraseNonLette = String(scelta.fraseNonLette || '');
+        if (!lista || lista.length === 0) { showNotification(fraseNonLette ? t.errorNoTagsToExport + ' ' + fraseNonLette : t.errorNoTagsToExport, "info"); return undefined; }
+        return exportAllAsZip(lista, conImmagini, rinomina, fraseNonLette);
     };
 
     // ITALIANO: useCallback (dip. solo dalle trigger word): identita' stabile mentre si modificano i
@@ -2615,7 +4392,11 @@ export default function App() {
         //           doppi (che finirebbero nel .txt esportato e darebbero due pillole con la stessa key React).
         // ENGLISH: Dedupe at the source — pasting "sunset, sunset" etc. must not create duplicate tags
         //          (they would end up in the exported .txt and render two pills with the same React key).
-        const uniqueTags = [...new Set(newTags)];
+        // ITALIANO: anche "smile" e "Smile" sono doppioni: resta la grafia che c'era gia', o quella
+        //           della trigger word (vedi tagCase). Nessun tag viene messo in minuscolo.
+        // ENGLISH: "smile" and "Smile" are duplicates too: the spelling already there stays, or the
+        //          trigger word's (see tagCase). No tag is lowercased.
+        const uniqueTags = uniqueTagsIgnoringCase(newTags, globalTriggers);
         // ITALIANO: Ordine dei tag: prima le trigger word (nell'ordine impostato dall'utente,
         //           convenzione LoRA), poi tutti gli altri in ORDINE ALFABETICO. Vale ovunque,
         //           perche' questo e' l'unico punto in cui i tag di un'immagine vengono scritti.
@@ -2628,7 +4409,9 @@ export default function App() {
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     }, [globalTriggers]);
-    const updateOriginalTags = (id: string, newTags: string[]) => setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img));
+    // ITALIANO: il visualizzatore ha scritto il .txt: come in performSave, non e' un passo della cronologia.
+    // ENGLISH: the viewer wrote the .txt: as in performSave, it is not a history step.
+    const updateOriginalTags = (id: string, newTags: string[]) => { isUndoRedoAction.current = true; setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img)); };
     const toggleImageSelection = useCallback((id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]), []);
 
     // ITALIANO: clic su una miniatura: se c'e' gia' una selezione multipla la aggiunge/toglie,
@@ -2714,17 +4497,38 @@ export default function App() {
     // ENGLISH: The actual close. Split out because both paths use it: the simple
     //          confirmation (nothing to save) and the three-choice dialog.
     const closeProjectNow = () => {
+        // ITALIANO: un progetto nuovo: i lavori del cestino ancora in corso non lo toccano (vedi progettoGenRef).
+        // ENGLISH: a new project: trash jobs still running do not touch it (see progettoGenRef).
+        progettoGenRef.current++;
         // ITALIANO: ferma un eventuale batch AI in corso, poi azzera TUTTO
         // ENGLISH: stop any running AI batch, then clear EVERYTHING
         aiCancelRequestedRef.current = true;
         setAiCancelRequested(true);
         aiAbortControllerRef.current?.abort();
-        try { localStorage.removeItem('tagBackup'); } catch (_) { /* ignore */ }
+        // ITALIANO: dal backup anti-crash escono le cartelle di questo progetto, non quelle mai
+        //           riaperte dopo un crash (vedi backupDopoChiusura). Prima si cancellava tutto.
+        // ENGLISH: this project's folders leave the crash backup, not those never reopened after a
+        //          crash (see backupDopoChiusura). Everything used to be removed.
+        backupDopoChiusura(localStorage, imagesRef.current, fotoChiuseRef.current.values());
+        fotoChiuseRef.current.clear();
         // ITALIANO: libera le anteprime, altrimenti restano in memoria per tutta la sessione
         //           (con 2000 foto sono centinaia di MB che non tornano piu' indietro).
         // ENGLISH: free the thumbnails, otherwise they stay in memory for the whole session
         //          (with 2000 photos that is hundreds of MB that never come back).
         releaseThumbnails(images);
+        // ITALIANO: anche quelle delle foto chiuse con la X o cancellate per sempre, che
+        //           nell'elenco non ci sono piu'.
+        // ENGLISH: also those of the photos closed with the X or deleted for good, which are no
+        //          longer in the list.
+        liberaAnteprimeProgetto();
+        // ITALIANO: l'annullamento dello svuotamento appartiene a QUESTO progetto: se sopravvivesse,
+        //           il tasto comparirebbe nel progetto successivo e ci infilerebbe le foto di
+        //           quello chiuso. Le sue anteprime si liberano come tutte le altre.
+        // ENGLISH: undoing the emptying belongs to THIS project: if it survived, the button would
+        //          appear in the next project and push the closed project's photos into it.
+        //          Its thumbnails are freed like all the others.
+        if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
+        setUltimoSvuotamento(null);
         setImages([]);
         setGlobalTriggers([]);
         setSelectedForBulk([]);
@@ -2741,13 +4545,20 @@ export default function App() {
         //          touched the original files.
         setHistory([]);
         setHistoryIndex(-1);
+        discoNotoRef.current.clear();
         soundManager.chime();
         showNotification(t.closeAllDone, 'success');
     };
 
     const handleCloseProject = () => {
         if (images.length === 0) return;
-        const hasUnsaved = images.some(img => JSON.stringify(img.tags) !== JSON.stringify(img.originalTags));
+        // ITALIANO: stessa regola di handleSaveChanges: le foto nel cestino non si salvano, quindi
+        //           non contano. Prima contavano qui e non li': "ci sono modifiche non salvate",
+        //           poi "Salva e chiudi" rispondeva "Nessuna modifica da salvare."
+        // ENGLISH: same rule as handleSaveChanges: trashed photos are never saved, so they do not
+        //          count. They used to count here and not there: "there are unsaved changes",
+        //          then "Save and close" answered "No changes to save."
+        const hasUnsaved = images.some(img => !img.isTrashed && fotoDaSalvare(img, globalTriggers));
 
         // ITALIANO: Con modifiche non salvate si sceglie fra TRE strade: salvare e chiudere,
         //           chiudere buttando via le modifiche, oppure annullare.
@@ -2779,7 +4590,16 @@ export default function App() {
     //          reachable) the project is NOT closed and the dialog stays open, so no tags
     //          are lost: performSave already reports the error.
     const handleSaveAndCloseProject = async () => {
+        // ITALIANO: un'esportazione sta ancora scrivendo: un salvataggio adesso le spegnerebbe la
+        //           barra a meta' (vedi isSavingRef). La finestra resta aperta e si riprova dopo.
+        // ENGLISH: an export is still writing: a save now would switch its bar off halfway (see
+        //          isSavingRef). The dialog stays open and the user tries again later.
+        if (isSavingRef.current) {
+            showNotification(t.saveWaitForWrite, 'info');
+            return;
+        }
         setSaveCloseDialog({ isOpen: true, isSaving: true });
+        avvisoSalvataggioRef.current = '';
         let saved = false;
         try {
             saved = await handleSaveChanges();
@@ -2798,6 +4618,27 @@ export default function App() {
         }
         setSaveCloseDialog({ isOpen: false, isSaving: false });
         closeProjectNow();
+        // ITALIANO: il salvataggio ha svuotato dei .txt: l'avviso resta a schermo invece di "Progetto
+        //           chiuso" (vedi avvisoSalvataggioRef). Il progetto chiuso si vede gia'.
+        // ENGLISH: the save emptied some .txt files: the warning stays on screen instead of "Project
+        //          closed" (see avvisoSalvataggioRef). The closed project is already in view.
+        if (avvisoSalvataggioRef.current) showNotification(avvisoSalvataggioRef.current, 'info');
+        chiudiFinestraSeRichiesto();
+    };
+
+    // ITALIANO: "Chiudi senza salvare" e Annulla della finestra a tre scelte. Annulla dimentica anche
+    //           che la domanda era nata dalla X: la finestra resta aperta.
+    // ENGLISH: "Close without saving" and Cancel of the three-choice dialog. Cancel also forgets that
+    //          the question came from the X: the window stays open.
+    const handleDiscardAndClose = () => {
+        setSaveCloseDialog({ isOpen: false, isSaving: false });
+        closeProjectNow();
+        chiudiFinestraSeRichiesto();
+    };
+
+    const handleCancelClose = () => {
+        chiusuraFinestraRef.current = false;
+        setSaveCloseDialog({ isOpen: false, isSaving: false });
     };
 
     // ITALIANO: Tagga la singola immagine via Gemini API
@@ -2820,16 +4661,28 @@ export default function App() {
             // ENGLISH: Merge against LIVE tags (via imagesRef), not the pre-request snapshot:
             //          tags edited manually while waiting are not lost
             const live = imagesRef.current.find(i => i.id === imageId);
-            const baseTags: string[] = live ? live.tags : img.tags;
+            // ITALIANO: la foto non c'e' piu' (chiusa con la X, "Chiudi progetto", Reset) mentre Google
+            //           rispondeva: il risultato si scarta, come fa "Tagga tutte" (removedMidRequest).
+            //           Prima comparivano il suono e il verde "Tag generati: N" senza nessun tag messo.
+            // ENGLISH: the photo is gone (closed with the X, "Close project", Reset) while Google was
+            //          answering: the result is dropped, as "Auto-tag all" does (removedMidRequest).
+            //          The chime and the green "Tags generated: N" used to appear with no tag applied.
+            if (!live) {
+                console.log('[AI] single: photo removed during the request, result discarded');
+                return 0;
+            }
+            const baseTags: string[] = live.tags;
             const merged = [...new Set([...baseTags, ...tags])];
-            const added = merged.length - baseTags.length;
+            // ITALIANO: si contano solo i tag che la foto riceve davvero (vedi countNewTagsIgnoringCase).
+            // ENGLISH: only the tags the photo really gets are counted (see countNewTagsIgnoringCase).
+            const added = countNewTagsIgnoringCase(baseTags, tags);
             updateImageTags(imageId, merged);
             soundManager.chime();
             showNotification(t.aiTagsGenerated.replace('{n}', String(added)), 'success');
             return added;
         } catch (e: any) {
             console.error('AI tag failed', e);
-            const { kind } = classifyGeminiError(e);
+            const { kind, quotaGiorno, progetto } = classifyGeminiError(e);
             if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
             // ITALIANO: `invalid_key` e' il caso piu' frequente di tutti — la chiave sbagliata o
             //           scaduta — ed era l'unico che cadeva sul messaggio grezzo di Google, sempre
@@ -2841,14 +4694,39 @@ export default function App() {
             //          key dialog): it was simply never used here.
             const friendly = kind === 'invalid_key'
                 ? (t.aiKeyInvalid || 'API key not valid')
+                // ITALIANO: API Gemini spenta o progetto sospeso: non e' la fatturazione (`progetto`).
+                // ENGLISH: Gemini API turned off or project suspended: it is not billing (`progetto`).
                 : kind === 'billing_required'
-                ? (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.')
+                ? (progetto ? t.aiProjectRefused : (t.aiBillingRequired || 'This model requires billing enabled on your Google Cloud project.'))
                 : kind === 'rate_limit'
-                ? (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.')
+                ? (quotaGiorno ? t.aiDailyQuota : (t.aiRateLimit || 'Rate limit exceeded. Wait a moment or upgrade tier.'))
                 : kind === 'model_unavailable'
                 ? (t.aiModelUnavailable || 'Model unavailable for your account.')
-                : String(e?.message || e || '').slice(0, 200);
+                // ITALIANO: Google sovraccarico e foto rifiutata dal filtro: frasi tradotte, non il
+                //           JSON grezzo di Google (e niente suono o messaggio verde di successo).
+                // ENGLISH: Google overloaded and photo refused by the filter: translated sentences,
+                //          not Google's raw JSON (and no success chime or green message).
+                : kind === 'busy'
+                ? t.aiServerBusy
+                : kind === 'blocked'
+                ? t.aiResponseBlocked
+                // ITALIANO: tutto il resto (rete assente, attesa scaduta, una richiesta che Google non
+                //           accetta) mostrava il testo grezzo, in inglese in tutte le lingue: ora una
+                //           frase tradotta. Una foto che non si puo' mandare (vuota, oltre 20 MB, in un
+                //           formato illeggibile) lo dice. Il testo vero resta nella console (sopra).
+                // ENGLISH: everything else (no network, timeout, a request Google does not accept)
+                //          showed the raw text, in English in every language: now a translated
+                //          sentence. A photo that cannot be sent (empty, over 20 MB, in an unreadable
+                //          format) says so. The real text stays in the console (above).
+                : e?.geminiKind === 'photo'
+                ? t.aiPhotoNotSupported
+                : t.aiRequestFailed;
             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+            // ITALIANO: il modello non esiste piu': invece di lasciare l'AI rotta finche'
+            //           qualcuno non va a cambiarla a mano, si cerca subito il sostituto.
+            // ENGLISH: the model is gone: rather than leaving the AI broken until someone goes
+            //          and changes it by hand, look for the replacement right away.
+            if (kind === 'model_unavailable') setRiparaModello(n => n + 1);
             return 0;
         } finally {
             setIsAIBusy(false);
@@ -2903,6 +4781,14 @@ export default function App() {
         let skippedCount = 0;
         let fatalAbort = false;
         let cancelled = false;
+        // ITALIANO: foto di fila che non sono riuscite a raggiungere Google (vedi sotto).
+        // ENGLISH: photos in a row that could not reach Google (see below).
+        let reteConsecutivi = 0;
+        // ITALIANO: foto di fila che, anche dopo i tentativi, hanno trovato Google sovraccarico o
+        //           oltre il limite al minuto (vedi sotto).
+        // ENGLISH: photos in a row that, even after the retries, found Google overloaded or past
+        //          the per-minute limit (see below).
+        let occupatoConsecutivi = 0;
         try {
             for (let i = 0; i < images.length; i++) {
                 if (aiCancelRequestedRef.current) { cancelled = true; break; }
@@ -2919,9 +4805,17 @@ export default function App() {
                     setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
                     continue;
                 }
-                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag (stato live)
-                // ENGLISH: Skip if requested and the image already has at least one tag (live state)
-                if (aiSkipTagged && Array.isArray(current.tags) && current.tags.length > 0) {
+                // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag (stato live). Le
+                //           trigger word non contano (vedi hasTagsBeyondTriggers): con una trigger
+                //           impostata ogni foto risultava taggata e non ne partiva nessuna.
+                // ENGLISH: Skip if requested and the image already has at least one tag (live state).
+                //          Trigger words do not count (see hasTagsBeyondTriggers): with a trigger set
+                //          every photo looked tagged and none was sent.
+                // ITALIANO: una foto il cui .txt non si e' potuto leggere all'import ha dei tag su disco,
+                //           anche se qui sembra senza (vedi txtNonLettoInVigore): si salta anche lei.
+                // ENGLISH: a photo whose .txt could not be read at import has tags on disk, even if it
+                //          looks untagged here (see txtNonLettoInVigore): it is skipped too.
+                if (aiSkipTagged && ((Array.isArray(current.tags) && hasTagsBeyondTriggers(current.tags, globalTriggersRef.current)) || txtNonLettoInVigore(current))) {
                     skippedCount++;
                     console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
                     setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
@@ -2930,6 +4824,13 @@ export default function App() {
 
                 const requestStart = Date.now();
                 let success = false;
+                // ITALIANO: la foto e' stata chiusa mentre la sua richiesta era in volo: si conta fra
+                //           le saltate, come quella chiusa prima. Prima si contava fra le "taggate".
+                // ENGLISH: the photo was closed while its request was in flight: it counts as skipped,
+                //          like one closed before. It used to count as "tagged".
+                let removedMidRequest = false;
+                let erroreRete = false;
+                let erroreOccupato = false;
                 // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
                 // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
                 for (let attempt = 0; attempt < 3; attempt++) {
@@ -2951,12 +4852,12 @@ export default function App() {
                             // ITALIANO: Rimossa durante la richiesta: ignora il risultato
                             // ENGLISH: Removed during the request: discard the result
                             console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: removed mid-batch, result discarded`);
-                            success = true;
+                            removedMidRequest = true;
                             break;
                         }
                         const baseTags: string[] = Array.isArray(liveNow.tags) ? liveNow.tags : [];
                         const merged = [...new Set([...baseTags, ...tags])];
-                        totalTagsAdded += merged.length - baseTags.length;
+                        totalTagsAdded += countNewTagsIgnoringCase(baseTags, tags);
                         updateImageTags(current.id, merged);
                         success = true;
                         console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: ${tags.length} tags`);
@@ -2965,7 +4866,7 @@ export default function App() {
                         // ITALIANO: Se l'errore deriva dall'annullamento (abort), esci subito senza contarlo come errore
                         // ENGLISH: If the error comes from cancellation (abort), exit immediately without counting it as an error
                         if (aiCancelRequestedRef.current) { cancelled = true; break; }
-                        const { kind, message } = classifyGeminiError(err);
+                        const { kind, message, quotaGiorno, progetto } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (kind === 'invalid_key') {
                             // ITALIANO: si apre la finestra della chiave, ma senza una riga di
@@ -2980,13 +4881,35 @@ export default function App() {
                         }
                         if (kind === 'billing_required' || kind === 'model_unavailable') {
                             const friendly = kind === 'billing_required'
-                                ? (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.')
+                                ? (progetto ? t.aiProjectRefused : (t.aiBillingRequired || 'Model requires billing on your Google Cloud project.'))
                                 : (t.aiModelUnavailable || 'Model unavailable for your account.');
                             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
+                            // ITALIANO: la riparazione automatica era collegata solo al tagging di
+                            //           una foto: qui, nel caso normale, non partiva mai.
+                            // ENGLISH: the automatic repair was wired only to single-photo tagging:
+                            //          here, in the normal case, it never started.
+                            if (kind === 'model_unavailable') setRiparaModello(n => n + 1);
                             fatalAbort = true;
                             break;
                         }
-                        if (kind === 'rate_limit' && attempt < 2) {
+                        // ITALIANO: la quota del GIORNO e' finita: riprovare fra 15 e 45 secondi
+                        //           non serve, e ogni foto rimasta costava un minuto e tre richieste a
+                        //           vuoto, per ore, con un riepilogo che non diceva il perche'. Ci si
+                        //           ferma subito e lo si dice. Le foto gia' taggate restano.
+                        // ENGLISH: the DAILY quota is used up: retrying in 15 and 45 seconds is
+                        //          pointless, and every remaining photo cost a minute and three wasted
+                        //          requests, for hours, with a summary that never said why. Stop at
+                        //          once and say so. The photos already tagged stay tagged.
+                        if (kind === 'rate_limit' && quotaGiorno) {
+                            showNotification(`${t.aiError || 'AI Error'}: ${t.aiDailyQuota}`, 'error');
+                            fatalAbort = true;
+                            break;
+                        }
+                        // ITALIANO: Google sovraccarico (503/500) passa da solo: si riprova come per il
+                        //           limite di frequenza. Una foto rifiutata ('blocked') invece no.
+                        // ENGLISH: Google overloaded (503/500) passes on its own: retry as for the rate
+                        //          limit. A refused photo ('blocked') does not.
+                        if ((kind === 'rate_limit' || kind === 'busy') && attempt < 2) {
                             // ITALIANO: Backoff progressivo: 15s, 45s — cancellabile
                             // ENGLISH: Progressive backoff: 15s, 45s — cancellable
                             const backoff = attempt === 0 ? 15000 : 45000;
@@ -2995,16 +4918,57 @@ export default function App() {
                             if (aiCancelRequestedRef.current) { cancelled = true; break; }
                             continue;
                         }
-                        // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui
-                        // ENGLISH: Non-fatal error or last attempt failed → record error and continue
+                        // ITALIANO: Errore non-fatale o ultimo tentativo fallito → segna come errore e prosegui.
+                        //           Un errore senza nome e senza stato HTTP (rete assente, attesa
+                        //           scaduta) vuol dire che Google non si e' raggiunto: non una foto
+                        //           che non si puo' mandare, ne' una risposta di Google.
+                        // ENGLISH: Non-fatal error or last attempt failed → record error and continue.
+                        //          An unnamed error with no HTTP status (no network, timeout) means
+                        //          Google was not reached: not a photo that cannot be sent, nor an
+                        //          answer from Google.
+                        if (kind === 'unknown' && typeof err?.status !== 'number' && err?.geminiKind !== 'photo') erroreRete = true;
+                        // ITALIANO: anche l'ultimo tentativo ha trovato Google sovraccarico o oltre
+                        //           il limite al minuto (la quota del giorno si e' gia' fermata sopra).
+                        // ENGLISH: the last attempt too found Google overloaded or past the
+                        //          per-minute limit (the daily quota already stopped above).
+                        if (kind === 'rate_limit' || kind === 'busy') erroreOccupato = true;
                         break;
                     }
                 }
 
                 if (fatalAbort || cancelled) break;
-                if (success) okCount++;
+                if (removedMidRequest) skippedCount++;
+                else if (success) okCount++;
                 else errorCount++;
                 setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                // ITALIANO: senza rete ogni foto falliva lo stesso, una dopo l'altra (con una
+                //           connessione bloccata 90 secondi l'una, per ore), e alla fine il riepilogo
+                //           diceva solo "Non riuscite: 300". Dopo tre foto di fila che non raggiungono
+                //           Google ci si ferma e lo si dice. Le foto gia' taggate restano.
+                // ENGLISH: with no network every photo failed anyway, one after the other (on a
+                //          stalled connection 90 seconds each, for hours), and in the end the summary
+                //          only said "Failed: 300". After three photos in a row that do not reach
+                //          Google the run stops and says so. The photos already tagged stay.
+                reteConsecutivi = erroreRete && !success && !removedMidRequest ? reteConsecutivi + 1 : 0;
+                if (reteConsecutivi >= 3) {
+                    showNotification(`${t.aiError || 'AI Error'}: ${t.aiNetworkStopped}`, 'error');
+                    fatalAbort = true;
+                    break;
+                }
+                // ITALIANO: lo stesso quando Google risponde, ma sempre "sovraccarico" (503) o "troppe
+                //           richieste" (429 al minuto): ogni foto costava tre richieste e un minuto
+                //           di attese, per ore, e il riepilogo diceva solo "Non riuscite: 300". Dopo
+                //           tre foto di fila cosi' ci si ferma e si dice di riprovare piu' tardi.
+                // ENGLISH: the same when Google does answer, but always "overloaded" (503) or "too
+                //          many requests" (per-minute 429): every photo cost three requests and a
+                //          minute of waits, for hours, and the summary only said "Failed: 300". After
+                //          three such photos in a row the run stops and says to try again later.
+                occupatoConsecutivi = erroreOccupato && !success && !removedMidRequest ? occupatoConsecutivi + 1 : 0;
+                if (occupatoConsecutivi >= 3) {
+                    showNotification(`${t.aiError || 'AI Error'}: ${t.aiBusyStopped}`, 'error');
+                    fatalAbort = true;
+                    break;
+                }
 
                 // ITALIANO: Throttle adattivo — aspetta solo se la richiesta è stata più veloce del minimo
                 // ENGLISH: Adaptive throttle — only wait if the request was faster than the minimum
@@ -3018,10 +4982,21 @@ export default function App() {
             const successType: 'success' | 'info' | 'error' = cancelled
                 ? 'info'
                 : errorCount === 0 ? 'success' : (okCount > 0 ? 'info' : 'error');
-            const prefix = cancelled ? `${t.aiCancelled || 'Cancelled'} · ` : '';
-            const skippedSuffix = skippedCount > 0 ? ` · ⊘ ${skippedCount}` : '';
-            const summary = `${prefix}${t.completed || 'Done'} · ✓ ${okCount} · ✗ ${errorCount}${skippedSuffix} · ${t.aiTagsGenerated.replace('{n}', String(totalTagsAdded))}`;
-            showNotification(summary, successType);
+            // ITALIANO: una frase intera, "finito" OPPURE "annullato", con i numeri dopo i due punti
+            //           (si legge giusta anche con 1). Prima si incollavano pezzi e simboli, e un
+            //           tagging annullato diceva "Annullato · Completato! · ✓ 2 · ✗ 0 · ...".
+            //           Dopo un errore grave (chiave, fatturazione, modello) il riepilogo non si
+            //           mostra: prendeva il posto del messaggio d'errore appena comparso, in verde.
+            // ENGLISH: one whole sentence, "finished" OR "cancelled", with the numbers after the
+            //          colon (it reads right with 1 too). Pieces and symbols used to be glued, and a
+            //          cancelled run said "Cancelled · Completed! · ✓ 2 · ✗ 0 · ...". After a fatal
+            //          error (key, billing, model) the summary is not shown: it used to replace the
+            //          error message that had just appeared, in green.
+            const modello = cancelled
+                ? (t.aiBatchCancelled || 'AI tagging cancelled. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.')
+                : (t.aiBatchDone || 'AI tagging finished. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.');
+            const summary = modello.replace('{ok}', String(okCount)).replace('{err}', String(errorCount)).replace('{skip}', String(skippedCount)).replace('{n}', String(totalTagsAdded));
+            if (!fatalAbort) showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;
             setAiCancelRequested(false);
@@ -3030,34 +5005,53 @@ export default function App() {
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, aiRpm, aiSkipTagged, images, isGlobalAITagging, t, updateImageTags]);
 
-    // ITALIANO: Verifica la API key. Usa SEMPRE 2.5 Flash (free tier) per la verifica,
-    //           così non confondiamo "key invalida" con "modello a pagamento".
-    // ENGLISH: Verify the API key. ALWAYS uses 2.5 Flash (free tier) for verification
-    //          so we don't confuse "invalid key" with "paid-only model".
+    // ITALIANO: Verifica la API key chiedendo l'elenco dei modelli, NON una risposta a un
+    //           modello preciso: cosi' una chiave buona resta buona anche il giorno che
+    //           Google chiude il modello di riserva. Vedi verifyGeminiApiKey.
+    // ENGLISH: Verify the API key by asking for the model list, NOT for an answer from one
+    //          specific model: a good key stays good even the day Google retires the
+    //          fallback model. See verifyGeminiApiKey.
     const handleVerifyApiKey = useCallback(async () => {
         const key = tempApiKey.trim();
         if (!key) { setApiKeyError(t.aiKeyEmpty || 'Please enter a key'); return; }
         setIsVerifyingApiKey(true);
         setApiKeyError('');
         try {
-            const result = await verifyGeminiApiKey(key, DEFAULT_GEMINI_MODEL);
+            const result = await verifyGeminiApiKey(key);
             if (result.ok) {
                 setGeminiApiKey(key);
                 setIsApiKeyDialogOpen(false);
                 soundManager.chime();
                 showNotification(t.aiKeySaved || 'API Key verified and saved', 'success');
             } else {
-                const friendly = result.errorKind === 'billing_required'
-                    ? (t.aiBillingRequired || 'Billing required on your Google Cloud project.')
+                // ITALIANO: la chiave sbagliata e' il primo caso, con la sua frase tradotta. Prima
+                //           cadeva sul testo grezzo del servizio: i primi 200 caratteri della risposta
+                //           JSON di Google, o l'inglese fisso "too short" premendo Invio con una
+                //           chiave corta. Anche gli errori sconosciuti (rete assente, attesa scaduta,
+                //           una richiesta che Google non accetta) hanno una frase tradotta: il loro
+                //           testo grezzo va solo nella console.
+                // ENGLISH: a wrong key is the first case, with its translated sentence. It used to
+                //          fall to the service's raw text: the first 200 characters of Google's JSON
+                //          answer, or the fixed English "too short" when pressing Enter with a short
+                //          key. Unknown errors (no network, timeout, a request Google does not accept)
+                //          get a translated sentence too: their raw text goes to the console only.
+                if (result.errorKind === 'unknown') console.warn('[AI] Verifica della chiave non riuscita:', result.error);
+                const friendly = result.errorKind === 'invalid_key'
+                    ? (t.aiKeyInvalid || 'API Key invalid')
+                    : result.errorKind === 'billing_required'
+                    ? (result.progetto ? t.aiProjectRefused : (t.aiBillingRequired || 'Billing required on your Google Cloud project.'))
                     : result.errorKind === 'rate_limit'
                     ? (t.aiRateLimit || 'Rate limit (key valid but throttled).')
+                    : result.errorKind === 'busy'
+                    ? t.aiServerBusy
                     : result.errorKind === 'model_unavailable'
                     ? (t.aiModelUnavailable || 'Model unavailable for your account.')
-                    : (result.error || (t.aiKeyInvalid || 'API Key invalid'));
+                    : t.aiRequestFailed;
                 setApiKeyError(friendly);
             }
         } catch (e: any) {
-            setApiKeyError(e?.message || (t.aiKeyInvalid || 'API Key invalid'));
+            console.warn('[AI] Verifica della chiave non riuscita:', e);
+            setApiKeyError(t.aiRequestFailed);
         } finally {
             setIsVerifyingApiKey(false);
         }
@@ -3070,10 +5064,36 @@ export default function App() {
         // ENGLISH: apply tags ONLY to selected and NON-trashed photos. The !isTrashed guard is a
         //          safety net: even if a trashed id lingered in the selection, no tags are written
         //          to it (so none reach its .txt).
-        const quante = images.filter(img => selectedForBulk.includes(img.id) && !img.isTrashed).length;
+        // ITALIANO: si contano solo i tag che almeno una foto riceve davvero e le foto che cambiano
+        //           davvero (a parte le maiuscole, come countNewTagsIgnoringCase). Prima si contavano
+        //           i tag messi nel pannello e tutte le foto selezionate: 5 foto che avevano gia'
+        //           "1girl" davano "Tag aggiunti: 1. Foto interessate: 5." senza che cambiasse niente.
+        // ENGLISH: only the tags at least one photo really gets and the photos that really change
+        //          are counted (apart from case, as countNewTagsIgnoringCase). The staged tags and all
+        //          the selected photos used to be counted: 5 photos already holding "1girl" gave "Tags
+        //          added: 1. Photos affected: 5." with nothing changed.
+        const daCambiare = new Set<string>();
+        const tagNuovi = new Set<string>();
+        for (const img of images) {
+            if (!selectedForBulk.includes(img.id) || img.isTrashed) continue;
+            const mancanti = stagedBulkTags.filter(tag => countNewTagsIgnoringCase(img.tags, [tag]) > 0);
+            if (mancanti.length === 0) continue;
+            daCambiare.add(img.id);
+            for (const tag of mancanti) tagNuovi.add(tag.toLowerCase());
+        }
+        if (daCambiare.size === 0) {
+            // ITALIANO: niente da aggiungere: nessun passo vuoto nella cronologia, nessun suono di
+            //           successo, e il pannello si chiude come sempre.
+            // ENGLISH: nothing to add: no empty step in the history, no success chime, and the panel
+            //          closes as always.
+            showNotification(t.bulkTagsNothingNew, 'info');
+            setStagedBulkTags([]);
+            setSelectedForBulk([]);
+            return;
+        }
         setImages(prev => prev.map(img => {
-            if (selectedForBulk.includes(img.id) && !img.isTrashed) {
-                const combinedTags = [...new Set([...img.tags, ...stagedBulkTags])];
+            if (daCambiare.has(img.id) && !img.isTrashed) {
+                const combinedTags = uniqueTagsIgnoringCase([...img.tags, ...stagedBulkTags], globalTriggers);
                 // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
                 // ENGLISH: same order as everywhere else: triggers first, then alphabetical
                 const orderedTags = [
@@ -3085,7 +5105,7 @@ export default function App() {
             return img;
         }));
         soundManager.chime();
-        showNotification(t.bulkTagsAdded.replace('{tags}', String(stagedBulkTags.length)).replace('{images}', String(quante)), "success");
+        showNotification(t.bulkTagsAdded.replace('{tags}', String(tagNuovi.size)).replace('{images}', String(daCambiare.size)), "success");
         setStagedBulkTags([]);
         // ITALIANO: finito il lavoro si deselezionano le immagini, e cosi' il pannello si chiude
         //           da solo (compare solo quando c'e' almeno un'immagine selezionata). Prima
@@ -3104,12 +5124,16 @@ export default function App() {
     const handleGlobalTagsChange = (newGlobalTags: string[]) => {
         const added = newGlobalTags.filter(t => !globalTriggers.includes(t));
         const removed = globalTriggers.filter(t => !newGlobalTags.includes(t));
+        globalTriggersRef.current = newGlobalTags;
         setGlobalTriggers(newGlobalTags);
         if (images.length > 0) {
             setImages(prev => prev.map(img => {
                 let updatedTags = [...img.tags];
                 added.forEach(tag => { if (!updatedTags.includes(tag)) updatedTags.unshift(tag); });
                 removed.forEach(tag => { updatedTags = updatedTags.filter(t => t !== tag); });
+                // ITALIANO: la trigger "OHWX" su una foto che ha "ohwx" non diventa un secondo tag.
+                // ENGLISH: the trigger "OHWX" on a photo that has "ohwx" does not become a second tag.
+                updatedTags = uniqueTagsIgnoringCase(updatedTags, newGlobalTags);
                 
                 const orderedTags = [
                     ...newGlobalTags.filter(t => updatedTags.includes(t)),
@@ -3165,6 +5189,7 @@ export default function App() {
     }, []);
     useEffect(() => {
         function handleClickOutside(event: any) {
+            if (aiutoRef.current && aiutoRef.current.contains(event.target)) return;
             if (settingsRef.current && !settingsRef.current.contains(event.target)) setIsSettingsOpen(false);
         }
         document.addEventListener("mousedown", handleClickOutside);
@@ -3346,7 +5371,7 @@ export default function App() {
                 </div>
             )}
             
-            {toast.show && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
+            {toast.show && <Toast id={toast.id} message={toast.message} type={toast.type} onClose={() => setToast(prev => ({ ...prev, show: false }))} />}
             {/* ITALIANO: Finestre di dialogo per conferme e riepilogo importazione */}
             {/* ENGLISH: Dialog boxes for confirmations and import summary */}
             <ExportChoiceDialog
@@ -3355,11 +5380,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
                 onCancel={() => setExportChoice(null)}
-                onConfirm={(conImmagini: boolean, rinomina: boolean) => {
-                    const scelta = exportChoice;
-                    setExportChoice(null);
-                    if (scelta) exportAllAsZip(scelta.imgs, conImmagini, rinomina);
-                }}
+                onConfirm={avviaExport}
             />
             <UpdateDialog
                 isOpen={updateAskOpen}
@@ -3405,6 +5426,7 @@ export default function App() {
                 lang={lang}
                 showNotification={showNotification}
                 onFileSaved={handleTagEditorSaved}
+                onDirtyChange={segnaEditorSporco}
                 projectTags={allUniqueTags}
                 onImportTagsToProject={(tagsFromEditor: string[]) => {
                     // ITALIANO: i tag aperti/importati nell'editor entrano anche nella palette del
@@ -3421,12 +5443,12 @@ export default function App() {
                 title={t.closeAllTitle}
                 message={t.closeAllUnsavedMsg}
                 onSave={handleSaveAndCloseProject}
-                onDiscard={() => { setSaveCloseDialog({ isOpen: false, isSaving: false }); closeProjectNow(); }}
-                onCancel={() => setSaveCloseDialog({ isOpen: false, isSaving: false })}
+                onDiscard={handleDiscardAndClose}
+                onCancel={handleCancelClose}
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={() => processImportData(importSummary.pendingData.imgFiles, importSummary.pendingData.txtFiles, importSummary.pendingData.handle, importSummary.pendingData.folderOf, importSummary.pendingData.relPathOf, importSummary.pendingData.pathOf, importSummary.pendingData.cartellaRelOf)} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
@@ -3491,7 +5513,32 @@ export default function App() {
             {/* ITALIANO: accept solo immagini = nel selettore i file di testo NON si vedono */}
             {/* ENGLISH: images-only accept = text files are NOT shown in the picker */}
             <input type="file" accept="image/*" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
-            
+
+            {/* ITALIANO: la finestra con la spiegazione di una sezione delle Impostazioni (tasto "?").
+                          Si chiude con Chiudi, con Esc o cliccando fuori; il pannello resta aperto.
+                ENGLISH: the window with the explanation of a Settings section ("?" button). It closes
+                         with Close, Esc or a click outside; the panel stays open. */}
+            {aiuto && (
+                <div ref={aiutoRef} role="dialog" aria-modal="true" aria-labelledby="aiuto-titolo"
+                    onMouseDown={(e) => { if (e.target === e.currentTarget) setAiuto(null); }}
+                    className={`fixed inset-0 z-[450] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/70' : 'bg-gray-900/40'} backdrop-blur-sm animate-in fade-in`}>
+                    <div className={`w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl shadow-2xl border overflow-hidden ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
+                        <div className={`flex items-center justify-between gap-3 px-5 py-3 border-b ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+                            <h3 id="aiuto-titolo" className="text-sm font-bold">{testiAiuto[aiuto].titolo}</h3>
+                            <button onClick={() => setAiuto(null)} title={t.close} aria-label={t.close}
+                                className={`p-1 rounded-lg ${isDarkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><X size={16} /></button>
+                        </div>
+                        <div className="flex flex-col gap-3 px-5 py-4 overflow-y-auto text-[13px] leading-relaxed">
+                            {testiAiuto[aiuto].testi.filter(Boolean).map((testo, i) => <p key={i}>{testo}</p>)}
+                        </div>
+                        <div className={`flex justify-end px-5 py-3 border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+                            <button onClick={() => setAiuto(null)} autoFocus
+                                className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">{t.close}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {isTrashOpen && (
                 <div className={`fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/50'} backdrop-blur-sm animate-in fade-in`}>
                     <div className={`w-full max-w-5xl h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
@@ -3521,7 +5568,7 @@ export default function App() {
                                     <>
                                         <button
                                             onClick={handleRestoreAll}
-                                            disabled={isEmptyingTrash}
+                                            disabled={isEmptyingTrash || ripristinoInCorso}
                                             className={`flex items-center gap-2 px-4 py-2 ${isDarkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700' : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200'} border rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed`}
                                         >
                                             <RefreshCw size={18} />
@@ -3537,7 +5584,7 @@ export default function App() {
                                                     onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                 });
                                             }}
-                                            disabled={isEmptyingTrash}
+                                            disabled={isEmptyingTrash || ripristinoInCorso}
                                             className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <Trash size={18} />
@@ -3600,7 +5647,7 @@ export default function App() {
                                                 <p className={`text-sm max-w-md leading-relaxed mb-5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t.undoEmptyHint}</p>
                                                 <button
                                                     onClick={annullaSvuotamento}
-                                                    disabled={ripristinoInCorso}
+                                                    disabled={ripristinoInCorso || isEmptyingTrash}
                                                     className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-md shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                     {ripristinoInCorso ? <Loader2 size={18} className="animate-spin" /> : <Undo2 size={18} />}
@@ -3616,18 +5663,18 @@ export default function App() {
                                                 <div className={`relative ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} overflow-hidden shrink-0 flex justify-center items-center ${viewMode === 'square' ? 'aspect-square' : ''}`} style={viewMode === 'original' ? { height: 'auto', minHeight: '120px' } : {}}>
                                                     <img src={img.thumb} alt="Trash preview" loading="lazy" className={`w-full ${viewMode === 'square' ? 'h-full object-cover' : 'h-auto object-contain'} opacity-70`} />
                                                     
-                                                    {img.width * img.height < 1048576 && (
+                                                    {qualityWarningText(t, img.width, img.height) !== null && (
                                                         <div className="absolute top-2 right-2 z-30 group/alert">
                                                             <div className="p-1.5 bg-yellow-500 text-white rounded-lg shadow-md cursor-help">
                                                                 <AlertTriangle size={16} strokeWidth={2.5} />
                                                             </div>
                                                             <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                                                {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(2)} MP)`}
+                                                                {qualityWarningText(t, img.width, img.height)}
                                                             </div>
                                                         </div>
                                                     )}
                                                     
-                                                    <button onClick={() => handleRestore(img.id)} className="absolute top-2 left-2 p-1.5 bg-black/50 hover:bg-green-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20" title={t.restore}><RefreshCw size={14} /></button>
+                                                    <button onClick={() => handleRestore(img.id)} disabled={isEmptyingTrash} className="absolute top-2 left-2 p-1.5 bg-black/50 hover:bg-green-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 disabled:cursor-not-allowed" title={t.restore}><RefreshCw size={14} /></button>
                                                     <button onClick={() => {
                                                         setConfirmDialog({
                                                             isOpen: true,
@@ -3639,7 +5686,7 @@ export default function App() {
                                                             },
                                                             onCancel: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
                                                         });
-                                                    }} className={`absolute top-2 ${img.width * img.height < 1048576 ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.deletePermanently}><X size={14} /></button>
+                                                    }} disabled={isEmptyingTrash} className={`absolute top-2 ${qualityWarningText(t, img.width, img.height) !== null ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 disabled:cursor-not-allowed`} title={t.deletePermanently}><X size={14} /></button>
                                                 </div>
                                                 <div className={`p-3 flex-1 flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                                                     <div className={`flex-1 rounded-xl border p-1 ${isDarkMode ? 'bg-gray-900/30 border-gray-700/50' : 'bg-gray-50 border-gray-100'}`}>
@@ -3726,7 +5773,7 @@ export default function App() {
                             <div className="relative" ref={settingsRef}>
                                 <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}><span className="font-semibold text-sm hidden sm:inline-block">{t.settings}</span><Settings size={20} className={isSettingsOpen ? "rotate-45 transition-transform duration-300" : "transition-transform duration-300"} /></button>
                                 
-                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
+                                {isSettingsOpen && <div className={`absolute right-0 mt-2 w-80 max-h-[calc(100vh-13rem)] md:max-h-[calc(100vh-8.5rem)] overflow-y-auto overscroll-contain ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
                                     <h3 className={`text-xs font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} uppercase mb-4 tracking-wider`}>{t.settings}</h3>
                                     <div className="flex flex-col gap-4">
                                         <div className="flex items-center justify-between">
@@ -3736,10 +5783,9 @@ export default function App() {
                                         {apiElectron && typeof apiElectron.checkForUpdate === 'function' && (
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center justify-between">
-                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{t.updateCheckLabel}</div>
+                                                    <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>{t.updateCheckLabel}{tastoAiuto('aggiornamenti')}</div>
                                                     <AppleToggle checked={updateCheckChoice === 'on'} onChange={(v: boolean) => rispondiAggiornamenti(v ? 'on' : 'off')} colorClass="bg-indigo-500" />
                                                 </div>
-                                                <p className={`text-[10px] leading-snug ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.updateCheckHint}</p>
                                             </div>
                                         )}
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
@@ -3764,18 +5810,24 @@ export default function App() {
                                                     >
                                                         {t.aiBeta || 'Beta'}
                                                     </span>
+                                                    {tastoAiuto('ai')}
                                                 </div>
-                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
+                                                {/* ITALIANO: spegnere l'AI ferma anche la taggatura in blocco in corso, come Annulla: prima le foto continuavano a partire verso Google con l'AI "spenta" */}
+                                                {/* ENGLISH: switching the AI off also stops the running bulk tagging, like Cancel: photos used to keep going to Google with the AI "off" */}
+                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (!v && aiAbortControllerRef.current) handleCancelAITagging(); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
                                             </div>
                                             {aiEnabled && (
-                                                <div className={`flex flex-col gap-2 p-2 rounded-lg text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/50 text-gray-600'}`}>
-                                                    <p className="leading-relaxed">{t.aiCloudInfo || ''}</p>
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="font-medium text-[11px]">{t.aiKeyLabel || 'API Key Gemini'}</label>
+                                                <div className={`flex flex-col gap-2.5 p-2 rounded-xl text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/60 text-gray-600'}`}>
+                                                    <p className={`flex items-start gap-1.5 leading-relaxed px-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                                        <Globe size={11} className="shrink-0 mt-0.5 text-purple-400" />
+                                                        <span>{t.aiCloudInfo || ''}</span>
+                                                    </p>
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><KeyRound size={12} />{t.aiKeyLabel || 'API Key Gemini'}</div>
                                                         <div className="flex items-center gap-1">
                                                             <button
                                                                 onClick={() => setIsApiKeyDialogOpen(true)}
-                                                                className={`flex-1 flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-mono transition-colors border ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                                                                className={`flex-1 flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg text-[10.5px] font-mono transition-colors border ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-200 hover:border-purple-500/60' : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-purple-300'}`}
                                                             >
                                                                 <span className="truncate">{geminiApiKey ? `${'•'.repeat(8)}${geminiApiKey.slice(-4)}` : (t.aiKeyMissing || 'Click to enter your key')}</span>
                                                                 <KeyRound size={11} className="shrink-0" />
@@ -3805,7 +5857,7 @@ export default function App() {
                                                         {/* ENGLISH: Expandable guide button */}
                                                         <button
                                                             onClick={() => setIsApiKeyGuideOpen(v => !v)}
-                                                            className={`mt-1 flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-bold transition-colors ${isDarkMode ? 'bg-indigo-900/30 text-indigo-300 hover:bg-indigo-900/50' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+                                                            className={`flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-lg text-[10px] font-semibold transition-colors ${isDarkMode ? 'text-indigo-300 hover:bg-indigo-900/40' : 'text-indigo-700 hover:bg-indigo-50'}`}
                                                         >
                                                             <span className="flex items-center gap-1.5">
                                                                 <BookOpen size={11} />
@@ -3852,15 +5904,55 @@ export default function App() {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="font-medium text-[11px]">{t.aiModelLabel || 'Modello'}</label>
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><Sparkles size={12} />{t.aiModelLabel || 'Modello'}<span className="ml-auto">{tastoAiuto('modello')}</span></div>
                                                         <select
-                                                            value={aiModel}
-                                                            onChange={(e) => setAiModel(e.target.value)}
-                                                            className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-800'}`}
+                                                            value={aiModelloFissato ? aiModel : '__auto__'}
+                                                            onChange={(e) => {
+                                                                const scelto = e.target.value;
+                                                                if (scelto === '__auto__') {
+                                                                    setAiModelloFissato(false);
+                                                                    if (geminiApiKey) controllaModello(false, true, false);
+                                                                } else {
+                                                                    sceltaManualeRef.current += 1;
+                                                                    ultimaSceltaRef.current = scelto;
+                                                                    setAiModel(scelto);
+                                                                    setAiModelloFissato(true);
+                                                                }
+                                                            }}
+                                                            className={`w-full text-[11px] font-medium rounded-lg border px-2.5 py-2 outline-none cursor-pointer transition-colors focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-100 hover:border-purple-500/60' : 'bg-gray-50 border-gray-200 text-gray-800 hover:border-purple-300'}`}
                                                         >
-                                                            {GEMINI_MODELS.map(m => {
-                                                                const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : ' $';
+                                                            <option value="__auto__">{t.aiModelAutomatic.replace('{a}', aiModel)}</option>
+                                                            {/* ITALIANO: dopo "Prova i modelli recenti" la tendina mostra i modelli VERI della
+                                                                          chiave, a gruppi secondo l'esito; quelli senza accesso o non
+                                                                          adatti si vedono ma non si scelgono (resta sceglibile solo se e'
+                                                                          gia' quello in uso, altrimenti la tendina resterebbe vuota).
+                                                                ENGLISH: after "Test recent models" the dropdown shows the key's REAL models,
+                                                                         grouped by outcome; those with no access or not suitable are
+                                                                         shown but cannot be picked (unless already in use, or the
+                                                                         dropdown would sit blank). */}
+                                                            {modelliProvati && GRUPPI_MODELLI.map(g => {
+                                                                const voci = modelliProvati.filter(m => (m.stato ?? 'daProvare') === g.stato);
+                                                                if (voci.length === 0) return null;
+                                                                return (
+                                                                    <optgroup key={g.stato} label={t[g.etichetta]}>
+                                                                        {voci.map(m => (
+                                                                            <option key={m.id} value={m.id} disabled={g.spento && m.id !== aiModel}>
+                                                                                {modelliProvati.filter(x => x.label === m.label).length > 1 ? m.id : m.label}
+                                                                            </option>
+                                                                        ))}
+                                                                    </optgroup>
+                                                                );
+                                                            })}
+                                                            {modelliProvati && !modelliProvati.some(m => m.id === aiModel) && (
+                                                                <option value={aiModel}>{aiModel}</option>
+                                                            )}
+                                                            {!modelliProvati && elencoModelli.map(m => {
+                                                                // ITALIANO: 'unknown' (flash-lite, senza versione): nessun simbolo, invece di
+                                                                //           promettere un piano gratuito che il modello puo' non avere.
+                                                                // ENGLISH: 'unknown' (flash-lite, no version): no badge, rather than promising
+                                                                //          a free tier the model may not have.
+                                                                const tierBadge = m.tier === 'free' ? ' ✓' : m.tier === 'limited' ? ' ◐' : m.tier === 'paid' ? ' $' : '';
                                                                 return (
                                                                     <option key={m.id} value={m.id}>
                                                                         {m.label}{tierBadge}{m.recommended ? ' ★' : ''}
@@ -3868,23 +5960,85 @@ export default function App() {
                                                                 );
                                                             })}
                                                         </select>
-                                                        {getModelTier(aiModel) === 'limited' && (
+                                                        {(statoModelloInUso === 'senzaAccesso' || statoModelloInUso === 'nonAdatto') && (
+                                                            <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-red-900/30 text-red-300 border border-red-800/50' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                                                                <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                                                                <span>{t.aiModelNotWorkingWarning}</span>
+                                                            </div>
+                                                        )}
+                                                        {getModelTier(aiModel) === 'limited' && (statoModelloInUso === undefined || statoModelloInUso === 'utilizzabile' || statoModelloInUso === 'occupato') && (
                                                             <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-blue-900/30 text-blue-300 border border-blue-800/50' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
                                                                 <AlertTriangle size={11} className="shrink-0 mt-0.5" />
                                                                 <span>{t.aiModelLimitedWarning || 'Free tier limitato (rate limit più bassi). Per uso intenso serve billing attivo.'}</span>
                                                             </div>
                                                         )}
-                                                        {getModelTier(aiModel) === 'paid' && (
+                                                        {(statoModelloInUso === 'aPagamento' || (statoModelloInUso === undefined && getModelTier(aiModel) === 'paid')) && (
                                                             <div className={`text-[10px] rounded-md px-2 py-1.5 mt-1 flex items-start gap-1.5 ${isDarkMode ? 'bg-amber-900/30 text-amber-300 border border-amber-800/50' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                                                                 <AlertTriangle size={11} className="shrink-0 mt-0.5" />
                                                                 <span>{t.aiModelPaidWarning || 'Questo modello richiede billing attivo sul tuo progetto Google Cloud (no free tier).'}</span>
                                                             </div>
                                                         )}
+                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (<>
+                                                        <div className={`flex flex-col gap-0.5 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                            <span>
+                                                                {modelloControllatoIl > 0
+                                                                    ? t.aiModelCheckedOn.replace('{quando}', new Date(modelloControllatoIl).toLocaleDateString(lang))
+                                                                    : t.aiModelCheckedNever}
+                                                            </span>
+                                                            {(provaModelliStato || (modelliProvati && modelliChiave)) && (
+                                                                <span className={`leading-snug ${provaModelliStato ? (isDarkMode ? 'text-purple-300 font-medium' : 'text-purple-700 font-medium') : ''}`}>
+                                                                    {provaModelliStato
+                                                                        ? (provaModelliStato.totale === 0
+                                                                            ? t.aiProbeListing
+                                                                            : t.aiProbeProgress.replace('{n}', String(provaModelliStato.fatti)).replace('{tot}', String(provaModelliStato.totale)))
+                                                                        : modelliProvati && modelliChiave
+                                                                            ? t.aiProbeSummary
+                                                                                .replace('{quando}', new Date(modelliChiave.il).toLocaleDateString(lang))
+                                                                                .replace('{ok}', String(modelliProvati.filter(m => m.stato === 'utilizzabile').length))
+                                                                                .replace('{pag}', String(modelliProvati.filter(m => m.stato === 'aPagamento').length))
+                                                                                .replace('{no}', String(modelliProvati.filter(m => m.stato === 'senzaAccesso').length))
+                                                                                .replace('{na}', String(modelliProvati.filter(m => m.stato === 'nonAdatto').length))
+                                                                                .replace('{occ}', String(modelliProvati.filter(m => m.stato === 'occupato').length))
+                                                                                .replace('{np}', String(modelliProvati.filter(m => !m.stato).length))
+                                                                            : ''}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-1.5">
+                                                            <button
+                                                                onClick={() => controllaModello(false, true)}
+                                                                disabled={controlloModelloInCorso || provaModelliStato !== null || !geminiApiKey}
+                                                                className={pulsanteSchedaAi}
+                                                            >
+                                                                {controlloModelloInCorso ? <Loader2 size={11} className="animate-spin shrink-0" /> : <RefreshCw size={11} className="shrink-0" />}
+                                                                <span>{t.aiModelCheckNow}</span>
+                                                            </button>
+                                                            <button
+                                                                onClick={() => (provaModelliStato ? provaModelliRef.current?.abort() : provaModelliChiave())}
+                                                                disabled={!provaModelliStato && (controlloModelloInCorso || !geminiApiKey || !improntaChiave)}
+                                                                className={pulsanteSchedaAi}
+                                                            >
+                                                                {provaModelliStato ? <Loader2 size={11} className="animate-spin shrink-0" /> : <Wand2 size={11} className="shrink-0" />}
+                                                                <span>{provaModelliStato ? t.aiProbeStop : t.aiProbeAll}</span>
+                                                            </button>
+                                                        </div>
+                                                        </>)}
                                                     </div>
+                                                    <button
+                                                        onClick={() => setAiAvanzate(v => !v)}
+                                                        aria-expanded={aiAvanzate || provaModelliStato !== null || controlloModelloInCorso}
+                                                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${isDarkMode ? 'text-purple-300 hover:bg-gray-800/70' : 'text-purple-700 hover:bg-purple-50'}`}
+                                                    >
+                                                        <span>{t.aiAdvanced}</span>
+                                                        {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                                    </button>
+                                                    {(aiAvanzate || provaModelliStato !== null || controlloModelloInCorso) && (
+                                                    <div className={schedaAi}>
+                                                        <div className={titoloSchedaAi}><Wand2 size={12} />{t.aiCardTagging}<span className="ml-auto">{tastoAiuto('tagga')}</span></div>
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">
                                                             <span>{t.aiMaxTags || 'Max tags'}</span>
-                                                            <span className="font-bold tabular-nums">{aiMaxTags}</span>
+                                                            <span className={`font-bold tabular-nums text-[10px] px-1.5 py-0.5 rounded-md ${isDarkMode ? 'bg-purple-900/50 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>{aiMaxTags}</span>
                                                         </label>
                                                         <input
                                                             type="range"
@@ -3897,7 +6051,7 @@ export default function App() {
                                                     <div className="flex flex-col gap-1">
                                                         <label className="flex items-center justify-between font-medium text-[11px]">
                                                             <span>{t.aiRpmLabel || 'Velocità (req/min)'}</span>
-                                                            <span className="font-bold tabular-nums">{aiRpm}</span>
+                                                            <span className={`font-bold tabular-nums text-[10px] px-1.5 py-0.5 rounded-md ${isDarkMode ? 'bg-purple-900/50 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>{aiRpm}</span>
                                                         </label>
                                                         <input
                                                             type="range"
@@ -3906,13 +6060,9 @@ export default function App() {
                                                             onChange={(e) => setAiRpm(parseInt(e.target.value, 10))}
                                                             className="w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
                                                         />
-                                                        <p className="text-[9px] italic opacity-80">{t.aiRpmHint || 'Free tier: max 15. Più alto = più veloce ma rischio rate-limit.'}</p>
                                                     </div>
-                                                    <div className={`flex items-start justify-between gap-3 px-2 py-1.5 rounded-md ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-100/70'}`}>
-                                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                                            <span className="font-medium text-[11px]">{t.aiSkipTagged || 'Salta foto già taggate'}</span>
-                                                            <span className="text-[9px] italic opacity-75 leading-snug">{t.aiSkipTaggedHint || 'Se attivo, le immagini che hanno già almeno un tag vengono saltate durante "Tagga tutte con AI".'}</span>
-                                                        </div>
+                                                    <div className={`flex items-center justify-between gap-3 px-2 py-1.5 rounded-md ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-100/70'}`}>
+                                                        <span className="font-medium text-[11px] min-w-0">{t.aiSkipTagged || 'Salta foto già taggate'}</span>
                                                         <AppleToggle checked={aiSkipTagged} onChange={(v: boolean) => setAiSkipTagged(v)} colorClass="bg-purple-500" />
                                                     </div>
                                                     <div className="flex flex-col gap-1">
@@ -3925,10 +6075,72 @@ export default function App() {
                                                             className={`w-full text-[11px] rounded-md border px-2 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 min-h-[60px] resize-none ${isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-600' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}
                                                         />
                                                     </div>
-                                                    <p className={`text-[9px] italic mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                                                        {t.aiModelLegend}
-                                                    </p>
+                                                    </div>
+                                                    )}
                                                 </div>
+                                            )}
+                                        </div>
+                                        <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
+                                        {/* ITALIANO: Server MCP per le AI esterne: spento di serie, solo nel programma installato.
+                                            ENGLISH: MCP server for external AIs: off by default, only in the installed program. */}
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className={`flex items-center gap-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} font-medium`}>
+                                                    <Plug size={16} className="text-emerald-500"/>
+                                                    {t.mcpTitle}
+                                                    <span title={t.aiBetaHint} className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider leading-none ${isDarkMode ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30' : 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'}`}>{t.aiBeta}</span>
+                                                    {tastoAiuto('mcp')}
+                                                </div>
+                                                {window.electronAPI?.mcp && (
+                                                    <AppleToggle checked={!!mcpStato?.acceso} onChange={(v: boolean) => {
+                                                        cambiaMcp(v);
+                                                        // ITALIANO: la prima volta che lo si accende la spiegazione si apre da sola: dice
+                                                        //           anche che un'AI in cloud manda le foto ai suoi server.
+                                                        // ENGLISH: the first time it is switched on the explanation opens by itself: it
+                                                        //          also says a cloud AI sends the photos to its own servers.
+                                                        if (v) { try { if (localStorage.getItem('mcpSpiegazioneVista') !== '1') { localStorage.setItem('mcpSpiegazioneVista', '1'); setAiuto('mcp'); } } catch (_) { setAiuto('mcp'); } }
+                                                    }} colorClass="bg-emerald-500" />
+                                                )}
+                                            </div>
+                                            {(!window.electronAPI?.mcp || !!mcpStato?.errore || !!(mcpStato?.acceso && mcpStato.attivo)) && (
+                                            <div className={`flex flex-col gap-2 p-2.5 rounded-xl text-[10px] border ${isDarkMode ? 'bg-gray-800/50 border-gray-700/70 text-gray-400' : 'bg-white border-emerald-100 shadow-sm text-gray-600'}`}>
+                                                {!window.electronAPI?.mcp && <p className="leading-relaxed">{t.mcpOnlyDesktop}</p>}
+                                                {mcpStato?.errore === 'porta' && <p className="text-red-500 leading-snug">{t.mcpErrPort.replace('{porta}', String(mcpStato.porta))}</p>}
+                                                {mcpStato?.errore === 'avvio' && <p className="text-red-500 leading-snug">{t.mcpErrStart}</p>}
+                                                {mcpStato?.errore === 'salvataggio' && <p className="text-red-500 leading-snug">{t.mcpErrSave}</p>}
+                                                {mcpStato?.acceso && mcpStato.attivo && (
+                                                    <>
+                                                        <p className={`font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{t.mcpListening.replace('{url}', indirizzoMcp)}</p>
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className="font-medium text-[11px]">{t.mcpToken}</label>
+                                                            <div className="flex items-center gap-1">
+                                                                <code className={`flex-1 min-w-0 truncate rounded-lg border px-2.5 py-1.5 font-mono ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
+                                                                    {mcpCodiceVisibile ? mcpStato.codice : '•'.repeat(16)}
+                                                                </code>
+                                                                <button onClick={() => setMcpCodiceVisibile(v => !v)} title={mcpCodiceVisibile ? t.mcpHide : t.mcpShow} aria-label={mcpCodiceVisibile ? t.mcpHide : t.mcpShow}
+                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                                                    {mcpCodiceVisibile ? <EyeOff size={12}/> : <Eye size={12}/>}
+                                                                </button>
+                                                                <button onClick={() => copiaMcp(mcpStato.codice)} title={t.mcpCopyToken} aria-label={t.mcpCopyToken}
+                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                                                    <Copy size={12}/>
+                                                                </button>
+                                                                <button onClick={nuovoCodiceMcp} title={t.mcpNewToken} aria-label={t.mcpNewToken}
+                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                                                    <RefreshCw size={12}/>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        {(['claudeCode', 'desktop', 'cursor'] as const).map(tipo => (
+                                                            <button key={tipo} onClick={() => copiaMcp(configMcp(tipo))}
+                                                                className={`${pulsanteSchedaAi} !justify-start text-left`}>
+                                                                <Copy size={11} className="shrink-0"/>
+                                                                {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
+                                                            </button>
+                                                        ))}
+                                                    </>
+                                                )}
+                                            </div>
                                             )}
                                         </div>
                                         <div className={`w-full h-px ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}></div>
@@ -3942,7 +6154,7 @@ export default function App() {
                                                     <img src={flagUriForLang(lang)} alt={lang} className="w-5 h-5 rounded-full object-cover" />
                                                     <span className="text-xs font-medium uppercase">{lang}</span>
                                                 </div>
-                                                <div className={`absolute right-0 top-full mt-1 w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                                <div className={`absolute right-0 bottom-full w-36 py-1 rounded-xl border shadow-xl overflow-hidden z-50 hidden group-hover:block ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                                                     {APP_LANGUAGES.map((l) => (
                                                         <div 
                                                             key={l.code} 
@@ -3988,13 +6200,19 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* ITALIANO: lg:items-stretch = i tre riquadri si allungano tutti alla STESSA altezza (quella
-                                  del piu' alto), cosi' il riquadro di sinistra arriva in basso come quello di destra. */}
-                    {/* ENGLISH: lg:items-stretch = the three panels all stretch to the SAME height (the tallest),
-                                 so the left panel reaches the bottom like the right one. */}
-                    <div className={`p-4 md:p-5 flex flex-col lg:flex-row lg:items-stretch gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
+                    {/* ITALIANO: dai 1536 px (2xl) i tre riquadri stanno su una riga e si allungano tutti alla STESSA
+                                  altezza (2xl:items-stretch). Fra 1024 e 1535 px (lg, xl) non ci stanno (i pulsanti dei lati
+                                  vogliono 420 px in tedesco, francese, spagnolo e russo): sinistro e destro
+                                  stanno affiancati e quello centrale va sotto, a tutta larghezza (prima, a 1024 px,
+                                  quello centrale restava largo 46 px e i pulsanti uscivano dal bordo). */}
+                    {/* ENGLISH: from 1536 px (2xl) the three panels sit on one row and all stretch to the SAME
+                                 height (2xl:items-stretch). Between 1024 and 1535 px (lg, xl) they do not fit (the side
+                                 buttons need 420 px in German, French, Spanish and Russian): left and
+                                 right sit side by side and the middle one goes below, full width (before, at 1024 px
+                                 the middle one was 46 px wide and the buttons ran out of it). */}
+                    <div className={`p-4 md:p-5 flex flex-col lg:grid lg:grid-cols-2 2xl:flex 2xl:flex-row 2xl:items-stretch gap-6 lg:gap-4 2xl:gap-6 border-b ${isDarkMode ? 'border-gray-800/50 bg-gray-800/20' : 'border-gray-200 bg-gray-100/30'} shrink-0`}>
                         
-                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`w-full 2xl:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: "Carica Cartella" e "Carica immagini" affiancati, stesso colore (blu). */}
                             {/* ENGLISH: "Load Folder" and "Load images" side by side, same colour (blue). */}
                             <div className="flex gap-2">
@@ -4009,7 +6227,11 @@ export default function App() {
                             </div>
                             {/* ITALIANO: Chiude il progetto attuale (foto + tag), come app appena aperta — arancione */}
                             {/* ENGLISH: Closes the current project (photos + tags), like a freshly opened app — orange */}
-                            <button onClick={handleCloseProject} disabled={images.length === 0} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${images.length === 0 ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
+                            {/* ITALIANO: spento anche mentre si scrive (isSaving), come Salva ed Esporta: "Salva e
+                                chiudi" spegneva a meta' la barra di un'esportazione in corso.
+                                ENGLISH: also off while writing (isSaving), like Save and Export: "Save and
+                                close" switched off the bar of a running export halfway. */}
+                            <button onClick={handleCloseProject} disabled={images.length === 0 || isSaving} className={`w-full h-[42px] flex justify-center items-center gap-2 px-4 rounded-xl shadow-md font-semibold transition-all active:scale-95 whitespace-nowrap text-sm ${(images.length === 0 || isSaving) ? (isDarkMode ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'}`} title={t.closeAllImages}>
                                 <X size={16} />
                                 <span>{t.closeAllImages}</span>
                             </button>
@@ -4023,10 +6245,10 @@ export default function App() {
                                       pannelli laterali (bg, bordo, angoli, ombra interna). */}
                         {/* ENGLISH: Centre section wrapped in a panel with the SAME style as the two side
                                      panels (bg, border, rounding, inner shadow). */}
-                        <div className={`flex-1 w-full flex flex-col gap-3 min-w-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`flex-1 w-full flex flex-col gap-3 min-w-0 lg:col-span-2 lg:order-last 2xl:order-none lg:flex-row lg:items-start 2xl:flex-col 2xl:items-stretch ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             {/* ITALIANO: Input per le trigger words globali */}
                             {/* ENGLISH: Input for global trigger words */}
-                            <div className="w-full">
+                            <div className="w-full lg:flex-1 lg:min-w-0 2xl:flex-none">
                                 {/* ITALIANO: cap a 120px (con scorrimento interno) cosi' la sezione centrale non
                                               diventa mai piu' alta dei due riquadri laterali: la barra comandi resta bilanciata. */}
                                 {/* ENGLISH: capped at 120px (scrolls inside) so the centre section never grows taller
@@ -4036,7 +6258,7 @@ export default function App() {
 
                             {/* ITALIANO: Toolbar Tag Suggeriti + Auto-Tag AI (se abilitato) */}
                             {/* ENGLISH: Toolbar with Suggested Tags + AI Auto-Tag (if enabled) */}
-                            <div className={`p-2 rounded-xl border ${isDarkMode ? 'bg-gray-950/40 border-gray-700/40' : 'bg-gray-50 border-gray-100'} flex flex-col gap-2 w-full`}>
+                            <div className={`lg:w-[380px] lg:shrink-0 2xl:w-auto p-2 rounded-xl border ${isDarkMode ? 'bg-gray-950/40 border-gray-700/40' : 'bg-gray-50 border-gray-100'} flex flex-col gap-2 w-full`}>
                                 <div className="flex items-center justify-center gap-3 flex-wrap">
                                     {aiEnabled && (
                                         <button
@@ -4048,7 +6270,9 @@ export default function App() {
                                             {isGlobalAITagging ? `${globalAIProgress.done}/${globalAIProgress.total}` : (t.aiAutoTagAll || 'Auto-tag all with AI')}
                                         </button>
                                     )}
-                                    {aiEnabled && isGlobalAITagging && (
+                                    {/* ITALIANO: Annulla resta finche' la taggatura gira, anche con l'AI appena spenta */}
+                                    {/* ENGLISH: Cancel stays while the tagging runs, even with the AI just switched off */}
+                                    {isGlobalAITagging && (
                                         <button
                                             onClick={handleCancelAITagging}
                                             disabled={aiCancelRequested}
@@ -4090,7 +6314,7 @@ export default function App() {
                             </div>
                         </div>
                         
-                        <div className={`w-full lg:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
+                        <div className={`w-full 2xl:w-[420px] flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-gray-900/50 border-gray-700/50' : 'bg-white border-gray-200'} p-4 rounded-2xl border shadow-inner`}>
                             <div className="flex gap-2">
                                 {/* ITALIANO: Pulsante per visualizzare tutti i tag del progetto */}
                                 {/* ENGLISH: Button to view all project tags */}
@@ -4125,7 +6349,7 @@ export default function App() {
                                          four small buttons all share the SAME width. The "ZIP" caption below is
                                          gone: the format is now written on the button itself. */}
                             <div className="flex gap-2">
-                                <button onClick={handleSaveChanges} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                <button onClick={handleSaveChanges} disabled={images.length === 0 || isSaving} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                     <Save size={16} />
                                     <span className="hidden sm:inline">{t.saveChanges}</span>
                                     <span className="sm:hidden">{t.saveShort}</span>
@@ -4138,7 +6362,7 @@ export default function App() {
                                     files: people expected the whole dataset, images included, and had to open the
                                     zip to find out it was captions only. The name now says what comes out, and
                                     the tooltip says what does not. */}
-                                <button onClick={handleExportAll} title={t.exportAllTip} disabled={images.length === 0} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
+                                <button onClick={handleExportAll} title={t.exportAllTip} disabled={images.length === 0 || isSaving} className="flex-1 h-[42px] flex justify-center items-center gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 text-white rounded-xl shadow-md font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm">
                                     <SaveAll size={16} />
                                     <span className="hidden sm:inline">{t.exportAllTxt}</span>
                                     <span className="sm:hidden">{t.exportShort}</span>
@@ -4164,7 +6388,7 @@ export default function App() {
                         <div className={`basis-full xl:basis-auto flex flex-wrap items-center gap-2 text-sm font-medium min-w-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                             {/* ITALIANO: conteggio — se c'e' una ricerca per tag mostro "filtrate / totali" */}
                             {/* ENGLISH: count — if a tag search is active I show "filtered / total" */}
-                            <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${images.filter(i => !i.isTrashed).length}` : `${images.length} ${images.length === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
+                            <div className="flex items-center gap-2 shrink-0"><ImageIcon size={16} /><span className="whitespace-nowrap">{tagSearch.trim() ? `${displayedImages.length} / ${fotoAttive}` : `${fotoAttive} ${fotoAttive === 1 ? t.imgOpenedSingle : t.imgOpenedPlural}`}</span></div>
                             {/* ITALIANO: ricerca per TAG — filtra le immagini mostrate (uno o piu' tag separati da virgola) */}
                             {/* ENGLISH: TAG search — filters the shown images (one or more comma-separated tags) */}
                             <div className="relative flex-1 min-w-[150px] max-w-xs">
@@ -4304,9 +6528,11 @@ export default function App() {
                                         onKeyDown={(e: any) => {
                                             if (e.key === 'Enter' || e.key === ',') {
                                                 e.preventDefault();
-                                                const newTag = e.target.value.trim().replace(/,$/, '');
-                                                if (newTag) {
-                                                    setStagedBulkTags(prev => prev.includes(newTag) ? prev : [...prev, newTag]);
+                                                // ITALIANO: un elenco incollato diventa un tag per voce (vedi splitTagInput).
+                                                // ENGLISH: a pasted list becomes one tag per item (see splitTagInput).
+                                                const nuovi = splitTagInput(e.target.value);
+                                                if (nuovi.length > 0) {
+                                                    setStagedBulkTags(prev => [...prev, ...nuovi.filter(tag => !hasTagIgnoringCase(prev, tag))]);
                                                     e.target.value = '';
                                                     soundManager.pop();
                                                 }
@@ -4442,9 +6668,11 @@ export default function App() {
                                 onKeyDown={(e: any) => {
                                     if (e.key === 'Enter' || e.key === ',') {
                                         e.preventDefault();
-                                        const newTag = e.target.value.trim().replace(/,$/, '');
-                                        if (newTag && !allUniqueTags.includes(newTag)) {
-                                            setCustomProjectTags(prev => [...prev, newTag]);
+                                        // ITALIANO: un elenco incollato diventa un tag per voce (vedi splitTagInput).
+                                        // ENGLISH: a pasted list becomes one tag per item (see splitTagInput).
+                                        const nuovi = splitTagInput(e.target.value).filter(tag => !hasTagIgnoringCase(allUniqueTags, tag));
+                                        if (nuovi.length > 0) {
+                                            setCustomProjectTags(prev => [...prev, ...nuovi.filter(tag => !hasTagIgnoringCase(prev, tag))]);
                                             e.target.value = '';
                                             soundManager.pop();
                                         }
@@ -4530,7 +6758,13 @@ export default function App() {
                                 const statsUniqueTags = [...new Set([...statsImages.flatMap(img => img.tags), ...customProjectTags])].sort((a, b) => a.localeCompare(b));
                                 const totalImages = statsImages.length;
                                 const totalTags = statsUniqueTags.length;
-                                const taggedImages = statsImages.filter(img => img.tags && img.tags.length > 0).length;
+                                // ITALIANO: "con tag" = almeno un tag che NON e' una trigger word, come per "Salta
+                                //           foto gia' taggate": con una trigger impostata ogni foto la porta, e il
+                                //           pannello diceva "Immagini senza tag 0" anche con foto senza descrizione.
+                                // ENGLISH: "tagged" = at least one tag that is NOT a trigger word, as for "Skip
+                                //          already-tagged photos": with a trigger set every photo carries it, and
+                                //          the panel said "Untagged images 0" even with undescribed photos.
+                                const taggedImages = statsImages.filter(img => Array.isArray(img.tags) && hasTagsBeyondTriggers(img.tags, globalTriggers)).length;
                                 const taggedPercentage = totalImages > 0 ? Math.round((taggedImages / totalImages) * 100) : 0;
 
                                 const categoryCounts: Record<string, number> = {};

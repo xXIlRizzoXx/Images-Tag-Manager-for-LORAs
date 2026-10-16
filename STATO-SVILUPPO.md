@@ -1,7 +1,96 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 21 agosto 2026
-**Versione attuale:** 1.2.0 — **pubblicata** su GitHub il 21 agosto 2026
+**Ultimo aggiornamento:** 16 ottobre 2026
+**Versione attuale:** 2.0.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+Novità 2.0.0 (traguardo 109, 16 ottobre 2026): **pagina del progetto rifatta per la 2.0.0.** Tutte
+le schermate del README sono state rifatte con l'interfaccia di oggi (prima si vedeva ancora il vecchio
+tasto "Export All (.zip)"), e ci sono tre schede nuove: la prova dei modelli recenti, il server MCP
+e i tasti "?" delle Impostazioni. Le Impostazioni AI e MCP sono fotografate con una chiave e un
+esito della prova dimostrativi, con la rete bloccata: per farle non è partita nessuna chiamata a
+Google. La finestra non si stringe più sotto 1040x600 e, a quella misura, la fascia in alto resta
+su due righe: provato sul programma vero con la build finale del 16 ottobre.
+Novità 2.0.0 (traguardo 108, 15-16 ottobre 2026): **due funzioni nuove per l'AI, provate sul
+programma vero e ricontrollate.** (1) **Prova i modelli recenti**: nelle Impostazioni un pulsante
+prova, con un'immagine minuscola, i modelli delle ultime tre versioni di Gemini che Google elenca
+per la chiave, e li divide nella tendina in utilizzabili, a pagamento, senza accesso, non adatti
+e da riprovare. (2) **Server MCP**: spento di serie, ascolta solo su questo computer e chiede un
+codice segreto; permette a un'AI che si usa già (Claude Code, Claude Desktop, Cursor...) di vedere
+le foto aperte e cambiarne i tag, ma non salva mai: i .txt si scrivono solo con "Salva Modifiche".
+Le Impostazioni AI e MCP sono divise in schede. Le prove sul programma vero hanno trovato tre
+difetti seri, tutti riparati: l'immagine di prova dei modelli era un file rotto e Google rifiutava
+ogni modello (per questo anche la scelta automatica non passava mai a un modello più nuovo); con
+l'AI accesa il pannello Impostazioni usciva dallo schermo; un modello lento fermava tutta la prova
+come se mancasse la rete. Due revisori indipendenti hanno poi ricontrollato le riparazioni e
+trovato altri ritocchi, sistemati: la finestra ora ha una misura minima (1040x600, mai più grande
+dello schermo), il pannello si adatta anche alla finestra stretta, una connessione appesa ferma la
+prova invece di farla durare un'ora, e il costo delle prove con la fatturazione attiva è scritto
+onestamente. I testi nuovi sono stati ricontrollati nelle 9 lingue. Prove automatiche: 159 file,
+tutte verdi. Provata il 16 ottobre sul programma vero, con la build finale: la scelta automatica
+è passata da sola al modello più nuovo (3.8), la prova dei modelli è arrivata in fondo senza
+segnare per sbaglio nessun modello come non adatto, e un client MCP vero ha letto le foto, ne ha
+cambiato i tag e il disco è rimasto intatto finché non si è premuto "Salva Modifiche". Le
+Impostazioni AI ora mostrano solo chiave e modello: il resto sta in "Avanzate". Le spiegazioni
+lunghe non riempiono più il pannello: ogni sezione ha un tasto "?" che le apre in una finestra
+(quella di MCP si apre da sola la prima volta che lo si accende).
+Novità 2.0.0 (traguardo 107, 15 ottobre 2026): **secondo grande ciclo di controllo chiuso, e la
+versione diventa 2.0.0.** Tre giri completi su tutto il programma, con lo stesso metodo del ciclo
+precedente: 122 problemi segnalati, 106 confermati da verificatori indipendenti, **99 riparati in
+26 salvataggi**, ognuno con la sua prova automatica e ricontrollato da un revisore. Le prove
+automatiche sono passate da 86 a 148 file, tutte verdi. Il terzo giro ha trovato molto meno dei
+primi due (25 segnalazioni contro 46 e 51). I più seri: la domanda "salvare prima di chiudere?"
+che restava nascosta, un .txt non letto che poteva essere sovrascritto, il recupero dopo un crash
+che perdeva una cartella, le foto HEIC che l'AI non taggava più, e lo svuotamento del Cestino che
+si portava via il .txt di un'altra foto con lo stesso nome (a.png e a.jpg). Una prova usava una
+posizione GPS vera come esempio: è stata sostituita con una finta in tutta la storia non ancora
+pubblicata. Restano 9 rifiniture minori in elenco per il prossimo controllo. Le riparazioni vanno
+ancora provate sul programma vero. La 1.3.0 non è mai stata costruita né pubblicata: la prossima
+versione scaricabile sarà la 2.0.0, e da lì riparte la regola del +0.0.1.
+Novità 1.3.0 (traguardo 106, 14 ottobre 2026): **chiuso il grande ciclo di controllo e riparazione.**
+Due giri completi su tutto il programma: agenti che cercano i difetti per area, tre verificatori
+indipendenti che provano a smontare ogni segnalazione, un correttore che ripara con una prova
+automatica per ogni riparazione, e un revisore che ricontrolla ogni salvataggio. Il primo giro ha
+confermato 55 difetti e ne ha riparati 54; il secondo ne ha confermati 78 e riparati 68. In tutto
+**122 difetti riparati in 19 salvataggi**, e le prove automatiche sono passate da 47 a 86 file,
+tutte verdi. I più seri riguardavano il backup anti-crash (che in certi casi rimetteva tag vecchi o
+perdeva quelli di una seconda cartella), il Ctrl+Z dopo il Cestino, "Annulla lo svuotamento" con
+un file omonimo, l'AI che continuava a lavorare dopo essere stata spenta, e le foto aperte da una
+cartella di rete (`\\server\...`), che ora si salvano. Restano aperte tre cose che non stanno nel
+codice ma nell'articolo pubblicato su Civitai (promesse non più vere su cestino, tag in minuscolo e
+tag in blocco), più 28 rifiniture segnalate dai revisori dell'ultimo giro: sono in elenco per il
+prossimo controllo. Le riparazioni non sono ancora state provate sul programma vero: serve una build.
+Novità 1.3.0 (traguardo 105, 24 settembre 2026): **la versione in lavorazione diventa 1.3.0.** Il
+lavoro nato come 1.2.1 (scelta automatica del modello AI, qui sotto) e il giro di controllo completo
+che lo accompagna cambiano abbastanza cose da meritare un salto della seconda cifra: il numero sale
+di 0.1.0 e la terza cifra torna a zero. La 1.2.1 non e' mai stata costruita ne' pubblicata, quindi
+nessuno la ha sul proprio computer: la prossima versione che si potra' scaricare sara' la 1.3.0.
+Novità 1.2.1 (traguardo 104): **il programma non è più legato a un modello AI preciso.** Prima
+dentro il codice c'era una sigla sola, `gemini-3.6-flash`: il giorno che Google la chiude, l'AI
+smette di funzionare per tutti e l'unico rimedio è andare a cambiarla a mano. Adesso **quali
+modelli esistano lo dice Google**: il programma chiede l'elenco (allo stesso indirizzo a cui già
+parlava, e la richiesta non consuma nulla) e sceglie da sé il più recente della linea gratuita.
+L'elenco scritto nel codice non è più una gabbia: è la riserva, quella che si usa finché non si
+è potuto chiedere l'elenco vero.
+Quattro trappole, tutte verificate con un elenco finto fatto come quello vero. La prima è la più
+insidiosa: **in ordine alfabetico "3.10" viene prima di "3.6"**, perché confronta l'1 con il 6.
+Ordinando i nomi come testo, il giorno che Google supera il .9 il programma tornerebbe indietro
+da solo, in silenzio. La versione va letta come numero. La seconda: **nell'elenco c'è di tutto**,
+anteprime, modelli sperimentali, per l'audio, per generare immagini, per gli embedding — alcuni
+non accettano nemmeno una foto, cioè proprio il mestiere che serve qui. La terza: **essere
+nell'elenco non vuol dire poterlo usare**, perché un modello può comparire e poi rispondere che
+serve la fatturazione; per questo, prima di adottarne uno, glielo si fa fare davvero — una
+chiamata con un'immagine di un pixel e lo stesso schema del tagging. Adottarlo sperando che
+funzioni sarebbe di nuovo dichiarare un successo senza averlo controllato. La quarta: **un
+limite di frequenza non dice niente sul modello**; se la prova torna "troppe richieste" il
+modello esiste eccome, e scartarlo farebbe scendere di versione il programma al primo momento
+di traffico.
+Il controllo parte una volta al giorno all'avvio, e subito quando il modello in uso risponde
+"non esisto" — così chi ci finisce sopra non resta con l'AI rotta senza capire perché. Parte
+**solo con l'AI accesa e la chiave presente**: chi non usa l'AI continua a non far partire
+nessun collegamento, e quella promessa resta vera alla lettera. E ogni cambio **viene detto**:
+un modello nuovo può taggare in modo diverso, e se si è a metà di un dataset è una cosa da
+sapere. Nelle Impostazioni si vede quando è stato fatto l'ultimo controllo, c'è un tasto per
+farlo subito, e scegliendo un modello a mano quello resta fermo.
+
 Novità 1.2.0 (traguardo 103): **la 1.2.0 è pubblicata.** Sulla pagina delle release ci sono i due
 file da scaricare, installer e portable, con la spiegazione di quale scegliere, la nota sull'avviso
 dell'antivirus e, in cima a tutto, l'avvertimento a chi ha la 1.1.0: quella versione poteva
@@ -234,8 +323,9 @@ Fatta la **copertina per Civitai**: là la scheda è verticale e ritaglia il cen
 logo e nome stanno esattamente al centro. Il programma salva anche l'anteprima già ritagliata, per
 vedere come verrà la scheda prima di caricarla.
 Novità (traguardo 88): il progetto è ora **pubblico** su GitHub. Prima di aprirlo ho controllato
-tutta la storia dei salvataggi: nessuna chiave, nessuna password, nessun percorso del tuo computer
-è mai finito dentro. La cartella `Release` e le note di lavoro restano fuori. Chiunque ora può
+tutta la storia dei salvataggi: nessuna chiave e nessuna password è mai finita dentro.
+(Correzione del 14 ottobre 2026: in questo registro era rimasto il percorso della cartella del
+progetto sul disco; ora è tolto, ma resta leggibile nelle versioni precedenti della storia.) La cartella `Release` e le note di lavoro restano fuori. Chiunque ora può
 vedere il programma, scaricare i due file e leggere anche questo registro.
 Novità (traguardo 87): **pubblicata la 1.1.0 su GitHub**. Nella pagina delle release adesso c'è
 **solo la 1.1.0**, con i due file pronti da scaricare (installer e portable) e una spiegazione di
@@ -321,7 +411,7 @@ stanno per finire su foto nascoste dalla ricerca, il ricarico automatico che spo
 annulla/ripeti e poteva partire due volte, "Seleziona tutte" che cancellava le selezioni nascoste,
 e la foto aperta che spariva togliendole il tag cercato. In più la **barra degli strumenti** della
 galleria non si accavalla più restringendo la finestra. Novità
-1.0.7 (traguardo 77): **12 richieste** di Matteo — trascinamento immagini (con .txt
+1.0.7 (traguardo 77): **12 richieste** dell'autore — trascinamento immagini (con .txt
 automatico), ricerca per tag nella pagina principale + "inverti selezione", editor tag potenziato
 (tasto "aggiungi tag del progetto", aggiunta multipla con virgole, tag importati che entrano nella
 palette, finestra "scarta" a tema), pannello selezione più largo/responsive con ricerca e legenda
@@ -444,9 +534,8 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 ## Vincoli sempre validi del progetto
 
-- **Consegna Windows:** i due file finali (portable + installer) vanno messi in
-  `D:\SOFTWARE PERSONALI IN SVILUPPO\000 SOFTWARE AI STUDIO PASSATI A CLAUDE\Images-Tag-Manager-for-LORAs\Release\`
-  (radice del progetto, non dentro la cartella di lavoro git).
+- **Consegna Windows:** i due file finali (portable + installer) vanno messi nella cartella
+  `Release\` della radice del progetto (non dentro la cartella di lavoro git).
 - **Dati dell'app:** sempre in `%APPDATA%\images-tag-manager` (mai accanto all'exe).
   È la cartella da cancellare per far ripartire l'app "da zero".
 - **Privacy:** nessuna telemetria, nessun tracciamento. Con l'AI cloud le foto vanno a Google

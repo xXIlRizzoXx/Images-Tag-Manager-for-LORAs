@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-const { app, BrowserWindow, ipcMain, net, safeStorage, session, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net, safeStorage, session, Menu, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -102,8 +102,8 @@ let splashWindow = null;
 // ENGLISH: IPC handler for the app version
 ipcMain.handle('app:get-version', () => appVersion);
 
-// ITALIANO: Storage cifrato per la API key Gemini, basato sul keychain del SO
-// ENGLISH: Encrypted storage for the Gemini API key, backed by the OS keychain
+// ITALIANO: Storage cifrato per la API key Gemini: safeStorage (su Windows la protezione dati DPAPI dell'account) in userData/secrets.json
+// ENGLISH: Encrypted storage for the Gemini API key: safeStorage (on Windows the account's DPAPI data protection) in userData/secrets.json
 const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json');
 
 const readSecrets = () => {
@@ -195,12 +195,14 @@ ipcMain.handle('secure-storage:delete', (_event, key) => {
 //           percorsi LOCALI e ASSOLUTI. Come difesa in profondita' scarto tutto il resto — percorsi
 //           di rete UNC (\\server\share), percorsi "device" (\\?\...) e qualsiasi segmento ".." di
 //           risalita — cosi' questi canali non possono essere spinti a leggere/scrivere/cestinare
-//           file fuori da dove l'utente ha davvero puntato.
+//           file fuori da dove l'utente ha davvero puntato. Unica eccezione: i due canali del .txt
+//           accettano anche \\server\condivisione\... (vedi isSafeSidecarPath qui sotto).
 // ENGLISH: Paths come from the renderer (derived from the user's picked files): they are always
 //          LOCAL, ABSOLUTE paths. As defense in depth I reject everything else — UNC network paths
 //          (\\server\share), device paths (\\?\...) and any ".." traversal segment — so these
 //          channels cannot be steered into reading/writing/trashing files outside what the user
-//          actually pointed at.
+//          actually pointed at. Only exception: the two .txt channels also accept
+//          \\server\share\... (see isSafeSidecarPath below).
 const isSafeLocalPath = (p) => {
     if (typeof p !== 'string' || !p) return false;
     if (/^[\\/]{2}/.test(p)) return false;        // UNC / device / //host
@@ -208,17 +210,62 @@ const isSafeLocalPath = (p) => {
     if (p.split(/[\\/]+/).includes('..')) return false;
     return true;
 };
+// ITALIANO: SOLO per i due canali del .txt (lettura e scrittura) si accetta anche una cartella di
+//           rete scritta per esteso, \\server\condivisione\...: una foto scelta o trascinata da li'
+//           arriva con quel percorso, e la stessa cartella raggiunta con una lettera (Z:\) funzionava
+//           gia'. Restano rifiutati i percorsi "device" (\\?\, \\.\), la forma con le barre //host e
+//           ogni segmento "..". Toccare \\server fa autenticare Windows verso quel server: va bene,
+//           il file l'ha scelto l'utente. Il Cestino, il ripristino e la cartella scelta restano su
+//           isSafeLocalPath: li' una cartella di rete resta fuori (decide la seconda conferma).
+// ENGLISH: ONLY for the two .txt channels (read and write) a network folder spelled out,
+//          \\server\share\..., is accepted too: a photo picked or dropped from there arrives with
+//          that path, and the same folder reached through a letter (Z:\) already worked. Device
+//          paths (\\?\, \\.\), the //host slash form and any ".." segment stay refused. Touching
+//          \\server makes Windows authenticate to that server: fine, the user picked the file. The
+//          Recycle Bin, the restore and the picked folder stay on isSafeLocalPath: there a network
+//          folder stays out (the second confirmation decides).
+const isSafeSidecarPath = (p) => {
+    if (isSafeLocalPath(p)) return true;
+    if (typeof p !== 'string') return false;
+    if (!/^\\\\[^\\/?.][^\\/]*\\[^\\/]+\\[^\\/]/.test(p)) return false;   // \\server\share\file
+    if (p.split(/[\\/]+/).includes('..')) return false;
+    return path.isAbsolute(p);
+};
 
 const SIDECAR_MAX_BYTES = 1024 * 1024;
-const SIDECAR_MAX_FILES = 5000;
-const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff']);
+// ITALIANO: nessun tetto sul NUMERO di foto per richiesta. Prima si leggevano solo le prime 5000,
+//           in silenzio: dalla 5001esima la foto arrivava senza tag, e un'aggiunta in blocco
+//           seguita da "Salva" le riscriveva il .txt con la sola parola chiave, cancellando i tag
+//           veri. I limiti che proteggono restano quelli per file: solo .txt, solo accanto a
+//           un'immagine vera, mai oltre 1 MB.
+// ENGLISH: no cap on the NUMBER of photos per request. Only the first 5000 used to be read,
+//          silently: from the 5001st on the photo arrived without tags, and a bulk addition
+//          followed by "Save" rewrote its .txt with the trigger word alone, wiping the real tags.
+//          The limits that protect stay per file: .txt only, only next to a real image, never
+//          above 1 MB.
+// ITALIANO: la pagina accetta un'immagine dal tipo che le da' il browser (image/...), non
+//           dall'estensione, e il browser chiama image/jpeg anche .jfif, .jpe, .pjpeg e .pjp
+//           (Windows salva cosi' molti JPEG scaricati). Senza queste voci quelle foto si
+//           caricavano, ma il loro .txt non si leggeva, non si salvava, e il Cestino le rifiutava.
+// ENGLISH: the page accepts an image by the type the browser gives it (image/...), not by its
+//          extension, and the browser calls .jfif, .jpe, .pjpeg and .pjp image/jpeg too (Windows
+//          saves many downloaded JPEGs that way). Without these entries those photos loaded, but
+//          their .txt was not read, could not be saved, and the Recycle Bin refused them.
+// ITALIANO: per lo stesso motivo ci sono anche .apng, .ico, .svg, .svgz e .xbm: il browser li
+//           chiama image/... e la pagina li carica, quindi il loro .txt va letto, salvato e
+//           cestinato come quello delle altre foto.
+// ENGLISH: for the same reason .apng, .ico, .svg, .svgz and .xbm are here too: the browser calls
+//          them image/... and the page loads them, so their .txt must be read, saved and trashed
+//          like the other photos'.
+const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pjp', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff',
+    '.apng', '.ico', '.svg', '.svgz', '.xbm']);
 
 ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
     const out = [];
     const seen = new Set();
-    for (const raw of imagePaths.slice(0, SIDECAR_MAX_FILES)) {
-        if (!isSafeLocalPath(raw)) continue;
+    for (const raw of imagePaths) {
+        if (!isSafeSidecarPath(raw)) continue;
         try {
             // ITALIANO: dev'essere un'immagine VERA presente su disco
             // ENGLISH: it must be a REAL image present on disk
@@ -232,17 +279,35 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
             if (seen.has(txtPath)) continue;
             seen.add(txtPath);
 
-            const txtStat = fs.statSync(txtPath);
-            if (!txtStat.isFile() || txtStat.size > SIDECAR_MAX_BYTES) continue;
+            // ITALIANO: un .txt che C'E' ma non si legge (oltre 1 MB, bloccato da un altro programma,
+            //           un file di OneDrive solo in rete) non si scarta in silenzio: torna segnato
+            //           { skipped: true }, senza testo, e la pagina lo conta fra i .txt saltati, come fa
+            //           "Carica cartella". Prima la foto sembrava senza tag e un "Salva" dopo
+            //           un'aggiunta in blocco riscriveva quel .txt coi soli tag nuovi. Un .txt che non
+            //           c'e' resta il caso normale: nessun segnale.
+            // ENGLISH: a .txt that EXISTS but cannot be read (over 1 MB, locked by another program, a
+            //          OneDrive online-only file) is not dropped silently: it comes back marked
+            //          { skipped: true }, with no text, and the page counts it among the skipped .txt
+            //          files, as "Load Folder" does. The photo used to look untagged and a "Save" after
+            //          a bulk addition rewrote that .txt with the new tags alone. A .txt that is not
+            //          there stays the normal case: no signal.
+            const saltato = { name: base + '.txt', dir: path.dirname(txtPath), skipped: true };
+            const nonCe = (e) => Boolean(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'));
+            let txtStat;
+            try { txtStat = fs.statSync(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            if (!txtStat.isFile()) continue;
+            if (txtStat.size > SIDECAR_MAX_BYTES) { out.push(saltato); continue; }
+            let content;
+            try { content = fs.readFileSync(txtPath, 'utf8'); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
             // ITALIANO: torno anche la cartella del .txt: cosi' il rinnovo lato app puo' abbinare
             //           ogni testo alla SUA immagine anche se due foto scelte hanno lo stesso nome
             //           ma stanno in cartelle diverse.
             // ENGLISH: also return the .txt's folder: this lets the app pair each text with ITS
             //          image even when two picked photos share a name but sit in different folders.
-            out.push({ name: base + '.txt', content: fs.readFileSync(txtPath, 'utf8'), dir: path.dirname(txtPath) });
+            out.push({ name: base + '.txt', content, dir: path.dirname(txtPath) });
         } catch (_) {
-            // ITALIANO: nessun .txt accanto a questa immagine: e' normale, si prosegue
-            // ENGLISH: no .txt next to this image: that is normal, carry on
+            // ITALIANO: l'immagine stessa non si legge: non c'e' niente da abbinare, si prosegue
+            // ENGLISH: the image itself cannot be read: there is nothing to pair, carry on
         }
     }
     return out;
@@ -265,26 +330,36 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
    as reading: it writes ONLY a .txt next to an image that truly exists on disk — it cannot become
    a "write any file" primitive. */
 const WRITE_MAX_BYTES = 1024 * 1024;
-const WRITE_MAX_FILES = 5000;
+// ITALIANO: come per la lettura, nessun tetto sul numero di foto: prima dalla 5001esima in poi
+//           non si scriveva niente, e la risposta, piu' corta della richiesta, diceva ok:true.
+// ENGLISH: as for reading, no cap on the number of photos: from the 5001st on nothing used to be
+//          written, and the answer, shorter than the request, still said ok:true.
 
 ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
     if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
     let written = 0;
     let failed = 0;
     const results = [];
-    for (const it of items.slice(0, WRITE_MAX_FILES)) {
+    for (const it of items) {
         const imagePath = it && typeof it.imagePath === 'string' ? it.imagePath : '';
         const content = it && typeof it.content === 'string' ? it.content : '';
         try {
             // ITALIANO: dev'essere un'immagine VERA presente su disco (stesso contratto della lettura)
             // ENGLISH: it must be a REAL image present on disk (same contract as reading)
-            if (!isSafeLocalPath(imagePath) || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
+            if (!isSafeSidecarPath(imagePath) || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
             if (Buffer.byteLength(content, 'utf8') > WRITE_MAX_BYTES) { failed++; results.push(false); continue; }
             const imgStat = fs.statSync(imagePath);
             if (!imgStat.isFile()) { failed++; results.push(false); continue; }
             const base = path.basename(imagePath, path.extname(imagePath));
             const txtPath = path.join(path.dirname(imagePath), base + '.txt');
             if (path.extname(txtPath).toLowerCase() !== '.txt') { failed++; results.push(false); continue; }
+            // ITALIANO: una foto senza tag e senza .txt resta senza: un .txt vuoto NUOVO farebbe
+            //           fermare Kohya ("caption file is empty"), uno che manca no. La foto risulta
+            //           salvata (il disco e' gia' com'e' lei). Un .txt che c'era si svuota davvero.
+            // ENGLISH: a photo with no tags and no .txt stays without one: a NEW empty .txt would
+            //          stop Kohya ("caption file is empty"), a missing one does not. The photo counts
+            //          as saved (the disk already matches it). A .txt that was there is really emptied.
+            if (content === '' && !fs.existsSync(txtPath)) { results.push(true); continue; }
             fs.writeFileSync(txtPath, content, 'utf8');
             written++;
             results.push(true);
@@ -313,31 +388,64 @@ const TRASH_MAX_FILES = 5000;
 
 // ITALIANO: l'esito torna adesso FILE PER FILE, in `results`, con tre valori distinti:
 //   'ok'       il file e' nel Cestino di Windows, oppure non c'era gia' piu' (niente da fare)
-//   'rifiutato' questo canale non puo' toccarlo: percorso di RETE (il Cestino di Windows non
-//              esiste per le condivisioni di rete) oppure estensione fuori dall'elenco ammesso
+//   'rifiutato' questo canale non puo' toccarlo: percorso di RETE scritto \\server\..., estensione
+//              fuori dall'elenco ammesso, oppure Windows ha rifiutato lo spostamento su un'unita'
+//              senza Cestino (lettera collegata a una condivisione di rete, chiavetta USB, scheda SD)
+//              o col Cestino spento o troppo piccolo per quel file
 //   'errore'   il file c'e' ma non si e' riusciti a spostarlo (bloccato, permessi)
 //   Prima i tre casi erano indistinguibili: i primi due uscivano da un `continue` silenzioso e il
 //   gruppo tornava {ok:true, trashed:0}, cioe' "riuscito" senza aver spostato niente. 'rifiutato'
-//   NON e' un vicolo cieco: chi chiama lo tratta come "Cestino non raggiungibile" e offre la
-//   cancellazione definitiva con la seconda conferma, altrimenti una foto su una cartella di rete
-//   resterebbe per sempre nel cestino dell'app senza modo di toglierla.
+//   NON e' un vicolo cieco: chi chiama lo tratta come "Cestino non raggiungibile". Per una foto
+//   aperta con "Carica cartella" offre la cancellazione definitiva con la seconda conferma; per
+//   una foto caricata una per una o trascinata (nessuna cartella aperta) dice perche' non si puo'
+//   e cosa fare, invece di un "non rimossa" muto a ogni tentativo.
 // ENGLISH: the outcome now comes back FILE BY FILE in `results`, with three distinct values:
 //   'ok'        the file reached the Windows Recycle Bin, or was already gone (nothing to do)
-//   'rifiutato' this channel cannot touch it: a NETWORK path (Windows has no Recycle Bin for
-//               network shares) or an extension outside the allowed list
+//   'rifiutato' this channel cannot touch it: a NETWORK path spelled \\server\..., an extension
+//               outside the allowed list, or Windows refused the move on a drive with no Recycle
+//               Bin (a letter mapped to a network share, a USB stick, an SD card) or with the
+//               Recycle Bin turned off or too small for that file
 //   'errore'    the file is there but could not be moved (locked, permissions)
 //   The three used to be indistinguishable: the first two left through a silent `continue` and the
 //   batch returned {ok:true, trashed:0} - "success" having moved nothing. 'rifiutato' is NOT a dead
-//   end: the caller reads it as "Recycle Bin out of reach" and offers the permanent delete behind
-//   the second confirmation, otherwise a photo on a network folder would sit in the app's trash
-//   forever with no way to remove it.
+//   end: the caller reads it as "Recycle Bin out of reach". For a photo opened with "Load Folder"
+//   it offers the permanent delete behind the second confirmation; for a photo loaded one by one
+//   or dropped in (no open folder) it says why that is not possible and what to do, instead of a
+//   silent "not removed" on every try.
 ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
     if (!Array.isArray(filePaths)) return { ok: false, trashed: 0, failed: 0, results: [] };
     let trashed = 0;
     let failed = 0;
     const results = [];
     for (const raw of filePaths.slice(0, TRASH_MAX_FILES)) {
-        if (!isSafeLocalPath(raw)) { results.push('rifiutato'); continue; }
+        // ITALIANO: su una cartella di rete scritta \\server\condivisione\... non si cestina mai
+        //           niente (decisione A). Pero' una foto che l'utente ha gia' cancellato da Esplora
+        //           file, come gli dice il messaggio dell'app, deve poter uscire dal cestino
+        //           dell'app: prima il percorso veniva scartato PRIMA di guardare se il file c'era
+        //           ancora, e la risposta restava 'rifiutato' a ogni tentativo. Ora, per un percorso
+        //           ammesso dai canali del .txt e con un'estensione ammessa, si guarda soltanto: file
+        //           assente su una condivisione che risponde = 'ok' (niente spostato, trashed resta 0);
+        //           file presente, o condivisione che non risponde = 'rifiutato' come prima.
+        //           \\?\, \\.\, //host e '..' restano rifiutati senza guardare niente.
+        // ENGLISH: nothing is ever trashed on a network folder spelled \\server\share\... (decision
+        //          A). But a photo the user already deleted in File Explorer, as the app's message
+        //          tells them to, must be able to leave the app's trash: the path used to be refused
+        //          BEFORE checking whether the file was still there, so the answer stayed 'rifiutato'
+        //          on every try. Now, for a path the .txt channels accept and an allowed extension, we
+        //          only look: file gone on a share that answers = 'ok' (nothing moved, trashed stays
+        //          0); file there, or a share that does not answer = 'rifiutato' as before.
+        //          \\?\, \\.\, //host and '..' stay refused without looking at anything.
+        if (!isSafeLocalPath(raw)) {
+            let assente = false;
+            if (isSafeSidecarPath(raw) && TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) {
+                try { assente = !fs.statSync(raw).isFile(); } catch (err) { assente = Boolean(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')); }
+                if (assente) {
+                    try { assente = fs.statSync(path.parse(raw).root).isDirectory(); } catch (_) { assente = false; }
+                }
+            }
+            results.push(assente ? 'ok' : 'rifiutato');
+            continue;
+        }
         if (!TRASH_ALLOWED_EXT.has(path.extname(raw).toLowerCase())) { results.push('rifiutato'); continue; }
         // ITALIANO: un file assente (es. il .txt di una foto senza tag) e' NORMALE: si salta e
         //           non conta come errore. Un file che ESISTE ma non si riesce a cestinare
@@ -345,14 +453,137 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
         // ENGLISH: a missing file (e.g. the .txt of a photo with no tags) is NORMAL: skip it and do
         //          not count it as an error. A file that EXISTS but cannot be trashed (locked,
         //          permissions) is a real error.
+        // ITALIANO: "assente" pero' solo se Windows dice che il file non c'e' (ENOENT/ENOTDIR) E la
+        //           radice della sua unita' risponde, come per le cartelle di rete. Una chiavetta
+        //           staccata o un'unita' di rete (Z:\) spenta davano 'ok': la foto usciva dal
+        //           progetto con "spostati nel Cestino di Windows" ed era ancora nella cartella.
+        //           Ora resta 'errore': la foto resta nel cestino dell'app e si puo' riprovare.
+        // ENGLISH: "missing" only when Windows says the file is not there (ENOENT/ENOTDIR) AND the
+        //          root of its drive answers, as for network folders. An unplugged USB stick or a
+        //          network drive (Z:\) that is off answered 'ok': the photo left the project with
+        //          "moved to the Windows Recycle Bin" and was still in the folder. Now it stays
+        //          'errore': the photo stays in the app's trash and the user can try again.
         let exists = false;
-        try { exists = fs.statSync(raw).isFile(); } catch (_) { exists = false; }
+        let assenzaCerta = true;
+        try { exists = fs.statSync(raw).isFile(); } catch (err) {
+            exists = false;
+            assenzaCerta = Boolean(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR'));
+            if (assenzaCerta) {
+                try { assenzaCerta = fs.statSync(path.parse(raw).root).isDirectory(); } catch (_) { assenzaCerta = false; }
+            }
+        }
+        if (!exists && !assenzaCerta) {
+            console.error('trash-files: drive not reachable', raw);
+            failed++;
+            results.push('errore');
+            continue;
+        }
         if (!exists) { results.push('ok'); continue; }
         try {
             await shell.trashItem(raw);
             trashed++;
             results.push('ok');
         } catch (e) {
+            // ITALIANO: il Cestino si prova SEMPRE prima: dove non c'e', Windows rifiuta lo
+            //           spostamento e non cancella niente. Solo DOPO un rifiuto si guarda perche'.
+            //           Se il file e' ancora li' e il Cestino su quell'unita' non esiste, si risponde
+            //           'rifiutato' (la pagina offre la seconda conferma se la cartella e' aperta, se no
+            //           spiega cosa fare), altrimenti la foto resterebbe bloccata nel cestino dell'app
+            //           a ogni tentativo. Due casi:
+            //           - una lettera collegata a una condivisione di rete (Z:\ -> \\nas\dati): il
+            //             percorso VERO lo dice Windows (per un'unita' di rete risponde \\server\...).
+            //             Prima lo si guardava prima di provare, e chi ha il Cestino anche li' (una
+            //             cartella utente spostata alla radice dell'unita') lo perdeva;
+            //           - una chiavetta USB o una scheda SD: alla radice non c'e' $RECYCLE.BIN.
+            //           Un file bloccato su un disco che il Cestino ce l'ha resta 'errore'. Un disco col
+            //           Cestino spento ha comunque $RECYCLE.BIN: per quello vedi la prova qui sotto.
+            // ENGLISH: the Recycle Bin is ALWAYS tried first: where there is none, Windows refuses the
+            //          move and deletes nothing. Only AFTER a refusal do we look at why. If the file is
+            //          still there and that drive has no Recycle Bin, we answer 'rifiutato' (the page
+            //          offers the second confirmation when the folder is open, otherwise it says what to
+            //          do), otherwise the photo would stay stuck in the app's trash on every try. Two
+            //          cases:
+            //          - a drive letter mapped to a network share (Z:\ -> \\nas\data): Windows tells the
+            //            REAL path (for a network drive it answers \\server\...). It used to be checked
+            //            before trying, and whoever has a Recycle Bin there too (a user folder moved to
+            //            the drive's root) lost it;
+            //          - a USB stick or an SD card: there is no $RECYCLE.BIN at the root.
+            //          A locked file on a disk that has a Recycle Bin stays 'errore'. A disk with the
+            //          Recycle Bin turned off still has $RECYCLE.BIN: for that see the check below.
+            let ancoraLi = false;
+            try { ancoraLi = fs.statSync(raw).isFile(); } catch (_) { ancoraLi = false; }
+            let percorsoVero = raw;
+            try { percorsoVero = fs.realpathSync.native(raw); } catch (_) { percorsoVero = raw; }
+            percorsoVero = String(percorsoVero || raw);
+            const diRete = /^[\\/]{2}/.test(percorsoVero);
+            let senzaCestino = false;
+            if (ancoraLi && !diRete) {
+                try {
+                    fs.statSync(path.join(path.parse(percorsoVero).root, '$RECYCLE.BIN'));
+                } catch (err) {
+                    senzaCestino = Boolean(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR'));
+                }
+            }
+            if (ancoraLi && (diRete || senzaCestino)) { results.push('rifiutato'); continue; }
+            // ITALIANO: un disco col Cestino SPENTO ("non spostare i file nel Cestino"), o un file
+            //           piu' grande del Cestino di quel disco: Windows rifiuta anche li', ma la cartella
+            //           $RECYCLE.BIN c'e', e prima la risposta era 'errore' a ogni tentativo, senza
+            //           seconda conferma: la foto non usciva mai dal cestino dell'app. Per distinguerlo
+            //           da un file bloccato si prova ad aprirlo in lettura e scrittura: se un altro
+            //           programma lo tiene (EBUSY, EPERM, qualsiasi errore) resta 'errore' come prima.
+            //           Se si apre, nessuno lo blocca: un blocco di un attimo (antivirus, indicizzazione)
+            //           si riconosce riprovando una volta il Cestino; se rifiuta di nuovo, si risponde
+            //           'rifiutato' e la pagina chiede la seconda conferma, che dice che e' definitivo.
+            //           Dopo l'apertura si rinomina il file su se' stesso: serve il permesso di
+            //           cancellare, quindi fallisce (EBUSY) anche con un programma che lo tiene
+            //           aperto lasciando leggere e scrivere ma non cancellare (Python open(), PIL);
+            //           su un file libero non cambia niente. Anche quell'errore resta 'errore'.
+            //           Un file con l'attributo "sola lettura" (fotocamere con la protezione, file
+            //           copiati da un CD) non si apre MAI in scrittura (EPERM), anche se nessuno lo
+            //           blocca: per lui si salta l'apertura e decide solo la rinomina, che riesce
+            //           sui file in sola lettura e fallisce (EBUSY) se un programma lo tiene aperto.
+            //           Nota: aprire un file "solo online" di OneDrive lo scarica; succede solo dopo
+            //           che il Cestino lo ha gia' rifiutato.
+            // ENGLISH: a disk with the Recycle Bin TURNED OFF ("don't move files to the Recycle Bin"),
+            //          or a file bigger than that disk's Recycle Bin: Windows refuses there too, but the
+            //          $RECYCLE.BIN folder exists, and the answer used to be 'errore' on every try, with
+            //          no second confirmation: the photo never left the app's trash. To tell it from a
+            //          locked file we try to open it for reading and writing: if another program holds it
+            //          (EBUSY, EPERM, any error) it stays 'errore' as before. If it opens, nobody is
+            //          locking it: a lock of a moment (antivirus, indexing) is caught by trying the
+            //          Recycle Bin once more; if it refuses again we answer 'rifiutato' and the page asks
+            //          the second confirmation, which says it is final.
+            //          After the open the file is renamed onto itself: that needs delete access, so
+            //          it fails (EBUSY) also when a program holds it open allowing read and write but
+            //          not delete (Python open(), PIL); on a free file it changes nothing. That error
+            //          stays 'errore' too.
+            //          A file with the "read-only" attribute (cameras with the protect flag, files
+            //          copied from a CD) NEVER opens for writing (EPERM), even when nobody locks it:
+            //          for it the open is skipped and only the rename decides, which succeeds on
+            //          read-only files and fails (EBUSY) when a program holds it open.
+            //          Note: opening an online-only OneDrive file downloads it; this only happens after
+            //          the Recycle Bin has already refused it.
+            if (ancoraLi && !diRete) {
+                let siApre = false;
+                try {
+                    const soloLettura = (fs.statSync(raw).mode & 0o200) === 0;
+                    if (!soloLettura) fs.closeSync(fs.openSync(raw, 'r+'));
+                    fs.renameSync(raw, raw);
+                    siApre = true;
+                } catch (_) { siApre = false; }
+                if (siApre) {
+                    try {
+                        await shell.trashItem(raw);
+                        trashed++;
+                        results.push('ok');
+                        continue;
+                    } catch (_) {
+                        let restaLi = false;
+                        try { restaLi = fs.statSync(raw).isFile(); } catch (__) { restaLi = false; }
+                        if (restaLi) { results.push('rifiutato'); continue; }
+                    }
+                }
+            }
             // ITALIANO: NON annunciamo un successo falso: prima si ritornava sempre ok:true, cosi'
             //           una foto che il cestino NON era riuscito a spostare veniva comunque tolta dal
             //           progetto e il ripiego non partiva mai. Ora ok e' falso se qualcosa e' fallito.
@@ -371,7 +602,7 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    Electron sa mettere un file nel Cestino ma non sa tirarlo fuori: Windows quella strada la
    espone solo alla shell. Si passa quindi da PowerShell, che parla con la shell via COM.
 
-   Tre cose imparate provandolo davvero, e ognuna sarebbe stata un difetto silenzioso:
+   Cinque cose imparate provandolo davvero, e ognuna sarebbe stata un difetto silenzioso:
    1. il nome che la shell mostra segue l'impostazione "nascondi le estensioni", quindi puo'
       arrivare senza ".txt": l'estensione vera si prende dal nome interno ($R......txt), che
       non mente mai. Cercando per nome mostrato non si ritroverebbe niente su mezzo mondo.
@@ -380,6 +611,10 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    3. se al posto del file e' nato un omonimo, NON si ripristina: si torna 'occupato' e lo si
       dice. Il ripristino della shell sovrascriverebbe, e questo canale esiste per NON perdere
       file, non per perderne di nuovi.
+   4. nel Cestino possono esserci due voci con lo stesso percorso d'origine (un omonimo cancellato
+      prima): si ripristina quella cancellata per ULTIMA, cioe' quella appena svuotata dall'app.
+   5. PowerShell legge e scrive con la code page della console, non in UTF-8: senza dirglielo
+      ogni percorso con una lettera accentata, cirillica o cinese tornava "non trovato".
 
    Il testo dello script e' una costante: i percorsi entrano da stdin come JSON, mai dentro la
    riga di comando, cosi' un nome di file con virgolette o punti e virgola non puo' diventare
@@ -389,7 +624,7 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    Electron can put a file in the Recycle Bin but cannot take it back out: Windows exposes that
    road only to the shell. So we go through PowerShell, which talks to the shell over COM.
 
-   Three things learned by actually trying it, each of which would have been a silent defect:
+   Five things learned by actually trying it, each of which would have been a silent defect:
    1. the name the shell reports follows the "hide known extensions" setting, so it can arrive
       without ".txt": the real extension comes from the internal name ($R......txt), which never
       lies. Matching on the displayed name would find nothing on half the machines out there.
@@ -398,16 +633,25 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
    3. if a namesake has appeared in the meantime, we do NOT restore: we return 'occupato' and
       say so. The shell's own restore would overwrite, and this channel exists so files are NOT
       lost, not so that new ones are.
+   4. the Recycle Bin can hold two entries with the same original path (a namesake deleted
+      earlier): the one deleted LAST is restored, i.e. the one the app has just emptied.
+   5. PowerShell reads and writes with the console code page, not UTF-8: unless told otherwise,
+      every path with an accented, Cyrillic or Chinese letter came back "not found".
 
    The script text is a constant: paths come in through stdin as JSON, never on the command
    line, so a file name containing quotes or semicolons cannot become a command. The console
    window stays hidden. */
-const RESTORE_MAX_FILES = 5000;
 const RESTORE_TIMEOUT_MS = 60000;
 const SCRIPT_RIPRISTINO = [
     "$ErrorActionPreference = 'Stop'",
     "$ProgressPreference = 'SilentlyContinue'",
     "$voluti = @()",
+    "# main.cjs scrive i percorsi in UTF-8 e legge la risposta in UTF-8. Senza questa riga PowerShell",
+    "# usa la code page della console (850, 1252, 932...): una lettera accentata arriva come due",
+    "# caratteri sbagliati e nessun percorso non ASCII combacia col Cestino. Provato: tutto nonTrovato.",
+    "# Servono tutte e due: con la sola entrata il file torna ma il percorso rimandato indietro si",
+    "# rompe e main.cjs lo segna fallito. Se manca la console il catch lascia tutto come prima.",
+    "try { [Console]::OutputEncoding = (New-Object System.Text.UTF8Encoding $false); [Console]::InputEncoding = (New-Object System.Text.UTF8Encoding $false) } catch {}",
     "$grezzo = [Console]::In.ReadToEnd()",
     "# ConvertFrom-Json NON sgrana l elenco: lo consegna tutto intero come un oggetto solo.",
     "# Senza questo giro $voluti diventa un elenco con dentro un elenco, il ciclo gira una",
@@ -420,19 +664,55 @@ const SCRIPT_RIPRISTINO = [
     "# PRIMA si guarda tutto il Cestino e si segna cosa serve, POI si ripristina. Ripristinare",
     "# mentre si sta ancora scorrendo l elenco lo cambia sotto i piedi: il verbo non protesta,",
     "# semplicemente non fa niente. Provato: mescolando le due fasi non torna indietro un file.",
-    "$daFare = @()",
+    "$scelte = @{}",
+    "# Un nome mostrato che finisce GIA con l estensione vera ha due letture: x.png con le estensioni",
+    "# visibili, oppure x.png.png con le estensioni nascoste (chi rinomina in x.png da Esplora file",
+    "# ottiene proprio x.png.png). Prima valeva solo la prima lettura, e x.png.png tornava nonTrovato",
+    "# pur essendo nel Cestino. Ora si tengono le letture chieste dal programma; se le chiede tutte e",
+    "# due (x.png e x.png.png svuotate insieme) prima si assegnano le voci senza dubbi, poi quella",
+    "# dubbia prende il percorso rimasto libero, e a parita la lettura con l estensione aggiunta",
+    "# (le estensioni nascoste sono l impostazione di Windows). Solo dal nome non si puo fare di piu.",
+    "$candidate = @()",
     "foreach ($v in @($bin.Items())) {",
     "  $nome = $v.Name",
     "  $est = [System.IO.Path]::GetExtension($v.Path)",
-    "  if ($est -and -not $nome.EndsWith($est, 'OrdinalIgnoreCase')) { $nome = $nome + $est }",
-    "  $orig = Join-Path ($bin.GetDetailsOf($v, 1)) $nome",
-    "  $k = $orig.ToLowerInvariant()",
-    "  if (-not $esiti.ContainsKey($k)) { continue }",
-    "  if ($esiti[$k] -ne 'nonTrovato') { continue }",
-    "  if (Test-Path -LiteralPath $orig) { $esiti[$k] = 'occupato'; continue }",
-    "  $esiti[$k] = 'inCorso'",
-    "  $daFare += [pscustomobject]@{ voce = $v; orig = $orig; k = $k }",
+    "  $nomi = @($nome)",
+    "  if ($est) { if ($nome.EndsWith($est, 'OrdinalIgnoreCase')) { $nomi = @(($nome + $est), $nome) } else { $nomi = @($nome + $est) } }",
+    "  # Il Cestino ha anche le voci di altri programmi. Join-Path chiede a PowerShell se l unita",
+    "  # esiste: per una voce da un disco esterno che ha cambiato lettera lanciava un errore, e con",
+    "  # 'Stop' lo script finiva senza risposta, ogni volta. Path.Combine non chiede niente all unita;",
+    "  # una voce estranea che da errore si salta. Provato: con Join-Path tutto fallito.",
+    "  $possibili = @()",
+    "  try { $cart = [string]$bin.GetDetailsOf($v, 1); foreach ($n in $nomi) { $c = [System.IO.Path]::Combine($cart, $n); if ($esiti.ContainsKey($c.ToLowerInvariant())) { $possibili += $c } } } catch { continue }",
+    "  if ($possibili.Count -eq 0) { continue }",
+    "  $candidate += [pscustomobject]@{ voce = $v; possibili = $possibili }",
     "}",
+    "$prese = @{}",
+    "foreach ($c in $candidate) { if ($c.possibili.Count -eq 1) { $prese[$c.possibili[0].ToLowerInvariant()] = $true } }",
+    "$ordinate = @($candidate | Where-Object { $_.possibili.Count -eq 1 }) + @($candidate | Where-Object { $_.possibili.Count -gt 1 })",
+    "foreach ($c in $ordinate) {",
+    "  $v = $c.voce",
+    "  $orig = $c.possibili[0]",
+    "  if ($c.possibili.Count -gt 1 -and $prese.ContainsKey($c.possibili[0].ToLowerInvariant()) -and -not $prese.ContainsKey($c.possibili[1].ToLowerInvariant())) { $orig = $c.possibili[1] }",
+    "  $k = $orig.ToLowerInvariant()",
+    "  if ($esiti[$k] -eq 'occupato') { continue }",
+    "  if (Test-Path -LiteralPath $orig) { $esiti[$k] = 'occupato'; $scelte.Remove($k); continue }",
+    "  # Nel Cestino possono esserci DUE voci con lo stesso percorso (un omonimo cancellato prima):",
+    "  # l ordine dell elenco e casuale, e prendere la prima poteva rimettere la foto VECCHIA sotto",
+    "  # la scheda di quella nuova. Si tiene la voce cancellata per ULTIMA, cioe quella che il",
+    "  # programma ha appena mandato li. La data e un DateTime, non il testo tradotto della colonna;",
+    "  # una voce senza data non scavalca mai una che ce l ha, e senza date si fa come prima.",
+    "  $quando = $null",
+    "  try { $quando = $v.ExtendedProperty('System.Recycle.DateDeleted') } catch { $quando = $null }",
+    "  if ($quando -isnot [datetime]) { $quando = $null }",
+    "  if ($scelte.ContainsKey($k)) {",
+    "    $prima = $scelte[$k].quando",
+    "    if (($null -eq $quando) -or (($null -ne $prima) -and ($prima -ge $quando))) { continue }",
+    "  }",
+    "  $esiti[$k] = 'inCorso'",
+    "  $scelte[$k] = [pscustomobject]@{ voce = $v; orig = $orig; k = $k; quando = $quando }",
+    "}",
+    "$daFare = @($scelte.Values)",
     "$avviati = @()",
     "foreach ($d in $daFare) {",
     "  try {",
@@ -445,7 +725,8 @@ const SCRIPT_RIPRISTINO = [
     "    $avviati += $d.orig",
     "  } catch { $esiti[$d.k] = 'fallito' }",
     "}",
-    "$scadenza = (Get-Date).AddSeconds(20)",
+    "# L attesa cresce col numero di file: con migliaia di file 20 secondi fissi non bastavano.",
+    "$scadenza = (Get-Date).AddSeconds(20 + 0.05 * $avviati.Count)",
     "while ($avviati.Count -gt 0 -and (Get-Date) -lt $scadenza) {",
     "  Start-Sleep -Milliseconds 200",
     "  $ancora = @()",
@@ -462,13 +743,32 @@ ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
     const results = [];
     if (process.platform !== 'win32' || !Array.isArray(filePaths)) return { ok: false, restored: 0, results };
     const voluti = [];
-    for (const raw of filePaths.slice(0, RESTORE_MAX_FILES)) {
+    // ITALIANO: nessun tetto sul NUMERO di file per richiesta. Prima si guardavano solo i primi
+    //           5000, in silenzio: per gli altri non tornava nessun esito, e la pagina li contava
+    //           "non rimessi a posto" senza che nessuno li avesse cercati. Il tempo massimo (qui
+    //           sotto) e l'attesa dello script crescono gia' col numero di file; spezzare la
+    //           chiamata in piu' pezzi farebbe scorrere tutto il Cestino una volta per pezzo.
+    // ENGLISH: no cap on the NUMBER of files per request. Only the first 5000 used to be looked at,
+    //          silently: the rest got no outcome at all, and the page counted them "not put back"
+    //          although nobody had looked for them. The time limit (below) and the script's wait
+    //          already grow with the number of files; splitting the call into chunks would scan the
+    //          whole Recycle Bin once per chunk.
+    for (const raw of filePaths) {
         // ITALIANO: stesso contratto stretto degli altri canali: solo percorsi locali assoluti.
         // ENGLISH: same narrow contract as the other channels: local absolute paths only.
         if (!isSafeLocalPath(raw)) { results.push({ percorso: String(raw || ''), esito: 'rifiutato' }); continue; }
         voluti.push(raw);
     }
     if (voluti.length === 0) return { ok: false, restored: 0, results };
+
+    // ITALIANO: quali file c'erano GIA' prima di cominciare (un omonimo): servono per dire il vero
+    //           quando il tempo scade, vedi sotto. Il tempo massimo cresce col numero di file: un
+    //           minuto fisso non bastava a svuotamenti di migliaia di foto.
+    // ENGLISH: which files were ALREADY there before starting (a namesake): needed to tell the
+    //          truth when time runs out, see below. The time limit grows with the number of files:
+    //          a fixed minute was not enough for emptyings of thousands of photos.
+    const giaPresenti = new Set(voluti.filter((p) => { try { return fs.existsSync(p); } catch (_) { return false; } }));
+    const tempoMassimo = RESTORE_TIMEOUT_MS + 100 * voluti.length;
 
     const esitiPS = await new Promise((resolve) => {
         let uscito = false;
@@ -483,11 +783,28 @@ ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
             //          windowsHide keeps the black console window off the user's screen.
             const ps = spawn(psExe, ['-NoProfile', '-NonInteractive', '-Sta', '-Command', SCRIPT_RIPRISTINO], { windowsHide: true });
             let out = '';
-            const orologio = setTimeout(() => { try { ps.kill(); } catch (_) {} fine(null); }, RESTORE_TIMEOUT_MS);
+            // ITALIANO: allo scadere si ferma PowerShell e si aspetta che sia davvero chiuso (al
+            //           massimo 5 secondi) prima di guardare il disco: un file spostato un attimo
+            //           dopo il controllo tornerebbe 'fallito' pur essendo gia' al suo posto.
+            // ENGLISH: when time runs out PowerShell is stopped and we wait until it has really
+            //          closed (5 seconds at most) before looking at the disk: a file moved a moment
+            //          after the check would come back 'fallito' while already in its place.
+            let scaduto = false;
+            const orologio = setTimeout(() => {
+                scaduto = true;
+                try { ps.kill(); } catch (_) {}
+                setTimeout(() => fine(null), 5000);
+            }, tempoMassimo);
+            // ITALIANO: la risposta e' UTF-8 (vedi lo script): una lettera di piu' byte puo' cadere
+            //           a cavallo di due pezzi, e decodificarli uno per uno la romperebbe.
+            // ENGLISH: the answer is UTF-8 (see the script): a multi-byte letter can straddle two
+            //          chunks, and decoding them one by one would break it.
+            ps.stdout.setEncoding('utf8');
             ps.stdout.on('data', (d) => { out += String(d); });
             ps.on('error', (e) => { clearTimeout(orologio); console.error('restore-trashed: PowerShell non partito', e); fine(null); });
             ps.on('close', () => {
                 clearTimeout(orologio);
+                if (scaduto) { fine(null); return; }
                 try { fine(JSON.parse(out.trim() || '[]')); } catch (e) { console.error('restore-trashed: risposta illeggibile', e); fine(null); }
             });
             ps.stdin.on('error', () => {});
@@ -508,9 +825,21 @@ ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
             if (e && typeof e.percorso === 'string') perPercorso.set(e.percorso, String(e.esito || 'fallito'));
         }
     }
+    // ITALIANO: un file che prima non c'era e adesso e' al suo posto E' tornato, anche se la risposta
+    //           e' mancata (tempo scaduto) o lo dava ancora per 'fallito' (l'attesa dello script e'
+    //           finita un attimo prima). Dirlo 'fallito' era falso: l'app lo teneva fuori dal
+    //           progetto, il nuovo tentativo non lo trovava piu' nel Cestino ('nonTrovato') e il suo
+    //           .txt restava li'. Un file che c'era gia' prima (un omonimo) non diventa mai 'ok'.
+    // ENGLISH: a file that was not there before and is in its place now HAS come back, even when the
+    //          answer was missing (time ran out) or still called it 'fallito' (the script's wait ended
+    //          a moment earlier). Calling it 'fallito' was false: the app kept it out of the project,
+    //          the retry no longer found it in the Recycle Bin ('nonTrovato') and its .txt stayed
+    //          there. A file that was already there before (a namesake) never becomes 'ok'.
+    const tornatoDavvero = (p) => { try { return !giaPresenti.has(p) && fs.existsSync(p); } catch (_) { return false; } };
     let restored = 0;
     for (const p of voluti) {
-        const esito = perPercorso.get(p) || 'fallito';
+        let esito = perPercorso.get(p) || 'fallito';
+        if (esito === 'fallito' && tornatoDavvero(p)) esito = 'ok';
         if (esito === 'ok') restored++;
         results.push({ percorso: p, esito });
     }
@@ -596,6 +925,119 @@ ipcMain.handle('updates:check', async () => new Promise((resolve) => {
         req.end();
     } catch (_) { rispondi(null); }
 }));
+// ITALIANO: SERVER MCP (vedi electron/mcp-server.src.mjs). Spento di serie; lo stato e il codice
+//           segreto stanno in userData/mcp.json. Il server non ha le foto: ogni domanda di un'AI
+//           esterna si gira alla finestra (canale 'mcp:request'), che risponde su 'mcp:response'.
+//           Il codice del server si carica solo quando lo si accende.
+// ENGLISH: MCP SERVER (see electron/mcp-server.src.mjs). Off by default; its state and secret
+//          token live in userData/mcp.json. The server holds no photos: every question from an
+//          external AI is forwarded to the window ('mcp:request'), which answers on
+//          'mcp:response'. The server code is loaded only when it is switched on.
+const MCP_PORTA = 37620;
+const MCP_TIMEOUT_MS = 60000;
+const getMcpPath = () => path.join(app.getPath('userData'), 'mcp.json');
+const leggiMcp = () => {
+    try {
+        const j = JSON.parse(fs.readFileSync(getMcpPath(), 'utf8'));
+        return { acceso: j.acceso === true, codice: typeof j.codice === 'string' && j.codice.length >= 32 ? j.codice : '' };
+    } catch (_) {
+        return { acceso: false, codice: '' };
+    }
+};
+const scriviMcp = (dati) => {
+    try {
+        fs.writeFileSync(getMcpPath(), JSON.stringify({ acceso: dati.acceso === true, codice: String(dati.codice || '') }), 'utf8');
+        return true;
+    } catch (e) {
+        console.error('[MCP] settings not saved', e);
+        return false;
+    }
+};
+const nuovoCodiceMcp = () => require('crypto').randomBytes(24).toString('base64url');
+let mcpServer = null;
+let mcpErrore = '';
+let mcpProssimoId = 1;
+const mcpInAttesa = new Map();
+
+const chiediAllaFinestra = (strumento, argomenti) => new Promise((risolvi) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        risolvi({ errore: 'Images Tag Manager has no open window.' });
+        return;
+    }
+    const id = mcpProssimoId++;
+    const timer = setTimeout(() => {
+        mcpInAttesa.delete(id);
+        risolvi({ errore: 'Images Tag Manager did not answer in time.' });
+    }, MCP_TIMEOUT_MS);
+    mcpInAttesa.set(id, { risolvi, timer });
+    mainWindow.webContents.send('mcp:request', { id, strumento: String(strumento), argomenti: argomenti || {} });
+});
+ipcMain.on('mcp:response', (event, messaggio) => {
+    // ITALIANO: risponde solo la finestra principale, e solo a una domanda fatta davvero.
+    // ENGLISH: only the main window answers, and only to a question really asked.
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+    const voce = mcpInAttesa.get(messaggio && messaggio.id);
+    if (!voce) return;
+    clearTimeout(voce.timer);
+    mcpInAttesa.delete(messaggio.id);
+    voce.risolvi(messaggio.risposta && typeof messaggio.risposta === 'object' ? messaggio.risposta : { errore: 'Empty answer.' });
+});
+const statoMcp = () => {
+    const c = leggiMcp();
+    return { acceso: c.acceso, attivo: mcpServer !== null, porta: MCP_PORTA, codice: c.codice, errore: mcpErrore };
+};
+const fermaMcp = async () => {
+    const s = mcpServer;
+    mcpServer = null;
+    if (s) { try { await s.chiudi(); } catch (_) { } }
+    for (const voce of mcpInAttesa.values()) {
+        clearTimeout(voce.timer);
+        voce.risolvi({ errore: 'The MCP server was switched off.' });
+    }
+    mcpInAttesa.clear();
+};
+const avviaMcp = async () => {
+    await fermaMcp();
+    mcpErrore = '';
+    let c = leggiMcp();
+    if (!c.codice) {
+        c = { ...c, codice: nuovoCodiceMcp() };
+        scriviMcp(c);
+    }
+    try {
+        const { avviaServerMcp } = require('./mcp-server.cjs');
+        mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion });
+    } catch (e) {
+        mcpServer = null;
+        // ITALIANO: 'porta' = un altro programma usa gia' la porta; 'avvio' = qualunque altro guasto.
+        // ENGLISH: 'porta' = another program already uses the port; 'avvio' = any other fault.
+        mcpErrore = e && e.code === 'EADDRINUSE' ? 'porta' : 'avvio';
+        console.error('[MCP] start failed', e);
+    }
+};
+ipcMain.handle('mcp:get-status', () => statoMcp());
+ipcMain.handle('mcp:set-enabled', async (_event, acceso) => {
+    const c = leggiMcp();
+    const nuovo = { acceso: acceso === true, codice: c.codice || nuovoCodiceMcp() };
+    if (!scriviMcp(nuovo)) {
+        mcpErrore = 'salvataggio';
+        return { ...statoMcp(), acceso: mcpServer !== null };
+    }
+    if (nuovo.acceso) await avviaMcp();
+    else { await fermaMcp(); mcpErrore = ''; }
+    return statoMcp();
+});
+ipcMain.handle('mcp:new-token', async () => {
+    const c = leggiMcp();
+    if (!scriviMcp({ acceso: c.acceso, codice: nuovoCodiceMcp() })) {
+        mcpErrore = 'salvataggio';
+        return statoMcp();
+    }
+    if (c.acceso) await avviaMcp();
+    return statoMcp();
+});
+app.on('will-quit', () => { fermaMcp(); });
+
 ipcMain.handle('shell:open-external', async (_event, url) => {
     if (typeof url !== 'string') return false;
     try {
@@ -643,10 +1085,14 @@ const rememberPickedDir = (p) => {
     //           per le condivisioni di rete, quindi un percorso del genere non servirebbe a
     //           niente. Restando vuoto, la pagina ricade sulla strada gia' esistente, cioe' la
     //           seconda conferma con la cancellazione definitiva, che li' e' l'unica verita'.
+    //           Una cartella su una LETTERA collegata alla rete (Z:\) invece passa: per quella e'
+    //           il canale del Cestino a rispondere 'rifiutato', che porta alla stessa strada.
     // ENGLISH: NETWORK folders do not get through here, deliberately: Windows has no Recycle Bin
     //          for network shares, so such a path would buy nothing. Left empty, the page falls
     //          back to the road that already exists - the second confirmation with the permanent
     //          delete - which over there is the only truthful answer.
+    //          A folder on a network-MAPPED drive letter (Z:\) does get through: for that one the
+    //          Recycle Bin channel answers 'rifiutato', which leads to the same road.
     if (!isSafeLocalPath(p)) return;
     try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
     // ITALIANO: si RACCOLGONO tutti i candidati, non si tiene solo l'ultimo. In quella finestra
@@ -793,10 +1239,32 @@ function createSplashWindow() {
     splashWindow.on('closed', () => { splashWindow = null; });
 }
 
+// ITALIANO: misura minima della finestra. Sotto i 1024 px di larghezza i tre riquadri in alto
+//           (carica, trigger, pulsanti) vanno uno sotto l'altro e la grafica si scompone; sotto i
+//           600 px di altezza la galleria quasi sparisce. Mai piu' grande dell'area utile dello
+//           schermo: su un portatile piccolo con lo zoom di Windows (1366x768 al 125% = ~1093x566)
+//           un minimo piu' alto farebbe uscire la finestra dai bordi.
+// ENGLISH: minimum window size. Below 1024 px wide the three top panels (load, triggers, buttons)
+//          stack and the layout falls apart; below 600 px tall the gallery nearly vanishes. Never
+//          larger than the screen work area: on a small laptop with Windows scaling (1366x768 at
+//          125% = ~1093x566) a higher minimum would push the window off the screen.
+// ITALIANO: 1040 e non 1024: il minimo vale per la finestra intera, bordi compresi, e dentro la
+//           pagina resta ~16 px piu' stretta: a 1024 scendeva sotto la soglia lg (visto dal vivo).
+// ENGLISH: 1040 and not 1024: the minimum applies to the whole window, borders included, and the
+//          page inside stays ~16 px narrower: at 1024 it fell below the lg threshold (seen live).
+const FINESTRA_MIN_LARGHEZZA = 1040;
+const FINESTRA_MIN_ALTEZZA = 600;
+const misuraMinima = () => {
+    let area = { width: FINESTRA_MIN_LARGHEZZA, height: FINESTRA_MIN_ALTEZZA };
+    try { area = screen.getPrimaryDisplay().workAreaSize; } catch (_) { }
+    return { minWidth: Math.min(FINESTRA_MIN_LARGHEZZA, area.width), minHeight: Math.min(FINESTRA_MIN_ALTEZZA, area.height) };
+};
+
 function createMainWindow() {
     mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
+        ...misuraMinima(),
         title: `Images Tag Manager for LORAs v${appVersion}`,
         show: false,
         autoHideMenuBar: true,
@@ -836,15 +1304,28 @@ function createMainWindow() {
        programma con l'immagine. Con il menu disattivato non si tornava indietro: progetto,
        cestino e cronologia persi. La pagina dell'app viene caricata con loadFile, che NON
        emette will-navigate, quindi qui possiamo bloccare tutto senza effetti collaterali.
+       Unica eccezione: la pagina che ricarica se stessa. Il pulsante "Ricarica" della
+       schermata di errore chiama window.location.reload(), che e' una navigazione chiesta
+       dalla pagina verso lo STESSO indirizzo: bloccata, nell'app installata il pulsante non
+       faceva niente. Passa solo l'indirizzo identico a quello gia' caricato; un indirizzo
+       malformato viene bloccato.
        ENGLISH: Block ANY navigation away from the app.
        Every "file:" URL used to be allowed, not just the app's own page: dropping a photo on
        the window made Chromium navigate to it, replacing the program with the image. With the
        menu disabled there was no way back: project, trash and undo history all lost. The app's
        page is loaded via loadFile, which does NOT emit will-navigate, so blocking everything
-       here is safe. */
-    mainWindow.webContents.on('will-navigate', (event, url) => {
-        const target = new URL(url);
-        const allowedDevHost = isDev && target.host === 'localhost:3000';
+       here is safe.
+       Only exception: the page reloading itself. The error screen's "Reload" button calls
+       window.location.reload(), a navigation started by the page towards the SAME address:
+       blocked, in the installed app the button did nothing. Only the address identical to the
+       one already loaded goes through; a malformed address is blocked. */
+    const contenutiPrincipali = mainWindow.webContents;
+    contenutiPrincipali.on('will-navigate', (event, url) => {
+        let paginaCorrente = '';
+        try { paginaCorrente = contenutiPrincipali.getURL(); } catch (_) { paginaCorrente = ''; }
+        if (paginaCorrente && url === paginaCorrente) return;
+        let allowedDevHost = false;
+        try { allowedDevHost = isDev && new URL(url).host === 'localhost:3000'; } catch (_) { allowedDevHost = false; }
         if (!allowedDevHost) {
             event.preventDefault();
         }
@@ -911,13 +1392,53 @@ function createMainWindow() {
             mostraApp(false);
         }
     });
+    // ITALIANO: se il processo della pagina muore (memoria esaurita, crollo) la finestra restava
+    //           bianca: niente messaggio, e in produzione niente menu, quindi niente Ctrl+R. Ora la
+    //           pagina si ricarica da sola, una volta al minuto al massimo (un crollo che si ripete
+    //           subito non diventa un giro infinito), e la finestra si mostra subito se non lo era
+    //           ancora. Le modifiche non salvate sono nel salvataggio di emergenza: tornano
+    //           riaprendo la cartella. Un'uscita normale ('clean-exit') o un processo chiuso apposta
+    //           ('killed', anche alla chiusura del programma) non si ricaricano.
+    //           Un secondo crollo entro il minuto non viene piu' ignorato (la finestra restava
+    //           bianca per sempre): il ricaricamento si rimanda alla fine del minuto, uno solo in
+    //           attesa, e si annulla se la finestra si chiude prima.
+    // ENGLISH: when the page process dies (out of memory, crash) the window stayed blank: no
+    //          message, and in production no menu, so no Ctrl+R. Now the page reloads by itself, at
+    //          most once a minute (a crash that repeats at once does not become an endless loop),
+    //          and the window is shown right away if it was not yet. Unsaved edits are in the crash
+    //          backup: they come back when the folder is reopened. A normal exit ('clean-exit') or a
+    //          process ended on purpose ('killed', also while the program closes) does not reload.
+    //          A second crash within the minute is no longer ignored (the window stayed blank for
+    //          good): the reload is delayed to the end of the minute, only one pending, and it is
+    //          cancelled if the window closes first.
+    let ultimoRicaricamento = 0;
+    let ricaricamentoPendente = null;
     mainWindow.webContents.on('render-process-gone', (_e, details) => {
         console.error('main window render process gone', details);
         if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+        const motivo = details && details.reason;
+        if (motivo === 'clean-exit' || motivo === 'killed') return;
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        const ora = Date.now();
+        if (ultimoRicaricamento && ora - ultimoRicaricamento < 60000) {
+            if (ricaricamentoPendente) return;
+            ricaricamentoPendente = setTimeout(() => {
+                ricaricamentoPendente = null;
+                if (!mainWindow || mainWindow.isDestroyed()) return;
+                ultimoRicaricamento = Date.now();
+                mostraApp(true);
+                try { mainWindow.webContents.reload(); } catch (e) { console.error('main window reload failed', e); }
+            }, ultimoRicaricamento + 60000 - ora);
+            return;
+        }
+        ultimoRicaricamento = ora;
+        mostraApp(true);
+        try { mainWindow.webContents.reload(); } catch (e) { console.error('main window reload failed', e); }
     });
 
     mainWindow.on('closed', () => {
         if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+        if (ricaricamentoPendente) { clearTimeout(ricaricamentoPendente); ricaricamentoPendente = null; }
         mainWindow = null;
     });
 }
@@ -954,6 +1475,9 @@ app.whenReady().then(() => {
 
     createSplashWindow();
     createMainWindow();
+    // ITALIANO: il server MCP riparte da solo se l'utente lo aveva lasciato acceso.
+    // ENGLISH: the MCP server starts again by itself if the user left it on.
+    if (leggiMcp().acceso) avviaMcp();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

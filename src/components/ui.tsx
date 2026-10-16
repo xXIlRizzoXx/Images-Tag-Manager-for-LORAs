@@ -29,6 +29,7 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 // ENGLISH: Input field for tags with suggestions and deletion
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
+import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from '../utils/tagCase';
 
 // ITALIANO: `lang` serve a mostrare la traduzione del tag al passaggio del mouse: prima
 //           accadeva solo nel visualizzatore a foto singola, non sulle miniature.
@@ -43,7 +44,9 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         if (e.key === ',' || e.key === 'Enter') {
             e.preventDefault();
             const newTag = inputValue.trim().replace(/,$/, '');
-            if (newTag && !tags.includes(newTag)) { setTags([...tags, newTag]); setInputValue(''); soundManager.pop(); }
+            // ITALIANO: "Smile" su una foto che ha "smile" non e' un tag nuovo (vedi tagCase).
+            // ENGLISH: "Smile" on a photo that has "smile" is not a new tag (see tagCase).
+            if (newTag && !hasTagIgnoringCase(tags, newTag)) { setTags([...tags, newTag]); setInputValue(''); soundManager.pop(); }
         } else if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
             setTags(tags.slice(0, -1)); soundManager.click();
         }
@@ -53,9 +56,9 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         if (readOnly) return;
         e.preventDefault();
         const pasteData = e.clipboardData.getData('text');
-        const newTags = pasteData.split(/[,\n\r]+/)
+        const newTags = uniqueTagsIgnoringCase(pasteData.split(/[,\n\r]+/)
             .map((t: string) => t.trim())
-            .filter((t: string) => t && !tags.includes(t));
+            .filter((t: string) => t && !hasTagIgnoringCase(tags, t)));
         
         if (newTags.length > 0) {
             setTags([...tags, ...newTags]);
@@ -103,16 +106,50 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
     );
 };
 
+// ITALIANO: quanto resta un avviso. 4 secondi bastano per "Tag copiati", non per un avviso di 59
+//           parole che dice cosa fare (foto su chiavetta che non escono dal cestino): il tempo cresce
+//           con il testo (60 ms a carattere, 150 per gli ideogrammi cinesi e giapponesi), un errore
+//           resta almeno 8 secondi, e nessuno oltre 30 (la X chiude subito).
+// ENGLISH: how long a notice stays. 4 seconds are enough for "Tags copied", not for a 59-word notice
+//          that says what to do (photos on a USB stick that cannot leave the trash): the time grows
+//          with the text (60 ms per character, 150 for Chinese and Japanese ideographs), an error
+//          stays at least 8 seconds, and none over 30 (the X closes at once).
+const durataAvviso = (message: any, type: any): number => {
+    const testo = String(message ?? '');
+    const ideogrammi = (testo.match(/[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/g) || []).length;
+    const lettura = (testo.length - ideogrammi) * 60 + ideogrammi * 150;
+    return Math.min(30000, Math.max(type === 'error' ? 8000 : 4000, lettura));
+};
+
 // ITALIANO: Messaggio a comparsa (notifica) in basso a destra
 // ENGLISH: Pop-up message (notification) at the bottom right
-export const Toast = ({ message, type, onClose }: any) => {
-    useEffect(() => { const timer = setTimeout(onClose, 4000); return () => clearTimeout(timer); }, [onClose]);
+export const Toast = ({ message, type, onClose, id }: any) => {
+    // ITALIANO: i 4 secondi partono con ogni notifica NUOVA (testo, tipo o `id` diversi: l'id
+    //           cambia anche quando torna lo stesso testo, es. "Tag copiati" due volte di fila).
+    //           Prima dipendevano da onClose, che App crea nuova a ogni disegno: scrivendo nella
+    //           ricerca, o durante "Tagga tutte con AI" veloce, ripartivano a ogni disegno e il
+    //           messaggio non spariva piu'. La chiusura usata e' sempre l'ultima ricevuta.
+    // ENGLISH: the 4 seconds start with every NEW notification (different text, type or `id`: the
+    //          id changes even when the same text comes back, e.g. "Tags copied" twice in a row).
+    //          They used to depend on onClose, which App creates anew on every render: typing in
+    //          the search, or a fast "Auto-tag all with AI", restarted them on every render and
+    //          the message never went away. The close function used is always the latest one.
+    const chiudiRef = useRef(onClose);
+    useEffect(() => { chiudiRef.current = onClose; });
+    // ITALIANO: la durata dipende da testo e tipo (vedi durataAvviso), con le stesse dipendenze.
+    // ENGLISH: the duration depends on text and type (see durataAvviso), with the same dependencies.
+    useEffect(() => { const timer = setTimeout(() => chiudiRef.current(), durataAvviso(message, type)); return () => clearTimeout(timer); }, [message, type, id]);
     const bgColor = type === 'error' ? 'bg-red-600' : 'bg-emerald-500';
     const infoColor = type === 'info' ? 'bg-blue-600' : bgColor;
     return (
         <div className={`fixed bottom-8 right-8 flex items-center gap-3 px-6 py-3 rounded-full shadow-2xl text-white ${infoColor} animate-in slide-in-from-bottom-10 fade-in z-[9999] w-max max-w-[90vw]`}>
             {type === 'error' ? <TriangleAlert size={18} /> : type === 'info' ? <Info size={18} /> : <Check size={18} />}
-            <span className="font-medium text-sm whitespace-nowrap">{message}</span>
+            {/* ITALIANO: va a capo solo quando supera il 90% della finestra (w-max lo tiene su una riga
+                altrimenti): un avviso fatto di frasi intere puo' essere lungo, e con nowrap usciva
+                dallo schermo. ENGLISH: wraps only past 90% of the window (w-max keeps it on one line
+                otherwise): a notice made of whole sentences can be long, and with nowrap it ran off
+                the screen. */}
+            <span className="font-medium text-sm">{message}</span>
             <button onClick={onClose} className="ml-2 hover:bg-black/20 rounded-full p-1 transition-colors"><X size={14} /></button>
         </div>
     );
@@ -279,8 +316,16 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
  */
 export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: any) => {
     if (!isOpen) return null;
+    // ITALIANO: z-[500], sopra l'editor dei file di tag (320/340), la finestra della API key (400) e
+    //           le altre finestre: la X della finestra puo' arrivare con una di loro aperta, e la
+    //           domanda restava nascosta sotto (la X sembrava morta). Sopra restano solo la schermata
+    //           di avvio, la scelta della lingua e i messaggi a comparsa.
+    // ENGLISH: z-[500], above the Tag file editor (320/340), the API key dialog (400) and the other
+    //          dialogs: the window X can arrive with one of them open, and the question stayed hidden
+    //          underneath (the X looked dead). Only the splash, the language picker and the toasts
+    //          stay above.
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-3 text-amber-500 dark:text-amber-400">

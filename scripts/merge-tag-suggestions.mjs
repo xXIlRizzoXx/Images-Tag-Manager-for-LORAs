@@ -33,7 +33,36 @@ const ingressi = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i 
 //   o maiuscole diverse: e' cosi' che si evitano i doppioni veri.
 // ENGLISH: two tags are "the same tag" even when spelled with underscores, extra spaces or
 //   different case: that is what actually prevents duplicates.
-const chiave = t => String(t).toLowerCase().replace(/[_\s]+/g, ' ').replace(/\s*\(.*?\)\s*/g, ' ').trim();
+// ITALIANO: un tag fatto solo di parentesi ('(o)_(o)') senza di loro resterebbe vuoto, e il
+//   rapporto lo scarterebbe: in quel caso la chiave tiene le parentesi.
+// ENGLISH: a tag made only of parentheses ('(o)_(o)') would be empty without them, and the report
+//   would drop it: in that case the key keeps the parentheses.
+const chiave = t => {
+    const base = String(t).toLowerCase().replace(/[_\s]+/g, ' ').trim();
+    return base.replace(/\s*\(.*?\)\s*/g, ' ').trim() || base;
+};
+
+// ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con
+//   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (a differenza di chiave),
+//   e un'emoticon senza lettere ne' cifre (^_^) tiene i suoi trattini bassi.
+// ENGLISH: the form in which a new tag enters the dictionary, where every tag is lowercase with
+//   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (unlike chiave), and an
+//   emoticon without letters or digits (^_^) keeps its underscores.
+// ITALIANO: il trattino basso resta anche dove fa parte del tag, perche' i modelli conoscono
+//   solo quella forma: le emoticon di WD14 (o_o, x_x, 0_0: un segno, _, un segno, piu' le poche
+//   piu' lunghe) e i tag di qualita' di Pony (score_9, score_8_up, source_anime, rating_safe).
+//   Vale anche per un piano corretto a mano, che passa di qui con --apply.
+// ENGLISH: the underscore also stays where it is part of the tag, because models only know that
+//   form: the WD14 emoticons (o_o, x_x, 0_0: one sign, _, one sign, plus the few longer ones)
+//   and Pony's quality tags (score_9, score_8_up, source_anime, rating_safe). This also holds for
+//   a plan corrected by hand, which goes through here on --apply.
+const EMOTICON_LUNGHE = new Set(['(o)_(o)', '<o>_<o>', '<|>_<|>', '||_||']);
+const tieneTrattino = s => /^[^\s_]_[^\s_]$/u.test(s) || EMOTICON_LUNGHE.has(s) || /^(score|source|rating)_[\p{L}\p{N}_]+$/u.test(s);
+const grafia = t => {
+    const s = String(t).toLowerCase().trim();
+    if (tieneTrattino(s)) return s;
+    return (/[\p{L}\p{N}]/u.test(s) ? s.replace(/[_\s]+/g, ' ') : s.replace(/\s+/g, ' ')).trim();
+};
 
 function leggiDizionario() {
     const src = fs.readFileSync(FILE_TAG, 'utf8');
@@ -102,8 +131,8 @@ if (APPLY) {
         if (!cat) { saltati.push(`${tag} -> categoria sconosciuta "${info.categoria}"`); continue; }
         if (!info.it || !String(info.it).trim()) { saltati.push(`${tag} -> manca la traduzione italiana`); continue; }
         if (!perCategoria.has(cat.id)) perCategoria.set(cat.id, []);
-        perCategoria.get(cat.id).push({ tag, it: String(info.it).trim() });
-        perChiave.set(k, { tag, categoria: cat.id });   // niente doppioni dentro lo stesso piano
+        perCategoria.get(cat.id).push({ tag: grafia(tag), it: String(info.it).trim() });
+        perChiave.set(k, { tag: grafia(tag), categoria: cat.id });   // niente doppioni dentro lo stesso piano
     }
 
     // inserisco partendo dal fondo del file, cosi' le posizioni non si spostano
@@ -150,14 +179,14 @@ if (ingressi.length === 0) {
 const { categorie, perChiave } = leggiDizionario();
 console.log(`dizionario attuale: ${perChiave.size} tag in ${categorie.length} categorie\n`);
 
-const visti = new Map();     // chiave -> prima grafia incontrata
+const visti = new Map();     // chiave -> prima grafia incontrata, nella forma del dizionario
 for (const f of ingressi) {
     const tags = leggiTagDaFile(f);
     let nuoviQui = 0;
     for (const t of tags) {
         const k = chiave(t);
         if (!k) continue;
-        if (!visti.has(k)) { visti.set(k, t); if (!perChiave.has(k)) nuoviQui++; }
+        if (!visti.has(k)) { visti.set(k, grafia(t)); if (!perChiave.has(k)) nuoviQui++; }
     }
     console.log(`${path.basename(f)}: ${tags.length} tag letti, ${nuoviQui} mai visti prima`);
 }

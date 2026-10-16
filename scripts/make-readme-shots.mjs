@@ -12,7 +12,7 @@
  *
  *   node scripts/make-readme-shots.mjs [--url http://localhost:3100] [--only 02,03]
  */
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, session } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -56,7 +56,16 @@ function stageRealFiles(dir, count) {
     for (let i = 0; i < coppie.length && scelte.length < count; i += passo) scelte.push(coppie[i]);
 
     fs.rmSync(STAGE_DIR, { recursive: true, force: true });
-    fs.mkdirSync(STAGE_DIR, { recursive: true });
+    // ITALIANO: su Windows una cartella appena cancellata (o tenuta d'occhio dal server di
+    //   sviluppo) puo' rifiutare per un attimo di essere ricreata (EPERM): si riprova.
+    // ENGLISH: on Windows a folder just deleted (or watched by the dev server) may refuse for a
+    //   moment to be created again (EPERM): retry.
+    for (let i = 0; ; i++) {
+        try { fs.mkdirSync(STAGE_DIR, { recursive: true }); break; } catch (e) {
+            if (e.code !== 'EPERM' || i >= 20) throw e;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+        }
+    }
     const elenco = [];
     for (const img of scelte) {
         const base = img.replace(IMG_RE, '');
@@ -369,14 +378,69 @@ window.__shot = {
 };
 true`;
 
+// ITALIANO: l'esito di una "Prova i modelli recenti" DIMOSTRATIVO, legato alla chiave finta di
+//   shots-demo-bridge.cjs (l'impronta sono le prime 16 cifre del suo SHA-256, come in App.tsx).
+// ENGLISH: a DEMO "Test recent models" outcome, tied to the fake key of shots-demo-bridge.cjs
+//   (the fingerprint is the first 16 digits of its SHA-256, as in App.tsx).
+const CHIAVE_DEMO = 'AIzaDEMO-only-for-the-readme-screenshots';
+const PROVA_DEMO = {
+    il: Date.now(),
+    modelli: [
+        { id: 'gemini-4-pro-preview', label: 'Gemini 4 Pro Preview', versione: [4], stato: 'aPagamento' },
+        { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', versione: [3, 8], stato: 'occupato' },
+        { id: 'gemini-3.8-flash-lite', label: 'Gemini 3.8 Flash-Lite', versione: [3, 8], stato: 'utilizzabile' },
+        { id: 'gemini-3.7-pro', label: 'Gemini 3.7 Pro', versione: [3, 7], stato: 'aPagamento' },
+        { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', versione: [3, 7], stato: 'utilizzabile' },
+        { id: 'gemini-3.7-flash-lite', label: 'Gemini 3.7 Flash-Lite', versione: [3, 7], stato: 'utilizzabile' },
+    ],
+};
+
 async function main() {
     fs.mkdirSync(OUT_DIR, { recursive: true });
-    const win = new BrowserWindow({
-        width: W, height: H, useContentSize: true, show: false,
-        backgroundColor: '#2e1065',
-        webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+    // ITALIANO: niente rete: la pagina puo' parlare solo col server di sviluppo. Con la chiave
+    //   finta un controllo dei modelli verso Google non deve nemmeno partire.
+    // ENGLISH: no network: the page may only talk to the dev server. With the fake key a model
+    //   check towards Google must not even start.
+    session.defaultSession.webRequest.onBeforeRequest((det, cb) => {
+        const u = det.url;
+        cb({ cancel: !(u.startsWith(URL_APP) || u.startsWith('data:') || u.startsWith('blob:') || u.startsWith('devtools:') || u.startsWith('ws://localhost')) });
     });
-    const wc = win.webContents;
+    const crypto = await import('crypto');
+    PROVA_DEMO.impronta = crypto.createHash('sha256').update(CHIAVE_DEMO).digest('hex').slice(0, 16);
+
+    let win = null;
+    let wc = null;
+    // ITALIANO: conPonte = finestra col ponte finto (chiave dimostrativa e MCP), solo per gli
+    //   scatti delle Impostazioni AI e MCP; tutti gli altri restano come nell'anteprima del browser.
+    // ENGLISH: conPonte = window with the fake bridge (demo key and MCP), only for the AI and MCP
+    //   Settings shots; all the others stay as in the browser preview.
+    const apriFinestra = async (conPonte) => {
+        // la vecchia si chiude DOPO aver aperto la nuova: senza finestre il programma uscirebbe
+        // the old one is closed AFTER the new one opens: with no windows the program would quit
+        const vecchia = win;
+        win = new BrowserWindow({
+            width: W, height: H, useContentSize: true, show: false,
+            backgroundColor: '#2e1065',
+            webPreferences: {
+                contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false,
+                ...(conPonte ? { preload: path.join(ROOT, 'scripts', 'shots-demo-bridge.cjs') } : {}),
+            },
+        });
+        if (vecchia) vecchia.destroy();
+        wc = win.webContents;
+        // ITALIANO: il primo caricamento della prima finestra a volte fallisce (ERR_FAILED): su una
+        //   pagina d'errore gli scatti dopo restano appesi, quindi si riprova finche' la pagina c'e'.
+        // ENGLISH: the first window's first load sometimes fails (ERR_FAILED): on an error page the
+        //   later shots hang, so retry until the page is there.
+        for (let tentativo = 1; tentativo <= 4; tentativo++) {
+            try { await wc.loadURL(URL_APP); break; } catch (e) {
+                console.log('   caricamento fallito (' + e.code + '), tentativo', tentativo);
+                if (tentativo === 4) throw e;
+                await sleep(1500);
+            }
+        }
+        await sleep(1200);
+    };
     const run = js => wc.executeJavaScript(js, true);
 
     const shot = async (name) => {
@@ -408,12 +472,21 @@ async function main() {
     //   secondo ma evita che un pannello rimasto aperto sporchi la foto successiva.
     // ENGLISH: every shot starts from scratch (reload + re-import). It costs a few seconds but
     //   stops a panel left open from spoiling the next picture.
-    const daCapo = async ({ lingua = 'en', conImmagini = true, primoAvvio = false, conferma = true } = {}) => {
+    const daCapo = async ({ lingua = 'en', conImmagini = true, primoAvvio = false, conferma = true, ai = false } = {}) => {
         await run(`try {
             localStorage.setItem('lang', '${lingua}');
             ${primoAvvio ? `localStorage.removeItem('langChosen');` : `localStorage.setItem('langChosen','1');`}
             localStorage.removeItem('tagBackup');
-            localStorage.setItem('aiEnabled', 'false');
+            localStorage.setItem('aiEnabled', '${ai ? 'true' : 'false'}');
+            localStorage.setItem('updateCheck', 'off');
+            localStorage.setItem('mcpSpiegazioneVista', '1');
+            localStorage.setItem('aiModel', 'gemini-3.7-flash');
+            localStorage.setItem('aiModelloFissato', 'false');
+            localStorage.setItem('aiModelloControllatoIl', String(Date.now()));
+            localStorage.setItem('aiModelloTentatoIl', String(Date.now()));
+            ${ai ? `localStorage.setItem('aiModelliChiave', ${JSON.stringify(JSON.stringify(PROVA_DEMO))});` : `localStorage.removeItem('aiModelliChiave');`}
+            localStorage.removeItem('isDarkMode');
+            localStorage.removeItem('soundEnabled');
         } catch(e) {}; true`).catch(() => { });
         await wc.reload();
         await sleep(1600);
@@ -433,9 +506,12 @@ async function main() {
     };
 
     console.log('apro', URL_APP);
-    await wc.loadURL(URL_APP);
-    await sleep(1200);
+    await apriFinestra(false);
 
+    // ITALIANO: con --only si saltano anche i preparativi degli scatti non chiesti (sono lenti).
+    // ENGLISH: with --only the set-up of the shots not asked for is skipped too (it is slow).
+    const vuole = (...nomi) => !ONLY.length || nomi.some(n => ONLY.some(o => n.startsWith(o)));
+    if (vuole('01', '02', '03', '04', '05', '06', '08', '09', '10', '11', '12', '13', '14', '15')) {
     // --- 1. galleria ---------------------------------------------------------
     await daCapo();
     await shot('01-gallery');
@@ -475,13 +551,8 @@ async function main() {
     await sleep(3000);
     await shot('06-statistics');
 
-    // --- 7. impostazioni / IA ------------------------------------------------
-    await daCapo();
-    await run(`window.__shot.click('Settings')`);
-    await sleep(1400);
-    console.log('   accendo gli strumenti IA:', await run(`window.__shot.interruttore(2)`));
-    await sleep(1800);
-    await shot('07-ai-settings');
+    // (7. impostazioni / IA: piu' sotto, nella finestra col ponte finto
+    //  7. settings / AI: further down, in the window with the fake bridge)
 
     // --- 8. tema chiaro ------------------------------------------------------
     await daCapo();
@@ -547,6 +618,58 @@ async function main() {
         await sleep(800);
     }
     await shot('15-trigger-words');
+    }
+
+    // --- dal 7 al 18: Impostazioni AI e MCP, col ponte finto ---------------
+    // --- 7 to 18: AI and MCP Settings, with the fake bridge -----------------
+    if (vuole('07', '16', '17', '18')) {
+        await apriFinestra(true);
+        // porta in vista una sezione del pannello Impostazioni (il pannello scorre)
+        // brings a section of the Settings panel into view (the panel scrolls)
+        const inVista = testo => run(`(() => {
+            const el = Array.from(document.querySelectorAll('div, span, button')).find(e =>
+                e.childElementCount < 6 && (e.innerText || '').trim().startsWith(${JSON.stringify(testo)}));
+            if (!el) return false;
+            el.scrollIntoView({ block: 'start' });
+            return true;
+        })()`);
+
+        // 7. chiave e modello, come si vedono aprendo le Impostazioni
+        //    key and model, as they look when Settings is opened
+        await daCapo({ ai: true });
+        await run(`window.__shot.click('Settings')`);
+        await sleep(1600);
+        console.log('   sezione AI in vista:', await inVista('AI Tools'));
+        await sleep(800);
+        await shot('07-ai-settings');
+
+        // 16. "Avanzate" aperta, con l'esito della prova dei modelli
+        //     "Advanced" open, with the model test outcome
+        await run(`window.__shot.click('Advanced')`);
+        await sleep(1400);
+        console.log('   modello in vista:', await inVista('Model'));
+        await sleep(800);
+        await shot('16-ai-models');
+
+        // 17. server MCP acceso
+        //     MCP server switched on
+        await daCapo();
+        await run(`window.__shot.click('Settings')`);
+        await sleep(1600);
+        console.log('   sezione MCP in vista:', await inVista('MCP'));
+        await sleep(800);
+        await shot('17-mcp');
+
+        // 18. la spiegazione "?" della sezione MCP
+        //     the "?" explanation of the MCP section
+        console.log('   apro la spiegazione MCP:', await run(`(() => {
+            const b = Array.from(document.querySelectorAll('button')).filter(x => (x.getAttribute('aria-label') || '').startsWith('Help'));
+            const mcp = b.find(x => /MCP/.test(x.getAttribute('aria-label')));
+            if (mcp) { mcp.click(); return true; } return false;
+        })()`));
+        await sleep(1400);
+        await shot('18-help');
+    }
 
     console.log('fine');
     app.quit();

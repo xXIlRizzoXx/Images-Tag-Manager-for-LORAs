@@ -12,6 +12,8 @@
 *******************************************************************************
 *******************************************************************************/
 
+import { fileBaseName } from './sidecarTags';
+
 const MAX_FILENAME_LENGTH = 200;
 const ILLEGAL_VISIBLE_CHARS = /[<>:"/\\|?*]/g;
 const RESERVED_WINDOWS_NAMES = new Set([
@@ -76,4 +78,29 @@ export const stripExtension = (name: string): string => {
 export const buildTagFileName = (imageFileName: string): string => {
     const base = stripExtension(imageFileName);
     return `${base || 'image'}.txt`;
+};
+
+// ITALIANO: Nome del .txt scritto ACCANTO a una foto che e' gia' su disco, e del .txt da togliere
+//           con lei. E' la stessa regola con cui l'import abbina i due file (fileBaseName: tutto
+//           prima dell'ultimo punto) e con cui Kohya cerca la didascalia, SENZA ripulire il nome.
+//           Con buildTagFileName una foto "photo..v2.png" (nome valido su Windows) riceveva
+//           "photo.v2.txt": un file che nessuno rilegge, mentre il .txt vero restava coi tag
+//           vecchi. Ripulire qui non serve: la foto esiste gia' con quel nome, e getFileHandle /
+//           removeEntry rifiutano da soli '.', '..' e i separatori. buildTagFileName resta solo per i
+//           download dal browser, dove il nome arriva nel sistema di un altro; anche il .txt dentro
+//           l'archivio (.zip) usa questa regola, perche' estratto accanto alla foto deve abbinarsi.
+//           Una foto senza nome prima del punto (".png") tiene la regola di prima.
+// ENGLISH: Name of the .txt written NEXT TO a photo that is already on disk, and of the .txt removed
+//          with it. It is the same rule the import pairs the two files with (fileBaseName: all
+//          before the last dot) and Kohya looks for the caption with, WITHOUT cleaning the name.
+//          With buildTagFileName a "photo..v2.png" photo (a valid Windows name) got "photo.v2.txt":
+//          a file nobody reads back, while the real .txt kept the old tags. Cleaning is not needed
+//          here: the photo already exists under that name, and getFileHandle / removeEntry refuse
+//          '.', '..' and separators on their own. buildTagFileName stays only for browser
+//          downloads, where the name lands on someone else's system; the .txt inside the archive
+//          (.zip) uses this rule too, because once extracted next to the photo it must pair with it.
+//          A photo with no name before the dot (".png") keeps the previous rule.
+export const sidecarTagFileName = (imageFileName: string): string => {
+    const base = fileBaseName(String(imageFileName || ''));
+    return base ? `${base}.txt` : buildTagFileName(imageFileName);
 };

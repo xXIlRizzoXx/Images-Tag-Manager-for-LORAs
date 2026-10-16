@@ -19,12 +19,15 @@ npm install
 npm run dev          # in the browser, fastest loop
 npm run electron:dev # as the real desktop app
 npm run lint         # tsc --noEmit, must be clean
+npm test             # the two checks below in one go; npm run electron:build runs it too and stops if it fails
+node scripts/check-translations.mjs   # same keys in all nine languages, must end "ESITO: nessun problema meccanico"
+node scripts/run-tests.mjs            # offline tests, must end "ESITO PROVE: TUTTE PASSATE"
 ```
 
 Three things to know before touching anything:
 
-*   **Losing someone's `.txt` tag files silently is the worst outcome this project has.** Any change to saving, importing or deleting deserves paranoia. Deletion goes to the Windows Recycle Bin, never straight to nothing.
-*   **All interface strings live in `src/constants.ts`**, in one object with nine language keys. The `t` object is typed, so a missing key is a compile error — every language must gain the key at the same time. Tag suggestions live in `src/constants/tagSuggestions.ts`.
+*   **Losing someone's `.txt` tag files silently is the worst outcome this project has.** Any change to saving, importing or deleting deserves paranoia. Deletion goes to the Windows Recycle Bin; only where there is none (network folders, a disk with the Recycle Bin turned off, or a file whose place on disk is not certain) does a second confirmation, which says the removal is final, delete for good.
+*   **All interface strings live in `src/constants.ts`**, in one object with nine language keys, and every language must gain a new key at the same time. The type check catches a missing key only where `src/App.tsx` reads it: the components in `src/components/` receive `t` untyped, so there a key missing in one language just shows up blank. `node scripts/check-translations.mjs` is the check that catches it, and it also reports a key the components read that exists in no language at all (a typo, or a key never added to `src/constants.ts`). Tag suggestions live in `src/constants/tagSuggestions.ts`.
 *   **App data belongs in `%APPDATA%\images-tag-manager`**, never next to the executable. The Gemini key is stored through Electron's `safeStorage`, never in plain text, and the Content-Security-Policy allows exactly one outbound host.
 
 The images in the README are generated, not hand-made — see `scripts/make-readme-shots.mjs`, `scripts/make-cover.mjs` and `scripts/make-feature-cards.mjs`.

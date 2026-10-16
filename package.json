@@ -1,7 +1,7 @@
 {
   "name": "images-tag-manager",
   "private": true,
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Privacy-focused desktop tool to manage, edit and auto-generate tags for image datasets used in LoRA / Stable Diffusion training.",
   "license": "MIT",
   "author": {
@@ -14,11 +14,13 @@
     "dev": "vite --port=3000",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "npx rimraf dist release",
+    "clean": "node -e \"for (const d of ['dist','release/win-unpacked']) require('fs').rmSync(d,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
+    "test": "node scripts/check-translations.mjs && node scripts/run-tests.mjs",
     "installer:art": "node scripts/make-installer-art.mjs",
-    "electron:dev": "cross-env NODE_ENV=development concurrently \"npm run dev\" \"wait-on tcp:3000 && electron .\"",
-    "electron:build": "npm run lint && npm run build && electron-builder"
+    "electron:dev": "npm run build:mcp && cross-env NODE_ENV=development concurrently \"npm run dev\" \"wait-on tcp:3000 && electron .\"",
+    "electron:build": "npm run lint && npm test && npm run build && npm run build:mcp && electron-builder",
+    "build:mcp": "node scripts/build-mcp.mjs"
   },
   "build": {
     "appId": "com.imagestagmanager.app",
@@ -70,8 +72,15 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/mcp-server.cjs",
+      "electron/splash.html",
+      "electron/splash.js",
       "public/**/*",
+      "!**/*.md",
+      "!public/__shots/**/*",
+      "!dist/__shots/**/*",
       "!node_modules/**/*"
     ],
     "asar": true
@@ -85,6 +94,7 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
@@ -99,6 +109,7 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "wait-on": "^9.0.4"
+    "wait-on": "^9.0.4",
+    "zod": "3.25.76"
   }
 }

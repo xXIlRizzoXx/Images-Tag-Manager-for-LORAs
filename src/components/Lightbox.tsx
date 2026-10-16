@@ -21,7 +21,9 @@ import { AppleToggle } from './ui';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
-import { buildTagFileName } from '../utils/pathUtils';
+import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
+import { hasTagIgnoringCase, splitTagInput } from '../utils/tagCase';
+import { qualityWarningText } from '../utils/imageQuality';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
@@ -29,6 +31,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const [zoomOrigin, setZoomOrigin] = useState('center');
     const [highResUrl, setHighResUrl] = useState<string | null>(null);
     const [isHighResLoaded, setIsHighResLoaded] = useState(false);
+    // ITALIANO: l'indirizzo HD che il programma non ha saputo mostrare (TIFF, HEIC, file rovinato).
+    //           Senza, la rotella "Caricamento HD..." restava per sempre: arriva "errore", non "caricata".
+    // ENGLISH: the HD address the app could not display (TIFF, HEIC, damaged file). Without it the
+    //          "Loading HD..." spinner stayed forever: "error" arrives, not "load".
+    const [hdErroreUrl, setHdErroreUrl] = useState<string | null>(null);
     const [showOnlyAdded, setShowOnlyAdded] = useState(false);
     const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
 
@@ -89,7 +96,14 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         ...tags.filter((tag: string) => !globalTriggers.includes(tag)).sort((a: string, b: string) => a.localeCompare(b))
     ];
     const appliedTags = orderTags(currentTags).filter((tag: string) => tag.toLowerCase().includes(filterLc));
-    const availableTags = allTags.filter((tag: string) => !currentTags.includes(tag) && tag.toLowerCase().includes(filterLc)).sort((a: string, b: string) => a.localeCompare(b));
+    // ITALIANO: "Smile" di un'altra foto non si offre a questa, che ha gia' "smile" (vedi tagCase).
+    //           Un Set in minuscolo, fatto una volta: l'elenco del progetto puo' avere migliaia di tag
+    //           e si ricalcola a ogni lettera scritta nel filtro.
+    // ENGLISH: another photo's "Smile" is not offered to this one, which already has "smile" (see
+    //          tagCase). A lowercase Set, built once: the project list can hold thousands of tags and
+    //          is recomputed on every letter typed in the filter.
+    const giaQui = new Set(currentTags.map((tag: string) => tag.toLowerCase()));
+    const availableTags = allTags.filter((tag: string) => !giaQui.has(tag.toLowerCase()) && tag.toLowerCase().includes(filterLc)).sort((a: string, b: string) => a.localeCompare(b));
 
     const toggleTag = (tag: string) => {
         if (currentTags.includes(tag)) {
@@ -137,9 +151,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const handleSidebarKeyDown = (e: any) => {
         if (e.key === ',' || e.key === 'Enter') {
             e.preventDefault();
-            const newTag = filterText.trim().replace(/,$/, '');
-            if (newTag && !currentTags.includes(newTag)) {
-                updateTags(image.id, [...currentTags, newTag]);
+            // ITALIANO: un elenco incollato ("1girl, solo, smile") diventa un tag per voce (vedi splitTagInput).
+            // ENGLISH: a pasted list ("1girl, solo, smile") becomes one tag per item (see splitTagInput).
+            const nuovi = splitTagInput(filterText).filter(tag => !hasTagIgnoringCase(currentTags, tag));
+            if (nuovi.length > 0) {
+                updateTags(image.id, [...currentTags, ...nuovi]);
                 setFilterText('');
                 soundManager.pop();
             }
@@ -169,17 +185,39 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         const orderedTags = orderTags(currentTags);
         const tagString = orderedTags.length > 0 ? orderedTags.join(', ') + ',' : '';
         const fileName = buildTagFileName(image.file.name);
+        // ITALIANO: senza tag il .txt e' vuoto, e Kohya si ferma su un .txt vuoto ("caption file is
+        //           empty"), non su uno che manca: un .txt vuoto NUOVO non si crea, quello che c'era
+        //           si svuota (come chiesto) e il messaggio lo dice.
+        // ENGLISH: with no tags the .txt is empty, and Kohya stops on an empty .txt ("caption file
+        //          is empty"), not on a missing one: a NEW empty .txt is not created, one that was
+        //          there is emptied (as asked) and the message says so.
+        const vuoto = tagString === '';
+        const salvato = (svuotato: boolean) => {
+            updateOriginalTags(image.id, currentTags);
+            soundManager.chime();
+            if (showNotification) showNotification(svuotato ? t.successSaveSingle + ' ' + t.saveEmptyCaptionOne : t.successSaveSingle, svuotato ? "info" : "success");
+        };
 
         try {
             if (dirHandle) {
-                const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-                const writable = await fileHandle.createWritable();
-                await writable.write(tagString);
-                await writable.close();
-
-                updateOriginalTags(image.id, currentTags);
-                soundManager.chime();
-                if (showNotification) showNotification(t.successSaveSingle, "success");
+                // ITALIANO: accanto alla foto va il .txt che l'import rilegge e Kohya usa, col nome
+                //           non ripulito (vedi sidecarTagFileName); `fileName` resta per il download.
+                // ENGLISH: next to the photo goes the .txt the import reads back and Kohya uses, with
+                //          the name uncleaned (see sidecarTagFileName); `fileName` stays for the download.
+                const nomeTxt = sidecarTagFileName(image.file.name);
+                let fileHandle: any = null;
+                if (vuoto) {
+                    try { fileHandle = await dirHandle.getFileHandle(nomeTxt); }
+                    catch (e: any) { if (!e || e.name !== 'NotFoundError') throw e; }
+                } else {
+                    fileHandle = await dirHandle.getFileHandle(nomeTxt, { create: true });
+                }
+                if (fileHandle) {
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(tagString);
+                    await writable.close();
+                }
+                salvato(vuoto && !!fileHandle);
                 return;
             }
             // ITALIANO: foto senza cartella (caricata con "Carica immagini"): in Electron scrivo il
@@ -197,9 +235,11 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 const imagePath = api.getPathForFile(image.file) || '';
                 const res = await api.writeSidecarTags([{ imagePath, content: tagString }]);
                 if (res && Array.isArray(res.results) && res.results[0]) {
-                    updateOriginalTags(image.id, currentTags);
-                    soundManager.chime();
-                    if (showNotification) showNotification(t.successSaveSingle, "success");
+                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo: si e' svuotato
+                    //           solo se sul disco la foto aveva dei tag.
+                    // ENGLISH: the main process does not create a new empty .txt: it was emptied
+                    //          only if the photo had tags on disk.
+                    salvato(vuoto && (image.originalTags || []).length > 0);
                 } else if (showNotification) {
                     showNotification(t.errorSaveGen || t.dirError, 'error');
                 }
@@ -219,7 +259,9 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
             } finally { URL.revokeObjectURL(url); }
             soundManager.chime();
-            if (showNotification) showNotification(t.infoSaveFallback, "info");
+            // ITALIANO: un solo file: la frase al singolare (prima "Download multiplo avviato").
+            // ENGLISH: a single file: the singular sentence (it used to say "Multiple download started").
+            if (showNotification) showNotification(t.saveDownloadedOne, "info");
         } catch (err) {
             // ITALIANO: prima qui non veniva mostrato NULLA: se la cartella era stata spostata,
             //           il disco era pieno o il file era bloccato, il salvataggio falliva in
@@ -247,7 +289,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                           su monitor larghi (prima si fermava a 1920px lasciando fasce vuote).
                 ENGLISH: No width cap: the window fills the whole screen even on wide monitors
                          (it used to stop at 1920px, leaving empty bands). */}
-            <div className="w-full h-full mx-auto flex gap-6" onClick={e => e.stopPropagation()}>
+            <div className="w-full h-full mx-auto flex gap-4 lg:gap-6 relative" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 flex flex-col items-center gap-6 h-full min-w-0 relative">
                     <div className="absolute top-0 left-0 flex gap-2 z-[110]">
                         <button className={`p-2.5 ${isDarkMode ? 'bg-gray-800/60 hover:bg-red-500 text-white border-gray-700/50' : 'bg-white hover:bg-red-500 text-gray-800 hover:text-white border-gray-200'} rounded-full transition-all border shadow-md`} onClick={onClose} title={t.close}><X size={24} /></button>
@@ -263,13 +305,15 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                         )}
                     </div>
                     <div className="absolute top-0 right-0 flex gap-2 z-[110]">
-                        {image.width * image.height < 1048576 && (
+                        {/* ITALIANO: foto piccola, o che il programma non sa mostrare (0x0): vedi qualityWarningText. */}
+                        {/* ENGLISH: a small photo, or one the program cannot display (0x0): see qualityWarningText. */}
+                        {qualityWarningText(t, image.width, image.height) !== null && (
                             <div className="relative group/alert">
                                 <div className="p-2.5 bg-yellow-500 text-white rounded-full transition-all border border-yellow-600 shadow-md flex items-center justify-center cursor-help">
                                     <AlertTriangle size={24} strokeWidth={2.5} />
                                 </div>
                                 <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                    {`${t.minQualityWarning}\n${t.imageQualityLabel}: ${image.width}x${image.height} (${(image.width * image.height / 1000000).toFixed(2)} MP)`}
+                                    {qualityWarningText(t, image.width, image.height)}
                                 </div>
                             </div>
                         )}
@@ -290,13 +334,21 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                                 setZoomOrigin(`${((e.clientX - left) / width) * 100}% ${((e.clientY - top) / height) * 100}%`);
                             }
                         }}>
-                            {!isHighResLoaded && <div className="absolute inset-0 flex flex-col items-center justify-center z-10"><div className="absolute inset-0 bg-cover bg-center filter blur-lg opacity-40 scale-110" style={{ backgroundImage: `url(${image.thumb})` }} /><div className={`relative ${isDarkMode ? 'bg-black/60 border-white/10' : 'bg-white/60 border-gray-200'} p-4 rounded-2xl backdrop-blur-md text-center border shadow-xl`}><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div><span className={`${isDarkMode ? 'text-white' : 'text-gray-800'} mt-3 block text-sm font-semibold tracking-wider`}>{t.loadingHD}</span></div></div>}
+                            {/* ITALIANO: se l'immagine HD da' errore la rotella lascia il posto alla frase "non si puo' mostrare". */}
+                            {/* ENGLISH: if the HD image fails the spinner gives way to the "cannot display" sentence. */}
+                            {!isHighResLoaded && <div className="absolute inset-0 flex flex-col items-center justify-center z-10"><div className="absolute inset-0 bg-cover bg-center filter blur-lg opacity-40 scale-110" style={{ backgroundImage: `url(${image.thumb})` }} /><div className={`relative ${isDarkMode ? 'bg-black/60 border-white/10' : 'bg-white/60 border-gray-200'} p-4 rounded-2xl backdrop-blur-md text-center border shadow-xl`}>{highResUrl && hdErroreUrl === highResUrl ? <span className={`${isDarkMode ? 'text-white' : 'text-gray-800'} block max-w-xs text-sm font-semibold`}>{t.imageUnreadable}</span> : <><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div><span className={`${isDarkMode ? 'text-white' : 'text-gray-800'} mt-3 block text-sm font-semibold tracking-wider`}>{t.loadingHD}</span></>}</div></div>}
                             <div className="w-full h-full" style={{ backgroundImage: `url(${highResUrl})`, backgroundPosition: zoomOrigin, backgroundSize: zoomLevel === 2 ? '350%' : zoomLevel === 1 ? '200%' : 'contain', backgroundRepeat: 'no-repeat', transition: 'background-size 0.3s', opacity: isHighResLoaded ? 1 : 0 }} />
-                            {highResUrl && <img src={highResUrl} onLoad={() => setIsHighResLoaded(true)} className="hidden" alt="HD" /> }
+                            {highResUrl && <img src={highResUrl} onLoad={() => setIsHighResLoaded(true)} onError={() => setHdErroreUrl(highResUrl)} className="hidden" alt="HD" /> }
                         </div>
                     </div>
                 </div>
-                <div className={`hidden lg:flex flex-col w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
+                {/* ITALIANO: la colonna dei tag c'e' a ogni larghezza, piu' stretta sotto i 1024 px.
+                              Era "hidden lg:flex": con la finestra a meta' schermo spariva, e con
+                              lei i tag della foto, "Genera tag con AI" e "Salva file .txt".
+                    ENGLISH: the tag column is there at every width, narrower below 1024 px. It was
+                             "hidden lg:flex": with the window at half the screen it vanished, and
+                             with it the photo's tags, "Generate tags with AI" and "Save .txt file". */}
+                <div className={`flex flex-col w-64 lg:w-80 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border shrink-0 h-full overflow-hidden`}>
                             <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} text-center shrink-0`}>
                                 <h3 className={`text-sm font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center justify-center gap-2`}><LayoutDashboard size={16} className="text-indigo-500" /> {t.tagsAlreadyInserted}</h3>
                                 <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 uppercase tracking-wide`}>{t.clickPillsToAdd}</p>
