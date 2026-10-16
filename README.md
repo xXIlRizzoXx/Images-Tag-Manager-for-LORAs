@@ -101,7 +101,7 @@ Settings has a built-in **MCP server**, **off by default**. Switch it on and an 
 *   It listens **only on your own computer** (`127.0.0.1`), never on the network, and asks for a **secret token**; **Create a new token** locks out every AI connected with the old one.
 *   The AI sees only the photos open in the app. Each photo it looks at is a copy at most 1024 px on its longest side, redrawn so that the hidden details of the file (GPS position, camera serial number, author) do not go with it. What it sees then goes wherever that AI goes: an assistant that runs in the cloud sends it to its own servers.
 *   **It never saves.** Tags changed by the AI show up in the app as unsaved changes: review them, and the `.txt` files are written only when you press **Save Changes**.
-*   Settings gives you the ready-made command or configuration to copy for Claude Code, Claude Desktop and the others. Claude Desktop connects through the small `mcp-remote` program, which it downloads from the internet by itself the first time.
+*   Settings gives you the ready-made command or configuration to copy for Claude Code, Claude Desktop and the others. Claude Desktop connects through the small `mcp-remote` program, so the computer needs [Node.js](https://nodejs.org) (free; it brings the `npx` command); after that Claude Desktop downloads `mcp-remote` from the internet by itself the first time. Claude Code and Cursor don't need Node.js.
 
 ---
 
