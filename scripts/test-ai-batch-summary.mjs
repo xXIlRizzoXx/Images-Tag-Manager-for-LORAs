@@ -41,10 +41,10 @@ const mostra = sorgente.indexOf('showNotification(summary, successType);', inizi
 if (inizio < 0 || mostra < 0) { console.log('NO  riepilogo di handleAITagAll non trovato in src/App.tsx'); process.exit(1); }
 const fineRiga = sorgente.indexOf('\n', mostra);
 const codice = (await esbuild.transform(sorgente.slice(inizio, fineRiga), { loader: 'ts' })).code;
-const riepilogo = new Function('t', 'cancelled', 'fatalAbort', 'okCount', 'errorCount', 'skippedCount', 'totalTagsAdded', 'showNotification', codice);
+const riepilogo = new Function('t', 'cancelled', 'fatalAbort', 'okCount', 'errorCount', 'skippedCount', 'totalTagsAdded', 'showNotification', 'nonPulibiliCount', codice);
 const prova = (t, cancelled, n, fatalAbort = false) => {
     const notifiche = [];
-    riepilogo(t, cancelled, fatalAbort, n.ok, n.err, n.skip, n.tag, (m, tipo) => notifiche.push([m, tipo]));
+    riepilogo(t, cancelled, fatalAbort, n.ok, n.err, n.skip, n.tag, (m, tipo) => notifiche.push([m, tipo]), n.nonPulibili || 0);
     return notifiche;
 };
 const riempi = (s, n) => String(s || '').replace('{ok}', String(n.ok)).replace('{err}', String(n.err)).replace('{skip}', String(n.skip)).replace('{n}', String(n.tag));

@@ -14,7 +14,8 @@
 *******************************************************************************
 *******************************************************************************/
 import { GoogleGenAI, Type } from '@google/genai';
-import { stripImageMetadata } from '../utils/imageMetadata';
+import { stripImageMetadata, METADATI_NON_PULIBILI } from '../utils/imageMetadata';
+import { fileDiAdesso, type FotoConCartella } from '../utils/freshFile';
 
 const CUSTOM_PROMPT_MAX_LENGTH = 500;
 const TAG_MAX_LENGTH = 60;
@@ -52,9 +53,15 @@ const sanitizeCustomPrompt = (input?: string): string => {
 //          that cannot be read). The `geminiKind = 'photo'` mark does not change the error kind (it
 //          stays 'unknown'), but lets the app say it is the photo and not the network, and lets bulk
 //          tagging not count it as "Google unreachable".
-const fotoNonUsabile = (motivo: string): Error => {
+// ITALIANO: `perche` dice all'app QUALE problema della foto, per un messaggio giusto: 'illeggibile'
+//           (non si legge piu' dal disco) e 'metadati' (dati nascosti che non si sanno togliere).
+// ENGLISH: `perche` tells the app WHICH photo problem, for the right message: 'illeggibile' (can no
+//          longer be read from disk) and 'metadati' (hidden data that cannot be removed).
+export type MotivoFoto = 'illeggibile' | 'metadati';
+const fotoNonUsabile = (motivo: string, perche?: MotivoFoto): Error => {
     const e = new Error(motivo);
-    (e as Error & { geminiKind?: string }).geminiKind = 'photo';
+    (e as Error & { geminiKind?: string; motivoFoto?: MotivoFoto }).geminiKind = 'photo';
+    if (perche) (e as Error & { motivoFoto?: MotivoFoto }).motivoFoto = perche;
     return e;
 };
 
@@ -124,11 +131,14 @@ const imageForGemini = async (file: File): Promise<{ data: string; mimeType: str
     //          was not even called. Without the mark the app said "Google could not be reached",
     //          and three in a row stopped bulk tagging as if the network were down.
     let bytes: Uint8Array;
-    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch { throw fotoNonUsabile('File can no longer be read'); }
+    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch { throw fotoNonUsabile('File can no longer be read', 'illeggibile'); }
     // ITALIANO: una foto rovinata che non si riesce a pulire e' un problema della foto, non della rete.
     // ENGLISH: a damaged photo that cannot be cleaned is a problem of the photo, not of the network.
     let pulita: ReturnType<typeof stripImageMetadata>;
-    try { pulita = stripImageMetadata(bytes); } catch { throw fotoNonUsabile('Unsupported file type'); }
+    try { pulita = stripImageMetadata(bytes); } catch (e) {
+        if ((e as { code?: string })?.code === METADATI_NON_PULIBILI) throw fotoNonUsabile('Hidden data cannot be removed', 'metadati');
+        throw fotoNonUsabile('Unsupported file type');
+    }
     const blob = pulita
         ? new Blob([pulita.bytes as Uint8Array<ArrayBuffer>], { type: pulita.mimeType })
         : await redrawAsPng(file);
@@ -198,11 +208,16 @@ export type GeminiTagOptions = GeminiOptions & {
     maxTags: number;
 };
 
-export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise<string[]> => {
+// ITALIANO: accetta un File o una foto dell'app: una foto aperta con una cartella si rilegge da li', cosi'
+//           una foto ritoccata in un altro programma dopo l'importazione si tagga lo stesso.
+// ENGLISH: takes a File or an app photo: a photo opened with a folder is re-read from there, so a photo
+//          retouched in another program after the import can still be tagged.
+export const getGeminiTags = async (foto: File | FotoConCartella, opts: GeminiTagOptions): Promise<string[]> => {
     if (!opts.apiKey || typeof opts.apiKey !== 'string') {
         throw new Error('Missing API key');
     }
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
+    const file = foto instanceof File ? foto : await fileDiAdesso(foto);
     const immagine = await imageForGemini(file);
 
     const response = await ai.models.generateContent({

@@ -31,7 +31,10 @@ const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'itm-extensions-'));
 let codice = 1;
 try {
     const nomi = ['foto.jfif', 'altra.jpe', 'terza.pjpeg', 'quarta.pjp', 'maiuscola.JFIF', 'normale.jpg',
-        'animata.apng', 'icona.ico', 'disegno.svg', 'compresso.svgz', 'bitmap.xbm'];
+        'animata.apng', 'icona.ico', 'disegno.svg', 'compresso.svgz', 'bitmap.xbm',
+        // ITALIANO: le foto dell'iPhone (2.0.1): la pagina le carica e l'AI le tagga, ma i canali le rifiutavano.
+        // ENGLISH: iPhone photos (2.0.1): the page loads them and the AI tags them, but the channels refused them.
+        'iphone.heic', 'seconda.HEIF'];
     const immagini = nomi.map((n) => path.join(cartella, n));
     for (const img of immagini) {
         fs.writeFileSync(img, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));

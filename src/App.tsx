@@ -49,6 +49,7 @@ import { purgeIdsFromHistory, addPhotosToHistory, withLiveOriginalTags, nearestD
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
+import { fileDiAdesso } from './utils/freshFile';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
@@ -509,7 +510,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('2.0.0');
+    const [appVersion, setAppVersion] = useState<string>('2.0.1');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -4074,14 +4075,7 @@ export default function App() {
             //          generic "Error creating ZIP". Re-read this way, the archive gets today's version.
             //          With no folder ("Load images") or if the photo is gone, the snapshot stays: if it
             //          cannot be read, the notice says which photo (zipPhotoUnreadable).
-            const fotoAggiornata = (img: any) => async (): Promise<Blob> => {
-                const dir = img.dirHandle;
-                if (dir && typeof dir.getFileHandle === 'function') {
-                    try { return await (await dir.getFileHandle(img.file.name)).getFile(); }
-                    catch (_) { /* spostata o cancellata: si prova l'istantanea / moved or deleted: try the snapshot */ }
-                }
-                return img.file;
-            };
+            const fotoAggiornata = (img: any) => (): Promise<Blob> => fileDiAdesso(img);
             // ITALIANO: due foto con lo STESSO nome in sottocartelle diverse (tipico dei dataset LoRA:
             //           10_viso\img.png e 20_corpo\img.png) davano lo stesso nome nell'archivio, e
             //           l'omonimo SOVRASCRIVEVA l'altro: uno dei due .txt spariva in silenzio. Ora, se il nome e'
@@ -4650,7 +4644,9 @@ export default function App() {
         if (!img) return 0;
         setIsAIBusy(true);
         try {
-            const tags = await getGeminiTags(img.file, {
+            // ITALIANO: la foto intera, non img.file: il servizio la rilegge dalla sua cartella (vedi fileDiAdesso).
+            // ENGLISH: the whole photo, not img.file: the service re-reads it from its folder (see fileDiAdesso).
+            const tags = await getGeminiTags(img, {
                 apiKey: geminiApiKey,
                 modelName: aiModel,
                 maxTags: aiMaxTags,
@@ -4718,8 +4714,12 @@ export default function App() {
                 //          showed the raw text, in English in every language: now a translated
                 //          sentence. A photo that cannot be sent (empty, over 20 MB, in an unreadable
                 //          format) says so. The real text stays in the console (above).
+                // ITALIANO: dati nascosti che non si sanno togliere (la foto non parte, decisione del
+                //           16/10/2026) e foto che non si legge piu' hanno una frase loro.
+                // ENGLISH: hidden data that cannot be removed (the photo is not sent) and a photo that
+                //          can no longer be read have their own sentence.
                 : e?.geminiKind === 'photo'
-                ? t.aiPhotoNotSupported
+                ? (e?.motivoFoto === 'metadati' ? t.aiPhotoHiddenData : e?.motivoFoto === 'illeggibile' ? t.aiPhotoUnreadable : t.aiPhotoNotSupported)
                 : t.aiRequestFailed;
             showNotification(`${t.aiError || 'AI Error'}: ${friendly}`, 'error');
             // ITALIANO: il modello non esiste piu': invece di lasciare l'AI rotta finche'
@@ -4779,6 +4779,9 @@ export default function App() {
         let okCount = 0;
         let errorCount = 0;
         let skippedCount = 0;
+        // ITALIANO: foto non mandate perche' i loro dati nascosti non si sanno togliere: il riepilogo lo dice.
+        // ENGLISH: photos not sent because their hidden data cannot be removed: the summary says so.
+        let nonPulibiliCount = 0;
         let fatalAbort = false;
         let cancelled = false;
         // ITALIANO: foto di fila che non sono riuscite a raggiungere Google (vedi sotto).
@@ -4836,7 +4839,7 @@ export default function App() {
                 for (let attempt = 0; attempt < 3; attempt++) {
                     if (aiCancelRequestedRef.current) { cancelled = true; break; }
                     try {
-                        const tags = await getGeminiTags(current.file, {
+                        const tags = await getGeminiTags(current, {
                             apiKey: geminiApiKey,
                             modelName: aiModel,
                             maxTags: aiMaxTags,
@@ -4868,6 +4871,7 @@ export default function App() {
                         if (aiCancelRequestedRef.current) { cancelled = true; break; }
                         const { kind, message, quotaGiorno, progetto } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
+                        if (err?.geminiKind === 'photo' && err?.motivoFoto === 'metadati') nonPulibiliCount++;
                         if (kind === 'invalid_key') {
                             // ITALIANO: si apre la finestra della chiave, ma senza una riga di
                             //           spiegazione la taggatura in blocco si fermava in silenzio e
@@ -4995,7 +4999,8 @@ export default function App() {
             const modello = cancelled
                 ? (t.aiBatchCancelled || 'AI tagging cancelled. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.')
                 : (t.aiBatchDone || 'AI tagging finished. Photos tagged: {ok}. Failed: {err}. Skipped: {skip}. Tags added: {n}.');
-            const summary = modello.replace('{ok}', String(okCount)).replace('{err}', String(errorCount)).replace('{skip}', String(skippedCount)).replace('{n}', String(totalTagsAdded));
+            const summary = modello.replace('{ok}', String(okCount)).replace('{err}', String(errorCount)).replace('{skip}', String(skippedCount)).replace('{n}', String(totalTagsAdded))
+                + (nonPulibiliCount > 0 ? ' ' + t.aiBatchHiddenData.replace('{n}', String(nonPulibiliCount)) : '');
             if (!fatalAbort) showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;

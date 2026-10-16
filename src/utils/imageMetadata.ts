@@ -61,6 +61,14 @@ const ascii = (b: Uint8Array, at: number, len: number): string => {
 };
 
 const malformed = (): Error => new Error('Unsupported file type');
+// ITALIANO: il file si legge, ma i suoi dati nascosti stanno in un posto che qui non si sa
+//           azzerare: la foto non parte (decisione del 16/10/2026), e l'errore lo dice
+//           con un segno suo, cosi' l'app spiega il motivo invece di "formato illeggibile".
+// ENGLISH: the file reads fine, but its hidden data sits somewhere that cannot be zeroed here: the
+//          photo is not sent, and the error says so with its own mark, so the app explains why
+//          instead of "unreadable format".
+export const METADATI_NON_PULIBILI = 'hidden-data-not-removable';
+const nonPulibile = (): Error => Object.assign(new Error('Hidden data cannot be removed'), { code: METADATI_NON_PULIBILI });
 
 // ITALIANO: l'orientamento e' l'unico dato dell'Exif che cambia COME si vede la foto: una foto del
 //           telefono tenuto in verticale e' spesso salvata di lato con "ruota di 90 gradi". Si
@@ -297,6 +305,7 @@ const fieldReader = (b: Uint8Array, from: number, end: number) => {
 const HEIC_PICTURE_ITEMS = new Set(['hvc1', 'grid', 'iden', 'iovl', 'tmap']);
 const HEIC_TOP_KEEP = new Set(['ftyp', 'meta', 'mdat', 'free', 'skip']);
 const HEIC_META_KEEP = new Set(['hdlr', 'pitm', 'iloc', 'iinf', 'iref', 'iprp', 'idat', 'dinf', 'grpl', 'free', 'skip']);
+const HEIC_PROPRIETA_TOLTE = new Set(['uuid', 'udes', 'taic', 'itai']);
 const stripHeic = (b: Uint8Array): Uint8Array => {
     const out = b.slice();
     const blank = (x: Box) => { out.set([0x66, 0x72, 0x65, 0x65], x.start + 4); out.fill(0, x.body, x.end); }; // 'free'
@@ -365,7 +374,14 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
             r.uN(idxSize);
             const off = r.uN(offSize);
             const len = r.uN(lenSize);
-            if (keep || dataRef !== 0) continue; // dati in un altro file: qui non ci sono / data in another file: not here
+            if (keep) continue;
+            // ITALIANO: un indice diverso da 0 rimanda alla tabella dref, che di solito dice "in questo
+            //           stesso file" (url con flag 1): saltarlo lasciava il GPS nella foto mandata. Qui
+            //           non si interpreta la tabella: la foto non parte.
+            // ENGLISH: an index other than 0 points into the dref table, which usually says "in this
+            //          same file" (url with flag 1): skipping it left the GPS in the photo sent. The
+            //          table is not interpreted here: the photo is not sent.
+            if (dataRef !== 0) throw nonPulibile();
             if (len === 0) throw malformed();
             let from: number, limit: number;
             if (method === 0) { from = base + off; limit = b.length; }
@@ -377,7 +393,9 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     }
     if (iprp) {
         for (const x of childBoxes(b, iprp.body, iprp.end)) {
-            if (x.type === 'ipco') for (const p of childBoxes(b, x.body, x.end)) if (p.type === 'uuid') blank(p);
+            // ITALIANO: proprieta' private (uuid), descrizione scritta dall'utente (udes) e orari (taic, itai).
+            // ENGLISH: private properties (uuid), user-written description (udes) and timestamps (taic, itai).
+            if (x.type === 'ipco') for (const p of childBoxes(b, x.body, x.end)) if (HEIC_PROPRIETA_TOLTE.has(p.type)) blank(p);
         }
     }
     return out;

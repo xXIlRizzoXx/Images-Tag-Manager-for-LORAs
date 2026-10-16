@@ -258,7 +258,7 @@ const SIDECAR_MAX_BYTES = 1024 * 1024;
 //          them image/... and the page loads them, so their .txt must be read, saved and trashed
 //          like the other photos'.
 const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pjp', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff',
-    '.apng', '.ico', '.svg', '.svgz', '.xbm']);
+    '.apng', '.ico', '.svg', '.svgz', '.xbm', '.heic', '.heif']);
 
 ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
