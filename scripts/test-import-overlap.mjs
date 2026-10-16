@@ -55,7 +55,7 @@ const altriRef = [...new Set(testo.match(/\b\w+Ref\b/g) || [])].filter(n => !NOT
 const NOMI = ['globalTriggersRef', 'setImages', 'setImportSummary', 'setDirHandle', 'setIsImporting', 'setImportProgress',
     'folderSignature', 'nuovoIdFoto', 'backupDellImport', 'localStorage', 'makeFolderKeyer', 'makeBackupKeyer', 'TXT_MAX_BYTES',
     'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'asDirHandle', 'anteprimeProgettoRef',
-    'soundManager', 'avvisoImport', 't', 'showNotification', 'folderInputRef', 'console', 'URL', ...altriRef];
+    'soundManager', 'avvisoImport', 't', 'showNotification', 'folderInputRef', 'console', 'URL', 'leggiTestoSidecar', ...altriRef];
 const fabbrica = new Function(...NOMI, codice + '\nreturn processImportData;');
 
 // ITALIANO: l'app finta: le chiamate a setIsImporting e setImportProgress si annotano.
@@ -69,7 +69,7 @@ const creaApp = () => {
         { getItem: () => null }, S.makeFolderKeyer, () => (f) => 'dataset\x1f' + f.name, 1024 * 1024, S.parseSidecarText,
         async (f) => { await a.cancelli.get(f.name); return { url: 'blob:finto', width: 1, height: 1 }; }, S.tagDiImport,
         B.tagDaRipristinare, () => null, { current: a.anteprime }, { chime() { a.suoni++; } }, N.avvisoImport, t, (m, tipo) => { a.notifiche.push([m, tipo]); },
-        { current: null }, { log() { }, warn() { }, error() { } }, { revokeObjectURL: (u) => { a.revocati.push(u); } }, ...altriRef.map(n => refs[n]));
+        { current: null }, { log() { }, warn() { }, error() { } }, { revokeObjectURL: (u) => { a.revocati.push(u); } }, S.leggiTestoSidecar, ...altriRef.map(n => refs[n]));
     a.refs = refs;
     // ITALIANO: un cancello per foto: la sua miniatura finisce solo quando lo si apre.
     // ENGLISH: one gate per photo: its thumbnail ends only when it is opened.

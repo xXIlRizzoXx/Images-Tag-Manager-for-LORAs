@@ -16,6 +16,7 @@ import { getTagCategory, getActiveCategoryColor } from '../utils/tagCategorizati
 import { translateTag } from '../utils/tagTranslation';
 import { soundManager } from '../utils/soundManager';
 import { uniqueTagsIgnoringCase, hasTagIgnoringCase } from '../utils/tagCase';
+import { leggiTestoSidecar } from '../utils/sidecarTags';
 
 // ITALIANO: Legge i tag da un testo. Il .json accetta sia il formato esportato
 //           dall'app ({tags: [...]}) sia un semplice elenco ["a","b"]. Il .txt usa
@@ -192,7 +193,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 //          OneDrive, antivirus scanning) would have overwritten the just-opened file
                 //          with the old one's tags.
                 if (annullato || handleRef.current !== handle || file.size > EDITOR_MAX_BYTES) return;
-                const testo = await file.text();
+                const testo = await leggiTestoSidecar(file);
                 if (annullato || handleRef.current !== handle) return;
                 const nuoviTag = parseTagFile(testo, file.name);
                 triggersRef.current = parseTagTriggers(testo, file.name);
@@ -282,6 +283,13 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         setTags(nuoviTag);
         setFileName(nome);
         setDirty(false);
+        // ITALIANO: il file nuovo parte con la casella vuota: il testo in attesa del file di prima e'
+        //           gia' stato scartato (domanda "Chiudi senza salvare"); prima restava li' e il primo
+        //           Salva lo scriveva DENTRO questo file.
+        // ENGLISH: the new file starts with an empty box: the previous file's pending text has already
+        //          been discarded ("Close without saving" question); it used to stay there and the
+        //          first Save wrote it INTO this file.
+        setInputValue('');
         // ITALIANO: rendo questi tag disponibili anche nel pannello di selezione in blocco del progetto.
         // ENGLISH: also make these tags available in the project's bulk-selection panel.
         if (onImportTagsToProject) onImportTagsToProject(nuoviTag);
@@ -309,7 +317,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 //           leggibile l'handle di scrittura NON cambia.
                 // ENGLISH: parse first (may throw), then adopt the handle: if the file is unreadable
                 //          the write handle does NOT change.
-                caricaTesto(await file.text(), file.name);
+                caricaTesto(await leggiTestoSidecar(file), file.name);
                 handleRef.current = handle;
             } catch (err: any) {
                 if (err && err.name !== 'AbortError') {
@@ -330,7 +338,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             // ITALIANO: stesso limite dell'altra via: niente file oltre 1 MB.
             // ENGLISH: same cap as the other path: no files over 1 MB.
             if (file.size > EDITOR_MAX_BYTES) { showNotification(t.tagEditorOpenError, 'error'); return; }
-            const testo = await file.text();
+            const testo = await leggiTestoSidecar(file);
             caricaTesto(testo, file.name);
             handleRef.current = null; // ITALIANO: senza handle si salva con "Salva come" — ENGLISH: no handle: saving goes through "Save as"
         } catch (err) {

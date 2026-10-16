@@ -260,6 +260,35 @@ const SIDECAR_MAX_BYTES = 1024 * 1024;
 const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pjp', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff',
     '.apng', '.ico', '.svg', '.svgz', '.xbm', '.heic', '.heif']);
 
+// ITALIANO: il testo di un .txt dai suoi byte, con la STESSA regola di decodificaSidecar in
+//           src/utils/sidecarTags.ts (copiata qui perche' questo file e' CommonJS): BOM FF FE / FE FF
+//           -> UTF-16 (Windows PowerShell 5.1, Blocco note "Unicode"), altrimenti UTF-8 valido senza
+//           caratteri NUL. Il resto (ANSI con lettere accentate, UTF-16 senza BOM) torna null: la
+//           codifica non si indovina e il .txt torna come saltato, protetto da Salva. Prima si leggeva
+//           sempre in UTF-8 e la spazzatura finiva nei tag, e poi sopra il file vero.
+//           UTF-16 BE si scambia a mano in LE: non dipende dai dati ICU.
+// ENGLISH: a .txt's text from its bytes, with the SAME rule as decodificaSidecar in
+//          src/utils/sidecarTags.ts (copied here because this file is CommonJS): BOM FF FE / FE FF
+//          -> UTF-16 (Windows PowerShell 5.1, Notepad "Unicode"), otherwise valid UTF-8 with no NUL
+//          characters. Anything else (ANSI with accented letters, UTF-16 with no BOM) returns null:
+//          the encoding is not guessed and the .txt comes back as skipped, protected from Save. It
+//          used to be always read as UTF-8, and the garbage went into the tags, then over the real
+//          file. UTF-16 BE is swapped to LE by hand: no dependence on ICU data.
+const decodificaSidecar = (buf) => {
+    try {
+        if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder('utf-16le', { fatal: true }).decode(buf.subarray(2));
+        if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+            const corpo = Buffer.from(buf.subarray(2));
+            if (corpo.length % 2 !== 0) return null;
+            return new TextDecoder('utf-16le', { fatal: true }).decode(corpo.swap16());
+        }
+        const testo = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+        return testo.includes('\u0000') ? null : testo;
+    } catch (_) {
+        return null;
+    }
+};
+
 ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
     const out = [];
@@ -297,8 +326,10 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
             try { txtStat = fs.statSync(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
             if (!txtStat.isFile()) continue;
             if (txtStat.size > SIDECAR_MAX_BYTES) { out.push(saltato); continue; }
-            let content;
-            try { content = fs.readFileSync(txtPath, 'utf8'); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            let byte;
+            try { byte = fs.readFileSync(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            const content = decodificaSidecar(byte);
+            if (content === null) { out.push(saltato); continue; }
             // ITALIANO: torno anche la cartella del .txt: cosi' il rinnovo lato app puo' abbinare
             //           ogni testo alla SUA immagine anche se due foto scelte hanno lo stesso nome
             //           ma stanno in cartelle diverse.

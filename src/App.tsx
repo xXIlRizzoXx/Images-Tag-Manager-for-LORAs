@@ -39,7 +39,7 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
-import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, leggiTestoSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
@@ -50,7 +50,7 @@ import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, h
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
 import { fileDiAdesso } from './utils/freshFile';
-import { fileGiaAperti } from './utils/alreadyOpen';
+import { fotoGiaAperte } from './utils/alreadyOpen';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
@@ -447,6 +447,15 @@ export default function App() {
     // ENGLISH: how many imports are running (processImportData). A second import can start during
     //          the first: whichever ends first must not switch off the other's strip.
     const importAttiviRef = useRef(0);
+    // ITALIANO: le foto degli import confermati e non ancora finiti (vedi confermaImport): entrano in
+    //           galleria solo alla fine, e senza questo elenco riaprire la stessa cartella mentre si
+    //           fanno le miniature le faceva entrare tutte due volte. `progetto` = il progetto in cui
+    //           e' partito l'import: dopo Reset o Chiudi progetto quelle foto non contano piu'.
+    // ENGLISH: the photos of the imports confirmed and not finished yet (see confermaImport): they
+    //          enter the gallery only at the end, and without this list reopening the same folder
+    //          while the thumbnails were made brought them all in twice. `progetto` = the project the
+    //          import started in: after Reset or Close project those photos no longer count.
+    const importInCorsoRef = useRef<{ progetto: number; foto: any[] }[]>([]);
     const [importProgress, setImportProgress] = useState(0);
     // ITALIANO: Stessa barra di avanzamento, ma durante il SALVATAGGIO. Riusa importProgress
     //           per la percentuale; isSaving decide se mostrarla e con quale etichetta.
@@ -2092,6 +2101,17 @@ export default function App() {
             for (const altra of [...imagesRef.current, ...chiuse]) {
                 if (!altra || altra.id === img.id || (giaTolte && giaTolte.has(altra.id))) continue;
                 if (!altra.file || sidecarTagFileName(altra.file.name).toLowerCase() !== nome) continue;
+                // ITALIANO: lo stesso nome INTERO (a.png e a.png) non e' un'altra foto che usa il .txt:
+                //           o sta in un'altra cartella (e allora il .txt e' un altro), o e' lo STESSO
+                //           file, per esempio la foto chiusa con la X e poi riaperta con un id nuovo.
+                //           Prima quella foto chiusa teneva a.txt sul disco, orfano, mentre l'immagine
+                //           se ne andava. Le maiuscole non contano, come per Windows.
+                // ENGLISH: the same WHOLE name (a.png and a.png) is not another photo using the .txt:
+                //          either it sits in another folder (so the .txt is another one), or it is the
+                //          SAME file, e.g. the photo closed with the X and reopened with a new id. That
+                //          closed photo used to keep a.txt on disk, orphaned, while the image left.
+                //          Case does not count, as for Windows.
+                if (String(altra.file.name).toLowerCase() === String(img.file.name).toLowerCase()) continue;
                 // ITALIANO: con i due percorsi su disco decide il percorso (stessa cartella o no);
                 //           senza (anteprima nel browser) decide la cartella aperta.
                 // ENGLISH: with both paths on disk the path decides (same folder or not); without
@@ -2123,7 +2143,7 @@ export default function App() {
     //           txtUsatoDaAltre).
     // ENGLISH: `giaTolte` (optional): the photos already removed in the same operation (see
     //          txtUsatoDaAltre).
-    const deleteImageFiles = async (img: any, spostati?: { img?: boolean; txt?: boolean }, giaTolte?: Set<string>): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
+    const deleteImageFiles = async (img: any, spostati?: { img?: boolean; txt?: boolean; condiviso?: boolean }, giaTolte?: Set<string>): Promise<'trashed' | 'nopath' | 'failed' | 'norecycle'> => {
         const api = (window as any).electronAPI;
         if (!api || typeof api.getPathForFile !== 'function' || typeof api.trashFiles !== 'function') {
             return img.dirHandle ? 'nopath' : 'failed';
@@ -2178,8 +2198,12 @@ export default function App() {
                 //           "Annulla lo svuotamento" non lo chiede indietro (spostati.txt falso).
                 // ENGLISH: the .txt is still used by another photo of the project: it stays where
                 //          it is, and "Undo the emptying" does not ask it back (spostati.txt false).
+                // ITALIANO: `condiviso` dice PERCHE' il .txt non e' partito: e' rimasto per un'altra
+                //           foto. Senza, un .txt mai esistito (trashed 0) sembrava uno rimasto qui.
+                // ENGLISH: `condiviso` says WHY the .txt did not leave: it stayed for another photo.
+                //          Without it, a .txt that never existed (trashed 0) looked like one kept here.
                 if (await txtUsatoDaAltre(img, giaTolte)) {
-                    if (spostati) spostati.txt = false;
+                    if (spostati) { spostati.txt = false; spostati.condiviso = true; }
                     return 'trashed';
                 }
                 const resTxt = await api.trashFiles([txtPath]);
@@ -2416,7 +2440,11 @@ export default function App() {
             //          (a.png and a.jpg sharing one a.txt): meanwhile that .txt may have left with the
             //          other one (the X on a.jpg) or not come back with it. If it is missing, the photo
             //          stays to be saved like those with no text: Save rewrites it from the tags in memory.
-            const daControllare = tornate.filter((v: any) => !v.txtPath && Array.isArray(v.img.tags) && v.img.tags.length > 0);
+            // ITALIANO: SOLO quelle (txtCondiviso): una foto il cui .txt non c'era proprio non ha niente
+            //           da controllare, e prima l'avviso parlava di .txt "non ripresi" mai esistiti.
+            // ENGLISH: ONLY those (txtCondiviso): a photo whose .txt was simply not there has nothing to
+            //          check, and the notice used to talk about .txt files "not taken back" that never existed.
+            const daControllare = tornate.filter((v: any) => v.txtCondiviso && !v.txtPath && Array.isArray(v.img.tags) && v.img.tags.length > 0);
             if (daControllare.length > 0 && typeof apiLocale.readSidecarTags === 'function') {
                 const chiave = (p: string) => String(p || '').replace(/\//g, '\\').toLowerCase();
                 try {
@@ -2613,7 +2641,7 @@ export default function App() {
             // ENGLISH: take the paths BEFORE moving the file: afterwards nothing is left in its
             //          place to work them out from.
             const percorsi = percorsiSuDisco(img);
-            const spostati: { img?: boolean; txt?: boolean } = {};
+            const spostati: { img?: boolean; txt?: boolean; condiviso?: boolean } = {};
             try {
                 esito = await deleteImageFiles(img, spostati, removedIds);
             } catch (error) {
@@ -2629,7 +2657,7 @@ export default function App() {
             //          being "undone" into an old image.
             if (esito === 'trashed') {
                 removedIds.add(img.id);
-                if (percorsi.imgPath && spostati.img) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: spostati.txt ? percorsi.txtPath : '' });
+                if (percorsi.imgPath && spostati.img) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: spostati.txt ? percorsi.txtPath : '', txtCondiviso: !!spostati.condiviso });
             }
             else if (esito === 'nopath') senzaPercorso.push(img);
             else {
@@ -2859,24 +2887,93 @@ export default function App() {
     //           non entrano una seconda volta; l'avviso di fine import dice quante erano.
     // ENGLISH: the summary's "Import": the photos already open in the project (same path on disk) do
     //          not enter a second time; the end-of-import notice says how many they were.
-    const confermaImport = () => {
+    // ITALIANO: senza percorsi (cartella di rete \\server\condivisione) decide la cartella, con
+    //           isSameEntry (vedi fotoGiaAperte); e contano anche le foto di un import ancora in corso
+    //           (importInCorsoRef), che in galleria entrano solo alla fine.
+    // ENGLISH: without paths (network folder \\server\share) the folder decides, with isSameEntry
+    //          (see fotoGiaAperte); and the photos of an import still running count too
+    //          (importInCorsoRef), since they enter the gallery only at the end.
+    const confermaImport = async () => {
         const d = importSummary.pendingData;
         if (!d) return;
+        // ITALIANO: il riepilogo si chiude SUBITO: il controllo qui sotto aspetta (isSameEntry), e un
+        //           secondo clic su Importa non deve far partire lo stesso import un'altra volta.
+        // ENGLISH: the summary closes AT ONCE: the check below waits (isSameEntry), and a second click
+        //          on Import must not start the same import again.
+        setImportSummary({ isOpen: false, summary: null, pendingData: null });
+        const progetto = progettoGenRef.current;
         const apiLocale = (window as any).electronAPI;
         const percorsoDi = (f: any): string => (d.pathOf && d.pathOf.get(f))
             || (apiLocale && typeof apiLocale.getPathForFile === 'function' ? apiLocale.getPathForFile(f) : '') || '';
-        const doppi = fileGiaAperti(d.imgFiles, percorsoDi, imagesRef.current.map(img => percorsiSuDisco(img).imgPath));
-        const nuove = doppi.size > 0 ? d.imgFiles.filter((f: any) => !doppi.has(f)) : d.imgFiles;
-        if (nuove.length === 0) {
-            setImportSummary({ isOpen: false, summary: null, pendingData: null });
-            if (folderInputRef.current) folderInputRef.current.value = '';
-            showNotification(t.importAlreadyOpen.replace('{n}', String(doppi.size)), 'info');
-            return;
+        const importFolder = (d.handle && d.handle.name) ? String(d.handle.name) : '';
+        const descritte = new Map<any, { percorso: string; nome: string; cartella: any }>(d.imgFiles.map((f: any) => [f, {
+            percorso: percorsoDi(f), nome: String(f.name || ''), cartella: asDirHandle(d.folderOf && d.folderOf.get(f)) || d.handle || null,
+        }]));
+        const aperte = [
+            ...imagesRef.current.map((img: any) => ({
+                percorso: percorsiSuDisco(img).imgPath, nome: String((img.file && img.file.name) || ''), cartella: img.dirHandle || null,
+                lotto: String(img.lottoImport || ''), cartellaImport: String(img.cartellaImport || ''),
+            })),
+            ...importInCorsoRef.current.filter(v => v.progetto === progetto).flatMap(v => v.foto),
+        ];
+        // ITALIANO: queste foto contano come "in arrivo" gia' durante l'attesa qui sotto; dopo restano
+        //           solo le nuove, fino alla fine del loro import (anche se fallisce o viene scartato).
+        // ENGLISH: these photos count as "on their way in" already during the wait below; afterwards
+        //          only the new ones stay, until their import ends (even when it fails or is dropped).
+        const voce = { progetto, foto: d.imgFiles.map((f: any) => ({ ...descritte.get(f), lotto: '', cartellaImport: importFolder })) };
+        importInCorsoRef.current = [...importInCorsoRef.current, voce];
+        try {
+            const doppi = await fotoGiaAperte(d.imgFiles, (f: any) => descritte.get(f)!, aperte);
+            // ITALIANO: Reset o Chiudi progetto durante l'attesa: queste foto non entrano nel progetto nuovo.
+            // ENGLISH: Reset or Close project during the wait: these photos do not enter the new project.
+            if (progetto !== progettoGenRef.current) {
+                if (folderInputRef.current) folderInputRef.current.value = '';
+                return;
+            }
+            const nuove = doppi.size > 0 ? d.imgFiles.filter((f: any) => !doppi.has(f)) : d.imgFiles;
+            if (nuove.length === 0) {
+                if (folderInputRef.current) folderInputRef.current.value = '';
+                showNotification(t.importAlreadyOpen.replace('{n}', String(doppi.size)), 'info');
+                return;
+            }
+            // ITALIANO: riaprendo la stessa cartella per prendere le foto nuove, queste entrano nel LOTTO
+            //           delle foto gia' aperte: il backup anti-crash fa un'impronta per lotto, e con un
+            //           lotto a parte nessuna delle due impronte era quella della cartella intera (dopo un
+            //           crash le modifiche non salvate si perdevano in silenzio). Solo se tutte le foto
+            //           gia' aperte vengono da UN lotto di questa stessa cartella; altrimenti un lotto nuovo.
+            // ENGLISH: reopening the same folder to take the new photos, these join the BATCH of the
+            //          photos already open: the crash backup keeps one fingerprint per batch, and with a
+            //          separate batch neither fingerprint was the whole folder's (after a crash the unsaved
+            //          edits were lost silently). Only when every photo already open comes from ONE batch of
+            //          this same folder; otherwise a new batch.
+            const combacianti = [...doppi.values()] as any[];
+            const lottoDaRiusare = importFolder && combacianti.length > 0
+                && combacianti.every(a => a.lotto && a.lotto === combacianti[0].lotto && a.cartellaImport === importFolder)
+                ? String(combacianti[0].lotto) : '';
+            const lotto = lottoDaRiusare || nuovoIdFoto();
+            // ITALIANO: i .txt delle foto gia' aperte non si rileggono: l'avviso di fine import li
+            //           contava di nuovo fra i saltati o gli accorciati (un errore al posto di "N foto
+            //           caricate"). Resta ogni .txt che serve a una foto nuova (a.png aperta e a.jpg nuova
+            //           con lo stesso a.txt) e ogni .txt senza foto, come prima.
+            // ENGLISH: the .txt files of the photos already open are not read again: the end-of-import
+            //          notice counted them once more among the skipped or shortened ones (an error in
+            //          place of "N photos loaded"). Every .txt a new photo needs stays (a.png open and a.jpg
+            //          new with the same a.txt), and so does every .txt with no photo, as before.
+            let txtFiles = d.txtFiles;
+            if (doppi.size > 0) {
+                const chiaveDi = makeFolderKeyer(d.folderOf);
+                const chiaviNuove = new Set(nuove.map(chiaveDi));
+                const chiaviAperte = new Set([...doppi.keys()].map(chiaveDi));
+                txtFiles = d.txtFiles.filter((x: any) => chiaviNuove.has(chiaveDi(x)) || !chiaviAperte.has(chiaveDi(x)));
+            }
+            voce.foto = nuove.map((f: any) => ({ ...descritte.get(f), lotto, cartellaImport: importFolder }));
+            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto);
+        } finally {
+            importInCorsoRef.current = importInCorsoRef.current.filter(v => v !== voce);
         }
-        processImportData(nuove, d.txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size);
     };
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0, lottoDaRiusare = '') => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -2914,7 +3011,11 @@ export default function App() {
             //          keeps one fingerprint per open folder.
             const importFolder = (handle && handle.name) ? String(handle.name) : '';
             const importSignature = folderSignature(importFolder, imgFiles.map(f => f.name));
-            const lottoImport = nuovoIdFoto();
+            // ITALIANO: il lotto lo sceglie confermaImport (riapertura della stessa cartella: quello
+            //           delle foto gia' aperte); senza, uno nuovo come sempre.
+            // ENGLISH: confermaImport picks the batch (reopening the same folder: the one of the photos
+            //          already open); without it, a new one as always.
+            const lottoImport = lottoDaRiusare || nuovoIdFoto();
             let backup: { voci: Record<string, any>; ts: number | null } | null = null;
             try {
                 backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature);
@@ -2977,7 +3078,11 @@ export default function App() {
                         nomiSaltati.push(String(txtFiles[i].name || ''));
                         txtNonLetti.add(folderKeyOf(txtFiles[i]));
                     } else {
-                        const text = await txtFiles[i].text();
+                        // ITALIANO: dai byte: UTF-16 (PowerShell, Blocco note "Unicode") si legge bene, un
+                        //           testo che non e' UTF-8 (ANSI) lancia e finisce fra i saltati qui sotto.
+                        // ENGLISH: from the bytes: UTF-16 (PowerShell, Notepad "Unicode") reads fine, a text
+                        //          that is not UTF-8 (ANSI) throws and lands among the skipped ones below.
+                        const text = await leggiTestoSidecar(txtFiles[i]);
                         const letti = parseSidecarText(text);
                         if (letti.truncated) {
                             console.warn('[Import] .txt oltre i limiti, accorciato / over the caps, shortened:', txtFiles[i].name);
