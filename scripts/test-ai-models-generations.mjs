@@ -127,6 +127,45 @@ console.log('\n--- tempo scaduto su un modello ---');
     const r = await S.provaTuttiIModelli(CHIAVE, undefined, ctrl.signal, 0, 5000);
     dice('fermata dall\'utente: esito fermato, il modello resta senza stato', ['fermato', undefined], [r.esito, r.modelli[0].stato]);
 }
+// ITALIANO: secondo ricontrollo (16/10/2026).
+// ENGLISH: second review (16/10/2026).
+const lento = (p) => new Promise((_, no) => p.config.abortSignal.addEventListener('abort', () => no(new Error('aborted')), { once: true }));
+{
+    // ITALIANO: nell'app il segnale dell'utente c'e' SEMPRE: il tempo massimo deve valere anche li'.
+    // ENGLISH: in the app the user's signal is ALWAYS there: the time limit must apply there too.
+    const ctrl = new AbortController();
+    google({ modelli: ['gemini-3.8-flash', 'gemini-3.7-flash'].map(M), generate: (p) => p.model === 'gemini-3.8-flash' ? lento(p) : Promise.resolve({ text: '["ok"]' }) });
+    const r = await S.provaTuttiIModelli(CHIAVE, undefined, ctrl.signal, 0, 50);
+    dice('con il segnale dell\'utente presente il tempo scaduto da\' "da riprovare"', ['fatto', 'occupato', 'utilizzabile'], [r.esito, ...r.modelli.map(m => m.stato)]);
+}
+{
+    // ITALIANO: tre modelli di fila senza risposta = connessione appesa: si ferma, non aspetta tutti.
+    // ENGLISH: three models in a row with no answer = hung connection: it stops, it does not wait for all.
+    const g = google({ modelli: ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.7-flash', 'gemini-3.7-flash-lite', 'gemini-3.6-flash'].map(M), generate: lento });
+    const r = await S.provaTuttiIModelli(CHIAVE, undefined, undefined, 0, 30);
+    dice('tre tempi scaduti di fila: "Google non raggiungibile"', 'nonRaggiungibile', r.esito);
+    dice('...e i modelli dopo non si provano', ['list', 'gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.7-flash'], g.chiamate);
+}
+{
+    // ITALIANO: due lenti e poi uno che risponde: il conteggio riparte, il giro va in fondo.
+    // ENGLISH: two slow ones and then one that answers: the count restarts, the round completes.
+    const lenti = new Set(['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.7-flash-lite', 'gemini-3.6-flash']);
+    google({ modelli: ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.7-flash', 'gemini-3.7-flash-lite', 'gemini-3.6-flash'].map(M), generate: (p) => lenti.has(p.model) ? lento(p) : Promise.resolve({ text: '["ok"]' }) });
+    const r = await S.provaTuttiIModelli(CHIAVE, undefined, undefined, 0, 30);
+    dice('due lenti, uno buono, due lenti: il giro arriva in fondo', ['fatto', 5], [r.esito, r.modelli.filter(m => m.stato).length]);
+}
+{
+    // ITALIANO: la scelta automatica ("Controlla ora", riparazione): un modello che non risponde in
+    //           tempo e' lento come uno sovraccarico, non "rete assente".
+    // ENGLISH: the automatic choice ("Check now", repair): a model that does not answer in time is
+    //          slow like an overloaded one, not "no network".
+    google({ generate: lento });
+    dice('scelta automatica: tempo scaduto = sovraccarico', 'sovraccarico', await S.provaModello(CHIAVE, 'gemini-3.8-flash', 30));
+    google({});
+    dice('scelta automatica: modello che risponde = ok', 'ok', await S.provaModello(CHIAVE, 'gemini-3.8-flash', 5000));
+}
+dice('"4" e "4.0" sono una versione sola', ['4', '4.0', '3.8', '3.7'],
+    S.ultimeGenerazioni([[4], [4, 0], [3, 8], [3, 7], [3, 6]].map(v => ({ versione: v }))).map(m => m.versione.join('.')));
 clearInterval(tieniVivo);
 {
     const sorgente = fs.readFileSync(path.join(radice, 'src/services/geminiService.ts'), 'utf8');

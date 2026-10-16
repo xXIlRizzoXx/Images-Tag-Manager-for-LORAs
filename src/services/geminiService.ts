@@ -643,7 +643,8 @@ export const elencaModelliRemoti = async (apiKey: string): Promise<ModelloTrovat
 //           'sovraccarico' quando Google ha risposto ma il modello e' sovraccarico (503/500).
 // ENGLISH: the real probe. 'incerto' when the outcome says nothing about the model itself;
 //          'sovraccarico' when Google answered but the model is overloaded (503/500).
-export const provaModello = async (apiKey: string, id: string): Promise<'ok' | 'no' | 'occupato' | 'sovraccarico' | 'incerto'> => {
+export const provaModello = async (apiKey: string, id: string, tempoMs: number = PROVA_TIMEOUT_MS): Promise<'ok' | 'no' | 'occupato' | 'sovraccarico' | 'incerto'> => {
+    const tempo = AbortSignal.timeout(tempoMs);
     try {
         const ai = new GoogleGenAI({ apiKey });
         const risposta = await ai.models.generateContent({
@@ -655,13 +656,20 @@ export const provaModello = async (apiKey: string, id: string): Promise<'ok' | '
                 ],
             },
             config: {
-                abortSignal: buildAbortSignal(undefined, PROVA_TIMEOUT_MS),
+                abortSignal: tempo,
                 responseMimeType: 'application/json',
                 responseSchema: { type: Type.ARRAY, items: { type: Type.STRING } },
             },
         });
         return risposta.text ? 'ok' : 'no';
     } catch (err: any) {
+        // ITALIANO: un modello che non risponde in tempo e' lento come uno sovraccarico, non e' la
+        //           rete assente: come nella prova di tutti i modelli. Prima diventava 'incerto' e
+        //           "Controlla ora" diceva "Google non raggiungibile" con la rete a posto.
+        // ENGLISH: a model that does not answer in time is slow like an overloaded one, not a missing
+        //          network: as in the all-models probe. Before, it became 'incerto' and "Check now"
+        //          said "Google unreachable" with the network working.
+        if (tempo.aborted) return 'sovraccarico';
         const { kind } = classifyGeminiError(err);
         if (kind === 'rate_limit') return 'occupato';
         if (kind === 'busy') return 'sovraccarico';
@@ -791,6 +799,7 @@ export type ModelloChiave = { id: string; label: string; versione: number[]; sta
 const MODELLI_ALTRO_MESTIERE = ['tts', 'audio', 'embedding', 'embed', 'imagen', 'veo', 'live', 'aqa', 'robotics', 'computer-use', 'image'];
 const MODELLI_CHIAVE_MAX = 60;
 const PAUSA_FRA_PROVE_MS = 1200;
+const TEMPI_SCADUTI_MAX = 3;
 
 export const scegliModelliChiave = (grezzi: any[]): ModelloChiave[] => {
     const buoni: ModelloChiave[] = [];
@@ -826,14 +835,17 @@ export const scegliModelliChiave = (grezzi: any[]): ModelloChiave[] => {
 export const GENERAZIONI_TENUTE = 3;
 export const ultimeGenerazioni = <T extends { versione?: number[] }>(modelli: T[], quante: number = GENERAZIONI_TENUTE): T[] => {
     const numero = (m: T): number[] => (Array.isArray(m.versione) ? m.versione : []);
+    // ITALIANO: "4" e "4.0" sono la stessa versione: gli zeri in coda non contano.
+    // ENGLISH: "4" and "4.0" are the same version: trailing zeros do not count.
+    const chiaveDi = (v: number[]): string => { const c = [...v]; while (c.length > 1 && c[c.length - 1] === 0) c.pop(); return c.join('.'); };
     const tenute: string[] = [];
     const versioni = modelli.map(numero).filter(v => v.length > 0).sort((a, b) => confrontaVersioni(b, a));
     for (const v of versioni) {
-        const chiave = v.join('.');
+        const chiave = chiaveDi(v);
         if (!tenute.includes(chiave)) tenute.push(chiave);
         if (tenute.length >= quante) break;
     }
-    return modelli.filter(m => numero(m).length > 0 && tenute.includes(numero(m).join('.')));
+    return modelli.filter(m => numero(m).length > 0 && tenute.includes(chiaveDi(numero(m))));
 };
 
 // ITALIANO: da un errore della prova allo stato del modello, oppure al motivo per fermare tutto.
@@ -855,7 +867,7 @@ export const statoDaErrore = (err: any): { stato?: StatoModello; ferma?: FermaPr
     return { ferma: 'nonRaggiungibile' };
 };
 
-export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal, tempoMs: number = PROVA_TIMEOUT_MS): Promise<{ stato?: StatoModello; ferma?: FermaProva }> => {
+export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal, tempoMs: number = PROVA_TIMEOUT_MS): Promise<{ stato?: StatoModello; ferma?: FermaProva; scaduto?: boolean }> => {
     const tempo = AbortSignal.timeout(tempoMs);
     try {
         const ai = new GoogleGenAI({ apiKey });
@@ -882,7 +894,7 @@ export const provaModelloChiave = async (apiKey: string, id: string, segnale?: A
         //           prima fermava tutto il giro, anche se gli altri modelli avevano risposto.
         // ENGLISH: a model that does not answer in time is "try again", not "no network": before,
         //          it stopped the whole round, even though the other models had answered.
-        if (tempo.aborted) return { stato: 'occupato' };
+        if (tempo.aborted) return { stato: 'occupato', scaduto: true };
         return statoDaErrore(err);
     }
 };
@@ -930,6 +942,7 @@ export const provaTuttiIModelli = async (
     if (modelli.length === 0) return { esito: 'nessunModello', modelli: [] };
     avanzamento?.(modelli.map(m => ({ ...m })), 0);
 
+    let scadutiDiFila = 0;
     for (let i = 0; i < modelli.length; i++) {
         if (segnale?.aborted) return { esito: 'fermato', modelli };
         if (i > 0 && pausaMs > 0) {
@@ -944,6 +957,14 @@ export const provaTuttiIModelli = async (
         if (r.ferma) return { esito: r.ferma, modelli };
         modelli = modelli.map((m, j) => (j === i ? { ...m, stato: r.stato } : m));
         avanzamento?.(modelli.map(m => ({ ...m })), i + 1);
+        // ITALIANO: TEMPI_SCADUTI_MAX modelli di fila senza risposta non sono modelli lenti: e' la
+        //           connessione appesa (proxy, antivirus, VPN caduta). Si ferma come "Google non
+        //           raggiungibile" invece di aspettare un minuto per ognuno dei modelli rimasti.
+        // ENGLISH: TEMPI_SCADUTI_MAX models in a row with no answer are not slow models: it is a hung
+        //          connection (proxy, antivirus, dropped VPN). Stop as "Google unreachable" instead
+        //          of waiting a minute for each model left.
+        scadutiDiFila = r.scaduto ? scadutiDiFila + 1 : 0;
+        if (scadutiDiFila >= TEMPI_SCADUTI_MAX) return { esito: 'nonRaggiungibile', modelli };
     }
     return { esito: 'fatto', modelli };
 };
