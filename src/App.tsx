@@ -1477,7 +1477,9 @@ export default function App() {
                 tieniElenco(elenco);
             }
 
-            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto);
+            // ITALIANO: l'AI spenta a meta' ferma anche le prove non ancora partite, non solo il risultato.
+            // ENGLISH: the AI switched off midway also stops the probes not yet started, not just the result.
+            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto, () => aiEnabledRef.current);
             if (!aiEnabledRef.current) return;
             tieniElenco(esito.disponibili);
             if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'progettoRifiutato' && esito.esito !== 'occupato') segnaControllo();

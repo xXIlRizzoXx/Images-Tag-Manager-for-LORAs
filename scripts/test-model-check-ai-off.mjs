@@ -112,7 +112,7 @@ const scenario = ({ aiModel, fissato, aiAccesa = true, trattieni = null }) => {
         localStorage: { getItem: () => null, setItem: (k) => stato.scritture.push(k) },
     };
     const controlla = (rotto, dillo) => render(env, { aiModel, aiModelloFissato: fissato }).controllaModello(rotto, dillo);
-    return { stato, notifiche, env, controlla, inAttesa, apri: () => apri(), chiamate: () => globalThis.__GOOGLE__.chiamate };
+    return { stato, notifiche, env, controlla, inAttesa, tieni, apri: () => apri(), chiamate: () => globalThis.__GOOGLE__.chiamate };
 };
 
 console.log('\n--- riparazione chiesta con l\'AI gia\' spenta ---');
@@ -155,6 +155,64 @@ console.log('\n--- modello bloccato, "Controlla ora": l\'AI si spegne mentre Goo
     s.apri(); await corsa;
     dice('nessun avviso "piu\' recente"', [], s.notifiche);
     dice('una sola chiamata: l\'elenco gia\' partito', 1, s.chiamate());
+}
+
+/* ITALIANO: il risultato veniva scartato, ma le prove a Google partivano lo stesso DOPO lo
+   spegnimento: da una a tre chiamate generateContent (fino a 60 s l'una). Qui si contano le
+   chiamate fatte dopo lo spegnimento: devono essere zero. Una prova gia' in volo non si conta
+   (e' partita con l'AI accesa).
+   ENGLISH: the result was discarded, but the probes to Google still started AFTER the switch-off:
+   one to three generateContent calls (up to 60 s each). Here the calls made after the switch-off
+   are counted: they must be zero. A probe already in flight is not counted (it started with the
+   AI on). */
+const no404 = async () => { const e = new Error('{"error":{"code":404,"status":"NOT_FOUND"}}'); e.status = 404; throw e; };
+const dopoLoSpegnimento = async (s, rotto, dillo) => {
+    const corsa = s.controlla(rotto, dillo);
+    await s.inAttesa;
+    s.env.aiEnabledRef.current = false;
+    const prima = s.chiamate();
+    s.apri(); await corsa;
+    return s.chiamate() - prima;
+};
+
+console.log('\n--- chiamate a Google DOPO lo spegnimento dell\'AI ---');
+{
+    const s = scenario({ aiModel: 'gemini-3.5-flash', fissato: false, trattieni: 'elenco' });
+    globalThis.__GOOGLE__.generate = no404;
+    dice('riparazione (Automatico), AI spenta durante l\'elenco, candidati 404: nessuna prova parte', 0, await dopoLoSpegnimento(s, true, true));
+    dice('...e nessun avviso, nessun cambio', ['gemini-3.5-flash', []], [s.stato.aiModel, s.notifiche]);
+}
+{
+    const s = scenario({ aiModel: 'gemini-3.5-flash', fissato: true, trattieni: 'elenco' });
+    dice('riparazione del modello bloccato, AI spenta durante l\'elenco: nessuna prova parte', 0, await dopoLoSpegnimento(s, true, true));
+}
+{
+    const s = scenario({ aiModel: 'gemini-3.5-flash', fissato: false, trattieni: 'elenco' });
+    dice('controllo di avvio (Automatico), AI spenta durante l\'elenco: nessuna prova parte', 0, await dopoLoSpegnimento(s, false, false));
+    dice('...e il modello non cambia', 'gemini-3.5-flash', s.stato.aiModel);
+}
+{
+    // ITALIANO: l'AI si spegne durante la PRIMA prova (candidati 404): le altre due non partono.
+    // ENGLISH: the AI is switched off during the FIRST probe (404 candidates): the other two do not start.
+    const s = scenario({ aiModel: 'gemini-3.5-flash', fissato: false, trattieni: 'prova' });
+    let prove = 0;
+    globalThis.__GOOGLE__.generate = async () => { prove++; if (prove === 1) await s.tieni(); return no404(); };
+    dice('riparazione, AI spenta durante la prima prova: le prove dopo non partono', 0, await dopoLoSpegnimento(s, true, true));
+    dice('...e nessun avviso', [], s.notifiche);
+}
+
+console.log('\n--- il servizio senza il controllo "continua": come prima ---');
+{
+    const s = scenario({ aiModel: 'gemini-3.5-flash', fissato: false });
+    globalThis.__GOOGLE__.generate = no404;
+    const e = await S.aggiornaModelloAutomatico(s.env.geminiApiKey, 'gemini-3.5-flash', true);
+    dice('senza il quarto argomento: elenco + tre prove, "nessunoValido"', [4, 'nessunoValido'], [s.chiamate(), e.esito]);
+    const r = scenario({ aiModel: 'gemini-3.5-flash', fissato: false });
+    const e2 = await S.aggiornaModelloAutomatico(r.env.geminiApiKey, 'gemini-3.5-flash', false, () => true);
+    dice('con "continua" sempre vero: si passa al piu\' recente come prima', ['gemini-3.7-flash', 'aggiornato', 2], [e2.modello, e2.esito, r.chiamate()]);
+    const q = scenario({ aiModel: 'gemini-3.5-flash', fissato: false });
+    const e3 = await S.aggiornaModelloAutomatico(q.env.geminiApiKey, 'gemini-3.5-flash', true, () => false);
+    dice('con "continua" falso: solo l\'elenco, nessun cambio', [1, false, 'gemini-3.5-flash'], [q.chiamate(), e3.cambiato, e3.modello]);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

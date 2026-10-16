@@ -719,10 +719,17 @@ export type EsitoModello = {
 //           in quel caso si cerca comunque, anche se e' gia' in cima all'elenco.
 // ENGLISH: the whole round. `rotto` = the current model has just answered "I do not exist":
 //          in that case we look anyway, even if it is already at the top of the list.
+// ITALIANO: `continua` (facoltativo) si chiede prima di ogni prova: se dice di no (l'AI e' stata
+//           spenta mentre Google rispondeva) non parte nessun'altra chiamata e non cambia niente.
+//           Chi lo passa scarta poi il risultato.
+// ENGLISH: `continua` (optional) is asked before every probe: if it says no (the AI was switched
+//          off while Google answered) no further call starts and nothing changes. Whoever
+//          passes it then discards the result.
 export const aggiornaModelloAutomatico = async (
     apiKey: string,
     attuale: string,
     rotto: boolean = false,
+    continua?: () => boolean,
 ): Promise<EsitoModello> => {
     const fermo = (esito: EsitoModello['esito'], disponibili: ModelloTrovato[] = []): EsitoModello =>
         ({ modello: attuale, precedente: attuale, cambiato: false, esito, disponibili });
@@ -752,6 +759,7 @@ export const aggiornaModelloAutomatico = async (
 
     let sovraccarico = false;
     for (const c of candidati.slice(0, PROVE_MAX)) {
+        if (continua && !continua()) return { ...fermo('invariato', candidati), disponibili: candidati };
         const esito = await provaModello(apiKey, c.id);
         // ITALIANO: non si sa niente del modello: ci si ferma dove si e', dicendo il perche'.
         // ENGLISH: nothing is known about the model: stay put, and say why.
