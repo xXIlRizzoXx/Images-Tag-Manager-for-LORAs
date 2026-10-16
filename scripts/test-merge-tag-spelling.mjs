@@ -121,6 +121,16 @@ try {
     const sbagliati = tagScritti().filter((t) => !TENUTI.has(t) && (/[A-Z_]/.test(t) || / {2}/.test(t)));
     dice('nessun altro tag del dizionario ha maiuscole, trattini bassi o doppi spazi', [], sbagliati);
 
+    // ITALIANO: i tag scritti con il peso dei prompt sono i tag di sempre: masterpiece e best quality
+    //           ci sono gia', smile no (entra senza peso), e (x) resta un tag a se'.
+    // ENGLISH: tags written with a prompt weight are the usual tags: masterpiece and best quality are
+    //          already there, smile is not (it goes in without the weight), and (x) stays a tag of its own.
+    fs.writeFileSync(path.join(prova, 'pesi.txt'), '(masterpiece), ((Best_Quality)), (smile:1.2), [blue sky], (x)\n');
+    const rapportoPesi = lancia('pesi.txt', '--out', 'piano-pesi.json');
+    const pianoPesi = JSON.parse(fs.readFileSync(path.join(prova, 'piano-pesi.json'), 'utf8'));
+    dice('i tag con il peso noti non sono proposti come nuovi; smile entra senza peso', ['smile'], Object.keys(pianoPesi).sort());
+    dice('il rapporto conta 4 tag gia\' nel dizionario: masterpiece, best quality, blue sky e (x)', true, /gia' nel dizionario\s*: 4\b/.test(rapportoPesi));
+
     // ITALIANO: rifare lo stesso inserimento non aggiunge niente (niente doppioni).
     // ENGLISH: repeating the same insertion adds nothing (no duplicates).
     const quanti = tagScritti().length;

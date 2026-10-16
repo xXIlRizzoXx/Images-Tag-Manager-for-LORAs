@@ -966,7 +966,7 @@ export default function App() {
     //          except when going back to the empty gallery from before the import: a trigger typed
     //          before importing must not vanish because of that.
     const handleUndo = useCallback(() => {
-        const passo = nearestDifferentStep(history, historyIndex, -1);
+        const passo = nearestDifferentStep(history, historyIndex, -1, { passi: triggerHistoryRef.current, attuali: globalTriggersRef.current });
         if (passo >= 0) {
             isUndoRedoAction.current = true;
             setHistoryIndex(passo);
@@ -978,7 +978,7 @@ export default function App() {
     }, [history, historyIndex, t]);
 
     const handleRedo = useCallback(() => {
-        const passo = nearestDifferentStep(history, historyIndex, 1);
+        const passo = nearestDifferentStep(history, historyIndex, 1, { passi: triggerHistoryRef.current, attuali: globalTriggersRef.current });
         if (passo >= 0) {
             isUndoRedoAction.current = true;
             setHistoryIndex(passo);

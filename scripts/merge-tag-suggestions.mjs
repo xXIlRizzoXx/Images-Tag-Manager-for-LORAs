@@ -37,8 +37,20 @@ const ingressi = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i 
 //   rapporto lo scarterebbe: in quel caso la chiave tiene le parentesi.
 // ENGLISH: a tag made only of parentheses ('(o)_(o)') would be empty without them, and the report
 //   would drop it: in that case the key keeps the parentheses.
+// ITALIANO: i pesi dei prompt: '(masterpiece)', '((best quality))', '(smile:1.2)', '[blue sky]' sono
+//   i tag masterpiece, best quality, smile, blue sky con un peso intorno. Si tolgono prima di tutto,
+//   altrimenti il rapporto li proponeva come tag nuovi. Restano i tag che sono parentesi e basta:
+//   '(x)' (una lettera sola, senza peso) e '(o)_(o)' (parentesi dentro) non sono pesi.
+// ENGLISH: prompt weights: '(masterpiece)', '((best quality))', '(smile:1.2)', '[blue sky]' are the
+//   tags masterpiece, best quality, smile, blue sky with a weight around them. They are removed first,
+//   otherwise the report offered them as new tags. Tags that are just parentheses stay: '(x)' (one
+//   letter, no weight) and '(o)_(o)' (parentheses inside) are not weights.
+const senzaPeso = s => {
+    const m = /^[([]+([^()[\]]*?)(:[\d.]+)?[)\]]+$/.exec(s);
+    return m && (m[2] || /[\p{L}\p{N}].*[\p{L}\p{N}]/u.test(m[1])) ? m[1].trim() : s;
+};
 const chiave = t => {
-    const base = String(t).toLowerCase().replace(/[_\s]+/g, ' ').trim();
+    const base = senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim();
     return base.replace(/\s*\(.*?\)\s*/g, ' ').trim() || base;
 };
 
@@ -59,7 +71,7 @@ const chiave = t => {
 const EMOTICON_LUNGHE = new Set(['(o)_(o)', '<o>_<o>', '<|>_<|>', '||_||']);
 const tieneTrattino = s => /^[^\s_]_[^\s_]$/u.test(s) || EMOTICON_LUNGHE.has(s) || /^(score|source|rating)_[\p{L}\p{N}_]+$/u.test(s);
 const grafia = t => {
-    const s = String(t).toLowerCase().trim();
+    const s = senzaPeso(String(t).toLowerCase().trim());
     if (tieneTrattino(s)) return s;
     return (/[\p{L}\p{N}]/u.test(s) ? s.replace(/[_\s]+/g, ' ') : s.replace(/\s+/g, ' ')).trim();
 };
