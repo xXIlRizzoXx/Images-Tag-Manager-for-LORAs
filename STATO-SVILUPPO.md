@@ -1,14 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 16 ottobre 2026
-**Versione attuale:** 2.0.0 in lavorazione — la 1.2.0 e' pubblicata su GitHub dal 21 agosto 2026
+**Versione attuale:** 2.0.0, pubblicata su GitHub il 16 ottobre 2026 (installer e portable). Da qui riparte la regola del +0.0.1: la prossima modifica farà 2.0.1.
 Novità 2.0.0 (traguardo 109, 16 ottobre 2026): **pagina del progetto rifatta per la 2.0.0.** Tutte
 le schermate del README sono state rifatte con l'interfaccia di oggi (prima si vedeva ancora il vecchio
 tasto "Export All (.zip)"), e ci sono tre schede nuove: la prova dei modelli recenti, il server MCP
 e i tasti "?" delle Impostazioni. Le Impostazioni AI e MCP sono fotografate con una chiave e un
 esito della prova dimostrativi, con la rete bloccata: per farle non è partita nessuna chiamata a
 Google. La finestra non si stringe più sotto 1040x600 e, a quella misura, la fascia in alto resta
-su due righe: provato sul programma vero con la build finale del 16 ottobre.
+su due righe: provato sul programma vero con la build finale del 16 ottobre. Lo stesso giorno la
+2.0.0 è stata pubblicata: chi ha la 1.2.0 con il controllo degli aggiornamenti acceso la vede
+annunciata all'avvio; chi ha la 1.1.0 deve passare dalla pagina delle release.
 Novità 2.0.0 (traguardo 108, 15-16 ottobre 2026): **due funzioni nuove per l'AI, provate sul
 programma vero e ricontrollate.** (1) **Prova i modelli recenti**: nelle Impostazioni un pulsante
 prova, con un'immagine minuscola, i modelli delle ultime tre versioni di Gemini che Google elenca
