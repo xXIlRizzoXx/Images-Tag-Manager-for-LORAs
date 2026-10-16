@@ -99,8 +99,39 @@ function leggiDizionario() {
     return { src, categorie, perChiave };
 }
 
+// ITALIANO: il testo di un file di tag dai suoi byte, con la stessa regola di decodificaSidecar
+//   dell'app: BOM FF FE / FE FF -> UTF-16 (Blocco note "Unicode", ">" di Windows PowerShell 5.1),
+//   altrimenti UTF-8 valido senza caratteri NUL (il BOM UTF-8 lo toglie TextDecoder). Il resto
+//   torna null. Prima si leggeva sempre in UTF-8: un file UTF-16 dava tag pieni di NUL, "hat" non
+//   risultava gia' nel dizionario e il piano lo riproponeva.
+// ENGLISH: a tag file's text from its bytes, with the same rule as the app's decodificaSidecar:
+//   BOM FF FE / FE FF -> UTF-16 (Notepad "Unicode", ">" in Windows PowerShell 5.1), otherwise valid
+//   UTF-8 with no NUL characters (TextDecoder drops the UTF-8 BOM). Anything else returns null. It
+//   used to be always read as UTF-8: a UTF-16 file gave NUL-filled tags, "hat" was not found in the
+//   dictionary and the plan offered it again.
+const decodifica = (buf) => {
+    try {
+        if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder('utf-16le', { fatal: true }).decode(buf.subarray(2));
+        if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+            const corpo = Buffer.from(buf.subarray(2));
+            if (corpo.length % 2 !== 0) return null;
+            return new TextDecoder('utf-16le', { fatal: true }).decode(corpo.swap16());
+        }
+        const testo = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+        return testo.includes('\u0000') ? null : testo;
+    } catch (_) {
+        return null;
+    }
+};
+
 function leggiTagDaFile(file) {
-    const testo = fs.readFileSync(file, 'utf8');
+    const testo = decodifica(fs.readFileSync(file));
+    // ITALIANO: un file che non si decodifica ferma tutto, invece di proporre tag storpiati.
+    // ENGLISH: a file that cannot be decoded stops everything, instead of offering mangled tags.
+    if (testo === null) {
+        console.error(`${file}: non e' UTF-8 ne' UTF-16 con BOM, impossibile leggerlo. Risalvalo in UTF-8 e rilancia.`);
+        process.exit(1);
+    }
     let grezzi = [];
     if (file.toLowerCase().endsWith('.json')) {
         const d = JSON.parse(testo);
