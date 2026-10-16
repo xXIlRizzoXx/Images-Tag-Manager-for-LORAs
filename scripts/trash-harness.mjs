@@ -76,7 +76,7 @@ const FUNZIONI = ['handleRestore', 'percorsiSuDisco', 'deleteImageFiles', 'delet
     'closeProjectNow', 'handleResetProject'];
 // ITALIANO: funzioni che il codice di prima non aveva: se mancano si va avanti senza.
 // ENGLISH: functions the previous code did not have: when missing, carry on without them.
-const FACOLTATIVE = ['fraseCestinoWindows', 'txtUsatoDaAltre'];
+const FACOLTATIVE = ['fraseCestinoWindows', 'txtUsatoDaAltre', 'copieChiuseDelloStessoFile'];
 const testi = [];
 for (const nome of [...FUNZIONI, ...FACOLTATIVE]) {
     const testo = ritaglia(`    const ${nome} = `);

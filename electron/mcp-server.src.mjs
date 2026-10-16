@@ -78,7 +78,7 @@ export const creaServerMcp = (chiedi, versione) => {
 
     server.registerTool('list_photos', {
         title: 'List photos',
-        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. Optional filters: tags that must all be present, or only photos without tags.',
+        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. A photo marked txt_unreadable has a .txt that could not be read when it was opened: "Save Changes" does not write it. Optional filters: tags that must all be present, or only photos without tags.',
         inputSchema: {
             tags: z.array(TAG).max(20).optional().describe('Only photos that have ALL these tags (case-insensitive).'),
             untagged_only: z.boolean().optional().describe('Only photos with no tags.'),

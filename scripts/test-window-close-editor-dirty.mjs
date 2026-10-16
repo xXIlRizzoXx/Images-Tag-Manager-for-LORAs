@@ -50,7 +50,7 @@ const codice = (await esbuild.transform(testo, { loader: 'ts' })).code;
 const NOMI = ['window', 'localStorage', 'imagesRef', 'fotoChiuseRef', 'dirHandle', 'permettiChiusuraRef', 'chiusuraFinestraRef',
     'saveCloseDialogRef', 'setSaveCloseDialog', 'scriviBackupSubito', 'modificheNonSalvate', 'setTimeout',
     'tagEditorDirtyRef', 'globalTriggersRef', 'setIsTagEditorOpen', 'showNotification', 't', 'backupConFotoRef', 'isSavingRef',
-    'ripristinoInCorsoRef', 'chiusuraInRipristinoRef', 'lottiSessioneRef'];
+    'ripristinoInCorsoRef', 'chiusuraInRipristinoRef', 'lottiSessioneRef', 'svuotamentoInCorsoRef', 'chiusuraInSvuotamentoRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn effettoChiusura;');
 
 const foto = (name, tags, originalTags, extra = {}) => ({
@@ -71,7 +71,7 @@ const app = ({ immagini = [], editorSporco = false, electron = true, trigger = [
     fabbrica(win, memoria, { current: immagini }, { current: new Map() }, null, { current: false }, a.chiusuraFinestraRef,
         saveCloseDialogRef, (d) => { a.finestra = d; saveCloseDialogRef.current = d; }, G.scriviBackupSubito, G.modificheNonSalvate, setTimeout,
         { current: editorSporco }, { current: trigger }, (v) => { a.editorAperto = typeof v === 'function' ? v(a.editorAperto) : v; },
-        (m, tipo) => a.notifiche.push([m, tipo]), t, { current: false }, { current: false }, { current: false }, { current: false }, { current: new Set() })();
+        (m, tipo) => a.notifiche.push([m, tipo]), t, { current: false }, { current: false }, { current: false }, { current: false }, { current: new Set() }, { current: false }, { current: false })();
     a.chiudi = () => {
         const e = { defaultPrevented: false, returnValue: undefined, preventDefault() { this.defaultPrevented = true; } };
         for (const fn of a.ascoltatori) fn(e);

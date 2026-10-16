@@ -50,6 +50,7 @@ const TAG_MAX = 200;
 const LIMITE_STANDARD = 100;
 const LIMITE_MAX = 500;
 const NOTA_SALVA = 'Changed in the program only, not saved to disk yet: the user reviews them and presses "Save Changes".';
+const NOTA_TXT_NON_LETTO = ' The .txt of the photos in txt_unreadable could not be read when they were opened: "Save Changes" does not write them, so as not to cover the real file.';
 
 export const pulisciTag = (tags: unknown): string[] => {
     if (!Array.isArray(tags)) return [];
@@ -118,6 +119,9 @@ export const eseguiStrumentoMcp = async (strumento: string, argomenti: Record<st
                     folder: cartellaDi(f),
                     tags: f.tags,
                     unsaved: !stessi(f.tags, f.originalTags || []),
+                    // ITALIANO: il campo c'e' solo per le foto col .txt non letto: Salva non le scrive.
+                    // ENGLISH: the field is there only for photos whose .txt was not read: Save does not write them.
+                    ...(txtNonLettoInVigore(f) ? { txt_unreadable: true } : {}),
                 })),
                 trigger_words: trigger,
             },
@@ -147,7 +151,9 @@ export const eseguiStrumentoMcp = async (strumento: string, argomenti: Record<st
     }
 
     if (strumento === 'set_tags' || strumento === 'add_tags' || strumento === 'remove_tags') {
-        const ids = strumento === 'set_tags' ? elencoId([args.id]) : elencoId(args.ids);
+        // ITALIANO: senza doppioni: con ["a","a"] la risposta contava due foto ("unchanged" 1, not_found ripetuto).
+        // ENGLISH: without duplicates: with ["a","a"] the answer counted two photos ("unchanged" 1, repeated not_found).
+        const ids = [...new Set(strumento === 'set_tags' ? elencoId([args.id]) : elencoId(args.ids))];
         const tags = pulisciTag(args.tags);
         if (ids.length === 0) return { errore: 'No photo id given.' };
         if (strumento !== 'set_tags' && tags.length === 0) return { errore: 'No tag given.' };
@@ -175,6 +181,11 @@ export const eseguiStrumentoMcp = async (strumento: string, argomenti: Record<st
             const ordinati = ordinaTag(prossimi, trigger);
             if (!stessi(ordinati, f.tags)) nuovi.set(id, ordinati);
         }
+        // ITALIANO: la modifica resta fatta (il visualizzatore la puo' salvare apposta), ma l'AI deve sapere
+        //           che per queste foto "Salva Modifiche" non scrive il .txt, che non si era potuto leggere.
+        // ENGLISH: the change is still made (the viewer can save it on purpose), but the AI must know that
+        //          for these photos "Save Changes" does not write the .txt, which could not be read.
+        const txtNonLetti = [...nuovi.keys()].filter(id => txtNonLettoInVigore(perId.get(id)!));
         if (nuovi.size > 0) ctx.applica(nuovi);
         return {
             cambiate: nuovi.size,
@@ -184,7 +195,8 @@ export const eseguiStrumentoMcp = async (strumento: string, argomenti: Record<st
                 ...(nonTrovate.length ? { not_found: nonTrovate } : {}),
                 ...(triggerNonTolte.size ? { trigger_words_kept: [...triggerNonTolte] } : {}),
                 ...(strumento === 'set_tags' && nuovi.size ? { tags: nuovi.get(ids[0]) } : {}),
-                note: NOTA_SALVA,
+                ...(txtNonLetti.length ? { txt_unreadable: txtNonLetti } : {}),
+                note: NOTA_SALVA + (txtNonLetti.length ? NOTA_TXT_NON_LETTO : ''),
             },
         };
     }

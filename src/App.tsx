@@ -910,6 +910,18 @@ export default function App() {
     //          with no notice. The first X stops and warns; a second X closes anyway.
     const chiusuraInRipristinoRef = useRef(false);
     if (!ripristinoInCorso) chiusuraInRipristinoRef.current = false;
+    // ITALIANO: lo stesso per "Svuota Cestino" e la cancellazione definitiva (isEmptyingTrash): tolgono
+    //           una foto alla volta, prima l'immagine e poi il .txt. Chiudendo in mezzo le foto non
+    //           ancora tolte restavano nella cartella e tornavano in galleria alla riapertura, senza
+    //           un avviso. La prima X si ferma e avvisa; una seconda X chiude comunque.
+    // ENGLISH: the same for "Empty Trash" and the permanent delete (isEmptyingTrash): they remove one
+    //          photo at a time, the image first and then the .txt. Closing in between left the photos
+    //          not removed yet in the folder, back in the gallery on reopening, with no notice. The
+    //          first X stops and warns; a second X closes anyway.
+    const svuotamentoInCorsoRef = useRef(isEmptyingTrash);
+    svuotamentoInCorsoRef.current = isEmptyingTrash;
+    const chiusuraInSvuotamentoRef = useRef(false);
+    if (!isEmptyingTrash) chiusuraInSvuotamentoRef.current = false;
     useEffect(() => {
         const allaChiusura = (e: BeforeUnloadEvent) => {
             // ITALIANO: l'utente ha gia' deciso (salvato, o chiuso senza salvare): si chiude e basta.
@@ -948,6 +960,15 @@ export default function App() {
                 setTimeout(() => showNotification(t.closeWhileRestoring, 'info'), 0);
                 return;
             }
+            // ITALIANO: uno svuotamento del cestino in corso (vedi chiusuraInSvuotamentoRef).
+            // ENGLISH: a trash emptying in progress (see chiusuraInSvuotamentoRef).
+            if (svuotamentoInCorsoRef.current && !chiusuraInSvuotamentoRef.current) {
+                e.preventDefault();
+                e.returnValue = false;
+                chiusuraInSvuotamentoRef.current = true;
+                setTimeout(() => showNotification(t.closeWhileEmptying, 'info'), 0);
+                return;
+            }
             // ITALIANO: prima la bozza dell'editor (vedi tagEditorDirtyRef); le foto si chiedono alla X dopo.
             // ENGLISH: the editor's draft first (see tagEditorDirtyRef); the photos are asked at the next X.
             if (editorSporco) {
@@ -964,7 +985,7 @@ export default function App() {
             //          "Save changes" the photos count as saved only at the end, so there were always
             //          edits here: the three-choice dialog opened and its "Save and close" said to try
             //          again later. The edits are already in the backup (above).
-            if (isSavingRef.current || ripristinoInCorsoRef.current) return;
+            if (isSavingRef.current || ripristinoInCorsoRef.current || svuotamentoInCorsoRef.current) return;
             if (!modificheNonSalvate(lista, globalTriggersRef.current)) return;
             e.preventDefault();
             // ITALIANO: come chiede la guida di Electron: returnValue esplicito, non solo preventDefault.
@@ -1729,7 +1750,9 @@ export default function App() {
     const indirizzoMcp = mcpStato ? `http://127.0.0.1:${mcpStato.porta}/images-tag-manager` : '';
     const configMcp = (tipo: 'claudeCode' | 'desktop' | 'cursor'): string => {
         const codice = mcpStato?.codice || '';
-        if (tipo === 'claudeCode') return `claude mcp add --transport http images-tag-manager ${indirizzoMcp} --header "Authorization: Bearer ${codice}"`;
+        // ITALIANO: --scope user: senza, il server vale solo nella cartella da cui si lancia il comando.
+        // ENGLISH: --scope user: without it the server only works in the folder the command is run from.
+        if (tipo === 'claudeCode') return `claude mcp add --transport http --scope user images-tag-manager ${indirizzoMcp} --header "Authorization: Bearer ${codice}"`;
         // ITALIANO: Claude Desktop parla solo con programmi locali: mcp-remote fa da ponte. Il codice
         //           sta in una variabile d'ambiente perche' su Windows gli spazi negli argomenti si rompono.
         // ENGLISH: Claude Desktop only talks to local programs: mcp-remote bridges. The token sits in an
@@ -1940,7 +1963,14 @@ export default function App() {
                 if (await savedHandle.isSameEntry(sidecar)) matchIds.add(img.id);
             } catch { /* ITALIANO: sidecar assente o non confrontabile: salto, per prudenza */ }
         }
-        if (matchIds.size === 0) {
+        // ITALIANO: anche quando una foto con la cartella combacia: a.jpg da "Carica cartella" e a.png
+        //           trascinata, nella stessa cartella, hanno lo stesso a.txt; prima a.png restava coi tag
+        //           vecchi e il suo Salva riscriveva a.txt sopra il file dell'editor.
+        // ENGLISH: also when a photo with a folder matches: a.jpg from "Load folder" and a.png dropped in,
+        //          in the same folder, share a.txt; a.png used to keep the old tags and its Save rewrote
+        //          a.txt over the editor's file.
+        const dalDisco = new Map<string, string[]>();
+        {
             // ITALIANO: foto SENZA cartella ("Carica immagini", trascinamento): nessun handle da
             //           confrontare, e prima restavano coi tag vecchi, che il primo "Salva" dopo una
             //           modifica riscriveva sopra il file dell'editor. In Electron si rilegge il .txt
@@ -1954,11 +1984,9 @@ export default function App() {
             //          than originalTags does the photo sync, as above. A same-named photo from another
             //          folder, with its .txt unchanged, does not change.
             const senzaCartella = images.filter(img => !img.dirHandle && img.file.name.split('.').slice(0, -1).join('.').toLowerCase() === base);
-            if (senzaCartella.length === 0) return;
-            const api = (window as any).electronAPI;
-            if (!api || typeof api.readSidecarTags !== 'function' || typeof api.getPathForFile !== 'function') return;
-            const dalDisco = new Map<string, string[]>();
-            for (const img of senzaCartella) {
+            const api = senzaCartella.length > 0 ? (window as any).electronAPI : null;
+            const conApi = !!api && typeof api.readSidecarTags === 'function' && typeof api.getPathForFile === 'function';
+            for (const img of conApi ? senzaCartella : []) {
                 const percorso = api.getPathForFile(img.file) || img.filePath || '';
                 if (!percorso) continue;
                 try {
@@ -1971,18 +1999,15 @@ export default function App() {
                     if (JSON.stringify(sulDisco) !== JSON.stringify(img.originalTags || []) || txtNonLettoInVigore(img)) dalDisco.set(img.id, sulDisco);
                 } catch { /* ITALIANO: .txt non rileggibile: la foto resta com'era / ENGLISH: .txt not readable: the photo stays as it was */ }
             }
-            if (dalDisco.size === 0) return;
-            setImages(prev => prev.map(i =>
-                dalDisco.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], dalDisco.get(i.id) || [], globalTriggers, i.baseTxtNonLetto) } : i
-            ));
-            return;
         }
+        if (matchIds.size === 0 && dalDisco.size === 0) return;
         // ITALIANO: una trigger word ancora da salvare resta sulla foto (vedi tagDopoEditor): l'editor
         //           non l'ha mai vista, e prima spariva insieme alla sua scrittura nel .txt.
         // ENGLISH: a trigger word still to be saved stays on the photo (see tagDopoEditor): the editor
         //          never saw it, and it used to vanish along with its write into the .txt.
         setImages(prev => prev.map(i =>
-            matchIds.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], savedTags, globalTriggers, i.baseTxtNonLetto) } : i
+            matchIds.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], savedTags, globalTriggers, i.baseTxtNonLetto) }
+                : dalDisco.has(i.id) ? { ...i, ...tagDopoEditor(i.tags, i.originalTags || [], dalDisco.get(i.id) || [], globalTriggers, i.baseTxtNonLetto) } : i
         ));
     };
 
@@ -2172,6 +2197,41 @@ export default function App() {
             console.warn('[Cestino] Non so se il .txt serve ad altre foto: lo lascio sul disco.', err);
             return true;
         }
+    };
+
+    // ITALIANO: le foto chiuse con la X che sono lo STESSO file di quelle appena tolte dal disco (la
+    //           foto chiusa e poi riaperta con un id nuovo): stesso nome intero, senza maiuscole, e
+    //           stesso percorso; senza percorsi, la stessa cartella aperta (come txtUsatoDaAltre).
+    //           Restavano fra le chiuse e nella cronologia: un Ctrl+Z le rimetteva in galleria senza
+    //           file, e contavano ancora nell'impronta del backup. Una copia di nuovo in galleria
+    //           (riportata con Ctrl+Z) non si tocca; nel dubbio (errore) la copia resta.
+    // ENGLISH: the photos closed with the X that are the SAME file as the ones just taken off the disk
+    //          (the photo closed and then reopened with a new id): same whole name, ignoring case,
+    //          and same path; with no paths, the same open folder (as txtUsatoDaAltre). They stayed
+    //          among the closed photos and in the history: one Ctrl+Z put them back in the gallery
+    //          with no file, and they still counted in the backup fingerprint. A copy back in the
+    //          gallery (brought back with Ctrl+Z) is left alone; when in doubt (an error) it stays.
+    const copieChiuseDelloStessoFile = async (tolte: any[]): Promise<string[]> => {
+        const trovate: string[] = [];
+        const nonChiuse = new Set([...imagesRef.current.map(i => i.id), ...tolte.map(f => f && f.id)]);
+        for (const [id, voce] of [...fotoChiuseRef.current.entries()]) {
+            const chiusa: any = voce && (voce as any).foto;
+            if (!chiusa || !chiusa.file || nonChiuse.has(id)) continue;
+            for (const img of tolte) {
+                if (!img || !img.file || String(img.file.name).toLowerCase() !== String(chiusa.file.name).toLowerCase()) continue;
+                try {
+                    const mio = percorsiSuDisco(img).imgPath.toLowerCase();
+                    const suo = percorsiSuDisco(chiusa).imgPath.toLowerCase();
+                    const stesso = mio && suo ? mio === suo
+                        : !!(img.dirHandle && chiusa.dirHandle && (img.dirHandle === chiusa.dirHandle
+                            || (typeof img.dirHandle.isSameEntry === 'function' && await img.dirHandle.isSameEntry(chiusa.dirHandle))));
+                    if (stesso) { trovate.push(id); break; }
+                } catch (err) {
+                    console.warn('[Cestino] Non so se la foto chiusa e\' lo stesso file: la lascio fra le chiuse.', err);
+                }
+            }
+        }
+        return trovate;
     };
 
     // ITALIANO: `spostati` (facoltativo) dice cosa e' arrivato DAVVERO nel Cestino di Windows. Il
@@ -2366,7 +2426,11 @@ export default function App() {
         //           era stato chiuso e riportato con Ctrl+Z.
         // ENGLISH: the file has left the disk: it no longer counts in the backup's fingerprint, even
         //          if it had been closed and brought back with Ctrl+Z.
+        // ITALIANO: con lei le sue copie chiuse (vedi copieChiuseDelloStessoFile).
+        // ENGLISH: and its closed copies with it (see copieChiuseDelloStessoFile).
+        const copieChiuse = await copieChiuseDelloStessoFile([img]);
         fotoChiuseRef.current.delete(id);
+        copieChiuse.forEach(c => fotoChiuseRef.current.delete(c));
         // ITALIANO: e non conta piu' nemmeno nella cronologia: un Ctrl+Z la rimetteva nel cestino
         //           dell'app mentre il file era nel Cestino di Windows (vedi purgeIdsFromHistory).
         //           L'uscita della foto non e' un passo da annullare: il file non c'e' piu'.
@@ -2375,7 +2439,7 @@ export default function App() {
         //          is not a step to undo: the file is gone.
         isUndoRedoAction.current = true;
         setImages(prev => prev.filter(i => i.id !== id));
-        setHistory(prev => purgeIdsFromHistory(prev, new Set([id])));
+        setHistory(prev => purgeIdsFromHistory(prev, new Set([id, ...copieChiuse])));
         // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
         //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
         // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
@@ -2562,19 +2626,25 @@ export default function App() {
                     return [...prev, ...rientrate.filter((f: any) => !presenti.has(f.id))];
                 });
                 // ITALIANO: un passo rimasto vuoto che ora riceve le foto tornate prende anche il riquadro
-                //           delle trigger di adesso: le foto portano le trigger di adesso, e con il
-                //           riquadro di allora ([] prima di scrivere ohwx) Ctrl+Z svuotava il riquadro
-                //           lasciando ohwx sulle foto come un tag qualsiasi. Stesso valore a ogni
-                //           esecuzione dell'aggiornamento (StrictMode).
-                // ENGLISH: a step left empty that now receives the returned photos also takes the
-                //          current trigger box: the photos carry the current triggers, and with the
-                //          box of then ([] before typing ohwx) Ctrl+Z emptied the box while leaving
-                //          ohwx on the photos as an ordinary tag. Same value on every run of the
-                //          update (StrictMode).
+                //           delle trigger che quelle foto portano, cioe' quello del momento dello
+                //           svuotamento (salvato nel ricordo): con il riquadro del passo ([] prima di
+                //           scrivere ohwx) Ctrl+Z svuotava il riquadro lasciando ohwx sulle foto come un
+                //           tag qualsiasi. Non quello di adesso: a galleria vuota il riquadro cambia senza
+                //           toccare le foto, e Ctrl+Z non poteva piu' rimetterlo d'accordo con loro. Un
+                //           ricordo senza riquadro usa quello di adesso. Stesso valore a ogni esecuzione
+                //           dell'aggiornamento (StrictMode).
+                // ENGLISH: a step left empty that now receives the returned photos also takes the trigger
+                //          box those photos carry, i.e. the one of the moment of the emptying (saved in
+                //          the record): with the step's box ([] before typing ohwx) Ctrl+Z emptied the
+                //          box while leaving ohwx on the photos as an ordinary tag. Not the current one:
+                //          with an empty gallery the box changes without touching the photos, and Ctrl+Z
+                //          could no longer bring it back in line with them. A record with no box uses the
+                //          current one. Same value on every run of the update (StrictMode).
+                const triggerDelleFoto: string[] = Array.isArray(ultimoSvuotamento.trigger) ? ultimoSvuotamento.trigger : globalTriggersRef.current;
                 setHistory(prev => {
                     const nuova = addPhotosToHistory(prev, rientrate, historyIndex);
                     triggerHistoryRef.current = triggerHistoryRef.current.map((delPasso, j) =>
-                        (prev[j] && prev[j].length === 0 && nuova[j] && nuova[j].length > 0 ? globalTriggersRef.current : delPasso));
+                        (prev[j] && prev[j].length === 0 && nuova[j] && nuova[j].length > 0 ? triggerDelleFoto : delPasso));
                     return nuova;
                 });
             }
@@ -2590,7 +2660,7 @@ export default function App() {
             //          Their thumbnails are shown by nobody any more: they are released.
             const riprovabili = rimaste.filter((v: any) => perPercorso.get(v.imgPath) !== 'nonTrovato');
             releaseThumbnails(nonTrovate.map((v: any) => v.img));
-            setUltimoSvuotamento(riprovabili.length > 0 ? { voci: riprovabili } : null);
+            setUltimoSvuotamento(riprovabili.length > 0 ? { ...ultimoSvuotamento, voci: riprovabili } : null);
 
             // ITALIANO: IL MOTIVO CAMBIA IL MESSAGGIO. Dire "non trovate nel Cestino di Windows"
             //           quando il file c'era eccome, e non e' stato rimesso apposta per non
@@ -2696,7 +2766,13 @@ export default function App() {
         //          stay live during the emptying.
         setIsEmptyingTrash(true);
         const progetto = progettoGenRef.current;
+        // ITALIANO: il riquadro delle trigger che le foto svuotate portano: "Annulla lo svuotamento" lo
+        //           mette nei passi della cronologia che le riprendono (vedi annullaSvuotamento).
+        // ENGLISH: the trigger box the emptied photos carry: "Undo the emptying" puts it into the
+        //          history steps that take them back (see annullaSvuotamento).
+        const triggerAlloSvuotamento = globalTriggersRef.current;
         const removedIds = new Set<string>();
+        const tolte: any[] = [];
         const ripescabili: any[] = [];
         const senzaPercorso: any[] = [];
         let failed = 0;
@@ -2736,6 +2812,7 @@ export default function App() {
             //          being "undone" into an old image.
             if (esito === 'trashed') {
                 removedIds.add(img.id);
+                tolte.push(img);
                 if (percorsi.imgPath && spostati.img) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: spostati.txt ? percorsi.txtPath : '', txtCondiviso: !!spostati.condiviso });
             }
             else if (esito === 'nopath') senzaPercorso.push(img);
@@ -2744,6 +2821,9 @@ export default function App() {
                 if (esito === 'norecycle') senzaCestino++;
             }
         }
+        // ITALIANO: le copie chiuse dei file appena spostati (vedi copieChiuseDelloStessoFile).
+        // ENGLISH: the closed copies of the files just moved (see copieChiuseDelloStessoFile).
+        const copieChiuse = await copieChiuseDelloStessoFile(tolte);
         setIsEmptyingTrash(false);
         // ITALIANO: il progetto e' stato chiuso o azzerato durante lo svuotamento: da li' il ciclo
         //           non ha piu' spostato niente, e cio' che era gia' nel Cestino di Windows ci resta.
@@ -2781,7 +2861,7 @@ export default function App() {
                 const nelProgetto = new Set(imagesRef.current.map(i => i.id));
                 releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img).filter((img: any) => !nelProgetto.has(img.id)));
             }
-            setUltimoSvuotamento({ voci: ripescabili });
+            setUltimoSvuotamento({ voci: ripescabili, trigger: triggerAlloSvuotamento });
         }
 
         // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe
@@ -2802,10 +2882,11 @@ export default function App() {
         //          Save wrote orphan .txt files into the folder. This way the thumbnails of the
         //          previous emptying, released above, are not left in any step either.
         removedIds.forEach(id => fotoChiuseRef.current.delete(id));
+        copieChiuse.forEach(id => fotoChiuseRef.current.delete(id));
         if (removedIds.size > 0) {
             isUndoRedoAction.current = true;
             setImages(prev => prev.filter(i => !removedIds.has(i.id)));
-            setHistory(prev => purgeIdsFromHistory(prev, removedIds));
+            setHistory(prev => purgeIdsFromHistory(prev, new Set([...removedIds, ...copieChiuse])));
         }
         // ITALIANO: le foto svuotate dal cestino non esistono piu': ripulisco la selezione in blocco
         //           dai loro id, altrimenti il contatore del pannello sovrastimerebbe.
@@ -2875,6 +2956,7 @@ export default function App() {
         setIsEmptyingTrash(true);
         const progetto = progettoGenRef.current;
         const removedIds = new Set<string>();
+        const tolte: any[] = [];
         let failed = 0;
         for (const scelta of imgs) {
             // ITALIANO: come in "Svuota cestino": l'elenco e' quello della finestra, la foto si
@@ -2887,8 +2969,11 @@ export default function App() {
             //          anyway, and vanished from the gallery.
             const img = imagesRef.current.find(i => i.id === scelta.id);
             if (!img || !img.isTrashed) continue;
-            if (await deleteImageFilesForGood(img, removedIds)) removedIds.add(img.id); else failed++;
+            if (await deleteImageFilesForGood(img, removedIds)) { removedIds.add(img.id); tolte.push(img); } else failed++;
         }
+        // ITALIANO: le copie chiuse dei file appena cancellati (vedi copieChiuseDelloStessoFile).
+        // ENGLISH: the closed copies of the files just deleted (see copieChiuseDelloStessoFile).
+        const copieChiuse = await copieChiuseDelloStessoFile(tolte);
         setIsEmptyingTrash(false);
         // ITALIANO: come in "Svuota cestino": il progetto e' stato chiuso o azzerato durante la
         //           cancellazione. Niente messaggio, chiusura della finestra del cestino o passo di
@@ -2912,11 +2997,12 @@ export default function App() {
 
         if (removedIds.size > 0) {
             removedIds.forEach(id => fotoChiuseRef.current.delete(id));
+            copieChiuse.forEach(id => fotoChiuseRef.current.delete(id));
             // ITALIANO: come per lo svuotamento: i file non esistono piu', Ctrl+Z non li riporta.
             // ENGLISH: as for the emptying: the files no longer exist, Ctrl+Z does not bring them back.
             isUndoRedoAction.current = true;
             setImages(prev => prev.filter(i => !removedIds.has(i.id)));
-            setHistory(prev => purgeIdsFromHistory(prev, removedIds));
+            setHistory(prev => purgeIdsFromHistory(prev, new Set([...removedIds, ...copieChiuse])));
             setSelectedForBulk(prev => prev.filter(x => !removedIds.has(x)));
         }
         // ITALIANO: un solo messaggio con le due parti, prima il Cestino di Windows e poi questa.
@@ -2985,12 +3071,16 @@ export default function App() {
         const percorsoDi = (f: any): string => (d.pathOf && d.pathOf.get(f))
             || (apiLocale && typeof apiLocale.getPathForFile === 'function' ? apiLocale.getPathForFile(f) : '') || '';
         const importFolder = (d.handle && d.handle.name) ? String(d.handle.name) : '';
-        const descritte = new Map<any, { percorso: string; nome: string; cartella: any }>(d.imgFiles.map((f: any) => [f, {
+        // ITALIANO: dimensione e data di modifica servono alla coppia mista di rete (vedi stessaFotoMista in alreadyOpen.ts).
+        // ENGLISH: size and modified date serve the mixed network pair (see stessaFotoMista in alreadyOpen.ts).
+        const descritte = new Map<any, { percorso: string; nome: string; cartella: any; dimensione?: number; modificata?: number }>(d.imgFiles.map((f: any) => [f, {
             percorso: percorsoDi(f), nome: String(f.name || ''), cartella: asDirHandle(d.folderOf && d.folderOf.get(f)) || d.handle || null,
+            dimensione: f.size, modificata: f.lastModified,
         }]));
         const aperte = [
             ...imagesRef.current.map((img: any) => ({
                 percorso: percorsiSuDisco(img).imgPath, nome: String((img.file && img.file.name) || ''), cartella: img.dirHandle || null,
+                dimensione: img.file && img.file.size, modificata: img.file && img.file.lastModified,
                 lotto: String(img.lottoImport || ''), cartellaImport: String(img.cartellaImport || ''),
             })),
             ...importInCorsoRef.current.filter(v => v.progetto === progetto).flatMap(v => v.foto),
@@ -4026,17 +4116,24 @@ export default function App() {
         const api = (window as any).electronAPI;
         const nomeTxt = (img: any) => sidecarTagFileName(img.file.name).toLowerCase();
         // ITALIANO: per le foto senza cartella, il .txt di arrivo come in performSave (txtDiArrivo).
+        //           Una foto con la cartella ha il percorso dato alla scelta (filePath).
         // ENGLISH: for folder-less photos, the target .txt as in performSave (txtDiArrivo).
+        //          A photo with a folder has the path given at pick time (filePath).
         const percorsoTxt = (img: any) => {
             if (!api || typeof api.getPathForFile !== 'function') return '';
-            const p = String(api.getPathForFile(img.file) || '');
+            const p = String(api.getPathForFile(img.file) || img.filePath || '');
             if (!p) return '';
             const taglio = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1;
             return (p.slice(0, taglio) + sidecarTagFileName(p.slice(taglio))).toLowerCase();
         };
+        // ITALIANO: senza cartella, o coppia mista (a.png trascinata, a.jpg da "Carica cartella"): decide
+        //           il .txt di arrivo. Prima la coppia mista non era mai "lo stesso .txt", e dopo il Salva
+        //           di una delle due l'altra restava coi tag vecchi segnata come salvata.
+        // ENGLISH: with no folder, or a mixed pair (a.png dropped, a.jpg from "Load folder"): the target
+        //          .txt decides. The mixed pair used to never be "the same .txt", and after one of them was
+        //          saved the other kept the old tags, marked as saved.
         const stessoTxt = async (a: any, b: any) => {
             if (!a.dirHandle || !b.dirHandle) {
-                if (a.dirHandle || b.dirHandle) return false;
                 const k = percorsoTxt(a);
                 return !!k && k === percorsoTxt(b);
             }
@@ -4155,6 +4252,36 @@ export default function App() {
             }
             return fuori;
         };
+        // ITALIANO: la coppia MISTA: a.png senza cartella (trascinata o "Carica immagini") e a.jpg con
+        //           la cartella ("Carica cartella" della stessa cartella) usano lo stesso a.txt, ma i due
+        //           controlli qui sotto guardano un gruppo per volta: con tag diversi a.txt si scriveva
+        //           due volte, vinceva l'ultima e tutte e due risultavano salvate. Qui le si confronta
+        //           col .txt di arrivo ricavato dal percorso (come txtDiArrivo); una foto con la
+        //           cartella senza percorso noto (cartella di rete) resta fuori, come prima.
+        // ENGLISH: the MIXED pair: a.png with no folder (dropped or "Load images") and a.jpg with the
+        //          folder ("Load folder" of the same folder) use the same a.txt, but the two checks
+        //          below look at one group at a time: with different tags a.txt was written twice, the
+        //          last one won and both counted as saved. Here they are compared by the target .txt
+        //          worked out from the path (as txtDiArrivo); a photo with a folder and no known path
+        //          (network folder) stays out, as before.
+        const doppieMiste = new Set<string>();
+        if (withFolder.length > 0 && withoutFolder.length > 0) {
+            const apiPercorsi = (window as any).electronAPI;
+            const txtDaPercorso = (img: any) => {
+                const p = String((apiPercorsi && typeof apiPercorsi.getPathForFile === 'function' ? apiPercorsi.getPathForFile(img.file) : '') || img.filePath || '');
+                if (!p) return '';
+                const taglio = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1;
+                return (p.slice(0, taglio) + sidecarTagFileName(p.slice(taglio))).toLowerCase();
+            };
+            const perTxt = new Map<string, any[]>();
+            for (const img of withFolder) { const k = txtDaPercorso(img); if (k) perTxt.set(k, [...(perTxt.get(k) || []), img]); }
+            for (const img of withoutFolder) {
+                const k = txtDaPercorso(img);
+                for (const altra of (k && perTxt.get(k)) || []) {
+                    if (getOrderedTagString(altra.tags) !== getOrderedTagString(img.tags)) { doppieMiste.add(altra.id); doppieMiste.add(img.id); }
+                }
+            }
+        }
 
         if (total > 0) { setIsSaving(true); setImportProgress(0); }
         try {
@@ -4175,7 +4302,7 @@ export default function App() {
                     try { return typeof a.dirHandle.isSameEntry === 'function' && await a.dirHandle.isSameEntry(b.dirHandle); } catch { return false; }
                 });
                 for (const img of withFolder) {
-                    if (doppieCartella.has(img.id)) { doppie.push(img.file.name); bump(); continue; }
+                    if (doppieCartella.has(img.id) || doppieMiste.has(img.id)) { doppie.push(img.file.name); bump(); continue; }
                     try {
                         const tagString = getOrderedTagString(img.tags);
                         // ITALIANO: lo stesso .txt che l'import rilegge e Kohya usa (vedi sidecarTagFileName).
@@ -4218,7 +4345,10 @@ export default function App() {
             //          written: cancelling was enough to lose the tags (and "Save and close" cleared the
             //          backup). Now the outcome is real.
             const api = (window as any).electronAPI;
-            let remaining = withoutFolder;
+            // ITALIANO: le foto senza cartella di una coppia mista con tag diversi non si scrivono (vedi doppieMiste).
+            // ENGLISH: the folder-less photos of a mixed pair with different tags are not written (see doppieMiste).
+            withoutFolder.forEach(img => { if (doppieMiste.has(img.id)) { doppie.push(img.file.name); bump(); } });
+            let remaining = withoutFolder.filter(img => !doppieMiste.has(img.id));
             if (remaining.length > 0 && api && typeof api.getPathForFile === 'function' && typeof api.writeSidecarTags === 'function') {
                 showNotification(t.processingFiles, "info");
                 // ITALIANO: la chiave e' il .txt di arrivo (cartella + sidecarTagFileName, come nel processo

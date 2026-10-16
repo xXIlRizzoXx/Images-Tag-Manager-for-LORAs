@@ -43,7 +43,7 @@ const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index) + '\n
 const NOMI = ['permettiChiusuraRef', 'imagesRef', 'tagEditorDirtyRef', 'backupConFotoRef', 'dirHandle', 'scriviBackupSubito', 'localStorage',
     'fotoChiuseRef', 'globalTriggersRef', 'lottiSessioneRef', 'window', 'isSavingRef', 'chiusuraInScritturaRef', 'setTimeout', 'showNotification', 't',
     'ripristinoInCorsoRef', 'chiusuraInRipristinoRef', 'setIsTagEditorOpen', 'modificheNonSalvate', 'chiusuraFinestraRef', 'saveCloseDialogRef',
-    'setSaveCloseDialog'];
+    'setSaveCloseDialog', 'svuotamentoInCorsoRef', 'chiusuraInSvuotamentoRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn allaChiusura;');
 
 // ITALIANO: un'app finta con modifiche non salvate. `disegni` conta i ridisegni della finestra a tre
@@ -63,7 +63,7 @@ const app = (finestraAperta) => {
     const gestore = fabbrica({ current: false }, { current: [{ id: 'a' }] }, { current: false }, { current: true }, null, nulla, {},
         { current: new Map() }, { current: [] }, { current: [] }, { electronAPI: {} }, { current: false }, { current: false },
         (f) => { a.timer.push(f); return 0; }, nulla, t, { current: false }, { current: false }, (v) => { a.editor = v; }, () => true,
-        a.refs.chiusuraFinestraRef, a.refs.saveCloseDialogRef, imposta);
+        a.refs.chiusuraFinestraRef, a.refs.saveCloseDialogRef, imposta, { current: false }, { current: false });
     a.x = () => {
         const e = { fermata: false, preventDefault() { this.fermata = true; }, returnValue: undefined };
         gestore(e);
