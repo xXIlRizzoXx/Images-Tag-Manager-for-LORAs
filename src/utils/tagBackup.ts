@@ -60,7 +60,11 @@ export const improntaTag = (tags: string[]): string => {
 //           disco, quindi conta ancora nell'impronta della sua cartella.
 // ENGLISH: a photo CLOSED with the "x" on its card: out of view, but the file is still on disk, so
 //          it still counts in its folder's fingerprint.
-export type FotoChiusa = { id: string; name: string; lotto: string; cartella: string };
+// ITALIANO: `foto` = la foto com'era alla chiusura: serve a txtUsatoDaAltre (un .txt condiviso con una
+//   foto chiusa, che Ctrl+Z puo' riportare, non va via). Il backup legge solo gli altri campi.
+// ENGLISH: `foto` = the photo as it was when closed: used by txtUsatoDaAltre (a .txt shared with a
+//   closed photo, which Ctrl+Z can bring back, does not leave). The backup reads only the other fields.
+export type FotoChiusa = { id: string; name: string; lotto: string; cartella: string; foto?: unknown };
 
 type VoceBackup = { tags: string[]; base: string };
 

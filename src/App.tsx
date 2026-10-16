@@ -1786,7 +1786,7 @@ export default function App() {
             //          bulk on project close/reset.
             // ITALIANO: il file resta su disco: la foto conta ancora nell'impronta del backup.
             // ENGLISH: the file stays on disk: the photo still counts in the backup's fingerprint.
-            fotoChiuseRef.current.set(id, { id, name: img.file.name, lotto: String(img.lottoImport || ''), cartella: String(img.cartellaImport || '') });
+            fotoChiuseRef.current.set(id, { id, name: img.file.name, lotto: String(img.lottoImport || ''), cartella: String(img.cartellaImport || ''), foto: img });
             setImages(prev => prev.filter(i => i.id !== id));
             setSelectedForBulk(prev => prev.filter(x => x !== id));
             setSelectedImageId(prev => prev === id ? null : prev);
@@ -2049,7 +2049,12 @@ export default function App() {
         try {
             const nome = sidecarTagFileName(img.file.name).toLowerCase();
             const mio = percorsiSuDisco(img).txtPath.toLowerCase();
-            for (const altra of imagesRef.current) {
+            // ITALIANO: anche le foto chiuse con la X della scheda: sono ancora sul disco e Ctrl+Z le
+            //           riporta; prima il loro .txt condiviso se ne andava (per sempre su chiavette e SD).
+            // ENGLISH: photos closed with the card's X too: they are still on disk and Ctrl+Z brings them
+            //          back; their shared .txt used to leave (for good on USB sticks and SD cards).
+            const chiuse = [...fotoChiuseRef.current.values()].map((c: any) => c && c.foto).filter(Boolean);
+            for (const altra of [...imagesRef.current, ...chiuse]) {
                 if (!altra || altra.id === img.id || (giaTolte && giaTolte.has(altra.id))) continue;
                 if (!altra.file || sidecarTagFileName(altra.file.name).toLowerCase() !== nome) continue;
                 // ITALIANO: con i due percorsi su disco decide il percorso (stessa cartella o no);
@@ -2366,6 +2371,31 @@ export default function App() {
                     console.warn('[Cestino] Il file di testo non e\' tornato:', v.txtPath, testoPerPercorso.get(v.txtPath) || '(nessuna risposta)');
                     senzaTesto.add(v.img.id);
                 });
+            }
+
+            // ITALIANO: le foto tornate il cui .txt era rimasto sul disco perche' serviva a un'altra foto
+            //           (a.png e a.jpg con un solo a.txt): nel frattempo quel .txt puo' essere andato via
+            //           con l'altra (la X su a.jpg) o non tornare con lei. Se manca, la foto resta da
+            //           salvare come quelle senza testo: Salva lo riscrive dai tag in memoria.
+            // ENGLISH: the returned photos whose .txt had stayed on disk because another photo used it
+            //          (a.png and a.jpg sharing one a.txt): meanwhile that .txt may have left with the
+            //          other one (the X on a.jpg) or not come back with it. If it is missing, the photo
+            //          stays to be saved like those with no text: Save rewrites it from the tags in memory.
+            const daControllare = tornate.filter((v: any) => !v.txtPath && Array.isArray(v.img.tags) && v.img.tags.length > 0);
+            if (daControllare.length > 0 && typeof apiLocale.readSidecarTags === 'function') {
+                const chiave = (p: string) => String(p || '').replace(/\//g, '\\').toLowerCase();
+                try {
+                    const trovati = await apiLocale.readSidecarTags(daControllare.map((v: any) => v.imgPath));
+                    const ci = new Set((Array.isArray(trovati) ? trovati : [])
+                        .filter((s: any) => s && s.name && s.dir)
+                        .map((s: any) => chiave(String(s.dir).replace(/[\\/]+$/, '') + '\\' + s.name)));
+                    daControllare.forEach((v: any) => {
+                        if (!ci.has(chiave(percorsiSuDisco(v.img).txtPath || ''))) senzaTesto.add(v.img.id);
+                    });
+                } catch (err) {
+                    console.warn('[Cestino] Non so se il .txt condiviso c\'e\' ancora: le foto restano da salvare.', err);
+                    daControllare.forEach((v: any) => senzaTesto.add(v.img.id));
+                }
             }
 
             // ITALIANO: il progetto e' stato chiuso o azzerato mentre si aspettava il Cestino di

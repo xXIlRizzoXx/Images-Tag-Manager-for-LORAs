@@ -101,20 +101,19 @@ console.log('\n--- il cestino svuotato aveva TUTTE le foto del progetto: Annulla
     app.render().handleRedo();
     await app.attendi();
     dice('Ctrl+Shift+Z rifa\' "Ripristina tutto"', ['A', 'B'], app.vista());
-    // ITALIANO: i passi "cestina A" e "cestina B" li ha tolti lo svuotamento: andando ancora indietro
-    //           si arriva alla galleria di prima dell'import, come in ogni progetto, e Ctrl+Shift+Z
-    //           le riporta.
-    // ENGLISH: the "trash A" and "trash B" steps were removed by the emptying: going further back
-    //          reaches the gallery before the import, as in any project, and Ctrl+Shift+Z brings
-    //          them back.
+    // ITALIANO: i passi "cestina A" e "cestina B" li ha tolti lo svuotamento, che aveva tolto TUTTE le
+    //           foto: le foto tornate sono entrate in ogni passo, anche nel primo (2.0.1). Andando
+    //           ancora indietro non si arriva piu' a una galleria vuota: un Ctrl+Z non toglie dall'app
+    //           foto i cui file sono di nuovo nella cartella (e i tag che c'erano solo in memoria).
+    // ENGLISH: the "trash A" and "trash B" steps were removed by the emptying, which had taken out EVERY
+    //          photo: the returned photos entered every step, the first one too (2.0.1). Going further
+    //          back no longer reaches an empty gallery: a Ctrl+Z does not take out of the app photos
+    //          whose files are back in the folder (and the tags that existed only in memory).
     app.render().handleUndo();
     await app.attendi();
     app.render().handleUndo();
     await app.attendi();
-    dice('due Ctrl+Z: la galleria di prima dell\'import, come annullando l\'import', [], app.vista());
-    app.render().handleRedo();
-    await app.attendi();
-    dice('...e Ctrl+Shift+Z le riporta nel cestino dell\'app', ['A(cestino)', 'B(cestino)'], app.vista());
+    dice('due Ctrl+Z: le foto restano nel cestino dell\'app, la galleria non si svuota', ['A(cestino)', 'B(cestino)'], app.vista());
 }
 {
     // ITALIANO: la regola pura: i passi vuoti dal secondo fino a quello attuale ricevono le foto; il
@@ -129,7 +128,7 @@ console.log('\n--- il cestino svuotato aveva TUTTE le foto del progetto: Annulla
     const dopo = cronologia.addPhotosToHistory(h, [P], 2);
     dice('passo attuale vuoto: riceve la foto; il passo 0 e quello dopo restano vuoti; il passo pieno la riceve',
         [[], ['X', 'P'], ['P'], []], dopo.map(s => s.map(f => f.id)));
-    dice('tutti i passi vuoti (cestino con tutte le foto): ricevono la foto tutti tranne il primo', [[], ['P'], ['P'], ['P']],
+    dice('tutti i passi vuoti (cestino con tutte le foto): ricevono la foto tutti, anche il primo', [['P'], ['P'], ['P'], ['P']],
         cronologia.addPhotosToHistory([[], [], [], []], [P], 3).map(s => s.map(f => f.id)));
     dice('senza indice del passo attuale: i passi vuoti restano vuoti, come prima', [[], ['X', 'P'], [], []],
         cronologia.addPhotosToHistory(h, [P]).map(s => s.map(f => f.id)));

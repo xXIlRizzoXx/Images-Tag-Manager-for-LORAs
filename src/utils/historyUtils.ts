@@ -49,13 +49,23 @@ export const purgeIdsFromHistory = <T extends { id: string }>(history: T[][], id
 //   "Restore all", a Ctrl+Z emptied the gallery while their files were back in the folder. The first
 //   step (the empty gallery before the import) stays empty, and a Ctrl+Z back to it takes the photos
 //   out as undoing the import always does.
-export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[], indiceAttuale = -1): T[][] =>
-    history.map((passo, indice) => {
-        if (passo.length === 0 && !(indice > 0 && indice <= indiceAttuale)) return passo;
+// ITALIANO: se lo svuotamento ha tolto TUTTE le foto del progetto, ogni passo e' vuoto: anche il
+//   primo riceve le foto tornate. Altrimenti i passi con le foto erano tutti uguali, Ctrl+Z li
+//   saltava e arrivava alla galleria vuota: un solo Ctrl+Z subito dopo "Annulla lo svuotamento"
+//   toglieva dall'app tutte le foto appena tornate (e i tag che c'erano solo in memoria).
+// ENGLISH: if the emptying took out EVERY photo of the project, every step is empty: the first one
+//   receives the returned photos too. Otherwise the steps with the photos were all equal, Ctrl+Z
+//   skipped them and reached the empty gallery: a single Ctrl+Z right after "Undo the emptying"
+//   took every photo just returned out of the app (and the tags that existed only in memory).
+export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[], indiceAttuale = -1): T[][] => {
+    const tuttiVuoti = history.every(passo => passo.length === 0);
+    return history.map((passo, indice) => {
+        if (passo.length === 0 && !tuttiVuoti && !(indice > 0 && indice <= indiceAttuale)) return passo;
         const presenti = new Set(passo.map(foto => foto.id));
         const mancanti = photos.filter(foto => !presenti.has(foto.id));
         return mancanti.length > 0 ? [...passo, ...mancanti] : passo;
     });
+};
 
 // ITALIANO: Il passo dove porta Ctrl+Z (verso -1) o Ctrl+Shift+Z (verso +1): il piu' vicino che sia
 //   DIVERSO da quello attuale, -1 se non ce n'e'. Due passi sono uguali quando hanno le stesse foto,

@@ -150,7 +150,7 @@ export const cartellaFinta = (bloccati = []) => {
    'rifiutato'); `prima(path)` runs BEFORE the answer, while the file "is being moved": the moment
    the user can do something else. Every call waits one tick, like a real call to the main process,
    so the state updates meanwhile. */
-export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null } = {}) => {
+export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null, txtSulDisco = null } = {}) => {
     const a = { chiamate: [], ripristini: [] };
     a.getPathForFile = (file) => file.percorso;
     a.trashFiles = async (percorsi) => {
@@ -161,6 +161,12 @@ export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null
         const trashed = results.filter(x => x === 'ok').length;
         return { ok: trashed === percorsi.length, trashed, failed: percorsi.length - trashed, results };
     };
+    // ITALIANO: `txtSulDisco(percorsoTxt)` = c'e' il .txt accanto alla foto? Senza, il canale manca (codice di prima).
+    // ENGLISH: `txtSulDisco(txtPath)` = is the .txt beside the photo there? Without it the channel is absent (previous code).
+    if (typeof txtSulDisco === 'function') {
+        a.readSidecarTags = async (percorsi) => percorsi.map(p => p.replace(/\.[^.\\]+$/, '.txt')).filter(txtSulDisco)
+            .map(p => ({ name: p.slice(p.lastIndexOf('\\') + 1), dir: p.slice(0, p.lastIndexOf('\\')), tags: [] }));
+    }
     a.restoreTrashed = async (percorsi) => {
         a.ripristini.push([...percorsi]);
         await new Promise(ok => setTimeout(ok, 0));
