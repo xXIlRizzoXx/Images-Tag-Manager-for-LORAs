@@ -180,8 +180,10 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         return l;
     };
     const presenti = new Set<string>();
+    const chiaviPresenti = new Set<string>();
     for (const img of images) {
         presenti.add(img.id);
+        chiaviPresenti.add(String(img.lottoImport || '') + BACKUP_KEY_SEP + (img.backupKey || (BACKUP_KEY_SEP + img.file.name)));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
         l.vivi++;
@@ -205,8 +207,21 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     }
     // ITALIANO: una foto chiusa e poi riportata con Ctrl+Z e' di nuovo in `images`: si conta una volta.
     // ENGLISH: a photo closed and then brought back with Ctrl+Z is in `images` again: counted once.
+    // ITALIANO: lo stesso per una foto chiusa e poi ripresa riaprendo la sua cartella: la copia
+    //           riaperta ha un id nuovo ma la stessa chiave (cartella + nome) nello stesso lotto, che
+    //           l'import riusa. Prima contava due volte: l'impronta diventava "img|4|..." per una
+    //           cartella di 3 foto, e dopo un crash nessuna modifica non salvata di quella cartella
+    //           tornava.
+    // ENGLISH: the same for a photo closed and then taken back by reopening its folder: the reopened
+    //          copy has a new id but the same key (folder + name) in the same batch, which the import
+    //          reuses. It used to count twice: the fingerprint became "img|4|..." for a folder of 3
+    //          photos, and after a crash no unsaved edit of that folder came back.
     for (const c of chiuse) {
-        if (!presenti.has(c.id)) lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
+        if (presenti.has(c.id)) continue;
+        const fotoChiusa: any = c.foto;
+        const chiaveChiusa = (fotoChiusa && typeof fotoChiusa.backupKey === 'string' && fotoChiusa.backupKey) || (BACKUP_KEY_SEP + c.name);
+        if (chiaviPresenti.has(String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa)) continue;
+        lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
     }
     const firme = new Map<string, number>();
     const aperte = new Set<string>();

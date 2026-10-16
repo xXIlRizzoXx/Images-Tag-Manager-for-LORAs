@@ -6,8 +6,9 @@
    dal disco mentre la card di a.png lo mostrava ancora come salvato. Lo stesso col "Salva file
    .txt" del visualizzatore (nessun gemello allineato) e con l'editor dei file di tag (si allineava
    solo la prima foto trovata). La regola: dopo ogni scrittura riuscita, le altre foto con lo
-   stesso .txt e SENZA modifiche proprie prendono i tag scritti (tag e ricordo del disco), senza
-   diventare un passo della cronologia; una gemella con modifiche proprie non si tocca.
+   stesso .txt prendono i tag scritti (tag e ricordo del disco), senza diventare un passo della
+   cronologia; una gemella con modifiche proprie (anche la sola trigger non ancora salvata) le
+   tiene sopra il file scritto, come fa l'editor dei file di tag.
    Si eseguono i testi VERI presi da src/App.tsx (vedi undo-harness.mjs).
    Uso:  node scripts/test-save-twin-sequence.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -18,9 +19,9 @@
    "cat, red," with the green notice, and "dog", already saved, left the disk while a.png's card
    still showed it as saved. The same with the viewer's "Save .txt file" (no twin synced) and with
    the tag file editor (only the first photo found was synced). The rule: after every successful
-   write, the other photos with the same .txt and NO edits of their own take the written tags
-   (tags and disk record), without becoming a history step; a twin with edits of its own is left
-   alone.
+   write, the other photos with the same .txt take the written tags (tags and disk record),
+   without becoming a history step; a twin with edits of its own (even just a trigger not saved
+   yet) keeps them on top of the file written, as the tag file editor does.
    The REAL code taken from src/App.tsx is run (see undo-harness.mjs).
    Usage:  node scripts/test-save-twin-sequence.mjs      (exits with code 1 if anything is off) */
 
@@ -115,15 +116,15 @@ console.log('\n--- quello che non deve cambiare ---');
     dice('le due restano con le loro modifiche', [['cat', 'dog'], ['cat', 'red']], [app.fotoCon('A').tags, app.fotoCon('B').tags]);
 }
 {
-    // ITALIANO: una gemella nel cestino con modifiche proprie non si tocca.
-    // ENGLISH: a twin in the trash with edits of its own is not touched.
+    // ITALIANO: una gemella nel cestino con modifiche proprie le tiene, sopra il file scritto, e resta nel cestino.
+    // ENGLISH: a twin in the trash with edits of its own keeps them, on top of the file written, and stays in the trash.
     const { app, ds } = await prepara();
     app.modifica(prev => prev.map(i => (i.id === 'B' ? { ...i, tags: ['cat', 'red'], isTrashed: true } : i)));
     conTag(app, 'A', ['cat', 'dog']);
     await app.attendi();
     await salva(app);
     dice('a.txt = "cat, dog,"', 'cat, dog,', ds.scritti.get('a.txt'));
-    dice('la gemella nel cestino con modifiche proprie resta com\'era', [['cat', 'red'], ['cat']], stato(app, 'B'));
+    dice('la gemella nel cestino tiene "red" sopra il file scritto', [['cat', 'dog', 'red'], ['cat', 'dog'], true], [...stato(app, 'B'), app.fotoCon('B').isTrashed]);
 }
 {
     // ITALIANO: una gemella nel cestino SENZA modifiche segue il disco: ripristinata, mostra il .txt vero.
@@ -194,16 +195,66 @@ console.log('\n--- "Salva file .txt" del visualizzatore ---');
     dice('il Salva dopo, su a.jpg, scrive "cat, dog, red,"', 'cat, dog, red,', ds.scritti.get('a.txt'));
 }
 {
-    // ITALIANO: una gemella con modifiche proprie non si tocca nemmeno dal visualizzatore.
-    // ENGLISH: a twin with edits of its own is not touched from the viewer either.
+    // ITALIANO: una gemella con modifiche proprie tiene le sue modifiche, rimesse sopra il file scritto
+    //           (come fa l'editor dei file di tag): prima restava com'era, e il Salva dopo riscriveva
+    //           a.txt con "cat, red," togliendo "dog", gia' salvato.
+    // ENGLISH: a twin with edits of its own keeps them, put back on top of the file written (as the
+    //          tag file editor does): it used to stay as it was, and the next Save rewrote a.txt as
+    //          "cat, red,", removing "dog", already saved.
     const { app, ds } = await prepara();
     conTag(app, 'A', ['cat', 'dog']);
     conTag(app, 'B', ['cat', 'red']);
     await app.attendi();
     ds.scritti.set('a.txt', 'cat, dog,');
-    app.render().updateOriginalTags('A', ['cat', 'dog']);
+    await app.render().updateOriginalTags('A', ['cat', 'dog']);
     await app.attendi();
-    dice('a.jpg con modifiche proprie resta com\'era', [['cat', 'red'], ['cat']], stato(app, 'B'));
+    dice('a.jpg con modifiche proprie: il file scritto piu\' "red", ancora da salvare', [['cat', 'dog', 'red'], ['cat', 'dog']], stato(app, 'B'));
+    dice('il Salva dopo scrive "cat, dog, red," (prima: "cat, red,")', [true, 'cat, dog, red,'], [await salva(app), ds.scritti.get('a.txt')]);
+    dice('a.png segue a.txt e tiene "dog"', [['cat', 'dog', 'red'], ['cat', 'dog', 'red']], stato(app, 'A'));
+}
+{
+    // ITALIANO: trigger "ohwx" non ancora nel .txt: all'import tutte e due le foto la hanno fuori da
+    //           originalTags (risultano modificate senza che l'utente le tocchi). Il visualizzatore
+    //           scrive a.png con "dog"; prima a.jpg non si allineava, il Salva dopo scriveva
+    //           "ohwx, cat," con l'avviso verde e "dog" spariva dal disco e dalla card di a.png.
+    // ENGLISH: trigger "ohwx" not in the .txt yet: at import both photos have it outside originalTags
+    //          (they count as modified without the user touching them). The viewer writes a.png with
+    //          "dog"; a.jpg used to stay out of sync, the next Save wrote "ohwx, cat," with the green
+    //          notice and "dog" vanished from the disk and from a.png's card.
+    const ds = cartella('ds');
+    ds.scritti.set('a.txt', 'cat,');
+    const conTrigger = (id, nome) => ({ ...foto(id, nome, ['ohwx', 'cat'], ds), originalTags: ['cat'] });
+    const app = creaApp([conTrigger('A', 'a.png'), conTrigger('B', 'a.jpg')], { trigger: ['ohwx'] });
+    app.importa();
+    await app.attendi();
+    aggiungi(app, 'A', 'dog');
+    await app.attendi();
+    ds.scritti.set('a.txt', 'ohwx, cat, dog,');
+    await app.render().updateOriginalTags('A', ['ohwx', 'cat', 'dog']);
+    await app.attendi();
+    dice('trigger non salvata: a.jpg prende il file scritto dal visualizzatore', [['ohwx', 'cat', 'dog'], ['ohwx', 'cat', 'dog']], stato(app, 'B'));
+    await salva(app);
+    dice('trigger non salvata: il Salva dopo non toglie "dog" da a.txt', 'ohwx, cat, dog,', ds.scritti.get('a.txt'));
+    dice('trigger non salvata: niente da salvare', [t.noChanges, 'info'], ultima(app));
+    dice('trigger non salvata: la card di a.png tiene "dog"', ['ohwx', 'cat', 'dog'], app.fotoCon('A').tags);
+}
+{
+    // ITALIANO: trigger non salvata e "Salva modifiche" su a.png: a.jpg, che aveva in piu' la sola
+    //           trigger, prende i tag scritti come prima.
+    // ENGLISH: unsaved trigger and "Save changes" on a.png: a.jpg, whose only extra was the trigger,
+    //          takes the written tags as before.
+    const ds = cartella('ds');
+    ds.scritti.set('a.txt', 'cat,');
+    const conTrigger = (id, nome) => ({ ...foto(id, nome, ['ohwx', 'cat'], ds), originalTags: ['cat'] });
+    const app = creaApp([conTrigger('A', 'a.png'), conTrigger('B', 'a.jpg')], { trigger: ['ohwx'] });
+    app.importa();
+    await app.attendi();
+    aggiungi(app, 'A', 'dog');
+    aggiungi(app, 'B', 'dog');
+    await app.attendi();
+    dice('trigger non salvata, stesso Salva per le due: riuscito', true, await salva(app));
+    dice('a.txt = "ohwx, cat, dog,"', 'ohwx, cat, dog,', ds.scritti.get('a.txt'));
+    dice('le due gemelle risultano salvate', [[['ohwx', 'cat', 'dog'], ['ohwx', 'cat', 'dog']], [['ohwx', 'cat', 'dog'], ['ohwx', 'cat', 'dog']]], [stato(app, 'A'), stato(app, 'B')]);
 }
 
 console.log('\n--- editor dei file di tag ---');
@@ -234,8 +285,9 @@ console.log('\n--- foto senza cartella ---');
         let images = [sciolta('A', 'C:\\ds\\a.png', ['cat']), sciolta('B', 'C:\\ds\\A.JPG', ['cat']), sciolta('C', 'C:\\altra\\a.jpg', ['cat'])];
         const finestra = { electronAPI: { getPathForFile: (f) => percorsi.get(f) || '' } };
         const P = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({ entryPoints: [fileURLToPath(new URL('../src/utils/pathUtils.ts', import.meta.url))], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })).outputFiles[0].text).toString('base64'));
-        const gemelliDelTxt = new Function('imagesRef', 'window', 'sidecarTagFileName', 'isUndoRedoAction', 'setImages', 'setHistory', js + '\nreturn gemelliDelTxt;')(
-            { current: images }, finestra, P.sidecarTagFileName, { current: false }, (f) => { images = f(images); }, () => { });
+        const S = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({ entryPoints: [fileURLToPath(new URL('../src/utils/sidecarTags.ts', import.meta.url))], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' })).outputFiles[0].text).toString('base64'));
+        const gemelliDelTxt = new Function('imagesRef', 'window', 'sidecarTagFileName', 'isUndoRedoAction', 'setImages', 'setHistory', 'tagDopoEditor', 'globalTriggersRef', js + '\nreturn gemelliDelTxt;')(
+            { current: images }, finestra, P.sidecarTagFileName, { current: false }, (f) => { images = f(images); }, () => { }, S.tagDopoEditor, { current: [] });
         (await gemelliDelTxt([{ id: 'A', tags: ['cat', 'dog'] }]))();
         dice('a.jpg (stessa cartella, maiuscole diverse) prende "cat, dog"; a.jpg di un\'altra cartella no', [['cat', 'dog'], ['cat']],
             [images.find(i => i.id === 'B').tags, images.find(i => i.id === 'C').tags]);

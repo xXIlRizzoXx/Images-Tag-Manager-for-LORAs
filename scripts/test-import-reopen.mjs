@@ -3,6 +3,7 @@
    1) Riaprire la stessa cartella per prendere una foto nuova: la nuova entrava in un LOTTO a parte, e
       il backup anti-crash (un'impronta per lotto) non aveva piu' l'impronta della cartella intera.
       Dopo un crash, riaprendo la cartella, le modifiche non salvate di TUTTE le sue foto sparivano.
+      Lo stesso per una foto chiusa con la X e ripresa cosi': contava due volte nell'impronta.
    2) Cartella di rete \\server\condivisione: nessun percorso, quindi nessuna foto scartata, e
       riaprendo ogni foto entrava due volte.
    3) Un import ancora in corso (miniature) non contava: riaprendo la stessa cartella in quel momento
@@ -17,7 +18,8 @@
    Since 2.0.1 "Import" leaves out the photos already open. Four cases were left uncovered:
    1) Reopening the same folder to take a new photo: the new one went into a separate BATCH, and the
       crash backup (one fingerprint per batch) no longer had the whole folder's fingerprint. After a
-      crash, reopening the folder, the unsaved edits of ALL its photos vanished.
+      crash, reopening the folder, the unsaved edits of ALL its photos vanished. The same for a
+      photo closed with the X and taken back that way: it counted twice in the fingerprint.
    2) Network folder \\server\share: no paths, so no photo dropped, and every photo came in twice.
    3) An import still running (thumbnails) did not count: reopening the same folder then brought all
       photos in twice.
@@ -136,6 +138,31 @@ console.log('\n--- 1) riaprire la stessa cartella per una foto nuova, poi un cra
     const dopo = creaApp({ backup: JSON.stringify({ ts: 1, ...salvato }) });
     await dopo.conferma(riepilogo(cartella('E:img', 'img'), ['a.png', 'b.png', 'c.png', 'd.png']));
     dice('dopo il crash le modifiche di a.png e d.png tornano', [['x', 'nuovo a'], [], [], ['nuovo d']], dopo.images.map(i => i.tags));
+}
+{
+    // ITALIANO: b.png chiusa con la X (resta fra le foto chiuse, con il suo id vecchio) e poi ripresa
+    //           riaprendo la cartella: entra nel lotto riusato con un id nuovo. Prima contava due volte
+    //           nell'impronta ("img|4|...") e dopo un crash la modifica di a.png non tornava.
+    // ENGLISH: b.png closed with the X (it stays among the closed photos, with its old id) and then
+    //          taken back by reopening the folder: it enters the reused batch with a new id. It used to
+    //          count twice in the fingerprint ("img|4|...") and after a crash a.png's edit did not come back.
+    const app = creaApp();
+    await app.conferma(riepilogo(cartella('E:img', 'img'), ['a.png', 'b.png', 'c.png']));
+    app.modifica('a.png', ['x', 'nuovo a']);
+    const b = app.images.find(i => i.file.name === 'b.png');
+    // ITALIANO: come handleCloseImage in src/App.tsx.
+    // ENGLISH: as handleCloseImage in src/App.tsx.
+    const chiuse = new Map([[b.id, { id: b.id, name: b.file.name, lotto: String(b.lottoImport || ''), cartella: String(b.cartellaImport || ''), foto: b }]]);
+    app.images = app.images.filter(i => i.id !== b.id);
+    app.refs.imagesRef.current = app.images;
+    await app.conferma(riepilogo(cartella('E:img', 'img'), ['a.png', 'b.png', 'c.png']));
+    dice('premessa: b.png rientra nel lotto delle altre, con un id nuovo', [true, true],
+        [app.images.find(i => i.file.name === 'b.png').lottoImport === b.lottoImport, app.images.find(i => i.file.name === 'b.png').id !== b.id]);
+    const salvato = B.costruisciBackup(app.images, chiuse.values(), 'img');
+    dice('foto chiusa e ripresa: l\'impronta e\' quella della cartella di 3 foto', ['img|3|a.png|c.png'], (salvato?.sources || []).map(s => s.signature));
+    const dopo = creaApp({ backup: salvato ? JSON.stringify({ ts: 1, ...salvato }) : null });
+    await dopo.conferma(riepilogo(cartella('E:img', 'img'), ['a.png', 'b.png', 'c.png']));
+    dice('dopo il crash la modifica di a.png torna', [['x', 'nuovo a'], [], []], dopo.images.map(i => i.tags));
 }
 {
     // ITALIANO: quello che NON deve cambiare: foto aperte da due cartelle diverse, o senza cartella.

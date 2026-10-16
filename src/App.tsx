@@ -2489,16 +2489,33 @@ export default function App() {
             //           da controllare, e prima l'avviso parlava di .txt "non ripresi" mai esistiti.
             // ENGLISH: ONLY those (txtCondiviso): a photo whose .txt was simply not there has nothing to
             //          check, and the notice used to talk about .txt files "not taken back" that never existed.
+            // ITALIANO: `dalDisco` = le foto il cui .txt condiviso c'e' ma nel frattempo e' cambiato (il
+            //           Salva di a.jpg con "dog"): tornano con il contenuto del disco come ricordo e le
+            //           loro modifiche sopra, con la regola dell'editor dei file di tag (tagDopoEditor).
+            //           Prima tornavano con i tag di allora come salvate: il Salva dopo, fatto su di
+            //           loro, riscriveva il .txt senza "dog" con l'avviso verde. Un .txt che non si
+            //           legge (skipped) resta com'e'.
+            // ENGLISH: `dalDisco` = the photos whose shared .txt is there but changed meanwhile (a.jpg
+            //          saved with "dog"): they come back with the disk's content as record and their
+            //          own edits on top, with the tag file editor's rule (tagDopoEditor). They used to
+            //          come back with the tags of then as saved: the next Save, made on them, rewrote
+            //          the .txt without "dog" with the green notice. A .txt that cannot be read
+            //          (skipped) stays as it is.
+            const dalDisco = new Map<string, string[]>();
             const daControllare = tornate.filter((v: any) => v.txtCondiviso && !v.txtPath && Array.isArray(v.img.tags) && v.img.tags.length > 0);
             if (daControllare.length > 0 && typeof apiLocale.readSidecarTags === 'function') {
                 const chiave = (p: string) => String(p || '').replace(/\//g, '\\').toLowerCase();
                 try {
                     const trovati = await apiLocale.readSidecarTags(daControllare.map((v: any) => v.imgPath));
-                    const ci = new Set((Array.isArray(trovati) ? trovati : [])
+                    const ci = new Map<string, any>((Array.isArray(trovati) ? trovati : [])
                         .filter((s: any) => s && s.name && s.dir)
-                        .map((s: any) => chiave(String(s.dir).replace(/[\\/]+$/, '') + '\\' + s.name)));
+                        .map((s: any) => [chiave(String(s.dir).replace(/[\\/]+$/, '') + '\\' + s.name), s]));
                     daControllare.forEach((v: any) => {
-                        if (!ci.has(chiave(percorsiSuDisco(v.img).txtPath || ''))) senzaTesto.add(v.img.id);
+                        const s = ci.get(chiave(percorsiSuDisco(v.img).txtPath || ''));
+                        if (!s) { senzaTesto.add(v.img.id); return; }
+                        if (s.skipped || typeof s.content !== 'string') return;
+                        const sulDisco = parseSidecarText(s.content).tags;
+                        if (JSON.stringify(sulDisco) !== JSON.stringify(v.img.originalTags || [])) dalDisco.set(v.img.id, sulDisco);
                     });
                 } catch (err) {
                     console.warn('[Cestino] Non so se il .txt condiviso c\'e\' ancora: le foto restano da salvare.', err);
@@ -2536,7 +2553,9 @@ export default function App() {
                 // ENGLISH: and the return is not a step to undo, just as the leaving is not (see
                 //          addPhotosToHistory): a Ctrl+Z right after took them out of the app while
                 //          their files were back in the folder.
-                const rientrate = tornate.map((v: any) => (senzaTesto.has(v.img.id) ? { ...v.img, isTrashed: true, originalTags: [] } : { ...v.img, isTrashed: true }));
+                const rientrate = tornate.map((v: any) => (senzaTesto.has(v.img.id) ? { ...v.img, isTrashed: true, originalTags: [] }
+                    : dalDisco.has(v.img.id) ? { ...v.img, ...tagDopoEditor(v.img.tags, v.img.originalTags || [], dalDisco.get(v.img.id) || [], globalTriggersRef.current, v.img.baseTxtNonLetto), isTrashed: true }
+                    : { ...v.img, isTrashed: true }));
                 isUndoRedoAction.current = true;
                 setImages(prev => {
                     const presenti = new Set(prev.map(i => i.id));
@@ -3975,7 +3994,7 @@ export default function App() {
     const avvisoSalvataggioRef = useRef('');
     // ITALIANO: le GEMELLE di un .txt appena scritto: le altre foto che finiscono nello stesso .txt
     //           (a.png e a.jpg nella stessa cartella hanno un solo a.txt; la stessa cartella aperta
-    //           due volte) e non hanno modifiche proprie. Prima restavano con i tag vecchi e
+    //           due volte). Prima restavano con i tag vecchi e
     //           risultavano salvate: salvata a.png con "dog", il Salva dopo, fatto su a.jpg,
     //           riscriveva a.txt senza "dog" con l'avviso verde, e la card di a.png lo mostrava
     //           ancora come salvato. `scritte` = la foto scritta e i tag scritti. Si cercano adesso
@@ -3983,12 +4002,14 @@ export default function App() {
     //           disco = i tag scritti) e va chiamata subito dopo il setImages che segna la foto
     //           scritta, cosi' i due cambi sono un solo aggiornamento e nessuno dei due e' un passo
     //           della cronologia. Il passo che contiene la foto scritta riceve anche lui la gemella
-    //           allineata: un Ctrl+Z dopo non la riporta ai tag vecchi. Una foto con modifiche
-    //           proprie non si tocca: se sono diverse, il controllo delle doppie di performSave la
-    //           ferma.
+    //           allineata: un Ctrl+Z dopo non la riporta ai tag vecchi. Una gemella con modifiche
+    //           proprie (anche la sola trigger non ancora nel .txt, che dopo l'import la fa
+    //           risultare modificata) le tiene sopra il file scritto, con la regola dell'editor dei
+    //           file di tag (tagDopoEditor). Prima veniva saltata: il Salva dopo, fatto su di lei,
+    //           riscriveva a.txt senza "dog" con l'avviso verde, e a.png si allineava a quel file.
     // ENGLISH: the TWINS of a .txt just written: the other photos that end in the same .txt (a.png
-    //          and a.jpg in the same folder have a single a.txt; the same folder opened twice) and
-    //          have no edits of their own. They used to keep the old tags and count as saved: with
+    //          and a.jpg in the same folder have a single a.txt; the same folder opened twice).
+    //          They used to keep the old tags and count as saved: with
     //          a.png saved with "dog", the next Save, made on a.jpg, rewrote a.txt without "dog" with
     //          the green notice, and a.png's card still showed it as saved. `scritte` = the photo
     //          written and the tags written. They are looked up now (isSameEntry is async); the
@@ -3996,8 +4017,10 @@ export default function App() {
     //          called right after the setImages that marks the written photo, so the two changes are
     //          a single update and neither is a history step. The step holding the written photo
     //          gets the synced twin too: a later Ctrl+Z does not bring it back to the old tags. A
-    //          photo with edits of its own is not touched: if they differ, the duplicate check of
-    //          performSave stops it.
+    //          twin with edits of its own (even just the trigger not in the .txt yet, which makes it
+    //          count as modified after the import) keeps them on top of the file written, with the
+    //          tag file editor's rule (tagDopoEditor). It used to be skipped: the next Save, made on
+    //          it, rewrote a.txt without "dog" with the green notice, and a.png synced to that file.
     const gemelliDelTxt = async (scritte: { id: string; tags: string[] }[]): Promise<() => void> => {
         const tutte = imagesRef.current;
         const api = (window as any).electronAPI;
@@ -4020,7 +4043,7 @@ export default function App() {
             if (a.dirHandle === b.dirHandle) return true;
             try { return typeof a.dirHandle.isSameEntry === 'function' && await a.dirHandle.isSameEntry(b.dirHandle); } catch { return false; }
         };
-        const allineate = new Map<string, { prima: any; fonte: any; tags: string[] }>();
+        const allineate = new Map<string, { prima: any; fonte: any; nuovi: { tags: string[]; originalTags: string[] } }>();
         // ITALIANO: un errore qui non deve fermare chi chiama: la foto scritta va segnata comunque.
         // ENGLISH: an error here must not stop the caller: the written photo is marked anyway.
         try {
@@ -4033,10 +4056,13 @@ export default function App() {
             }
             const scritteIds = new Set(scritte.map(s => s.id));
             for (const altra of tutte) {
-                if (scritteIds.has(altra.id) || JSON.stringify(altra.tags || []) !== JSON.stringify(altra.originalTags || [])) continue;
+                if (scritteIds.has(altra.id)) continue;
                 const candidate = perNome.get(nomeTxt(altra));
                 if (!candidate) continue;
-                for (const s of candidate) if (await stessoTxt(s.foto, altra)) { allineate.set(altra.id, { prima: altra, fonte: s.foto, tags: s.tags }); break; }
+                for (const s of candidate) if (await stessoTxt(s.foto, altra)) {
+                    allineate.set(altra.id, { prima: altra, fonte: s.foto, nuovi: tagDopoEditor(altra.tags || [], altra.originalTags || [], s.tags, globalTriggersRef.current, altra.baseTxtNonLetto) });
+                    break;
+                }
             }
         } catch (err) {
             console.error('[Salvataggio] gemelle del .txt non cercate', err);
@@ -4048,7 +4074,7 @@ export default function App() {
         const allinea = (img: any, presenti?: Set<any>) => {
             const a = allineate.get(img.id);
             if (!a || img !== a.prima || (presenti && !presenti.has(a.fonte))) return img;
-            return { ...img, tags: [...a.tags], originalTags: [...a.tags] };
+            return { ...img, tags: [...a.nuovi.tags], originalTags: [...a.nuovi.originalTags] };
         };
         return () => {
             if (allineate.size === 0) return;
@@ -4276,8 +4302,8 @@ export default function App() {
         // ENGLISH: mark as saved ONLY the files really written, with the SNAPSHOT tags (not the live
         //          ones): a tag added while saving is not counted as already saved.
         if (savedIds.size > 0) {
-            // ITALIANO: le gemelle senza modifiche proprie seguono il .txt scritto (vedi gemelliDelTxt).
-            // ENGLISH: the twins with no edits of their own follow the .txt written (see gemelliDelTxt).
+            // ITALIANO: le gemelle seguono il .txt scritto, con sopra le loro modifiche (vedi gemelliDelTxt).
+            // ENGLISH: the twins follow the .txt written, with their own edits on top (see gemelliDelTxt).
             const allineaGemelli = await gemelliDelTxt(imagesToSave.filter(s => savedIds.has(s.id)).map(s => ({ id: s.id, tags: s.tags })));
             // ITALIANO: segnare i file come salvati non e' un'azione dell'utente: non diventa un
             //           passo della cronologia (Ctrl+Z non tocca originalTags, vedi
@@ -4766,9 +4792,9 @@ export default function App() {
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
     }, [globalTriggers]);
     // ITALIANO: il visualizzatore ha scritto il .txt: come in performSave, non e' un passo della cronologia,
-    //           e le gemelle senza modifiche proprie seguono il .txt scritto (vedi gemelliDelTxt).
+    //           e le gemelle seguono il .txt scritto, con sopra le loro modifiche (vedi gemelliDelTxt).
     // ENGLISH: the viewer wrote the .txt: as in performSave, it is not a history step, and the twins
-    //          with no edits of their own follow the .txt written (see gemelliDelTxt).
+    //          follow the .txt written, with their own edits on top (see gemelliDelTxt).
     const updateOriginalTags = async (id: string, newTags: string[]) => { const allineaGemelli = await gemelliDelTxt([{ id, tags: [...newTags] }]); isUndoRedoAction.current = true; setImages(prev => prev.map(img => img.id === id ? { ...img, originalTags: [...newTags] } : img)); allineaGemelli(); };
     const toggleImageSelection = useCallback((id: string) => setSelectedForBulk(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]), []);
 
