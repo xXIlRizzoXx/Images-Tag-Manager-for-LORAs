@@ -609,6 +609,17 @@ export default function App() {
         }
     }, [isApiKeyDialogOpen, geminiApiKey]);
 
+    // ITALIANO: la chiave com'e' adesso, letta dalla prova dei modelli e dal controllo del modello
+    //           dopo ogni attesa: se nel frattempo e' stata tolta o cambiata, si fermano senza
+    //           usarla ancora. Un effetto e non un'assegnazione a ogni disegno: "Togli la chiave" la
+    //           svuota subito, e un disegno prima di setGeminiApiKey('') non deve rimetterla.
+    // ENGLISH: the key as it is now, read by the model test and the model check after every wait:
+    //          if it was removed or changed meanwhile, they stop without using it again. An effect,
+    //          not an assignment on every render: "Remove the key" empties it at once, and a render
+    //          before setGeminiApiKey('') must not put it back.
+    const geminiApiKeyRef = useRef(geminiApiKey);
+    useEffect(() => { geminiApiKeyRef.current = geminiApiKey; }, [geminiApiKey]);
+
     // ITALIANO: Cancella la API key cifrata e termina sessione AI
     // ENGLISH: Wipe the encrypted API key and end AI session
     const handleClearApiKey = useCallback(async () => {
@@ -620,6 +631,12 @@ export default function App() {
             aiCancelRequestedRef.current = true;
             setAiCancelRequested(true);
             aiAbortControllerRef.current?.abort();
+            // ITALIANO: ...e anche "Prova i modelli recenti" e il controllo del modello: prima
+            //           continuavano a chiamare Google con la chiave appena tolta.
+            // ENGLISH: ...and also "Test recent models" and the model check: they used to keep
+            //          calling Google with the key just removed.
+            geminiApiKeyRef.current = '';
+            provaModelliRef.current?.abort();
             const cancellata = await deleteSecret('geminiApiKey');
             setGeminiApiKey('');
             setIsAIBusy(false);
@@ -959,6 +976,15 @@ export default function App() {
             // ENGLISH: the editor (with no edits, at this point) is put away: the three-choice dialog
             //          sits below it and stayed hidden.
             if (!saveCloseDialogRef.current.isOpen) setTimeout(() => { setIsTagEditorOpen(false); setSaveCloseDialog({ isOpen: true, isSaving: false }); }, 0);
+            // ITALIANO: gia' aperta da "Chiudi progetto": un oggetto nuovo con lo stesso contenuto la fa
+            //           ridisegnare, cosi' titolo e testo (che leggono chiusuraFinestraRef) passano a
+            //           quelli del programma. Prima restava "Chiudere il progetto attuale?" e i tasti
+            //           chiudevano il programma.
+            // ENGLISH: already open from "Close project": a new object with the same content makes it
+            //          redraw, so title and text (which read chiusuraFinestraRef) switch to the
+            //          program's. It used to stay "Close the current project?" while the buttons closed
+            //          the program.
+            else setTimeout(() => setSaveCloseDialog(d => ({ ...d })), 0);
         };
         window.addEventListener('beforeunload', allaChiusura);
         return () => window.removeEventListener('beforeunload', allaChiusura);
@@ -1420,6 +1446,11 @@ export default function App() {
         controlloModelloRef.current = true;
         setControlloModelloInCorso(true);
         const scelteAllInizio = sceltaManualeRef.current;
+        // ITALIANO: dopo ogni attesa si va avanti solo con l'AI ancora accesa e la STESSA chiave:
+        //           tolta o cambiata nel frattempo, il controllo si ferma senza cambi ne' avvisi.
+        // ENGLISH: after every wait it goes on only with the AI still on and the SAME key: if it
+        //          was removed or changed meanwhile, the check stops with no changes and no notices.
+        const ancoraValido = () => aiEnabledRef.current && geminiApiKeyRef.current === geminiApiKey;
 
         // ITALIANO: "ultimo controllo" si scrive SOLO quando Google ha dato una risposta vera.
         //           Prima si scriveva sempre, anche dopo un fallimento: le Impostazioni dicevano
@@ -1450,9 +1481,9 @@ export default function App() {
             //          dead model is not respecting a choice.
             if (fissato && !rotto) {
                 const elenco = await elencaModelliRemoti(geminiApiKey);
-                // ITALIANO: l'AI e' stata spenta mentre Google rispondeva: niente avvisi, niente cambi.
-                // ENGLISH: the AI was switched off while Google answered: no notices, no changes.
-                if (!aiEnabledRef.current) return;
+                // ITALIANO: l'AI e' stata spenta (o la chiave tolta) mentre Google rispondeva: niente avvisi, niente cambi.
+                // ENGLISH: the AI was switched off (or the key removed) while Google answered: no notices, no changes.
+                if (!ancoraValido()) return;
                 // ITALIANO: mentre Google rispondeva l'utente e' passato ad Automatico: il controllo
                 //           chiesto da quel clic si e' perso (questo era in corso), quindi lo fa
                 //           questo, proseguendo come Automatico. Prima diceva "ce n'e' uno piu'
@@ -1478,7 +1509,14 @@ export default function App() {
                         //          flash comes before the lite in the list: with gemini-3.6-flash-lite
                         //          locked, gemini-3.6-flash was announced as "newer", and it is the
                         //          same 3.6.
+                        // ITALIANO: un modello bloccato fuori dalla linea confrontata (un pro scelto dopo
+                        //           "Prova i modelli recenti") non e' "il piu' recente della linea
+                        //           gratuita": lo si dice fuori dal confronto e resta quello scelto.
+                        // ENGLISH: a model locked outside the compared line (a pro picked after "Test
+                        //          recent models") is not "the newest of the free line": it is said to
+                        //          be outside the comparison and stays as chosen.
                         if (confrontaVersioni(versioneDi(elenco[0].id), versioneDi(aiModel)) > 0) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
+                        else if (!elenco.some(m => m.id === aiModel)) showNotification(t.aiModelOutsideFreeLine.replace('{a}', aiModel), 'info');
                         else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
                     }
                     return;
@@ -1488,8 +1526,8 @@ export default function App() {
 
             // ITALIANO: l'AI spenta a meta' ferma anche le prove non ancora partite, non solo il risultato.
             // ENGLISH: the AI switched off midway also stops the probes not yet started, not just the result.
-            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto, () => aiEnabledRef.current);
-            if (!aiEnabledRef.current) return;
+            const esito = await aggiornaModelloAutomatico(geminiApiKey, aiModel, rotto, ancoraValido);
+            if (!ancoraValido()) return;
             tieniElenco(esito.disponibili);
             if (esito.esito !== 'nonRaggiungibile' && esito.esito !== 'chiaveNonValida' && esito.esito !== 'progettoRifiutato' && esito.esito !== 'occupato') segnaControllo();
 
@@ -1571,7 +1609,7 @@ export default function App() {
             //           stesse frasi del giro automatico. "Non raggiungibile" resta per la rete.
             // ENGLISH: ...nor is a refused project, too many requests or Google overloaded: the same
             //          sentences as the automatic round. "Unreachable" stays for the network.
-            if (dilloComunque && aiEnabledRef.current) {
+            if (dilloComunque && ancoraValido()) {
                 const { kind } = classifyGeminiError(err);
                 if (kind === 'invalid_key') showNotification(t.aiModelCheckKeyInvalid, 'error');
                 else if (kind === 'billing_required') showNotification(t.aiModelCheckProjectRefused, 'error');
@@ -1605,11 +1643,13 @@ export default function App() {
         };
         try {
             const r = await provaTuttiIModelli(geminiApiKey, (modelli, fatti) => {
-                if (!aiEnabledRef.current) { ctrl.abort(); return; }
+                // ITALIANO: AI spenta o chiave tolta/cambiata: ci si ferma e non si salva piu' niente.
+                // ENGLISH: AI off or key removed/changed: stop and save nothing more.
+                if (!aiEnabledRef.current || geminiApiKeyRef.current !== geminiApiKey) { ctrl.abort(); return; }
                 setProvaModelliStato({ fatti, totale: modelli.length });
                 salva(modelli);
             }, ctrl.signal);
-            if (!aiEnabledRef.current) return;
+            if (!aiEnabledRef.current || geminiApiKeyRef.current !== geminiApiKey) return;
             const tot = String(r.modelli.length);
             if (r.esito === 'fatto') {
                 const ok = r.modelli.filter(m => m.stato === 'utilizzabile').length;
@@ -1649,7 +1689,12 @@ export default function App() {
                     imagesRef.current = imagesRef.current.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img));
                     setImages(prev => prev.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img)));
                 },
-                immagine: async (id) => fotoPerMcp(imagesRef.current.find(img => img.id === id)?.file),
+                // ITALIANO: la foto com'e' adesso sul disco, non l'istantanea dell'import (vedi fileDiAdesso).
+                // ENGLISH: the photo as it is on disk now, not the import snapshot (see fileDiAdesso).
+                immagine: async (id) => {
+                    const img = imagesRef.current.find(i => i.id === id);
+                    return img ? fotoPerMcp(await fileDiAdesso(img)) : null;
+                },
             });
         } catch (e) {
             console.warn('[MCP] request failed', e);
@@ -2497,7 +2542,22 @@ export default function App() {
                     const presenti = new Set(prev.map(i => i.id));
                     return [...prev, ...rientrate.filter((f: any) => !presenti.has(f.id))];
                 });
-                setHistory(prev => addPhotosToHistory(prev, rientrate, historyIndex));
+                // ITALIANO: un passo rimasto vuoto che ora riceve le foto tornate prende anche il riquadro
+                //           delle trigger di adesso: le foto portano le trigger di adesso, e con il
+                //           riquadro di allora ([] prima di scrivere ohwx) Ctrl+Z svuotava il riquadro
+                //           lasciando ohwx sulle foto come un tag qualsiasi. Stesso valore a ogni
+                //           esecuzione dell'aggiornamento (StrictMode).
+                // ENGLISH: a step left empty that now receives the returned photos also takes the
+                //          current trigger box: the photos carry the current triggers, and with the
+                //          box of then ([] before typing ohwx) Ctrl+Z emptied the box while leaving
+                //          ohwx on the photos as an ordinary tag. Same value on every run of the
+                //          update (StrictMode).
+                setHistory(prev => {
+                    const nuova = addPhotosToHistory(prev, rientrate, historyIndex);
+                    triggerHistoryRef.current = triggerHistoryRef.current.map((delPasso, j) =>
+                        (prev[j] && prev[j].length === 0 && nuova[j] && nuova[j].length > 0 ? globalTriggersRef.current : delPasso));
+                    return nuova;
+                });
             }
             // ITALIANO: si tiene solo cio' che NON e' tornato, cosi' il tasto resta a disposizione
             //           per quelle e sparisce quando non c'e' piu' niente da ripescare.
@@ -4271,9 +4331,13 @@ export default function App() {
         // ENGLISH: an emptied .txt stops Kohya: say so, without blocking anything.
         const fraseSvuotate = svuotate === 0 ? '' : svuotate === 1 ? t.saveEmptyCaptionOne : t.saveEmptyCaptionMany.replace('{n}', String(svuotate));
         if (fraseSvuotate) frasi.push(fraseSvuotate);
-        // ITALIANO: "Salva e chiudi" la rimostra dopo "Progetto chiuso" (vedi avvisoSalvataggioRef).
-        // ENGLISH: "Save and close" shows it again after "Project closed" (see avvisoSalvataggioRef).
-        avvisoSalvataggioRef.current = fraseSvuotate;
+        // ITALIANO: "Salva e chiudi" la rimostra dopo "Progetto chiuso" (vedi avvisoSalvataggioRef),
+        //           insieme alla frase sulle foto lasciate fuori: prima "Progetto chiuso" la copriva e
+        //           non si sapeva che a quei .txt la trigger non era arrivata.
+        // ENGLISH: "Save and close" shows it again after "Project closed" (see avvisoSalvataggioRef),
+        //          together with the sentence on the photos left out: "Project closed" used to cover it
+        //          and nobody knew the trigger had not reached those .txt files.
+        avvisoSalvataggioRef.current = [fraseSvuotate, fraseNonScritte].filter(Boolean).join(' ');
         if (fraseNonScritte) frasi.push(fraseNonScritte);
         const riuscito = failedNames.length === 0 && scaricate === 0 && doppie.length === 0 && !blocca;
         if (riuscito) soundManager.chime();
@@ -4322,7 +4386,9 @@ export default function App() {
         const fraseNonScritte = nonScritte.length === 0 ? ''
             : nonScritte.length === 1 ? t.saveUnreadTxtOne.replace('{names}', primi)
             : t.saveUnreadTxtMany.replace('{n}', String(nonScritte.length)).replace('{names}', primi);
-        if (daScrivere.length === 0) { showNotification(fraseNonScritte, "info"); return modificheNonScritte.length === 0; }
+        // ITALIANO: anche qui "Salva e chiudi" rimostra la frase dopo "Progetto chiuso" (vedi avvisoSalvataggioRef).
+        // ENGLISH: here too "Save and close" shows the sentence again after "Project closed" (see avvisoSalvataggioRef).
+        if (daScrivere.length === 0) { avvisoSalvataggioRef.current = fraseNonScritte; showNotification(fraseNonScritte, "info"); return modificheNonScritte.length === 0; }
         return performSave(daScrivere, fraseNonScritte, modificheNonScritte.length > 0);
     };
 

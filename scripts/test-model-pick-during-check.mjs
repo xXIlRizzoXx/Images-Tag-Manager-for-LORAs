@@ -86,7 +86,7 @@ const testoEffetto = app.slice(k0 + '    useEffect('.length, k1 + '    }'.length
 
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, geminiApiKeyRef, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
             elencaModelliRemoti, aggiornaModelloAutomatico, confrontaVersioni, versioneDi, localStorage } = env;
     const aiModel = snap.aiModel;
@@ -133,7 +133,7 @@ const scenario = (iniziale, { elencoAperto = false } = {}) => {
         },
     };
     const env = {
-        t, geminiApiKey: 'AIza' + 'x'.repeat(35),
+        t, geminiApiKey: 'AIza' + 'x'.repeat(35), geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
         controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
         aiModelloFissatoRef: { current: iniziale.aiModelloFissato }, aiEnabledRef: { current: true },
         setControlloModelloInCorso: (v) => { stato.inCorso = v; },

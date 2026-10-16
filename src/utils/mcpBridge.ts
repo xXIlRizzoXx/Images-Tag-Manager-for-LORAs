@@ -16,12 +16,14 @@
 //   in case merged, keeping the spelling already there; a comma inside a tag splits it in two (in
 //   the .txt the comma separates tags).
 import { uniqueTagsIgnoringCase } from './tagCase';
+import { txtNonLettoInVigore } from './sidecarTags';
 
 export type FotoMcp = {
     id: string;
     file?: { name?: string } | null;
     tags: string[];
     originalTags?: string[];
+    baseTxtNonLetto?: string[];
     isTrashed?: boolean;
     cartellaImport?: string;
     cartellaRel?: string;
@@ -70,7 +72,11 @@ export const ordinaTag = (tags: string[], trigger: string[]): string[] => {
 };
 
 const stessi = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
-const minuscolo = (s: string) => s.toLocaleLowerCase();
+// ITALIANO: toLowerCase e non toLocaleLowerCase, come chiave in tagCase.ts: con Windows in turco o azero
+//           la I maiuscola diventerebbe una i senza punto e "Indoor" non sarebbe piu' "indoor".
+// ENGLISH: toLowerCase, not toLocaleLowerCase, like chiave in tagCase.ts: with Windows in Turkish or
+//          Azeri the capital I would become a dotless i and "Indoor" would no longer be "indoor".
+const minuscolo = (s: string) => s.toLowerCase();
 const nomeDi = (f: FotoMcp) => String((f.file && f.file.name) || f.id);
 const cartellaDi = (f: FotoMcp) => [f.cartellaImport, f.cartellaRel].filter(Boolean).join('/');
 const intero = (v: unknown, base: number, min: number, max: number) => {
@@ -91,9 +97,13 @@ export const eseguiStrumentoMcp = async (strumento: string, argomenti: Record<st
         const scelte = visibili.filter(f => {
             const tag = f.tags.map(minuscolo);
             if (richiesti.some(r => !tag.includes(r))) return false;
-            // ITALIANO: "senza tag" = nessun tag oltre alle trigger word (che hanno tutte).
-            // ENGLISH: "untagged" = no tag besides the trigger words (which all photos have).
-            if (soloSenza && f.tags.some(t => !trigger.includes(t))) return false;
+            // ITALIANO: "senza tag" = nessun tag oltre alle trigger word (che hanno tutte). Una foto il cui
+            //           .txt non si e' potuto leggere all'import non conta come senza tag, come per "Salta foto
+            //           gia' taggate": Salva non ci scrive sopra, quindi il lavoro dell'AI andrebbe perso.
+            // ENGLISH: "untagged" = no tag besides the trigger words (which all photos have). A photo whose
+            //          .txt could not be read at import does not count as untagged, as for "Skip already-tagged
+            //          photos": Save does not write over it, so the AI's work would be lost.
+            if (soloSenza && (txtNonLettoInVigore(f) || f.tags.some(t => !trigger.includes(t)))) return false;
             return true;
         });
         const offset = intero(args.offset, 0, 0, Number.MAX_SAFE_INTEGER);

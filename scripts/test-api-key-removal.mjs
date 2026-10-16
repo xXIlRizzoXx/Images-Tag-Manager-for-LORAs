@@ -78,14 +78,15 @@ const fine = inizio < 0 ? null : chiusura.exec(sorgente);
 if (!fine) { console.log('NO  handleClearApiKey non trovato in src/App.tsx'); process.exit(1); }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 const NOMI = ['aiCancelRequestedRef', 'setAiCancelRequested', 'aiAbortControllerRef', 'deleteSecret', 'setGeminiApiKey', 'setIsAIBusy',
-    'setIsGlobalAITagging', 'setGlobalAIProgress', 'soundManager', 'showNotification', 't', 'useCallback', 'console'];
+    'setIsGlobalAITagging', 'setGlobalAIProgress', 'soundManager', 'showNotification', 't', 'useCallback', 'console',
+    'provaModelliRef', 'geminiApiKeyRef'];
 const togli = async (cancellata) => {
-    const r = { notifiche: [], suoni: [], chiave: 'AIza-finta', fermato: false };
+    const r = { notifiche: [], suoni: [], chiave: 'AIza-finta', fermato: false, prova: new AbortController(), chiaveRef: { current: 'AIza-finta' } };
     const nulla = () => { };
     const f = new Function(...NOMI, js + '\nreturn handleClearApiKey;')(
         { current: false }, () => { r.fermato = true; }, { current: null }, async () => cancellata, (v) => { r.chiave = v; }, nulla,
         nulla, nulla, { chime: () => r.suoni.push('chime'), pop: () => r.suoni.push('pop') }, (m, tipo) => r.notifiche.push([m, tipo]),
-        t, (fn) => fn, muto);
+        t, (fn) => fn, muto, { current: r.prova }, r.chiaveRef);
     await f();
     return r;
 };
@@ -103,6 +104,9 @@ console.log('\n--- "Togli la chiave API" nelle impostazioni ---');
     dice('chiave cancellata: "API key removed" come prima', [[t.aiKeyCleared, 'success']], r.notifiche);
     dice('...con il suono di successo', ['chime'], r.suoni);
     dice('...e la chiave in memoria vuota', '', r.chiave);
+    // ITALIANO: anche la prova dei modelli e il controllo del modello smettono di usarla (vedi
+    //           test-api-key-removal-stops-checks.mjs). ENGLISH: the model test and check stop using it too.
+    dice('...e ferma "Prova i modelli recenti" e svuota subito la chiave letta dai controlli', [true, ''], [r.prova.signal.aborted, r.chiaveRef.current]);
 }
 
 process.exit(esito());

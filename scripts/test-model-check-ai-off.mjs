@@ -67,7 +67,7 @@ const f0 = i0 < 0 ? null : fineControlla.exec(app);
 if (!f0) { console.log('NO  non trovato in src/App.tsx: controllaModello'); process.exit(1); }
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, geminiApiKeyRef, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
             elencaModelliRemoti, aggiornaModelloAutomatico, classifyGeminiError, confrontaVersioni, versioneDi, localStorage } = env;
     const aiModel = snap.aiModel;
@@ -101,7 +101,7 @@ const scenario = ({ aiModel, fissato, aiAccesa = true, trattieni = null }) => {
     const stato = { aiModel, aiModelloFissato: fissato, scritture: [] };
     const notifiche = [];
     const env = {
-        t, geminiApiKey: 'AIza' + 'x'.repeat(35),
+        t, geminiApiKey: 'AIza' + 'x'.repeat(35), geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
         controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
         aiModelloFissatoRef: { current: fissato }, aiEnabledRef: { current: aiAccesa },
         setControlloModelloInCorso: () => { }, setModelloControllatoIl: () => { }, setModelliDisponibili: () => { },
