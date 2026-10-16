@@ -1847,7 +1847,11 @@ export default function App() {
     };
 
     const handleCleanUnusedTags = () => {
-        const usedTags = new Set(images.flatMap(img => img.tags));
+        // ITALIANO: la stessa regola di allUniqueTags: una foto nel cestino non tiene in vita un tag
+        //           del progetto (nelle Statistiche ha 0 usi, e restava nell'elenco e nell'export).
+        // ENGLISH: the same rule as allUniqueTags: a photo in the trash does not keep a project tag
+        //          alive (it has 0 uses in the Statistics, and it stayed in the list and the export).
+        const usedTags = new Set(images.filter(img => !img.isTrashed).flatMap(img => img.tags));
         setCustomProjectTags(prev => prev.filter(tag => usedTags.has(tag)));
         showNotification(t.completed, 'success');
         soundManager.pop();
@@ -5278,8 +5282,17 @@ export default function App() {
         // ENGLISH: Controller to abort in-flight HTTP requests when the user cancels
         aiAbortControllerRef.current = new AbortController();
         const batchSignal = aiAbortControllerRef.current.signal;
+        // ITALIANO: si parte dalle sole foto in galleria. Quelle gia' nel cestino dell'app (scartate dal
+        //           dataset) contavano nel totale della barra e fra le "Saltate" del riepilogo, anche
+        //           con "Salta foto gia' taggate" spento. Una foto messa nel cestino DURANTE il lavoro
+        //           resta contata fra le saltate (vedi sotto).
+        // ENGLISH: start from the gallery photos only. Those already in the app's trash (dropped from
+        //          the dataset) counted in the bar's total and among the summary's "Skipped", even
+        //          with "Skip already tagged photos" off. A photo moved to the trash DURING the run
+        //          still counts as skipped (see below).
+        const daTaggare = images.filter(img => !img.isTrashed);
         setIsGlobalAITagging(true);
-        setGlobalAIProgress({ done: 0, total: images.length, ok: 0, errors: 0, skipped: 0 });
+        setGlobalAIProgress({ done: 0, total: daTaggare.length, ok: 0, errors: 0, skipped: 0 });
         // ITALIANO: Intervallo minimo tra le richieste in base alla RPM target dell'utente
         // ENGLISH: Minimum interval between requests based on user's target RPM
         const minIntervalMs = Math.max(1000, Math.floor(60000 / Math.max(1, aiRpm)));
@@ -5313,19 +5326,19 @@ export default function App() {
         //          the per-minute limit (see below).
         let occupatoConsecutivi = 0;
         try {
-            for (let i = 0; i < images.length; i++) {
+            for (let i = 0; i < daTaggare.length; i++) {
                 if (aiCancelRequestedRef.current) { cancelled = true; break; }
                 // ITALIANO: Lo snapshot fornisce solo l'ID; lo stato VIVO arriva da imagesRef —
                 //           così skip e merge vedono le modifiche fatte dall'utente durante il batch
                 // ENGLISH: The snapshot only provides the ID; LIVE state comes from imagesRef —
                 //          so skip and merge see edits the user made during the batch
-                const snapshotItem = images[i];
+                const snapshotItem = daTaggare[i];
                 const current = snapshotItem ? imagesRef.current.find(im => im.id === snapshotItem.id) : null;
                 if (!current || current.isTrashed) {
                     // ITALIANO: Eliminata o nel cestino nel frattempo: non sprecare quota
                     // ENGLISH: Deleted or trashed meanwhile: don't waste quota
                     skippedCount++;
-                    setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                    setGlobalAIProgress({ done: i + 1, total: daTaggare.length, ok: okCount, errors: errorCount, skipped: skippedCount });
                     continue;
                 }
                 // ITALIANO: Skip se richiesto e l'immagine ha già almeno un tag (stato live). Le
@@ -5340,8 +5353,8 @@ export default function App() {
                 //          looks untagged here (see txtNonLettoInVigore): it is skipped too.
                 if (aiSkipTagged && ((Array.isArray(current.tags) && hasTagsBeyondTriggers(current.tags, globalTriggersRef.current)) || txtNonLettoInVigore(current))) {
                     skippedCount++;
-                    console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: skipped (already tagged)`);
-                    setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                    console.log(`[AI] ${i + 1}/${daTaggare.length} ${current.file.name}: skipped (already tagged)`);
+                    setGlobalAIProgress({ done: i + 1, total: daTaggare.length, ok: okCount, errors: errorCount, skipped: skippedCount });
                     continue;
                 }
 
@@ -5374,7 +5387,7 @@ export default function App() {
                         if (!liveNow) {
                             // ITALIANO: Rimossa durante la richiesta: ignora il risultato
                             // ENGLISH: Removed during the request: discard the result
-                            console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: removed mid-batch, result discarded`);
+                            console.log(`[AI] ${i + 1}/${daTaggare.length} ${current.file.name}: removed mid-batch, result discarded`);
                             removedMidRequest = true;
                             break;
                         }
@@ -5383,14 +5396,14 @@ export default function App() {
                         totalTagsAdded += countNewTagsIgnoringCase(baseTags, tags);
                         updateImageTags(current.id, merged);
                         success = true;
-                        console.log(`[AI] ${i + 1}/${images.length} ${current.file.name}: ${tags.length} tags`);
+                        console.log(`[AI] ${i + 1}/${daTaggare.length} ${current.file.name}: ${tags.length} tags`);
                         break;
                     } catch (err: any) {
                         // ITALIANO: Se l'errore deriva dall'annullamento (abort), esci subito senza contarlo come errore
                         // ENGLISH: If the error comes from cancellation (abort), exit immediately without counting it as an error
                         if (aiCancelRequestedRef.current) { cancelled = true; break; }
                         const { kind, message, quotaGiorno, progetto } = classifyGeminiError(err);
-                        console.warn(`[AI] ${i + 1}/${images.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
+                        console.warn(`[AI] ${i + 1}/${daTaggare.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (err?.geminiKind === 'photo' && err?.motivoFoto === 'metadati') nonPulibiliCount++;
                         if (kind === 'invalid_key') {
                             // ITALIANO: si apre la finestra della chiave, ma senza una riga di
@@ -5464,7 +5477,7 @@ export default function App() {
                 if (removedMidRequest) skippedCount++;
                 else if (success) okCount++;
                 else errorCount++;
-                setGlobalAIProgress({ done: i + 1, total: images.length, ok: okCount, errors: errorCount, skipped: skippedCount });
+                setGlobalAIProgress({ done: i + 1, total: daTaggare.length, ok: okCount, errors: errorCount, skipped: skippedCount });
                 // ITALIANO: senza rete ogni foto falliva lo stesso, una dopo l'altra (con una
                 //           connessione bloccata 90 secondi l'una, per ore), e alla fine il riepilogo
                 //           diceva solo "Non riuscite: 300". Dopo tre foto di fila che non raggiungono
@@ -5496,7 +5509,7 @@ export default function App() {
 
                 // ITALIANO: Throttle adattivo — aspetta solo se la richiesta è stata più veloce del minimo
                 // ENGLISH: Adaptive throttle — only wait if the request was faster than the minimum
-                if (i < images.length - 1) {
+                if (i < daTaggare.length - 1) {
                     const elapsed = Date.now() - requestStart;
                     const waitMs = Math.max(0, minIntervalMs - elapsed);
                     if (waitMs > 0) await cancellableSleep(waitMs);

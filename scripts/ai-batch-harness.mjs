@@ -113,7 +113,9 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     const foto = fotoIniziali.map(({ id, tags = [] }) => ({
         id, isTrashed: false, tags: [...tags], file: new File([PNG_MINIMO], `${id}.png`, { type: 'image/png' }),
     }));
-    const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto };
+    // ITALIANO: `progressi` raccoglie ogni stato della barra (setGlobalAIProgress), in ordine.
+    // ENGLISH: `progressi` collects every state of the progress bar (setGlobalAIProgress), in order.
+    const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto, progressi: [] };
     let orologio = 1_000_000;
     const dip = {
         aiEnabled: true, geminiApiKey: 'AIza' + 'x'.repeat(35), aiModel: 'gemini-3.8-flash', aiMaxTags: 30, aiCustomPrompt: '',
@@ -125,7 +127,7 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         setRiparaModello: () => { },
         setIsApiKeyDialogOpen: (v) => { app.finestraChiave = v; },
         aiCancelRequestedRef: { current: false }, setAiCancelRequested: () => { },
-        aiAbortControllerRef: { current: null }, setIsGlobalAITagging: () => { }, setGlobalAIProgress: () => { },
+        aiAbortControllerRef: { current: null }, setIsGlobalAITagging: () => { }, setGlobalAIProgress: (p) => { app.progressi.push(p); },
         countNewTagsIgnoringCase: tagCase.countNewTagsIgnoringCase,
         globalTriggersRef: { current: trigger },
         hasTagsBeyondTriggers: tagCase.hasTagsBeyondTriggers,

@@ -32,4 +32,39 @@ const foto = [
 ];
 dice('i tag della foto nel cestino ("blurry") non ci sono', ['custom tag', 'red dress', 'smile'], calcola(foto, ['custom tag']));
 dice('ripristinata la foto, tornano', ['blurry', 'red dress', 'smile'], calcola(foto.map(f => ({ ...f, isTrashed: false })), []));
+
+// ITALIANO: "Pulisci inutilizzati" deve usare la stessa regola. Un tag aggiunto a mano al progetto e
+//           usato solo da una foto nel cestino ha 0 usi nelle Statistiche e non viene dalle foto in
+//           galleria: il pulsante diceva "Completato" ma lo lasciava nell'elenco, nella tavolozza
+//           della selezione in blocco e nell'export.
+// ENGLISH: "Clean unused" must use the same rule. A tag added to the project by hand and used only
+//          by a photo in the trash has 0 uses in the Statistics and does not come from the gallery
+//          photos: the button said "Completed" but left it in the list, the bulk palette and the export.
+const iPulisci = s.indexOf('    const handleCleanUnusedTags = () => {');
+const finePulisci = /\r?\n    \};\r?\n/g;
+finePulisci.lastIndex = Math.max(iPulisci, 0);
+const fPulisci = iPulisci < 0 ? null : finePulisci.exec(s);
+dice('premessa: "Pulisci inutilizzati" si trova in src/App.tsx', true, Boolean(fPulisci));
+const codicePulisci = (await esbuild.transform(s.slice(iPulisci, fPulisci.index + fPulisci[0].length), { loader: 'ts' })).code;
+const pulisci = (images, progetto) => {
+    let tag = [...progetto];
+    const avvisi = [];
+    new Function('images', 'setCustomProjectTags', 'showNotification', 't', 'soundManager', codicePulisci + '\nreturn handleCleanUnusedTags;')(
+        images, (f) => { tag = typeof f === 'function' ? f(tag) : f; }, (m, tipo) => avvisi.push([m, tipo]), { completed: 'Completed' }, { pop() { } })();
+    return { tag, avvisi, elenco: calcola(images, tag) };
+};
+const conCestino = [
+    { id: 'a', tags: ['smile'], isTrashed: false },
+    { id: 'p', tags: ['beach', 'smile'], isTrashed: true },
+];
+const r1 = pulisci(conCestino, ['beach', 'smile']);
+dice('"beach", usato solo dalla foto nel cestino, esce dai tag del progetto', ['smile'], r1.tag);
+dice('...e dall\'elenco del progetto', ['smile'], r1.elenco);
+dice('...con il messaggio verde', [['Completed', 'success']], r1.avvisi);
+dice('un tag del progetto usato da una foto in galleria resta', ['beach', 'smile'],
+    pulisci(conCestino.map(f => ({ ...f, isTrashed: false })), ['beach', 'smile']).tag);
+dice('un tag del progetto che nessuna foto usa esce come prima', ['smile'], pulisci(conCestino, ['mai usato', 'smile']).tag);
+const dopoPulizia = pulisci(conCestino, ['beach']).tag;
+dice('ripristinata la foto dopo la pulizia, "beach" torna nell\'elenco dalla foto stessa', ['beach', 'smile'],
+    calcola(conCestino.map(f => ({ ...f, isTrashed: false })), dopoPulizia));
 process.exit(esito());

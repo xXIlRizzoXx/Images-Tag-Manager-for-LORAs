@@ -100,6 +100,7 @@ const CITAZIONI = [
     ['saveEmptyCaptionMany', 'emptyTrash'],
     ['mcpHint', 'saveChanges'],
     ['mcpEditedNotice', 'saveChanges'],
+    ['bulkHiddenWarn', 'deleteSelected'],
 ];
 
 const rif = 'en';

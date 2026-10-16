@@ -66,7 +66,26 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         }
     };
 
-    const removeTag = (idx: number) => { 
+    // ITALIANO: uscendo dalla casella il testo scritto senza Invio diventa un tag, come con Invio.
+    //           Prima restava nella casella e sembrava applicato: una trigger scritta e non
+    //           confermata non finiva in nessun .txt, e Salva dava lo stesso il messaggio verde.
+    //           Un tag gia' presente non si ripete, ma la casella si svuota. Se e' la finestra a
+    //           perdere il fuoco (Alt+Tab) la parola, forse scritta a meta', resta com'e'.
+    // ENGLISH: leaving the box turns the text typed without Enter into a tag, as Enter does. It
+    //          used to stay in the box and look applied: a trigger typed and not confirmed reached
+    //          no .txt, and Save still gave the green message. A tag already there is not repeated,
+    //          but the box is emptied. If the whole window loses focus (Alt+Tab) the word, perhaps
+    //          half typed, stays as it is.
+    const handleBlur = () => {
+        if (readOnly) return;
+        if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+        const newTag = inputValue.trim().replace(/,$/, '');
+        if (!newTag) return;
+        if (!hasTagIgnoringCase(tags, newTag)) { setTags([...tags, newTag]); soundManager.pop(); }
+        setInputValue('');
+    };
+
+    const removeTag = (idx: number) => {
         if (readOnly) return;
         setTags(tags.filter((_: any, i: number) => i !== idx)); 
         soundManager.click(); 
@@ -98,6 +117,7 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
                 onChange={(e) => setInputValue(e.target.value)} 
                 onKeyDown={handleKeyDown} 
                 onPaste={handlePaste}
+                onBlur={handleBlur}
                 placeholder={placeholder}
                 className={`w-full bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-700 dark:placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
             />
