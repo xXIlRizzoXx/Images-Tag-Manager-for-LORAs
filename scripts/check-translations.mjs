@@ -93,6 +93,7 @@ const CITAZIONI = [
     ['langPickerHint', 'settings', { ru: 'Настройках' }],
     ['deleteNoRecycleBin', 'loadFolder'],
     ['zipPhotoUnreadable', 'closeImageTitle'],
+    ['aiPhotoUnreadable', 'closeImageTitle'],
     ['undoEmptyTxtNotBack', 'saveChanges'],
     ['undoEmptyTxtNotBack', 'restore'],
     ['saveEmptyCaptionOne', 'emptyTrash'],
