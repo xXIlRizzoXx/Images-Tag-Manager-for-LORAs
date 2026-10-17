@@ -165,10 +165,12 @@ try {
         lancia('--apply', 'spazi.json');
         return tagScritti().length;
     })());
-    fs.writeFileSync(path.join(prova, 'emoticon.txt'), '(o)_(o), (x), zzq(1)\n');
+    const KAOMOJI = ['ヽ(・∀・)ﾉ', 'o(^-^)o', 'ლ(╹◡╹ლ)', 'ε(´∀｀)з'];
+    fs.writeFileSync(path.join(prova, 'emoticon.txt'), ['(o)_(o)', '(x)', ...KAOMOJI, 'zzq(1)'].join(', ') + '\n');
     lancia('emoticon.txt', '--out', 'piano-emo.json');
     const pianoEmo = Object.keys(JSON.parse(fs.readFileSync(path.join(prova, 'piano-emo.json'), 'utf8')));
-    dice('le emoticon (o)_(o) e (x) non cambiano forma', true, pianoEmo.filter((t) => !t.startsWith('zzq')).every((t) => t === '(o)_(o)' || t === '(x)'));
+    dice('le emoticon (o)_(o) e (x) non cambiano forma', true, pianoEmo.filter((t) => !t.startsWith('zzq') && !KAOMOJI.includes(t)).every((t) => t === '(o)_(o)' || t === '(x)'));
+    dice('le emoticon giapponesi entrano senza spazi aggiunti', KAOMOJI.slice().sort(), pianoEmo.filter((t) => KAOMOJI.includes(t)).sort());
     dice('un nome attaccato alla parentesi entra con lo spazio, come nel dizionario', ['zzq (1)'], pianoEmo.filter((t) => t.startsWith('zzq')));
 
     // ITALIANO: rifare lo stesso inserimento non aggiunge niente (niente doppioni).
