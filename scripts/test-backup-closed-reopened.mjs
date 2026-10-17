@@ -57,7 +57,31 @@ console.log('\n--- foto chiusa e ripresa riaprendo la cartella (stesso lotto, id
     dice('dopo un crash la cartella di 3 foto ritrova la modifica di a.png', 1, ritrovate(r, ['a.png', 'b.png', 'c.png']));
 }
 
+console.log('\n--- foto chiusa, ripresa riaprendo la cartella e chiusa di nuovo ---');
+{
+    // ITALIANO: fra le chiuse ci sono due voci per b.png (id vecchio e id nuovo), stesso lotto e stessa chiave.
+    // ENGLISH: the closed photos hold two entries for b.png (old id and new id), same batch and same key.
+    const r = B.costruisciBackup([a, c], [chiusa(bVecchia), chiusa(bRiaperta)], 'img');
+    dice('l\'impronta conta b.png una volta sola', ['img|3|a.png|c.png'], impronte(r));
+    dice('dopo un crash la cartella di 3 foto ritrova la modifica di a.png', 1, ritrovate(r, ['a.png', 'b.png', 'c.png']));
+}
+{
+    // ITALIANO: tre giri di chiudi e riprendi: sempre una volta sola.
+    // ENGLISH: three rounds of close and take back: always once.
+    const bTerza = foto('b3', 'b.png', 'A');
+    const r = B.costruisciBackup([a, c], [chiusa(bVecchia), chiusa(bRiaperta), chiusa(bTerza)], 'img');
+    dice('tre chiusure della stessa foto: conta una volta', ['img|3|a.png|c.png'], impronte(r));
+}
+
 console.log('\n--- quello che non deve cambiare ---');
+{
+    // ITALIANO: due foto omonime in sottocartelle diverse dello stesso lotto, chiuse tutte e due: contano due.
+    // ENGLISH: two same-named photos in different subfolders of the same batch, both closed: they count two.
+    const viso = foto('v1', 'img.png', 'A', [], [], 'ds/10_viso');
+    const corpo = foto('k1', 'img.png', 'A', [], [], 'ds/20_corpo');
+    const r = B.costruisciBackup([a], [chiusa(viso), chiusa(corpo)], 'img');
+    dice('omonime in sottocartelle diverse, chiuse tutte e due: contano due', ['img|3|a.png|img.png'], impronte(r));
+}
 {
     const r = B.costruisciBackup([a, c], [chiusa(bVecchia)], 'img');
     dice('foto chiusa e non ripresa: conta ancora (la cartella su disco ne ha 3)', ['img|3|a.png|c.png'], impronte(r));

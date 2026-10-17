@@ -220,8 +220,18 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         if (presenti.has(c.id)) continue;
         const fotoChiusa: any = c.foto;
         const chiaveChiusa = (fotoChiusa && typeof fotoChiusa.backupKey === 'string' && fotoChiusa.backupKey) || (BACKUP_KEY_SEP + c.name);
-        if (chiaviPresenti.has(String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa)) continue;
+        const chiaveCompleta = String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa;
+        if (chiaviPresenti.has(chiaveCompleta)) continue;
         lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
+        // ITALIANO: una foto chiusa, ripresa riaprendo la cartella e chiusa di nuovo lascia fra le
+        //           chiuse due voci (id vecchio e id nuovo) con lo stesso lotto e la stessa chiave: e'
+        //           lo stesso file e si conta una volta. Solo per le chiavi con la cartella: senza
+        //           (nel browser) due foto omonime di sottocartelle diverse avrebbero la stessa chiave.
+        // ENGLISH: a photo closed, taken back by reopening the folder and closed again leaves two
+        //          closed entries (old id and new id) with the same batch and key: it is the same file
+        //          and counts once. Only for keys with the folder: without it (in the browser) two
+        //          same-named photos of different subfolders would share the key.
+        if (!chiaveChiusa.startsWith(BACKUP_KEY_SEP)) chiaviPresenti.add(chiaveCompleta);
     }
     const firme = new Map<string, number>();
     const aperte = new Set<string>();
