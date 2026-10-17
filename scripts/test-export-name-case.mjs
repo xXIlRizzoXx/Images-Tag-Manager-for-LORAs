@@ -47,7 +47,10 @@ for (const conImmagini of [false, true]) {
             dice(`il .txt accanto a ${foto} ha i tag della sua foto`, foto.endsWith('.png') ? 'tag_x,' : 'tag_y,', suo ? testoDi(suo) : null);
         }
     }
-    dice('l\'avviso dei nomi doppi conta 1', true, r.notifiche.some(([m]) => m.includes(t.zipNameCollisionWarn.replace('{n}', '1'))));
+    // ITALIANO: conta i file rinominati: con le immagini la foto e il suo .txt.
+    // ENGLISH: it counts the renamed files: with images the photo and its .txt.
+    const rinominati = conImmagini ? '2' : '1';
+    dice(`l'avviso dei nomi doppi conta ${rinominati}`, true, r.notifiche.some(([m]) => m.includes(t.zipNameCollisionWarn.replace('{n}', rinominati))));
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

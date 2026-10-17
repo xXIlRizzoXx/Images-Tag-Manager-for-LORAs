@@ -674,6 +674,11 @@ export default function App() {
     const [chiaveApiCaricata, setChiaveApiCaricata] = useState(false);
 
     const folderInputRef = useRef<HTMLInputElement>(null);
+    // ITALIANO: una cartella si sta aprendo ("Carica Cartella" o trascinata): fino al riepilogo una
+    //           seconda apertura non parte (vedi handleLoadFolderClick e apriCartellaTrascinata).
+    // ENGLISH: a folder is being opened ("Load Folder" or dropped): until the summary a second
+    //          opening does not start (see handleLoadFolderClick and apriCartellaTrascinata).
+    const aperturaCartellaRef = useRef(false);
     const settingsRef = useRef<HTMLDivElement>(null);
     // ITALIANO: Specchio sempre aggiornato di `images` per i loop async (evita snapshot stantii che sovrascrivono le modifiche manuali)
     // ENGLISH: Always-fresh mirror of `images` for async loops (avoids stale snapshots that overwrite manual edits)
@@ -1778,7 +1783,11 @@ export default function App() {
 
     useEffect(() => {
         if (!aiEnabled || !geminiApiKey) return;
-        if (Date.now() - modelloControllatoIl < 24 * 60 * 60 * 1000) return;
+        // ITALIANO: un "ultimo controllo" nel futuro (orologio del PC avanti, poi corretto) vale
+        //           come assente, come il tentativo qui sotto: prima fermava il controllo fino a quella data.
+        // ENGLISH: a "last check" in the future (PC clock ahead, then corrected) counts as missing,
+        //          like the attempt below: it used to stop the check until that date.
+        if (modelloControllatoIl <= Date.now() && Date.now() - modelloControllatoIl < 24 * 60 * 60 * 1000) return;
         // ITALIANO: "al massimo una volta al giorno" vale anche per i controlli non riusciti
         //           (Google occupato, rete assente, chiave che non va), che "ultimo controllo" non
         //           annota: prima ogni avvio, e ogni volta che si riaccendeva l'AI, si ricollegava.
@@ -2427,12 +2436,23 @@ export default function App() {
         //          back to the gallery meanwhile (Ctrl+Z), it is left alone.
         const img = imagesRef.current.find(i => i.id === id);
         if (!img || !img.isTrashed) return;
+        // ITALIANO: il progetto in cui la X e' stata premuta: se intanto lo si chiude (il Cestino
+        //           di Windows su un'unita' lenta risponde dopo secondi), alla fine non si dice e
+        //           non si tocca niente del progetto nuovo (come in handleEmptyTrash).
+        // ENGLISH: the project the X was pressed in: if it is closed meanwhile (the Windows Recycle
+        //          Bin on a slow drive answers after seconds), at the end nothing of the new project
+        //          is said or touched (as in handleEmptyTrash).
+        const progetto = progettoGenRef.current;
 
         let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
         try {
             esito = await deleteImageFiles(img);
         } catch (error) {
             console.error(error);
+        }
+        if (progetto !== progettoGenRef.current) {
+            console.warn('[Cestino] X su una foto finita dopo la chiusura del progetto: progetto attuale non toccato. Esito:', esito);
+            return;
         }
         // ITALIANO: niente Cestino di Windows e niente cartella aperta: si dice perche' e cosa fare.
         // ENGLISH: no Windows Recycle Bin and no open folder: say why and what to do.
@@ -2466,6 +2486,7 @@ export default function App() {
         // ITALIANO: con lei le sue copie chiuse (vedi copieChiuseDelloStessoFile).
         // ENGLISH: and its closed copies with it (see copieChiuseDelloStessoFile).
         const copieChiuse = await copieChiuseDelloStessoFile([img]);
+        if (progetto !== progettoGenRef.current) return;
         fotoChiuseRef.current.delete(id);
         copieChiuse.forEach(c => fotoChiuseRef.current.delete(c));
         // ITALIANO: e non conta piu' nemmeno nella cronologia: un Ctrl+Z la rimetteva nel cestino
@@ -2560,6 +2581,16 @@ export default function App() {
             //          that breaks too: that one used to land in the catch, and the images already
             //          back did not even re-enter the app's trash.
             const senzaTesto = new Set<string>();
+            // ITALIANO: a parte le foto il cui .txt all'import non si era letto (txtNonLettoInVigore):
+            //           il programma non sa cosa conteneva, quindi non le si rende "da salvare" (Salva
+            //           scriverebbe le sole trigger al posto della didascalia vera, rimasta nel Cestino
+            //           di Windows) e l'avviso dice di riprendere il file a mano, non di salvarlo.
+            // ENGLISH: apart, the photos whose .txt could not be read at import (txtNonLettoInVigore):
+            //          the app does not know what it held, so they are not made "to be saved" (Save
+            //          would write the triggers alone in place of the real caption, left in the Windows
+            //          Recycle Bin) and the notice says to take the file back by hand, not to save it.
+            const testoNonLetto = new Set<string>();
+            const segnaSenzaTesto = (v: any) => { (txtNonLettoInVigore(v.img) ? testoNonLetto : senzaTesto).add(v.img.id); };
             if (testi.length > 0) {
                 let esitoTesti: any = null;
                 try {
@@ -2574,7 +2605,7 @@ export default function App() {
                 tornate.forEach((v: any) => {
                     if (!v.txtPath || testoPerPercorso.get(v.txtPath) === 'ok') return;
                     console.warn('[Cestino] Il file di testo non e\' tornato:', v.txtPath, testoPerPercorso.get(v.txtPath) || '(nessuna risposta)');
-                    senzaTesto.add(v.img.id);
+                    segnaSenzaTesto(v);
                 });
             }
 
@@ -2626,14 +2657,14 @@ export default function App() {
                         .map((s: any) => [chiave(String(s.dir).replace(/[\\/]+$/, '') + '\\' + s.name), s]));
                     daControllare.forEach((v: any) => {
                         const s = ci.get(chiave(percorsiSuDisco(v.img).txtPath || ''));
-                        if (!s) { if (txtDaRiprendere(v)) senzaTesto.add(v.img.id); return; }
+                        if (!s) { if (txtDaRiprendere(v)) segnaSenzaTesto(v); return; }
                         if (s.skipped || typeof s.content !== 'string') return;
                         const sulDisco = parseSidecarText(s.content).tags;
                         if (JSON.stringify(sulDisco) !== JSON.stringify(v.img.originalTags || [])) dalDisco.set(v.img.id, sulDisco);
                     });
                 } catch (err) {
                     console.warn('[Cestino] Non so se il .txt condiviso c\'e\' ancora: le foto restano da salvare.', err);
-                    daControllare.forEach((v: any) => { if (txtDaRiprendere(v)) senzaTesto.add(v.img.id); });
+                    daControllare.forEach((v: any) => { if (txtDaRiprendere(v)) segnaSenzaTesto(v); });
                 }
             }
 
@@ -2749,9 +2780,11 @@ export default function App() {
             //           messaggio non e' piu' il verde "tutto a posto".
             // ENGLISH: the .txt files not back are reported next to the images' outcome, and the
             //          message is no longer the green "all done".
-            const conTesti = (frase: string) => (senzaTesto.size > 0
-                ? [frase, t.undoEmptyTxtNotBack.replace('{n}', String(senzaTesto.size))].join(' · ')
-                : frase);
+            // ITALIANO: quelli mai letti con la loro frase (vedi testoNonLetto).
+            // ENGLISH: the never-read ones with their own sentence (see testoNonLetto).
+            const conTesti = (frase: string) => [frase,
+                ...(senzaTesto.size > 0 ? [t.undoEmptyTxtNotBack.replace('{n}', String(senzaTesto.size))] : []),
+                ...(testoNonLetto.size > 0 ? [t.undoEmptyTxtNotBackUnread.replace('{n}', String(testoNonLetto.size))] : [])].join(' · ');
             if (tornate.length === 0 && bloccate.length > 0 && bloccate.length === rimaste.length) {
                 showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
             } else if (tornate.length === 0 && nonTrovate.length === rimaste.length) {
@@ -2765,7 +2798,7 @@ export default function App() {
                 showNotification(conTesti(t.undoEmptyPartialBlocked.replace('{done}', String(tornate.length)).replace('{n}', String(bloccate.length))), 'info');
             } else if (rimaste.length > 0) {
                 showNotification(conTesti(t.undoEmptyPartial.replace('{done}', String(tornate.length)).replace('{failed}', String(rimaste.length))), 'info');
-            } else if (senzaTesto.size > 0) {
+            } else if (senzaTesto.size > 0 || testoNonLetto.size > 0) {
                 showNotification(conTesti(t.undoEmptyDone.replace('{n}', String(tornate.length))), 'info');
             } else { showNotification(t.undoEmptyDone.replace('{n}', String(tornate.length)), 'success'); soundManager.pop(); }
         } catch (err) {
@@ -3599,10 +3632,15 @@ export default function App() {
         const pathOf = new Map<any, string>();
         if (rootPath) {
             const sep = rootPath.includes('\\') ? '\\' : '/';
+            // ITALIANO: la radice di un disco arriva con la barra finale ("D:\"): senza toglierla
+            //           usciva "D:\\a.png", che il Cestino di Windows rifiuta.
+            // ENGLISH: a drive root arrives with the trailing separator ("D:\"): without removing
+            //          it the result was "D:\\a.png", which the Windows Recycle Bin refuses.
+            const base = rootPath.replace(/[\\/]+$/, '');
             for (const f of [...imgFiles, ...txtFiles]) {
                 const rel = relPathOf.get(f) || '';
                 const sub = rel.split('/').slice(1).join(sep);
-                pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
+                pathOf.set(f, (sub ? base + sep + sub : base) + sep + f.name);
             }
         }
 
@@ -3624,6 +3662,14 @@ export default function App() {
             // ENGLISH: tell the main process a folder pick is starting: from now on it is the only
             //          one allowed to record the path Electron hands it. The page never knows the
             //          path and never sends one.
+            // ITALIANO: non mentre un'altra cartella si sta aprendo: beginFolderPick azzerava la sua
+            //           registrazione, e una delle due entrava senza percorso vero (niente Cestino di
+            //           Windows per le sue foto). Durante la lettura non si vede niente: lo si dice.
+            // ENGLISH: not while another folder is being opened: beginFolderPick reset its recording,
+            //          and one of the two came in without a real path (no Windows Recycle Bin for its
+            //          photos). Nothing shows during the read: the user is told.
+            if (aperturaCartellaRef.current) { showNotification(t.folderOpenBusy, 'info'); return; }
+            aperturaCartellaRef.current = true;
             const api = (window as any).electronAPI;
             try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
             // ITALIANO: diventa vero appena il selettore ha dato la cartella: da li' in poi un errore
@@ -3657,6 +3703,8 @@ export default function App() {
                     console.warn("Accesso diretto alla cartella bloccato (SecurityError nell'iframe). Uso il fallback standard.", err);
                     if (folderInputRef.current) folderInputRef.current.click();
                 }
+            } finally {
+                aperturaCartellaRef.current = false;
             }
         } else {
             if (folderInputRef.current) folderInputRef.current.click();
@@ -3800,23 +3848,31 @@ export default function App() {
     //          write permission the .txt files could not be saved: then nothing is imported and the
     //          user is sent to "Load Folder".
     const apriCartellaTrascinata = async (handle: any) => {
-        const api = (window as any).electronAPI;
-        try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
-        let permesso = 'granted';
+        // ITALIANO: come "Carica Cartella": non mentre un'altra cartella si sta aprendo.
+        // ENGLISH: as "Load Folder": not while another folder is being opened.
+        if (aperturaCartellaRef.current) { showNotification(t.folderOpenBusy, 'info'); return; }
+        aperturaCartellaRef.current = true;
         try {
-            if (typeof handle.requestPermission === 'function') permesso = await handle.requestPermission({ mode: 'readwrite' });
-        } catch (_) { permesso = 'denied'; }
-        if (permesso !== 'granted') {
-            try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
-            showNotification(t.dropFolderNoAccess, 'error');
-            return;
-        }
-        try {
-            await importaCartellaScelta(handle, api);
-        } catch (err) {
-            try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
-            console.error('[Import] Cartella trascinata non leggibile / dropped folder unreadable:', err);
-            showNotification(t.folderReadError, 'error');
+            const api = (window as any).electronAPI;
+            try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
+            let permesso = 'granted';
+            try {
+                if (typeof handle.requestPermission === 'function') permesso = await handle.requestPermission({ mode: 'readwrite' });
+            } catch (_) { permesso = 'denied'; }
+            if (permesso !== 'granted') {
+                try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
+                showNotification(t.dropFolderNoAccess, 'error');
+                return;
+            }
+            try {
+                await importaCartellaScelta(handle, api);
+            } catch (err) {
+                try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
+                console.error('[Import] Cartella trascinata non leggibile / dropped folder unreadable:', err);
+                showNotification(t.folderReadError, 'error');
+            }
+        } finally {
+            aperturaCartellaRef.current = false;
         }
     };
 
@@ -4764,6 +4820,15 @@ export default function App() {
             // ENGLISH: how many photos go in without a .txt because they have no tags: the final
             //          notice says so, otherwise they would train without a caption unnoticed.
             let senzaTag = 0;
+            // ITALIANO: foto di piu' cartelle aperte una dopo l'altra (10_face, poi 20_body): ognuna e'
+            //           alla radice della sua scelta (cartellaRel ""), quindi finivano tutte mescolate
+            //           alla radice tranne gli omonimi. Con piu' cartelle scelte ogni foto va sotto il
+            //           nome della sua (cartellaImport); con una sola l'archivio resta com'era.
+            // ENGLISH: photos of several folders opened one after the other (10_face, then 20_body):
+            //          each sits at the root of its pick (cartellaRel ""), so they all ended mixed at
+            //          the root except the namesakes. With several picked folders each photo goes
+            //          under its own folder's name (cartellaImport); with one the archive is as before.
+            const piuCartelle = new Set(imagesToExport.map(img => String(img.cartellaImport || '')).filter(Boolean)).size > 1;
             imagesToExport.forEach((img) => {
                 // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
                 //           vuoto fa fermare l'addestramento di Kohya ("caption file is empty"), uno
@@ -4783,7 +4848,7 @@ export default function App() {
                 //          namesakes, and sd-scripts (train_data_dir) only reads N_name folders: the
                 //          root photos were left out and the repeat counts vanished. Every part is
                 //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
-                const sotto = String(img.cartellaRel || '').split(/[\\/]/)
+                const sotto = [piuCartelle ? String(img.cartellaImport || '') : '', ...String(img.cartellaRel || '').split(/[\\/]/)]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
                 // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
                 //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
@@ -4809,7 +4874,9 @@ export default function App() {
                 const baseName =(sotto ? sotto + '/' : '') + sidecarTagFileName(img.file.name);
                 let name = baseName;
                 if (occupato(name)) {
-                    collisionCount++;
+                    // ITALIANO: l'avviso conta i file rinominati: con le immagini sono due (la foto e il suo .txt).
+                    // ENGLISH: the notice counts the renamed files: with images they are two (the photo and its .txt).
+                    collisionCount += (conTag ? 1 : 0) + (conImmagini ? 1 : 0);
                     // ITALIANO: con la sottocartella gia' nel nome resta il suffisso numerico.
                     // ENGLISH: with the subfolder already in the name, the numeric suffix remains.
                     const dir = (!sotto && img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
@@ -5466,9 +5533,16 @@ export default function App() {
         // ENGLISH: photos in a row that, even after the retries, found Google overloaded or past
         //          the per-minute limit (see below).
         let occupatoConsecutivi = 0;
+        // ITALIANO: la chiave salvata durante il lotto non e' piu' quella con cui e' partito (o e'
+        //           stata tolta): ci si ferma come un annullamento, come il controllo del modello e la
+        //           prova dei modelli. Prima le foto rimaste partivano con la chiave VECCHIA.
+        // ENGLISH: the key saved during the batch is no longer the one it started with (or it was
+        //          removed): stop like a cancel, as the model check and the model test do. The
+        //          remaining photos used to go out with the OLD key.
+        const chiaveCambiata = () => geminiApiKeyRef.current !== geminiApiKey;
         try {
             for (let i = 0; i < daTaggare.length; i++) {
-                if (aiCancelRequestedRef.current) { cancelled = true; break; }
+                if (aiCancelRequestedRef.current || chiaveCambiata()) { cancelled = true; break; }
                 // ITALIANO: Lo snapshot fornisce solo l'ID; lo stato VIVO arriva da imagesRef —
                 //           così skip e merge vedono le modifiche fatte dall'utente durante il batch
                 // ENGLISH: The snapshot only provides the ID; LIVE state comes from imagesRef —
@@ -5511,7 +5585,7 @@ export default function App() {
                 // ITALIANO: Retry su rate-limit, max 2 tentativi extra con attesa progressiva
                 // ENGLISH: Retry on rate-limit, max 2 extra attempts with progressive wait
                 for (let attempt = 0; attempt < 3; attempt++) {
-                    if (aiCancelRequestedRef.current) { cancelled = true; break; }
+                    if (aiCancelRequestedRef.current || chiaveCambiata()) { cancelled = true; break; }
                     try {
                         const tags = await getGeminiTags(current, {
                             apiKey: geminiApiKey,
@@ -5542,7 +5616,11 @@ export default function App() {
                     } catch (err: any) {
                         // ITALIANO: Se l'errore deriva dall'annullamento (abort), esci subito senza contarlo come errore
                         // ENGLISH: If the error comes from cancellation (abort), exit immediately without counting it as an error
-                        if (aiCancelRequestedRef.current) { cancelled = true; break; }
+                        // ITALIANO: anche con la chiave cambiata intanto: un "chiave non valida" della vecchia,
+                        //           gia' sostituita, non riapre la finestra della chiave.
+                        // ENGLISH: also with the key changed meanwhile: an "invalid key" from the old one,
+                        //          already replaced, does not reopen the key dialog.
+                        if (aiCancelRequestedRef.current || chiaveCambiata()) { cancelled = true; break; }
                         const { kind, message, quotaGiorno, progetto } = classifyGeminiError(err);
                         console.warn(`[AI] ${i + 1}/${daTaggare.length} ${current.file.name} (attempt ${attempt + 1}): ${kind} — ${message}`);
                         if (err?.geminiKind === 'photo' && err?.motivoFoto === 'metadati') nonPulibiliCount++;
@@ -5708,6 +5786,24 @@ export default function App() {
         try {
             const result = await verifyGeminiApiKey(key);
             if (result.ok) {
+                // ITALIANO: la stessa chiave che il programma ha gia' (riproposta dalla finestra dopo
+                //           un "chiave NON salvata"): lo stato non cambia e l'effetto che la salva non
+                //           riparte, quindi si salva qui e si dice "salvata" solo se e' vero.
+                // ENGLISH: the same key the app already holds (offered again by the dialog after a
+                //          "key NOT saved"): the state does not change and the saving effect does not
+                //          run again, so it is saved here and "saved" is said only when true.
+                if (key === geminiApiKeyRef.current) {
+                    let salvata = false;
+                    try { salvata = await setSecret('geminiApiKey', key); } catch (err) { console.error('Failed to persist API key', err); }
+                    setIsApiKeyDialogOpen(false);
+                    if (!salvata) {
+                        showNotification(t.apiKeyNotSaved, 'error');
+                        return;
+                    }
+                    soundManager.chime();
+                    showNotification(t.aiKeySaved || 'API Key verified and saved', 'success');
+                    return;
+                }
                 setGeminiApiKey(key);
                 setIsApiKeyDialogOpen(false);
                 soundManager.chime();

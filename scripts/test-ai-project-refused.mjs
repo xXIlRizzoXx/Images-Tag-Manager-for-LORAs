@@ -98,11 +98,12 @@ const codiceChiave = await prendi('    const handleVerifyApiKey = useCallback(',
 const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomPrompt', 'aiRpm', 'aiSkipTagged', 'images',
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy', 'aiCancelRequestedRef', 'setAiCancelRequested',
-    'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'useCallback', 'Date', 'setTimeout', 'console', 'progettoGenRef'];
+    'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'useCallback', 'Date', 'setTimeout', 'console', 'progettoGenRef',
+    'geminiApiKeyRef'];
 const fabbricaUna = new Function(...DIPENDENZE, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaTutte = new Function(...DIPENDENZE, codiceTutte + '\nreturn handleAITagAll;');
 const fabbricaChiave = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
-    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', codiceChiave + '\nreturn handleVerifyApiKey;');
+    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', 'geminiApiKeyRef', 'setSecret', codiceChiave + '\nreturn handleVerifyApiKey;');
 
 // --- gli errori come li costruisce DAVVERO la libreria di Google (ApiError)
 class ApiError extends Error {
@@ -160,6 +161,7 @@ const nuovaApp = (t, quante, generate) => {
         setTimeout: (f, ms) => { orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
         console: muto,
         progettoGenRef: { current: 0 },
+        geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
     };
     const args = DIPENDENZE.map(n => dip[n]);
     app.una = (id) => fabbricaUna(...args)(id);
@@ -222,7 +224,7 @@ for (const l of ['en', 'it']) {
         globalThis.__GOOGLE__ = { chiamate: 0, list, generate: async () => ({ text: '["ok"]' }) };
         const errori = [];
         await fabbricaChiave('AIzaSy' + 'x'.repeat(33), t, S.verifyGeminiApiKey, (m) => errori.push(m), () => { }, () => { },
-            () => { }, { chime() { } }, () => { }, (f) => f)();
+            () => { }, { chime() { } }, () => { }, (f) => f, { current: '' }, async () => true)();
         return errori.filter(Boolean).pop();
     };
     console.log(`\n--- ${l}: la finestra della chiave ---`);

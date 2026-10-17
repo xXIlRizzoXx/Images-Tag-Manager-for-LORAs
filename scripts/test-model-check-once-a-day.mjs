@@ -35,7 +35,7 @@ const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
 
 // ITALIANO: l'effetto di avvio, trovato dalla sua riga sulle 24 ore.
 // ENGLISH: the startup effect, found from its 24-hour line.
-const iGiorno = sorgente.indexOf('if (Date.now() - modelloControllatoIl < 24 * 60 * 60 * 1000) return;');
+const iGiorno = sorgente.indexOf('modelloControllatoIl < 24 * 60 * 60 * 1000) return;');
 const i0 = iGiorno < 0 ? -1 : sorgente.lastIndexOf('    useEffect(() => {', iGiorno);
 const i1 = iGiorno < 0 ? -1 : sorgente.indexOf('    }, [aiEnabled, geminiApiKey]);', iGiorno);
 if (i0 < 0 || i1 < 0) { console.log('NO  effetto di avvio del controllo dei modelli non trovato in src/App.tsx'); process.exit(1); }
@@ -87,6 +87,22 @@ console.log('\n--- quello che NON deve cambiare ---');
     const vecchio = creaPC();
     vecchio.memoria.setItem('aiModelloControllatoIl', String(T0 - 30 * ORA));
     dice('un controllo riuscito ieri: oggi si controlla', 1, vecchio.avvio(T0));
+}
+
+console.log('\n--- "ultimo controllo" nel futuro (orologio del PC avanti, poi corretto) ---');
+{
+    // ITALIANO: un controllo riuscito con l'orologio avanti di un anno lascia una data futura:
+    //           prima il controllo automatico restava fermo finche' l'orologio non la raggiungeva.
+    // ENGLISH: a successful check with the clock a year ahead leaves a future date: the automatic
+    //          check used to stay off until the clock reached it.
+    const fut = creaPC();
+    fut.memoria.setItem('aiModelloControllatoIl', String(T0 + 365 * 24 * ORA));
+    dice('un "ultimo controllo" fra un anno vale come assente: si controlla', 1, fut.avvio(T0));
+    dice('...ma sempre una volta sola al giorno', 0, fut.avvio(T0 + ORA));
+    dice('il giorno dopo si riprova', 1, fut.avvio(T0 + 25 * ORA));
+    const poco = creaPC();
+    poco.memoria.setItem('aiModelloControllatoIl', String(T0 + 2 * ORA));
+    dice('anche due ore nel futuro: si controlla', 1, poco.avvio(T0));
 }
 
 console.log('\n--- src/App.tsx: "Controlla ora" e la riparazione non passano dal limite del giorno ---');

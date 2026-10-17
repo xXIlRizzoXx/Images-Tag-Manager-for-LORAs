@@ -124,7 +124,10 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'parseSidecarText', 'tagDopoEditor',
     // ITALIANO: Chiudi progetto e Reset svuotano le caselle di ricerca.
     // ENGLISH: Close project and Reset empty the search boxes.
-    'setTagSearch', 'setBulkSearch'];
+    'setTagSearch', 'setBulkSearch',
+    // ITALIANO: Annulla lo svuotamento tiene a parte le foto il cui .txt non si era letto all'import.
+    // ENGLISH: Undo the emptying keeps apart the photos whose .txt could not be read at import.
+    'txtNonLettoInVigore'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -245,7 +248,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
         nulla, nulla, nulla, nulla, nulla,
         (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla, stato.isEmptyingTrash,
         H.addPhotosToHistory || ((h) => h),
-        S.parseSidecarText, S.tagDopoEditor, nulla, nulla);
+        S.parseSidecarText, S.tagDopoEditor, nulla, nulla, S.txtNonLettoInVigore || (() => false));
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();

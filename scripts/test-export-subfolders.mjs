@@ -74,7 +74,7 @@ const relDa = (argomenti) => {
 
 console.log('\n--- "Carica cartella": ogni foto ricorda la sua sottocartella ---');
 {
-    const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
+    const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle', 'aperturaCartellaRef',
         (await ritaglia('    const importaCartellaScelta = async (', '    const handleFolderUploadFallback')) + '\nreturn handleLoadFolderClick;');
     const file = (name) => ({ name, type: 'image/png', size: 10, lastModified: 1 });
     const voceFile = (f) => ({ kind: 'file', name: f.name, getFile: async () => f });
@@ -88,7 +88,7 @@ console.log('\n--- "Carica cartella": ogni foto ricorda la sua sottocartella ---
         showDirectoryPicker: async () => voceCartella('dataset', [voceFile(radiceF), voceCartella('10_face', [voceFile(a)]), voceCartella('20_body', [voceFile(b), voceCartella('extra', [voceFile(c)])])]),
         electronAPI: { beginFolderPick: async () => { }, takePickedFolderPath: async () => '' },
     };
-    await fabbrica(window, t, () => { }, (...x) => { argomenti = x; }, { current: { click() { } } }, scanDirectoryHandle)();
+    await fabbrica(window, t, () => { }, (...x) => { argomenti = x; }, { current: { click() { } } }, scanDirectoryHandle, { current: false })();
     const rel = relDa(argomenti);
     dice('dataset/cover.png -> "" (radice), 10_face/a.png -> "10_face", 20_body/extra/c.png -> "20_body/extra"',
         ['', '10_face', '20_body', '20_body/extra'], [rel(radiceF), rel(a), rel(b), rel(c)]);
@@ -205,6 +205,73 @@ console.log('\n--- "Rinomina in sequenza" tiene le sottocartelle Kohya ---');
     const s3 = creaSonda();
     const doppie = (await (await creaApp(progetto(s3, [['', 'img.png', 'p1'], ['', 'img.png', 'p2']]), s3).esporta(false)).archivio()) || {};
     dice('due omonime senza sottocartella: ancora distinte', 2, Object.keys(doppie).length);
+}
+
+// ITALIANO: due cartelle aperte una dopo l'altra con "Carica cartella" (10_face, poi 20_body): ogni
+//           foto e' alla radice della SUA scelta (cartellaRel ""), e la scelta la dice cartellaImport.
+//           L'archivio metteva a, b, img alla radice e solo l'omonima in 20_body/: sd-scripts leggeva
+//           una sola foto. Ora con piu' cartelle scelte ogni foto va sotto il nome della sua.
+// ENGLISH: two folders opened one after the other with "Load folder" (10_face, then 20_body): every
+//          photo is at the root of ITS pick (cartellaRel ""), and cartellaImport tells the pick. The
+//          archive put a, b, img at the root and only the namesake in 20_body/: sd-scripts read a
+//          single photo. Now with several picked folders each photo goes under its own folder's name.
+const dueRadici = (sonda, voci) => voci.map(([radiceScelta, rel, nome, tag], i) => ({
+    id: radiceScelta + '/' + rel + '/' + nome, file: new FotoFinta(byteDi(30, i), nome, sonda), tags: [tag], isTrashed: false,
+    dirHandle: { name: rel ? rel.split('/').pop() : radiceScelta }, cartellaRel: rel,
+    cartellaImport: radiceScelta, lottoImport: 'lotto-' + radiceScelta,
+}));
+const kohyaDueRadici = [['10_face', '', 'a.png', 'ta'], ['10_face', '', 'img.png', 'ti1'], ['20_body', '', 'b.png', 'tb'], ['20_body', '', 'img.png', 'ti2']];
+
+console.log('\n--- due cartelle Kohya aperte una dopo l\'altra, "Tag e immagini" coi nomi originali ---');
+{
+    const sonda = creaSonda();
+    const r = await creaApp(dueRadici(sonda, kohyaDueRadici), sonda).esporta(true);
+    const voci = await r.archivio() || {};
+    dice('ogni foto e il suo .txt sotto la cartella che e\' stata aperta',
+        ['10_face/a.png', '10_face/a.txt', '10_face/img.png', '10_face/img.txt', '20_body/b.png', '20_body/b.txt', '20_body/img.png', '20_body/img.txt'],
+        Object.keys(voci).sort());
+    dice('20_body/img.txt ha i tag di 20_body/img.png', 'ti2,', voci['20_body/img.txt'] ? voci['20_body/img.txt'].toString('utf8') : null);
+    dice('nessun avviso di nomi doppi', [[t.zipSuccess, 'success']], r.notifiche.filter(([, tipo]) => tipo !== 'info'));
+}
+{
+    const sonda = creaSonda();
+    const voci = await (await creaApp(dueRadici(sonda, kohyaDueRadici), sonda).esporta(true, true)).archivio() || {};
+    const nomi = Object.keys(voci);
+    dice('rinominando in sequenza: 8 voci, nessuna alla radice', [8, []], [nomi.length, nomi.filter(n => !n.includes('/'))]);
+    dice('...ognuna sotto la cartella della sua foto', true,
+        nomi.every(n => (n.startsWith('10_face/') || n.startsWith('20_body/'))));
+    const delB = nomi.find(n => n.endsWith('.txt') && voci[n].toString('utf8') === 'tb,');
+    dice('...e b.png resta in 20_body', true, !!delB && delB.startsWith('20_body/'));
+}
+{
+    // ITALIANO: una cartella madre (dataset con 10_face dentro) e una seconda cartella aperta a parte.
+    // ENGLISH: a parent folder (dataset with 10_face inside) and a second folder opened apart.
+    const sonda = creaSonda();
+    const voci = await (await creaApp(dueRadici(sonda, [['dataset', '10_face', 'a.png', 'ta'], ['dataset', '', 'cover.png', 'tc'], ['30_extra', '', 'x.png', 'tx']]), sonda).esporta(false)).archivio() || {};
+    dice('cartella madre e sottocartella si sommano, senza raddoppi', ['30_extra/x.txt', 'dataset/10_face/a.txt', 'dataset/cover.txt'], Object.keys(voci).sort());
+}
+{
+    // ITALIANO: una sola cartella aperta, anche insieme a foto sciolte ("Carica immagini"): come prima.
+    // ENGLISH: a single folder opened, even together with loose photos ("Load images"): as before.
+    const sonda = creaSonda();
+    const una = dueRadici(sonda, [['10_face', '', 'a.png', 'ta'], ['10_face', '', 'b.png', 'tb']]);
+    const sciolta = { id: 'z', file: new FotoFinta(byteDi(30, 9), 'z.png', sonda), tags: ['tz'], isTrashed: false, dirHandle: null, cartellaRel: '' };
+    const voci = await (await creaApp([...una, sciolta], sonda).esporta(true)).archivio() || {};
+    dice('una sola cartella aperta: l\'archivio resta piatto', ['a.png', 'a.txt', 'b.png', 'b.txt', 'z.png', 'z.txt'], Object.keys(voci).sort());
+}
+
+console.log('\n--- l\'avviso dei nomi doppi conta i file rinominati ---');
+{
+    // ITALIANO: con le immagini un nome doppio sposta due file (la foto e il suo .txt): l'avviso
+    //           "File rinominati per nomi doppi" diceva 1.
+    // ENGLISH: with images a duplicate name moves two files (the photo and its .txt): the notice
+    //          "Files renamed because of duplicate names" said 1.
+    const sonda = creaSonda();
+    const r = await creaApp(progetto(sonda, [['', 'img.png', 'p1'], ['', 'img.png', 'p2']]), sonda).esporta(true);
+    dice('"Tag e immagini": 2 file rinominati', true, r.notifiche.some(([m]) => m.includes(t.zipNameCollisionWarn.replace('{n}', '2'))));
+    const s2 = creaSonda();
+    const r2 = await creaApp(progetto(s2, [['', 'img.png', 'p1'], ['', 'img.png', 'p2']]), s2).esporta(false);
+    dice('"Solo i tag": 1 file rinominato', true, r2.notifiche.some(([m]) => m.includes(t.zipNameCollisionWarn.replace('{n}', '1'))));
 }
 
 process.exit(esito());

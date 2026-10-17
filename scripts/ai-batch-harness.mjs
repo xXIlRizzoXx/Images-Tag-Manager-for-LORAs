@@ -91,7 +91,8 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
-    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef'];
+    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef',
+    'geminiApiKeyRef'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -117,8 +118,9 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     // ENGLISH: `progressi` collects every state of the progress bar (setGlobalAIProgress), in order.
     const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto, progressi: [], suoni: 0 };
     let orologio = 1_000_000;
+    const chiave = 'AIza' + 'x'.repeat(35);
     const dip = {
-        aiEnabled: true, geminiApiKey: 'AIza' + 'x'.repeat(35), aiModel: 'gemini-3.8-flash', aiMaxTags: 30, aiCustomPrompt: '',
+        aiEnabled: true, geminiApiKey: chiave, aiModel: 'gemini-3.8-flash', aiMaxTags: 30, aiCustomPrompt: '',
         aiRpm: 14, aiSkipTagged: skip, images: foto, imagesRef: { current: foto }, isGlobalAITagging: false, t,
         updateImageTags: (id, tags) => { const f = foto.find(x => x.id === id); if (f) f.tags = tags; },
         getGeminiTags: S.getGeminiTags, classifyGeminiError: S.classifyGeminiError,
@@ -140,6 +142,9 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         console: { log() { }, warn() { }, error() { } },
         txtNonLettoInVigore: sidecar.txtNonLettoInVigore,
         progettoGenRef: { current: 0 },
+        // ITALIANO: la chiave com'e' adesso (geminiApiKeyRef in App.tsx): all'inizio quella del lotto.
+        // ENGLISH: the key as it is now (geminiApiKeyRef in App.tsx): at first the batch's one.
+        geminiApiKeyRef: { current: chiave },
     };
     const pezzi = () => fabbrica(...DIPENDENZE.map(n => dip[n]));
     app.tutte = () => pezzi().handleAITagAll();
@@ -155,5 +160,9 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     // ITALIANO: l'elenco vivo delle foto (imagesRef): una prova puo' togliere una foto a meta' richiesta.
     // ENGLISH: the live photo list (imagesRef): a test can remove a photo halfway through a request.
     app.imagesRef = dip.imagesRef;
+    // ITALIANO: l'utente salva un'altra chiave (o la stessa) nella finestra della chiave.
+    // ENGLISH: the user saves another key (or the same one) in the key dialog.
+    app.chiave = chiave;
+    app.cambiaChiave = (k) => { dip.geminiApiKeyRef.current = k; };
     return app;
 };

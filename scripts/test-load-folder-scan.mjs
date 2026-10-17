@@ -54,7 +54,7 @@ if (inizio < 0 || fine < inizio) {
 }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine), { loader: 'ts' })).code;
 const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
-    js + '\nreturn handleLoadFolderClick;');
+    'aperturaCartellaRef', js + '\nreturn handleLoadFolderClick;');
 
 // ITALIANO: gli avvisi in console della scansione sono ATTESI: si mettono da parte.
 // ENGLISH: the scan's console warnings are EXPECTED: set them aside.
@@ -90,7 +90,7 @@ const prova = async (selettore) => {
     };
     const fn = fabbrica(window, t, (m, tipo) => r.notifiche.push([m, tipo]),
         (img, txt) => { r.importate = { img: img.map(f => f.name), txt: txt.map(f => f.name) }; },
-        { current: { click: () => { r.clic++; } } }, scanDirectoryHandle);
+        { current: { click: () => { r.clic++; } } }, scanDirectoryHandle, { current: false });
     await fn();
     return r;
 };

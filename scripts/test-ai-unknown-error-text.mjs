@@ -88,7 +88,7 @@ const DIP_UNA = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomP
     'countNewTagsIgnoringCase', 'useCallback', 'console'];
 const fabbricaUna = new Function(...DIP_UNA, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaChiave = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
-    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', 'console', codiceChiave + '\nreturn handleVerifyApiKey;');
+    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', 'console', 'geminiApiKeyRef', 'setSecret', codiceChiave + '\nreturn handleVerifyApiKey;');
 
 class ApiError extends Error {
     constructor(messaggio, stato) { super(messaggio); this.name = 'ApiError'; this.status = stato; }
@@ -125,7 +125,7 @@ const verifica = async (t, list) => {
     globalThis.__GOOGLE__ = { chiamate: 0, list, generate: async () => ({ text: '[]' }) };
     const errori = [];
     await fabbricaChiave('AIzaSy' + 'x'.repeat(33), t, S.verifyGeminiApiKey, (m) => errori.push(m), () => { }, () => { },
-        () => { }, { chime() { } }, () => { }, (f) => f, muto)();
+        () => { }, { chime() { } }, () => { }, (f) => f, muto, { current: '' }, async () => true)();
     return errori.filter(Boolean).pop();
 };
 

@@ -66,7 +66,7 @@ if (!fineDrop) { console.log('NO  apriCartellaTrascinata / handleDroppedFiles no
 const pezzoDrop = sorgente.slice(inizioDrop, fineDrop.index + fineDrop[0].length);
 const js = (await esbuild.transform(pezzoCartella + pezzoDrop, { loader: 'ts' })).code;
 const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
-    'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac',
+    'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aperturaCartellaRef',
     js + '\nreturn { handleLoadFolderClick, apriCartellaTrascinata, handleDroppedFiles };');
 
 // --- cartelle finte della File System Access API (come in test-load-folder-scan.mjs)
@@ -105,7 +105,7 @@ const ambiente = ({ electron = true, radiceVera = 'D:\\prova\\foto', editor = fa
                 percorsi: pathOf ? img.map(f => pathOf.get(f) || '') : null };
         },
         { current: { click: () => { r.log.push('campo nascosto'); } } }, scanDirectoryHandle,
-        (f) => f, async () => { r.sidecar++; return { txtFiles: [], folderOf: null }; }, editor, chiave, fileDiMac);
+        (f) => f, async () => { r.sidecar++; return { txtFiles: [], folderOf: null }; }, editor, chiave, fileDiMac, { current: false });
     return { r, ...fn };
 };
 const a = file('a.jpg', 'image/jpeg');
