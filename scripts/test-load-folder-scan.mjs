@@ -44,7 +44,9 @@ const testo = (chiave, n) => typeof t[chiave] === 'string' ? t[chiave].replace('
 // ITALIANO: il gestore vero, ritagliato dal sorgente fra il suo inizio e quello successivo.
 // ENGLISH: the real handler, cut out of the source between its start and the next one.
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-const inizio = sorgente.indexOf('    const handleLoadFolderClick = async () => {');
+// ITALIANO: dalla funzione condivisa importaCartellaScelta, che sta subito prima e che il gestore chiama.
+// ENGLISH: from the shared importaCartellaScelta, which sits right before and which the handler calls.
+const inizio = sorgente.indexOf('    const importaCartellaScelta = async (');
 const fine = sorgente.indexOf('    const handleFolderUploadFallback');
 if (inizio < 0 || fine < inizio) {
     console.log('NO  handleLoadFolderClick non trovato in src/App.tsx');

@@ -75,7 +75,7 @@ const relDa = (argomenti) => {
 console.log('\n--- "Carica cartella": ogni foto ricorda la sua sottocartella ---');
 {
     const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
-        (await ritaglia('    const handleLoadFolderClick = async () => {', '    const handleFolderUploadFallback')) + '\nreturn handleLoadFolderClick;');
+        (await ritaglia('    const importaCartellaScelta = async (', '    const handleFolderUploadFallback')) + '\nreturn handleLoadFolderClick;');
     const file = (name) => ({ name, type: 'image/png', size: 10, lastModified: 1 });
     const voceFile = (f) => ({ kind: 'file', name: f.name, getFile: async () => f });
     const voceCartella = (name, voci) => ({

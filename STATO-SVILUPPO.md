@@ -1,7 +1,14 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 17 ottobre 2026
-**Versione attuale:** 2.0.1 in lavorazione (non ancora costruita né pubblicata). La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+**Versione attuale:** 2.0.1 costruita, non ancora pubblicata. La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+Novità 2.0.1 (traguardo 112, 17 ottobre 2026): **si può trascinare una cartella sulla finestra.**
+Prima il trascinamento accettava solo immagini. Ora una cartella trascinata da sola si apre come
+con «Carica Cartella»: stesso riepilogo dell'importazione, i tag si salvano nella cartella e le foto
+cancellate vanno nel Cestino di Windows. Più cartelle insieme, o una cartella con altri file, non si
+aprono e un messaggio dice di trascinarne una alla volta; se il programma non riceve il permesso di
+scrivere nella cartella non importa niente e rimanda a «Carica Cartella». Messaggi in 9 lingue, 218
+prove automatiche verdi.
 Novità 2.0.1 (traguardo 111, 17 ottobre 2026): **terzo ciclo di controllo completo, 65 difetti corretti.**
 Tre giri di ricerca, verifica e correzione su tutto il programma (62 segnalati, 57 confermati, 5
 scartati), più le ultime correzioni fatte a mano dopo il terzo giro: 27 salvataggi, 217 prove

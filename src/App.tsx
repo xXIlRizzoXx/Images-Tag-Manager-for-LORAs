@@ -3525,6 +3525,97 @@ export default function App() {
         });
     };
 
+    // ITALIANO: legge la cartella che l'utente ha dato al programma, scelta con «Carica Cartella» o
+    //           trascinata sulla finestra (apriCartellaTrascinata), e apre il riepilogo
+    //           dell'importazione. La finestra di registrazione del processo principale
+    //           (beginFolderPick) e' gia' aperta da chi chiama, e si chiude qui con
+    //           takePickedFolderPath. Un errore di lettura sale a chi chiama, che lo dice all'utente.
+    // ENGLISH: reads the folder the user gave the app, picked with "Load Folder" or dropped on the
+    //          window (apriCartellaTrascinata), and opens the import summary. The main process's
+    //          recording window (beginFolderPick) is already open from the caller, and is closed
+    //          here with takePickedFolderPath. A read error goes up to the caller, which tells the user.
+    const importaCartellaScelta = async (handle: any, api: any) => {
+        // ITALIANO: immagini e .txt con la sottocartella di ciascuno; le voci illeggibili si
+        //           saltano e si contano (vedi scanDirectoryHandle).
+        // ENGLISH: images and .txt files with the subfolder of each; unreadable entries are
+        //          skipped and counted (see scanDirectoryHandle).
+        const { imgFiles, txtFiles, folderOf, relPathOf, skipped } = await scanDirectoryHandle(handle);
+
+        if (imgFiles.length === 0) {
+            // ITALIANO: niente immagini: la finestra di registrazione si chiude anche qui (prima
+            //           restava aperta fino alla scelta dopo).
+            // ENGLISH: no images: the recording window is closed here too (it used to stay open
+            //          until the next pick).
+            try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
+            // ITALIANO: se nessuna immagine e' arrivata e qualcosa non si e' letto, si dice anche
+            //           quello: le immagini potevano stare proprio nelle voci saltate.
+            // ENGLISH: if no image arrived and something could not be read, that is said too:
+            //          the images may have been in the very entries that were skipped.
+            const saltate = skipped > 0 ? ' ' + t.folderEntriesSkipped.replace('{n}', String(skipped)) : '';
+            showNotification(t.noImagesTitle + saltate, "info");
+            return;
+        }
+
+        // ITALIANO: il percorso della cartella si ritira DOPO la scansione, non prima:
+        //           riaprendo una cartella gia' usata Electron non chiede piu' il permesso
+        //           (ce l'ha in memoria) e il percorso arriva solo con i "controlli", che
+        //           scattano mentre si leggono i file. Misurato il 17 agosto 2026.
+        //           Da qui compongo il percorso di ogni foto: cartella scelta + la parte di
+        //           sottocartella che ho gia' costruito scendendo (relPathOf), meno il nome
+        //           della radice, che nel percorso c'e' gia'.
+        //           Se resta vuoto (cartella di rete, o fuori da Electron) non cambia niente:
+        //           il programma si comporta esattamente come prima.
+        // ENGLISH: the folder path is collected AFTER the scan, not before: re-opening a
+        //          folder already used raises no permission request (the grant is cached) and
+        //          the path only arrives with the "checks", which fire while the files are
+        //          read. Measured 2026-08-17. From it I compose each photo's path: the picked
+        //          folder plus the subfolder part already built while descending (relPathOf),
+        //          minus the root's own name, which the path already carries.
+        //          If it stays empty (network folder, or outside Electron) nothing changes:
+        //          the app behaves exactly as before.
+        //           NON basta chiedere "che percorso hai visto": in quella finestra arrivano
+        //           anche cartelle che non c'entrano — al rientro del fuoco, quando il
+        //           selettore si chiude, la pagina rilegge la foto selezionata di una cartella
+        //           aperta prima, e anche quel percorso viene visto. Quindi mando le PROVE di
+        //           cosa ho appena letto (nome, sottocartella, dimensione, data di modifica di
+        //           qualche file) e il processo principale risponde solo se una cartella
+        //           contiene DAVVERO quei file. Il nome della cartella non decide niente: qui
+        //           si chiamano quasi tutte "dataset" o "img".
+        // ENGLISH: asking "which path did you see" is NOT enough: unrelated folders land in
+        //          that window too - on focus, as the picker closes, the page re-reads the
+        //          selected photo of a previously opened folder, and that path is seen as
+        //          well. So I send PROOF of what I just read (name, subfolder, size and
+        //          modification time of a few files) and the main process answers only if a
+        //          folder really holds those files. The folder's name decides nothing: around
+        //          here they are nearly all called "dataset" or "img".
+        const proveLettura = imgFiles.slice(0, 5).map(f => ({
+            rel: (relPathOf.get(f) || '').split('/').slice(1).join('/'),
+            name: f.name,
+            size: f.size,
+            mtime: f.lastModified,
+        }));
+        let rootPath = '';
+        try { rootPath = (await api?.takePickedFolderPath?.(proveLettura)) || ''; } catch (_) { rootPath = ''; }
+        const pathOf = new Map<any, string>();
+        if (rootPath) {
+            const sep = rootPath.includes('\\') ? '\\' : '/';
+            for (const f of [...imgFiles, ...txtFiles]) {
+                const rel = relPathOf.get(f) || '';
+                const sub = rel.split('/').slice(1).join(sep);
+                pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
+            }
+        }
+
+        // ITALIANO: la sottocartella di ogni foto senza il nome della radice ("" alla radice):
+        //           l'esportazione la rimette nell'archivio (vedi exportAllAsZip).
+        // ENGLISH: each photo's subfolder without the root's name ("" at the root): the
+        //          export puts it back in the archive (see exportAllAsZip).
+        const cartellaRelOf = new Map<any, string>();
+        for (const f of imgFiles) cartellaRelOf.set(f, (relPathOf.get(f) || '').split('/').slice(1).join('/'));
+        calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf);
+        if (skipped > 0) showNotification(t.folderEntriesSkipped.replace('{n}', String(skipped)), 'info');
+    };
+
     const handleLoadFolderClick = async () => {
         if ('showDirectoryPicker' in window) {
             // ITALIANO: avviso il processo principale che sta per essere scelta una cartella: da
@@ -3549,80 +3640,7 @@ export default function App() {
                 //          picker reopens there. startIn as a fallback on first use.
                 const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'itm-project', startIn: 'pictures' });
                 cartellaScelta = true;
-
-                // ITALIANO: immagini e .txt con la sottocartella di ciascuno; le voci illeggibili si
-                //           saltano e si contano (vedi scanDirectoryHandle).
-                // ENGLISH: images and .txt files with the subfolder of each; unreadable entries are
-                //          skipped and counted (see scanDirectoryHandle).
-                const { imgFiles, txtFiles, folderOf, relPathOf, skipped } = await scanDirectoryHandle(handle);
-
-                if (imgFiles.length === 0) {
-                    // ITALIANO: se nessuna immagine e' arrivata e qualcosa non si e' letto, si dice anche
-                    //           quello: le immagini potevano stare proprio nelle voci saltate.
-                    // ENGLISH: if no image arrived and something could not be read, that is said too:
-                    //          the images may have been in the very entries that were skipped.
-                    const saltate = skipped > 0 ? ' ' + t.folderEntriesSkipped.replace('{n}', String(skipped)) : '';
-                    return showNotification(t.noImagesTitle + saltate, "info");
-                }
-
-                // ITALIANO: il percorso della cartella si ritira DOPO la scansione, non prima:
-                //           riaprendo una cartella gia' usata Electron non chiede piu' il permesso
-                //           (ce l'ha in memoria) e il percorso arriva solo con i "controlli", che
-                //           scattano mentre si leggono i file. Misurato il 17 agosto 2026.
-                //           Da qui compongo il percorso di ogni foto: cartella scelta + la parte di
-                //           sottocartella che ho gia' costruito scendendo (relPathOf), meno il nome
-                //           della radice, che nel percorso c'e' gia'.
-                //           Se resta vuoto (cartella di rete, o fuori da Electron) non cambia niente:
-                //           il programma si comporta esattamente come prima.
-                // ENGLISH: the folder path is collected AFTER the scan, not before: re-opening a
-                //          folder already used raises no permission request (the grant is cached) and
-                //          the path only arrives with the "checks", which fire while the files are
-                //          read. Measured 2026-08-17. From it I compose each photo's path: the picked
-                //          folder plus the subfolder part already built while descending (relPathOf),
-                //          minus the root's own name, which the path already carries.
-                //          If it stays empty (network folder, or outside Electron) nothing changes:
-                //          the app behaves exactly as before.
-                //           NON basta chiedere "che percorso hai visto": in quella finestra arrivano
-                //           anche cartelle che non c'entrano — al rientro del fuoco, quando il
-                //           selettore si chiude, la pagina rilegge la foto selezionata di una cartella
-                //           aperta prima, e anche quel percorso viene visto. Quindi mando le PROVE di
-                //           cosa ho appena letto (nome, sottocartella, dimensione, data di modifica di
-                //           qualche file) e il processo principale risponde solo se una cartella
-                //           contiene DAVVERO quei file. Il nome della cartella non decide niente: qui
-                //           si chiamano quasi tutte "dataset" o "img".
-                // ENGLISH: asking "which path did you see" is NOT enough: unrelated folders land in
-                //          that window too - on focus, as the picker closes, the page re-reads the
-                //          selected photo of a previously opened folder, and that path is seen as
-                //          well. So I send PROOF of what I just read (name, subfolder, size and
-                //          modification time of a few files) and the main process answers only if a
-                //          folder really holds those files. The folder's name decides nothing: around
-                //          here they are nearly all called "dataset" or "img".
-                const proveLettura = imgFiles.slice(0, 5).map(f => ({
-                    rel: (relPathOf.get(f) || '').split('/').slice(1).join('/'),
-                    name: f.name,
-                    size: f.size,
-                    mtime: f.lastModified,
-                }));
-                let rootPath = '';
-                try { rootPath = (await api?.takePickedFolderPath?.(proveLettura)) || ''; } catch (_) { rootPath = ''; }
-                const pathOf = new Map<any, string>();
-                if (rootPath) {
-                    const sep = rootPath.includes('\\') ? '\\' : '/';
-                    for (const f of [...imgFiles, ...txtFiles]) {
-                        const rel = relPathOf.get(f) || '';
-                        const sub = rel.split('/').slice(1).join(sep);
-                        pathOf.set(f, (sub ? rootPath + sep + sub : rootPath) + sep + f.name);
-                    }
-                }
-
-                // ITALIANO: la sottocartella di ogni foto senza il nome della radice ("" alla radice):
-                //           l'esportazione la rimette nell'archivio (vedi exportAllAsZip).
-                // ENGLISH: each photo's subfolder without the root's name ("" at the root): the
-                //          export puts it back in the archive (see exportAllAsZip).
-                const cartellaRelOf = new Map<any, string>();
-                for (const f of imgFiles) cartellaRelOf.set(f, (relPathOf.get(f) || '').split('/').slice(1).join('/'));
-                calculateImportSummary(imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf);
-                if (skipped > 0) showNotification(t.folderEntriesSkipped.replace('{n}', String(skipped)), 'info');
+                await importaCartellaScelta(handle, api);
 
             } catch (err: any) {
                 // ITALIANO: scelta annullata o fallita: chiudo comunque la finestra di registrazione
@@ -3762,12 +3780,47 @@ export default function App() {
     //           stessa cartella su disco — perche' loadSidecarTxtFiles legge il file con lo stesso
     //           nome accanto a ciascuna immagine (via percorso Electron). Nel browser (senza Electron,
     //           niente accesso al disco) uso i .txt effettivamente trascinati, abbinati per nome.
+    //           Una CARTELLA trascinata va invece a apriCartellaTrascinata, qui sotto.
     // ENGLISH: DRAG & DROP of images into the app. The sidecar .txt is recognized automatically:
     //          whether dragged TOGETHER with the image or simply PRESENT in the same folder on disk —
     //          because loadSidecarTxtFiles reads the same-named file next to each image (via the
     //          Electron path). In the browser (no Electron, no disk access) I use the .txt files
     //          actually dropped, paired by name.
-    const handleDroppedFiles = useCallback(async (fileList: FileList) => {
+    //          A dropped FOLDER goes to apriCartellaTrascinata instead, right below.
+    // ITALIANO: CARTELLA TRASCINATA sulla finestra: si apre per la stessa strada di «Carica Cartella»
+    //           (importaCartellaScelta), compreso il percorso vero sul disco che serve al Cestino di
+    //           Windows: il processo principale lo riceve quando concede il permesso di lettura e
+    //           scrittura, come per il selettore. Per questo la finestra di registrazione si apre
+    //           PRIMA di chiedere il permesso. Senza permesso di scrittura i .txt non si potrebbero
+    //           salvare: allora non si importa niente e si manda l'utente su «Carica Cartella».
+    // ENGLISH: FOLDER DROPPED on the window: it opens along the same road as "Load Folder"
+    //          (importaCartellaScelta), real disk path included, which the Windows Recycle Bin needs:
+    //          the main process receives it when it grants read and write permission, as for the
+    //          picker. That is why the recording window opens BEFORE the permission is asked. With no
+    //          write permission the .txt files could not be saved: then nothing is imported and the
+    //          user is sent to "Load Folder".
+    const apriCartellaTrascinata = async (handle: any) => {
+        const api = (window as any).electronAPI;
+        try { await api?.beginFolderPick?.(); } catch (_) { /* fuori da Electron non esiste */ }
+        let permesso = 'granted';
+        try {
+            if (typeof handle.requestPermission === 'function') permesso = await handle.requestPermission({ mode: 'readwrite' });
+        } catch (_) { permesso = 'denied'; }
+        if (permesso !== 'granted') {
+            try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
+            showNotification(t.dropFolderNoAccess, 'error');
+            return;
+        }
+        try {
+            await importaCartellaScelta(handle, api);
+        } catch (err) {
+            try { await api?.takePickedFolderPath?.([]); } catch (_) { /* ignore */ }
+            console.error('[Import] Cartella trascinata non leggibile / dropped folder unreadable:', err);
+            showNotification(t.folderReadError, 'error');
+        }
+    };
+
+    const handleDroppedFiles = useCallback(async (fileList: FileList, maniglie?: Promise<any>[]) => {
         // ITALIANO: con l'editor dei file di tag (z 320) o la finestra della API key (z 400) aperti il
         //           riepilogo dell'importazione (z 300) si apriva SOTTO: il rilascio sembrava ignorato
         //           e un secondo rilascio sostituiva in silenzio quello in attesa. Si dice di chiudere
@@ -3777,6 +3830,17 @@ export default function App() {
         //          replaced the pending one. The user is told to close that window first (the message
         //          sits above everything).
         if (isTagEditorOpen || isApiKeyDialogOpen) { showNotification(t.dropCloseWindowFirst, 'info'); return; }
+        // ITALIANO: una cartella trascinata da sola si apre come con «Carica Cartella»; piu' cartelle,
+        //           o una cartella insieme ad altri file, non si indovinano: lo si dice.
+        // ENGLISH: a folder dropped on its own opens as with "Load Folder"; several folders, or a
+        //          folder together with other files, are not guessed at: the user is told.
+        const date = await Promise.all((maniglie || []).map(p => Promise.resolve(p).catch(() => null)));
+        const cartelle = date.filter((h: any) => h && h.kind === 'directory');
+        if (cartelle.length > 0) {
+            if (cartelle.length > 1 || date.length > 1) { showNotification(t.dropOneFolder, 'info'); return; }
+            await apriCartellaTrascinata(cartelle[0]);
+            return;
+        }
         // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
         // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
         const files = Array.from(fileList || []).filter((f: any) => !fileDiMac(f.name));
@@ -3830,7 +3894,15 @@ export default function App() {
             dragDepth = 0;
             setIsDragging(false);
             const dt = e.dataTransfer;
-            if (dt && dt.files && dt.files.length > 0) dropHandlerRef.current(dt.files);
+            // ITALIANO: le maniglie (per riconoscere una cartella) si chiedono SUBITO, dentro l'evento:
+            //           finito l'evento, l'elenco del trascinamento non e' piu' leggibile.
+            // ENGLISH: the handles (to recognise a folder) are asked for RIGHT AWAY, inside the event:
+            //          once the event is over, the drag list can no longer be read.
+            const maniglie = Array.from(dt?.items || []).filter(it => it.kind === 'file').map((it: any) => {
+                try { return typeof it.getAsFileSystemHandle === 'function' ? Promise.resolve(it.getAsFileSystemHandle()).catch(() => null) : Promise.resolve(null); }
+                catch (_) { return Promise.resolve(null); }
+            });
+            if (dt && ((dt.files && dt.files.length > 0) || maniglie.length > 0)) dropHandlerRef.current(dt.files, maniglie);
         };
         window.addEventListener('dragenter', onDragEnter);
         window.addEventListener('dragover', onDragOver);

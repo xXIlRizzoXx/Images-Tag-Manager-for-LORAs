@@ -103,6 +103,7 @@ const CITAZIONI = [
     ['mcpNewTokenDone', 'mcpCopyClaudeCode'],
     ['mcpClaudeCodeReconnect', 'mcpCopyClaudeCode'],
     ['bulkHiddenWarn', 'deleteSelected'],
+    ['dropFolderNoAccess', 'loadFolder'],
 ];
 
 const rif = 'en';
