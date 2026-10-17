@@ -183,6 +183,29 @@ dice('"dog" scritto di nuovo, X su "dog": sparisce, come col blur seguito dalla 
     delete globalThis.document;
 }
 
+{
+    // ITALIANO: il cursore e' nella casella di un'altra card (A, con "foo" scritto) e si clicca la X
+    //           di una pillola della card B: la casella di A va lasciata, "foo" entra in A con le
+    //           regole di A, e B perde solo il tag cliccato.
+    // ENGLISH: the cursor is in another card's box (A, with "foo" typed) and the X of a pill of card
+    //          B is clicked: A's box must be left, "foo" goes into A with A's rules, and B loses only
+    //          the clicked tag.
+    const ganciA = { i: 0, v: {} }, ganciB = { i: 0, v: {} };
+    let tagsA = ['cat'], tagsB = ['blue eyes', 'smile'];
+    const disegnaA = () => { globalThis.__GANCI__ = ganciA; ganciA.i = 0; return UI.TagInput({ tags: tagsA, setTags: (n) => { tagsA = regolaCard([])(n); }, lang: 'en' }); };
+    const disegnaB = () => { globalThis.__GANCI__ = ganciB; ganciB.i = 0; return UI.TagInput({ tags: tagsB, setTags: (n) => { tagsB = regolaCard([])(n); }, lang: 'en' }); };
+    const casellaA = () => trova(disegnaA(), n => n.type === 'input')[0];
+    const elementoA = { blur() { globalThis.document.activeElement = null; casellaA().props.onBlur({ target: {} }); } };
+    globalThis.document = { hasFocus: () => true, activeElement: elementoA };
+    casellaA().props.ref.current = elementoA;
+    casellaA().props.onChange({ target: { value: 'foo' } });
+    const pillola = pillole(disegnaB()).find(p => p.testo === 'smile');
+    trova(pillola.nodo.props.children, n => n.type === 'button')[0].props.onClick({ stopPropagation() { } });
+    dice('X nella card B con il cursore nella card A: A lasciata, "foo" entra in A, B perde "smile"',
+        { a: ['cat', 'foo'], b: ['blue eyes'], fuoco: null }, { a: tagsA, b: tagsB, fuoco: globalThis.document.activeElement });
+    delete globalThis.document;
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 dice('X senza aver scritto niente: sparisce il tag cliccato',
     { tags: ['a', 'c'], casella: '', errore: '' }, clicX(['a', 'b', 'c'], '', 'b', { regola: regolaCard([]) }));

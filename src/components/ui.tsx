@@ -122,10 +122,16 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         }
         setTags(nuovi);
         soundManager.click();
-        const casella = inputRef.current;
-        if (casella && typeof document !== 'undefined' && document.activeElement === casella) {
-            saltaBlurRef.current = true;
-            casella.blur();
+        // ITALIANO: si lascia la casella che ha il fuoco, anche se e' di un'altra card o del riquadro
+        //           delle trigger: il suo testo entra con le sue regole (il suo handleBlur), come
+        //           prima che la X trattenesse il fuoco. Solo il blur di questa casella si salta.
+        // ENGLISH: the box that has the focus is left, even when it belongs to another card or to the
+        //          trigger box: its text goes in by its own rules (its handleBlur), as before the X
+        //          held the focus. Only this box's blur is skipped.
+        const attivo: any = typeof document !== 'undefined' ? document.activeElement : null;
+        if (attivo && attivo !== document.body && typeof attivo.blur === 'function') {
+            if (attivo === inputRef.current) saltaBlurRef.current = true;
+            attivo.blur();
         }
     };
     const occorrenze = new Map<string, number>();
