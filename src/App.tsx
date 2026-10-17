@@ -4106,6 +4106,8 @@ export default function App() {
             if (ultimoSvuotamento) releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img));
             setUltimoSvuotamento(null);
             setImages([]); setGlobalTriggers([]); setSelectedForBulk([]); setStagedBulkTags([]); setCustomProjectTags([]); setDirHandle(null);
+            // ITALIANO: anche le ricerche, come in closeProjectNow.  ENGLISH: the searches too, as in closeProjectNow.
+            setTagSearch(''); setBulkSearch('');
             setHistory([]); setHistoryIndex(-1); discoNotoRef.current.clear();
             soundManager.chime(); showNotification(t.successReset, "success");
             setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
@@ -5113,6 +5115,12 @@ export default function App() {
         setDirHandle(null);
         setSelectedImageId(null);
         setCopiedTags(null);
+        // ITALIANO: anche le ricerche: con la parola rimasta nella casella la cartella aperta dopo
+        //           compariva filtrata, anche vuota ("0 / 40").
+        // ENGLISH: the searches too: with the word left in the box the folder opened next showed
+        //          filtered, even empty ("0 / 40").
+        setTagSearch('');
+        setBulkSearch('');
         // ITALIANO: azzera anche la cronologia: senza questo, dopo aver chiuso il progetto un
         //           Ctrl+Z riportava indietro tutte le foto ma ormai scollegate dalla cartella,
         //           e i salvataggi successivi non toccavano piu' i file originali.

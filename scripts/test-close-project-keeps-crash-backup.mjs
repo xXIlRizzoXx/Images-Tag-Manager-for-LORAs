@@ -47,7 +47,7 @@ const js = (await esbuild.transform(ritaglia('    const closeProjectNow = '), { 
 const NOMI = ['progettoGenRef', 'aiCancelRequestedRef', 'setAiCancelRequested', 'aiAbortControllerRef', 'localStorage', 'backupDopoChiusura',
     'imagesRef', 'fotoChiuseRef', 'releaseThumbnails', 'images', 'liberaAnteprimeProgetto', 'ultimoSvuotamento', 'setUltimoSvuotamento',
     'setImages', 'setGlobalTriggers', 'setSelectedForBulk', 'setStagedBulkTags', 'setCustomProjectTags', 'setDirHandle', 'setSelectedImageId',
-    'setCopiedTags', 'setHistory', 'setHistoryIndex', 'discoNotoRef', 'soundManager', 'showNotification', 't'];
+    'setCopiedTags', 'setHistory', 'setHistoryIndex', 'discoNotoRef', 'soundManager', 'showNotification', 't', 'setTagSearch', 'setBulkSearch'];
 const fabbrica = new Function(...NOMI, js + '\nreturn closeProjectNow;');
 
 const SEP = '\x1f';
@@ -87,7 +87,7 @@ const chiudiProgetto = (memoria, aperte, chiuse = []) => {
     const chiudi = fabbrica({ current: 0 }, { current: false }, nulla, { current: null }, memoria, G.backupDopoChiusura,
         { current: aperte }, fotoChiuseRef, nulla, aperte, nulla, null, nulla,
         nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, { current: new Map() },
-        { chime() { }, pop() { } }, nulla, { closeAllDone: 'chiuso' });
+        { chime() { }, pop() { } }, nulla, { closeAllDone: 'chiuso' }, nulla, nulla);
     chiudi();
     G.scriviBackupSubito(memoria, [], fotoChiuseRef.current.values(), '');
 };

@@ -73,6 +73,11 @@ export const ordinaTag = (tags: string[], trigger: string[]): string[] => {
 };
 
 const stessi = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+// ITALIANO: stessi tag (grafia esatta) in qualunque ordine. L'import tiene l'ordine del .txt, ordinaTag no:
+//           un riordino senza altre differenze non e' una modifica (niente avviso, cronologia, "da salvare").
+// ENGLISH: same tags (exact spelling) in any order. Import keeps the .txt order, ordinaTag does not: a
+//          reorder with no other difference is not a change (no notice, history step, "unsaved").
+const stessiSenzaOrdine = (a: string[], b: string[]) => stessi([...a].sort(), [...b].sort());
 // ITALIANO: toLowerCase e non toLocaleLowerCase, come chiave in tagCase.ts: con Windows in turco o azero
 //           la I maiuscola diventerebbe una i senza punto e "Indoor" non sarebbe piu' "indoor".
 // ENGLISH: toLowerCase, not toLocaleLowerCase, like chiave in tagCase.ts: with Windows in Turkish or
@@ -179,7 +184,7 @@ export const eseguiStrumentoMcp = async (strumento: string, argomenti: Record<st
                 });
             }
             const ordinati = ordinaTag(prossimi, trigger);
-            if (!stessi(ordinati, f.tags)) nuovi.set(id, ordinati);
+            if (!stessiSenzaOrdine(ordinati, f.tags)) nuovi.set(id, ordinati);
         }
         // ITALIANO: la modifica resta fatta (il visualizzatore la puo' salvare apposta), ma l'AI deve sapere
         //           che per queste foto "Salva Modifiche" non scrive il .txt, che non si era potuto leggere.
