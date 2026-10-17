@@ -100,6 +100,7 @@ const CITAZIONI = [
     ['saveEmptyCaptionMany', 'emptyTrash'],
     ['mcpHint', 'saveChanges'],
     ['mcpEditedNotice', 'saveChanges'],
+    ['mcpNewTokenDone', 'mcpCopyClaudeCode'],
     ['bulkHiddenWarn', 'deleteSelected'],
 ];
 
