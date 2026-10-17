@@ -78,6 +78,7 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
     //          half typed, stays as it is.
     const handleBlur = () => {
         if (readOnly) return;
+        if (saltaBlurRef.current) { saltaBlurRef.current = false; return; }
         if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) return;
         const newTag = inputValue.trim().replace(/,$/, '');
         if (!newTag) return;
@@ -95,17 +96,37 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
     //          another tag by then, and that one was removed. `occorrenza` tells two identical tags apart.
     // ITALIANO: in piu' la pressione sulla X non toglie il fuoco alla casella (vedi onMouseDown):
     //           senza, il riordino spostava la pillola, al rilascio sotto il puntatore c'era un'altra
-    //           pillola, il browser mandava il clic al contenitore e il primo clic andava a vuoto. Il
-    //           testo scritto resta nella casella ed entra con Invio o al prossimo blur.
+    //           pillola, il browser mandava il clic al contenitore e il primo clic andava a vuoto.
+    //           Il clic fa quindi anche il lavoro del blur, nello stesso aggiornamento: il testo
+    //           scritto senza Invio entra (lasciato nella casella si perdeva se la card spariva, per
+    //           esempio con la ricerca per tag attiva). Poi la casella viene lasciata, cosi' Ctrl+Z
+    //           annulla la X invece di restare al campo di testo; quel blur si salta, perche' il suo
+    //           gestore vedrebbe ancora i tag e il testo di prima.
     // ENGLISH: also, pressing the X does not take the focus from the box (see onMouseDown): without
     //          it the reorder moved the pill, on release another pill was under the pointer, the
-    //          browser sent the click to the container and the first click was lost. The typed text
-    //          stays in the box and goes in with Enter or on the next blur.
+    //          browser sent the click to the container and the first click was lost. So the click
+    //          also does the blur's job, in the same update: the text typed without Enter goes in
+    //          (left in the box it was lost when the card disappeared, for example with the tag
+    //          search active). Then the box is left, so Ctrl+Z undoes the X instead of staying with
+    //          the text field; that blur is skipped, because its handler would still see the old
+    //          tags and text.
+    const saltaBlurRef = useRef(false);
     const removeTag = (tag: string, occorrenza: number) => {
         if (readOnly) return;
         let visti = -1;
-        setTags(tags.filter((x: string) => x !== tag || ++visti !== occorrenza));
+        let nuovi = tags.filter((x: string) => x !== tag || ++visti !== occorrenza);
+        const scritto = inputValue.trim().replace(/,$/, '');
+        if (scritto) {
+            if (!hasTagIgnoringCase(tags, scritto)) nuovi = [...nuovi, scritto];
+            setInputValue('');
+        }
+        setTags(nuovi);
         soundManager.click();
+        const casella = inputRef.current;
+        if (casella && typeof document !== 'undefined' && document.activeElement === casella) {
+            saltaBlurRef.current = true;
+            casella.blur();
+        }
     };
     const occorrenze = new Map<string, number>();
 

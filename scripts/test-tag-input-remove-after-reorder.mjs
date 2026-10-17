@@ -9,8 +9,10 @@
    difetto: nel browser il clic arriva all'elemento che sta SOTTO il puntatore al rilascio; dopo
    il riordino li' c'era un'altra pillola, il clic finiva al contenitore e il primo clic andava a
    vuoto. La regola: premere la X non toglie il fuoco alla casella (onMouseDown con
-   preventDefault), quindi niente riordino prima del clic; la X toglie il suo tag e il testo
-   scritto resta nella casella, ed entra con Invio o al prossimo blur.
+   preventDefault), quindi niente riordino prima del clic. Il clic toglie il suo tag e, nello
+   stesso aggiornamento, fa entrare il testo scritto (come faceva il blur): lasciarlo nella
+   casella lo perdeva se la card spariva (ricerca per tag attiva). Poi la casella viene lasciata
+   senza un secondo inserimento, cosi' Ctrl+Z annulla la X invece di restare al campo di testo.
    Si esegue il TagInput VERO di src/components/ui.tsx con un React finto, senza DOM, e un modello
    del browser: il blur avviene solo se la pressione non e' stata annullata, e il clic arriva al
    pulsante solo se nella stessa posizione c'e' ancora la stessa pillola.
@@ -27,8 +29,10 @@
    click reaches the element UNDER the pointer on release; after the reorder another pill was
    there, the click went to the container and the first click was lost. The rule: pressing the X
    does not take the focus from the box (onMouseDown with preventDefault), so no reorder before
-   the click; the X removes its tag and the typed text stays in the box, going in with Enter or
-   on the next blur.
+   the click. The click removes its tag and, in the same update, puts the typed text in (as the
+   blur did): leaving it in the box lost it when the card disappeared (tag search active). Then
+   the box is left without a second insertion, so Ctrl+Z undoes the X instead of staying with
+   the text field.
    The REAL TagInput of src/components/ui.tsx runs with a fake React, no DOM, and a browser model:
    the blur happens only if the press was not cancelled, and the click reaches the button only if
    the same pill is still at the same position.
@@ -141,20 +145,49 @@ const clicX = (iniziali, testo, bersaglio, { regola = (n) => n, isGlobal = false
 };
 
 console.log('\n--- card della galleria: testo senza Invio, poi X su una pillola ---');
-dice('"apple" scritto, X su "dog": al primo clic sparisce "dog", "apple" resta nella casella',
-    { tags: ['blue eyes', 'cat'], casella: 'apple', errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'apple', 'dog', { regola: regolaCard([]) }));
-dice('correzione: "blond hair" scritto, X su "blonde hair": al primo clic sparisce il vecchio',
-    { tags: ['smile'], casella: 'blond hair', errore: '' }, clicX(['blonde hair', 'smile'], 'blond hair', 'blonde hair', { regola: regolaCard([]) }));
+dice('"apple" scritto, X su "dog": al primo clic sparisce "dog" ed entra "apple"',
+    { tags: ['apple', 'blue eyes', 'cat'], casella: '', errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'apple', 'dog', { regola: regolaCard([]) }));
+dice('correzione: "blond hair" scritto, X su "blonde hair": al primo clic resta solo il nuovo',
+    { tags: ['blond hair', 'smile'], casella: '', errore: '' }, clicX(['blonde hair', 'smile'], 'blond hair', 'blonde hair', { regola: regolaCard([]) }));
 dice('con una trigger davanti: "bird" scritto, X su "dog"',
-    { tags: ['ohwx', 'cat'], casella: 'bird', errore: '' }, clicX(['ohwx', 'cat', 'dog'], 'bird', 'dog', { regola: regolaCard(['ohwx']) }));
+    { tags: ['ohwx', 'bird', 'cat'], casella: '', errore: '' }, clicX(['ohwx', 'cat', 'dog'], 'bird', 'dog', { regola: regolaCard(['ohwx']) }));
 dice('tag nuovo che finisce in fondo: "zebra" scritto, X su "cat"',
-    { tags: ['blue eyes', 'dog'], casella: 'zebra', errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'zebra', 'cat', { regola: regolaCard([]) }));
+    { tags: ['blue eyes', 'dog', 'zebra'], casella: '', errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'zebra', 'cat', { regola: regolaCard([]) }));
+
+dice('"dog" scritto di nuovo, X su "dog": sparisce, come col blur seguito dalla X',
+    { tags: ['cat'], casella: '', errore: '' }, clicX(['cat', 'dog'], 'dog', 'dog', { regola: regolaCard([]) }));
+{
+    // ITALIANO: dopo la X la casella va lasciata (Ctrl+Z del progetto non agisce dentro un campo di
+    //           testo), e quel blur non deve inserire il testo una seconda volta sui tag vecchi.
+    // ENGLISH: after the X the box must be left (the project's Ctrl+Z does not act inside a text
+    //          field), and that blur must not insert the text a second time over the old tags.
+    globalThis.__GANCI__ = { i: 0, v: {} };
+    let tags = ['blonde hair', 'smile'];
+    let lasciata = false;
+    const disegna = () => { globalThis.__GANCI__.i = 0; return UI.TagInput({ tags, setTags: (n) => { tags = regolaCard([])(n); }, lang: 'en' }); };
+    const casella = () => trova(disegna(), n => n.type === 'input')[0];
+    const elemento = { blur() { lasciata = true; globalThis.document.activeElement = null; casella().props.onBlur({ target: {} }); } };
+    globalThis.document = { hasFocus: () => true, activeElement: elemento };
+    casella().props.ref.current = elemento;
+    casella().props.onChange({ target: { value: 'blond hair' } });
+    const pillola = pillole(disegna()).find(p => p.testo === 'blonde hair');
+    trova(pillola.nodo.props.children, n => n.type === 'button')[0].props.onClick({ stopPropagation() { } });
+    dice('dopo la X la casella viene lasciata', true, lasciata);
+    dice('il blur della casella lasciata non rimette il tag tolto', ['blond hair', 'smile'], tags);
+    // ITALIANO: il blur vero successivo funziona di nuovo normalmente.
+    // ENGLISH: the next real blur works normally again.
+    globalThis.document.activeElement = elemento;
+    casella().props.onChange({ target: { value: 'red' } });
+    casella().props.onBlur({ target: {} });
+    dice('il blur seguente fa entrare il testo come sempre', ['blond hair', 'red', 'smile'], tags);
+    delete globalThis.document;
+}
 
 console.log('\n--- quello che NON deve cambiare ---');
 dice('X senza aver scritto niente: sparisce il tag cliccato',
     { tags: ['a', 'c'], casella: '', errore: '' }, clicX(['a', 'b', 'c'], '', 'b', { regola: regolaCard([]) }));
 dice('riquadro delle trigger (non riordina): "zz" scritto, X su "tok"',
-    { tags: ['ohwx'], casella: 'zz', errore: '' }, clicX(['tok', 'ohwx'], 'zz', 'tok', { isGlobal: true }));
+    { tags: ['ohwx', 'zz'], casella: '', errore: '' }, clicX(['tok', 'ohwx'], 'zz', 'tok', { isGlobal: true }));
 dice('due tag identici (caso teorico): la X del secondo ne toglie uno solo',
     { tags: ['a', 'b'], casella: '', errore: '' }, clicX(['a', 'a', 'b'], '', 'a', { occorrenza: 1 }));
 {
