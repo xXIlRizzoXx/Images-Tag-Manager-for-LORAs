@@ -104,7 +104,7 @@ const codiceChiave = await prendi('    const handleVerifyApiKey = useCallback(',
 const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomPrompt', 'aiRpm', 'aiSkipTagged', 'images',
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy', 'aiCancelRequestedRef', 'setAiCancelRequested',
-    'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'useCallback', 'Date', 'setTimeout', 'console'];
+    'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'useCallback', 'Date', 'setTimeout', 'console', 'progettoGenRef'];
 const fabbricaUna = new Function(...DIPENDENZE, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaTutte = new Function(...DIPENDENZE, codiceTutte + '\nreturn handleAITagAll;');
 const fabbricaChiave = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
@@ -160,6 +160,7 @@ const nuovaApp = (t, quante, generate) => {
         Date: { now: () => orologio },
         setTimeout: (f, ms) => { orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
         console: muto,
+        progettoGenRef: { current: 0 },
     };
     const args = DIPENDENZE.map(n => dip[n]);
     app.una = (id) => fabbricaUna(...args)(id);

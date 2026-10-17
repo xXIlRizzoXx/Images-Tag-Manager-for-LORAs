@@ -171,11 +171,49 @@ console.log('\n--- 1) riaprire la stessa cartella per una foto nuova, poi un cra
     await app.conferma(riepilogo(cartella('E:img', 'img'), ['a.png']));
     await app.conferma(riepilogo(cartella('F:img', 'img'), ['b.png']));
     dice('due cartelle diverse con lo stesso nome restano due lotti', true, app.images[0].lottoImport !== app.images[1].lottoImport);
-    const c = creaApp();
-    await c.conferma({ ...riepilogo(cartella('E:x', 'x'), ['a.png']), handle: null, folderOf: null });
-    await c.conferma({ ...riepilogo(cartella('E:x', 'x'), ['a.png', 'e.png']), handle: null, folderOf: null });
-    dice('"Carica immagini" (nessuna cartella): la foto nuova ha un lotto suo, come prima', [['a.png', 'e.png'], true],
-        [c.nomi(), c.images[0].lottoImport !== c.images[1].lottoImport]);
+    // ITALIANO: una foto di "Carica cartella" e una di "Carica immagini" non finiscono mai nello stesso lotto.
+    // ENGLISH: a photo from "Load folder" and one from "Load images" never end up in the same batch.
+    const m = creaApp();
+    await m.conferma(riepilogo(cartella('E:img', 'img'), ['a.png']));
+    await m.conferma({ ...riepilogo(cartella('E:img', 'img'), ['a.png', 'e.png']), handle: null, folderOf: null });
+    dice('foto aperta con "Carica cartella", poi "Carica immagini": la foto nuova ha un lotto suo', [['a.png', 'e.png'], true],
+        [m.nomi(), m.images[0].lottoImport !== m.images[1].lottoImport]);
+}
+
+console.log('\n--- 1 bis) "Carica immagini" o trascinamento: le stesse foto piu\' una nuova, poi un crash ---');
+// ITALIANO: "Carica immagini" e il trascinamento non hanno una cartella scelta (handle null): la cartella
+//           di ogni foto e' la stringa del suo percorso (come loadSidecarTxtFiles). Prima la foto nuova
+//           prendeva SEMPRE un lotto a parte: il backup restava con l'impronta "|2|a.png|b.png" e, dopo un
+//           crash, ricaricando a, b e c insieme la modifica di a.png si perdeva in silenzio.
+// ENGLISH: "Load images" and drag and drop have no picked folder (handle null): each photo's folder is
+//          the string of its path (as loadSidecarTxtFiles). The new photo used to ALWAYS take a separate
+//          batch: the backup kept the fingerprint "|2|a.png|b.png" and, after a crash, reloading a, b and
+//          c together lost a.png's edit silently.
+const caricaImmagini = (nomi, dir = 'E:\\shoot') => {
+    const imgFiles = nomi.map(n => ({ name: n, percorso: dir + '\\' + n }));
+    return { imgFiles, txtFiles: [], handle: null, folderOf: new Map(imgFiles.map(f => [f, dir])), relPathOf: null, pathOf: null, cartellaRelOf: null };
+};
+{
+    const app = creaApp();
+    await app.conferma(caricaImmagini(['a.png', 'b.png']));
+    await app.conferma(caricaImmagini(['a.png', 'b.png', 'c.png']));
+    dice('premessa: entra solo c.png', ['a.png', 'b.png', 'c.png'], app.nomi());
+    dice('c.png entra nel lotto delle foto gia\' aperte', 1, new Set(app.images.map(i => i.lottoImport)).size);
+    app.modifica('a.png', ['nuovo a']);
+    const salvato = B.costruisciBackup(app.images, [], '');
+    dice('il backup ha UNA impronta: quella delle tre foto', ['|3|a.png|c.png'], (salvato?.sources || []).map(s => s.signature));
+    const dopo = creaApp({ backup: salvato ? JSON.stringify({ ts: 1, ...salvato }) : null });
+    await dopo.conferma(caricaImmagini(['a.png', 'b.png', 'c.png']));
+    dice('dopo il crash, ricaricando a, b, c, la modifica di a.png torna', [['nuovo a'], [], []], dopo.images.map(i => i.tags));
+}
+{
+    // ITALIANO: foto aperte da DUE caricamenti diversi: la foto nuova ha un lotto suo, come prima.
+    // ENGLISH: photos open from TWO different loads: the new photo gets a batch of its own, as before.
+    const app = creaApp();
+    await app.conferma(caricaImmagini(['a.png']));
+    await app.conferma(caricaImmagini(['b.png']));
+    await app.conferma(caricaImmagini(['a.png', 'b.png', 'f.png']));
+    dice('due lotti gia\' aperti: f.png non entra in nessuno dei due', 3, new Set(app.images.map(i => i.lottoImport)).size);
 }
 
 console.log('\n--- 2) cartella di rete \\\\server\\condivisione (nessun percorso) riaperta ---');

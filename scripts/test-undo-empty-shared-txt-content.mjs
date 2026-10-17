@@ -105,6 +105,24 @@ console.log('\n--- quello che deve restare com\'era ---');
     dice('modifica propria: disco piu\' "red", da salvare', [['cat', 'dog', 'red'], ['cat', 'dog'], true], statoDi(r.P));
 }
 {
+    // ITALIANO: a.png con TUTTI i tag tolti a mano (tags [], non salvata): anche lei si confronta con
+    //           a.txt. Prima restava con il ricordo vecchio ([cat]) e il Salva dopo "Ripristina"
+    //           scriveva a.txt vuoto: "dog", salvato da a.jpg, spariva dal disco.
+    // ENGLISH: a.png with ALL its tags removed by hand (tags [], unsaved): it is compared with a.txt
+    //          too. It used to keep the old record ([cat]) and the Save after "Restore" wrote an
+    //          empty a.txt: "dog", saved by a.jpg, vanished from the disk.
+    const r = await scenario({ png: { tags: [], originalTags: ['cat'] }, dopo: salvaJpgConDog });
+    dice('tag tutti tolti: "cat" resta tolto, "dog" del disco resta, da salvare', [['dog'], ['cat', 'dog'], true], statoDi(r.P));
+    dice('tag tutti tolti: avviso verde', [[t.undoEmptyDone.replace('{n}', '1'), 'success']], r.notifiche);
+}
+{
+    // ITALIANO: tag tutti tolti e a.txt sparito: torna com'era (da salvare), senza l'avviso dei .txt.
+    // ENGLISH: all tags removed and a.txt gone: it comes back as it was (to be saved), without the .txt notice.
+    const r = await scenario({ png: { tags: [], originalTags: ['cat'] }, dopo: (disco) => { delete disco[D + 'a.txt']; } });
+    dice('tag tutti tolti, a.txt sparito: torna com\'era', [[], ['cat'], true], statoDi(r.P));
+    dice('tag tutti tolti, a.txt sparito: avviso verde', [[t.undoEmptyDone.replace('{n}', '1'), 'success']], r.notifiche);
+}
+{
     const r = await scenario();
     dice('a.txt non cambiato: a.png torna com\'era', [['cat'], ['cat'], true], statoDi(r.P));
     dice('a.txt non cambiato: avviso verde', [[t.undoEmptyDone.replace('{n}', '1'), 'success']], r.notifiche);

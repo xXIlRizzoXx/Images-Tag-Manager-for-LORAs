@@ -68,12 +68,12 @@ const leggi = (testo, nome) => {
     try { return editor.parseTagFile(testo, nome); } catch (err) { return 'ERRORE: ' + (err && err.name); }
 };
 
-const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto',
+const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto', 'leggiTestoSidecar',
     (await ritaglia('src/App.tsx', '    const handleImportProjectTags = async (e: any) => {', /\r?\n    \};\r?\n/g)) + '\nreturn handleImportProjectTags;');
 const importa = async (testo, iniziale = []) => {
     const r = { palette: [...iniziale], notifiche: [] };
     const fn = fabbrica(t, (m, tipo) => r.notifiche.push([m, tipo]), (f) => { r.palette = typeof f === 'function' ? f(r.palette) : f; },
-        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto);
+        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto, S.leggiTestoSidecar);
     await fn({ target: { files: [{ size: Buffer.byteLength(testo), text: async () => testo }] } });
     return r;
 };

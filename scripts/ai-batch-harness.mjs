@@ -91,7 +91,7 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
-    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore'];
+    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -115,7 +115,7 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     }));
     // ITALIANO: `progressi` raccoglie ogni stato della barra (setGlobalAIProgress), in ordine.
     // ENGLISH: `progressi` collects every state of the progress bar (setGlobalAIProgress), in order.
-    const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto, progressi: [] };
+    const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto, progressi: [], suoni: 0 };
     let orologio = 1_000_000;
     const dip = {
         aiEnabled: true, geminiApiKey: 'AIza' + 'x'.repeat(35), aiModel: 'gemini-3.8-flash', aiMaxTags: 30, aiCustomPrompt: '',
@@ -123,7 +123,7 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         updateImageTags: (id, tags) => { const f = foto.find(x => x.id === id); if (f) f.tags = tags; },
         getGeminiTags: S.getGeminiTags, classifyGeminiError: S.classifyGeminiError,
         showNotification: (m, tipo) => app.notifiche.push([m, tipo]),
-        soundManager: { chime() { } },
+        soundManager: { chime() { app.suoni++; } },
         setRiparaModello: () => { },
         setIsApiKeyDialogOpen: (v) => { app.finestraChiave = v; },
         aiCancelRequestedRef: { current: false }, setAiCancelRequested: () => { },
@@ -139,6 +139,7 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         setTimeout: (f, ms) => { orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
         console: { log() { }, warn() { }, error() { } },
         txtNonLettoInVigore: sidecar.txtNonLettoInVigore,
+        progettoGenRef: { current: 0 },
     };
     const pezzi = () => fabbrica(...DIPENDENZE.map(n => dip[n]));
     app.tutte = () => pezzi().handleAITagAll();
@@ -146,6 +147,11 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     app.interruttore = (v) => pezzi().interruttoreAI(v);
     app.chiamate = () => globalThis.__GOOGLE__.chiamate;
     app.annullamentoChiesto = () => dip.aiCancelRequestedRef.current;
+    // ITALIANO: Chiudi progetto e Reset fermano il lotto cosi' (closeProjectNow, handleResetProject): un
+    //           progetto nuovo, la richiesta di annullamento e l'abort della richiesta in volo.
+    // ENGLISH: Close project and Reset stop the batch this way (closeProjectNow, handleResetProject): a
+    //          new project, the cancel request and the abort of the request in flight.
+    app.chiudiProgetto = () => { dip.progettoGenRef.current++; dip.aiCancelRequestedRef.current = true; dip.aiAbortControllerRef.current?.abort(); };
     // ITALIANO: l'elenco vivo delle foto (imagesRef): una prova puo' togliere una foto a meta' richiesta.
     // ENGLISH: the live photo list (imagesRef): a test can remove a photo halfway through a request.
     app.imagesRef = dip.imagesRef;

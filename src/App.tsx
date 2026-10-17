@@ -434,6 +434,11 @@ export default function App() {
     const [importSummary, setImportSummary] = useState<{ isOpen: boolean, summary: any, pendingData: any }>({ isOpen: false, summary: null, pendingData: null });
     const [selectedForBulk, setSelectedForBulk] = useState<string[]>([]);
     const [stagedBulkTags, setStagedBulkTags] = useState<string[]>([]);
+    // ITALIANO: la casella "Scrivi un tag da aggiungere..." del pannello in blocco: Conferma prende anche
+    //           il testo rimasto li' senza Invio (vedi applyBulkTags).
+    // ENGLISH: the bulk panel's "Type a tag to add..." box: Confirm also takes the text left there
+    //          without Enter (see applyBulkTags).
+    const bulkAddInputRef = useRef<HTMLInputElement>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isTrashOpen, setIsTrashOpen] = useState(false);
     // ITALIANO: acceso mentre lo svuotamento sta spostando i file: spegne "Ripristina tutte" e
@@ -1683,7 +1688,11 @@ export default function App() {
             } else if (r.esito === 'nessunModello') showNotification(t.aiProbeNoneFound, 'error');
             else if (r.esito === 'chiaveNonValida') showNotification(t.aiModelCheckKeyInvalid, 'error');
             else if (r.esito === 'progettoRifiutato') showNotification(t.aiModelCheckProjectRefused, 'error');
-            else if (r.esito === 'occupato') showNotification(t.aiModelCheckBusy, 'info');
+            // ITALIANO: una frase sua: quella del controllo del modello prometteva "verra' ripetuto piu'
+            //           avanti", ma la prova parte solo dal pulsante e niente la ripete da sola.
+            // ENGLISH: a sentence of its own: the model check's one promised "will be repeated later",
+            //          but the test starts only from the button and nothing repeats it by itself.
+            else if (r.esito === 'occupato') showNotification(t.aiProbeBusy, 'info');
             else showNotification(t.aiModelCheckFailed, 'error');
         } finally {
             provaModelliRef.current = null;
@@ -2186,6 +2195,30 @@ export default function App() {
                 //          closed photo used to keep a.txt on disk, orphaned, while the image left.
                 //          Case does not count, as for Windows.
                 if (String(altra.file.name).toLowerCase() === String(img.file.name).toLowerCase()) continue;
+                // ITALIANO: una copia chiusa che e' lo STESSO file di una foto gia' tolta nella stessa
+                //           operazione (a.jpg chiusa con la X, riaperta con un id nuovo e appena svuotata)
+                //           non usa piu' niente: prima teneva a.txt sul disco, orfano, quando le due
+                //           gemelle erano state chiuse e riaperte. Stessa regola di
+                //           copieChiuseDelloStessoFile: stesso nome intero e stesso percorso, oppure, senza
+                //           percorsi, la stessa cartella aperta.
+                // ENGLISH: a closed copy that is the SAME file as a photo already removed in the same
+                //          operation (a.jpg closed with the X, reopened with a new id and just emptied)
+                //          uses nothing any more: it used to keep a.txt on disk, orphaned, when both twins
+                //          had been closed and reopened. Same rule as copieChiuseDelloStessoFile: same
+                //          whole name and same path, or, with no paths, the same open folder.
+                if (giaTolte && giaTolte.size > 0 && !imagesRef.current.some(i => i.id === altra.id)) {
+                    const suaImg = percorsiSuDisco(altra).imgPath.toLowerCase();
+                    let giaTolta = false;
+                    for (const tolta of imagesRef.current as any[]) {
+                        if (!giaTolte.has(tolta.id) || !tolta.file || String(tolta.file.name).toLowerCase() !== String(altra.file.name).toLowerCase()) continue;
+                        const imgTolta = percorsiSuDisco(tolta).imgPath.toLowerCase();
+                        giaTolta = suaImg && imgTolta ? suaImg === imgTolta
+                            : !!(tolta.dirHandle && altra.dirHandle && (tolta.dirHandle === altra.dirHandle
+                                || (typeof tolta.dirHandle.isSameEntry === 'function' && await tolta.dirHandle.isSameEntry(altra.dirHandle))));
+                        if (giaTolta) break;
+                    }
+                    if (giaTolta) continue;
+                }
                 // ITALIANO: con i due percorsi su disco decide il percorso (stessa cartella o no);
                 //           senza (anteprima nel browser) decide la cartella aperta.
                 // ENGLISH: with both paths on disk the path decides (same folder or not); without
@@ -2569,8 +2602,21 @@ export default function App() {
             //          come back with the tags of then as saved: the next Save, made on them, rewrote
             //          the .txt without "dog" with the green notice. A .txt that cannot be read
             //          (skipped) stays as it is.
+            // ITALIANO: si confrontano anche le foto tornate senza tag (tutti tolti a mano): prima
+            //           restavano col ricordo vecchio e il Salva dopo "Ripristina" svuotava il .txt
+            //           condiviso, cancellando quello che l'altra foto vi aveva salvato. "Senza testo"
+            //           invece vale solo per chi ha tag da riscrivere e un .txt che c'era davvero
+            //           (ricordo del disco non vuoto, o un .txt non letto): con una gemella e nessun
+            //           .txt mai esistito l'avviso parlava di file "non ripresi" che non c'erano.
+            // ENGLISH: the photos that came back with no tags (all removed by hand) are compared too:
+            //          they used to keep the old record and the Save after "Restore" emptied the
+            //          shared .txt, wiping what the other photo had saved there. "No text" instead
+            //          applies only to those with tags to rewrite and a .txt that really existed
+            //          (non-empty disk record, or an unread .txt): with a twin and no .txt ever, the
+            //          notice talked about files "not taken back" that were never there.
             const dalDisco = new Map<string, string[]>();
-            const daControllare = tornate.filter((v: any) => v.txtCondiviso && !v.txtPath && Array.isArray(v.img.tags) && v.img.tags.length > 0);
+            const daControllare = tornate.filter((v: any) => v.txtCondiviso && !v.txtPath && Array.isArray(v.img.tags));
+            const txtDaRiprendere = (v: any) => v.img.tags.length > 0 && ((v.img.originalTags || []).length > 0 || !!v.img.baseTxtNonLetto);
             if (daControllare.length > 0 && typeof apiLocale.readSidecarTags === 'function') {
                 const chiave = (p: string) => String(p || '').replace(/\//g, '\\').toLowerCase();
                 try {
@@ -2580,14 +2626,14 @@ export default function App() {
                         .map((s: any) => [chiave(String(s.dir).replace(/[\\/]+$/, '') + '\\' + s.name), s]));
                     daControllare.forEach((v: any) => {
                         const s = ci.get(chiave(percorsiSuDisco(v.img).txtPath || ''));
-                        if (!s) { senzaTesto.add(v.img.id); return; }
+                        if (!s) { if (txtDaRiprendere(v)) senzaTesto.add(v.img.id); return; }
                         if (s.skipped || typeof s.content !== 'string') return;
                         const sulDisco = parseSidecarText(s.content).tags;
                         if (JSON.stringify(sulDisco) !== JSON.stringify(v.img.originalTags || [])) dalDisco.set(v.img.id, sulDisco);
                     });
                 } catch (err) {
                     console.warn('[Cestino] Non so se il .txt condiviso c\'e\' ancora: le foto restano da salvare.', err);
-                    daControllare.forEach((v: any) => senzaTesto.add(v.img.id));
+                    daControllare.forEach((v: any) => { if (txtDaRiprendere(v)) senzaTesto.add(v.img.id); });
                 }
             }
 
@@ -3114,13 +3160,19 @@ export default function App() {
             //           lotto a parte nessuna delle due impronte era quella della cartella intera (dopo un
             //           crash le modifiche non salvate si perdevano in silenzio). Solo se tutte le foto
             //           gia' aperte vengono da UN lotto di questa stessa cartella; altrimenti un lotto nuovo.
+            //           Vale anche per "Carica immagini" e il trascinamento (nessuna cartella scelta, ''):
+            //           le foto nuove entrano nel lotto senza cartella delle foto gia' aperte, mai in un
+            //           lotto di "Carica cartella". Prima prendevano sempre un lotto a parte.
             // ENGLISH: reopening the same folder to take the new photos, these join the BATCH of the
             //          photos already open: the crash backup keeps one fingerprint per batch, and with a
             //          separate batch neither fingerprint was the whole folder's (after a crash the unsaved
             //          edits were lost silently). Only when every photo already open comes from ONE batch of
             //          this same folder; otherwise a new batch.
+            //          The same goes for "Load images" and drag and drop (no picked folder, ''): the new
+            //          photos join the folder-less batch of the photos already open, never a "Load folder"
+            //          batch. They used to always take a separate batch.
             const combacianti = [...doppi.values()] as any[];
-            const lottoDaRiusare = importFolder && combacianti.length > 0
+            const lottoDaRiusare = combacianti.length > 0
                 && combacianti.every(a => a.lotto && a.lotto === combacianti[0].lotto && a.cartellaImport === importFolder)
                 ? String(combacianti[0].lotto) : '';
             const lotto = lottoDaRiusare || nuovoIdFoto();
@@ -3957,7 +4009,13 @@ export default function App() {
             //          suspicious (huge/hostile JSON) and could freeze the app: reject it. Then clamp
             //          each tag's length and the total count (see pulisciTagProgetto).
             if (file.size > 1024 * 1024) { showNotification(t.importTagsError, 'error'); return; }
-            const text = (await file.text()).trim();
+            // ITALIANO: letto come i .txt e l'editor dei file di tag (UTF-8, UTF-16 con BOM): con
+            //           file.text() un elenco UTF-16 di PowerShell o del Blocco note entrava come
+            //           "o h w x" con l'avviso verde. Un file ANSI lancia e finisce nell'errore di lettura.
+            // ENGLISH: read like the .txt files and the tag file editor (UTF-8, UTF-16 with BOM): with
+            //          file.text() a UTF-16 list from PowerShell or Notepad came in as "o h w x" with the
+            //          green notice. An ANSI file throws and ends in the reading error.
+            const text = (await leggiTestoSidecar(file)).trim();
             let tags: unknown[] = [];
             let triggers: unknown[] = [];
             // ITALIANO: anche un semplice elenco JSON ["a","b"] (lo accetta pure l'editor dei file di
@@ -5278,6 +5336,9 @@ export default function App() {
         if (!geminiApiKey) { setIsApiKeyDialogOpen(true); return; }
         aiCancelRequestedRef.current = false;
         setAiCancelRequested(false);
+        // ITALIANO: il progetto del lotto: Chiudi progetto e Reset lo cambiano (vedi la fine).
+        // ENGLISH: the batch's project: Close project and Reset change it (see the end).
+        const progetto = progettoGenRef.current;
         // ITALIANO: Controller per abortire le richieste HTTP in volo quando l'utente annulla
         // ENGLISH: Controller to abort in-flight HTTP requests when the user cancels
         aiAbortControllerRef.current = new AbortController();
@@ -5515,6 +5576,13 @@ export default function App() {
                     if (waitMs > 0) await cancellableSleep(waitMs);
                 }
             }
+            // ITALIANO: fermato da Chiudi progetto o Reset: niente suono ne' riepilogo. Prima il
+            //           riepilogo "annullato... Tag aggiunti: N" copriva subito "Progetto chiuso" (un
+            //           solo posto per gli avvisi), parlando di tag di un progetto ormai chiuso.
+            // ENGLISH: stopped by Close project or Reset: no chime and no summary. The "cancelled...
+            //          Tags added: N" summary used to cover "Project closed" at once (a single notice
+            //          slot), talking about tags of a project already closed.
+            if (progetto !== progettoGenRef.current) return;
             soundManager.chime();
             const successType: 'success' | 'info' | 'error' = cancelled
                 ? 'info'
@@ -5613,11 +5681,20 @@ export default function App() {
         //          are counted (apart from case, as countNewTagsIgnoringCase). The staged tags and all
         //          the selected photos used to be counted: 5 photos already holding "1girl" gave "Tags
         //          added: 1. Photos affected: 5." with nothing changed.
+        // ITALIANO: anche il testo rimasto nella casella senza Invio, diviso come con Invio: prima
+        //           arrivavano solo le pillole segnate, il pannello si chiudeva e quel testo spariva
+        //           senza avviso.
+        // ENGLISH: the text left in the box without Enter too, split as with Enter: only the marked
+        //          pills used to arrive, the panel closed and that text vanished with no notice.
+        const casella = bulkAddInputRef.current;
+        const scritti = splitTagInput(casella ? casella.value : '');
+        if (casella) casella.value = '';
+        const daAggiungere = [...stagedBulkTags, ...scritti.filter(tag => !hasTagIgnoringCase(stagedBulkTags, tag))];
         const daCambiare = new Set<string>();
         const tagNuovi = new Set<string>();
         for (const img of images) {
             if (!selectedForBulk.includes(img.id) || img.isTrashed) continue;
-            const mancanti = stagedBulkTags.filter(tag => countNewTagsIgnoringCase(img.tags, [tag]) > 0);
+            const mancanti = daAggiungere.filter(tag => countNewTagsIgnoringCase(img.tags, [tag]) > 0);
             if (mancanti.length === 0) continue;
             daCambiare.add(img.id);
             for (const tag of mancanti) tagNuovi.add(tag.toLowerCase());
@@ -5634,7 +5711,7 @@ export default function App() {
         }
         setImages(prev => prev.map(img => {
             if (daCambiare.has(img.id) && !img.isTrashed) {
-                const combinedTags = uniqueTagsIgnoringCase([...img.tags, ...stagedBulkTags], globalTriggers);
+                const combinedTags = uniqueTagsIgnoringCase([...img.tags, ...daAggiungere], globalTriggers);
                 // ITALIANO: stesso ordine di tutto il resto: trigger prima, poi alfabetico
                 // ENGLISH: same order as everywhere else: triggers first, then alphabetical
                 const orderedTags = [
@@ -7078,6 +7155,7 @@ export default function App() {
                                              photos; right: a SEARCH box that filters the pills below. */}
                                 <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                                     <input
+                                        ref={bulkAddInputRef}
                                         type="text"
                                         placeholder={t.bulkAddPlaceholder}
                                         className={`flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200 placeholder-gray-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}

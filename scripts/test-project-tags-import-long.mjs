@@ -49,13 +49,13 @@ if (inizio < 0 || !fine) {
     process.exit(1);
 }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
-const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto',
+const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto', 'leggiTestoSidecar',
     js + '\nreturn handleImportProjectTags;');
 
 const importa = async (testo) => {
     const r = { palette: [], notifiche: [] };
     const fn = fabbrica(t, (m, tipo) => r.notifiche.push([m, tipo]), (f) => { r.palette = typeof f === 'function' ? f(r.palette) : f; },
-        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto);
+        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto, S.leggiTestoSidecar);
     await fn({ target: { files: [{ size: Buffer.byteLength(testo), text: async () => testo }] } });
     return r;
 };

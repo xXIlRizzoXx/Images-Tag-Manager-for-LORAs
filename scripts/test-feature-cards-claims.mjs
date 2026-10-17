@@ -54,7 +54,8 @@ dice('premessa: i tag arrivano sulle foto con il pulsante Conferma (applyBulkTag
 const i = app.indexOf('const applyBulkTags = () => {');
 const corpo = i < 0 ? '' : app.slice(i, app.indexOf('\n    };', i));
 dice('premessa: applyBulkTags aggiunge e non toglie (unisce i tag della foto con quelli segnati)', true,
-    corpo.includes('uniqueTagsIgnoringCase([...img.tags, ...stagedBulkTags], globalTriggers)') && !/tags\.filter\(/.test(corpo));
+    corpo.includes('uniqueTagsIgnoringCase([...img.tags, ...daAggiungere], globalTriggers)')
+    && corpo.includes('const daAggiungere = [...stagedBulkTags, ') && !/tags\.filter\(/.test(corpo));
 dice('premessa: l\'ordinamento per data usa la data di modifica del file', true,
     /order === 'date-asc'\) list\.sort\(\(a, b\) => a\.file\.lastModified - b\.file\.lastModified\)/.test(app));
 
