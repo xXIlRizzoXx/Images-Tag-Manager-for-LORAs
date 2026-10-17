@@ -52,7 +52,7 @@ const ramoCursor = config.split('\n').filter(r => /^\s*return /.test(r)).pop() |
 dice('premessa: la configurazione di Claude Desktop lancia npx con mcp-remote', true, /command: 'npx', args: \['-y', 'mcp-remote'/.test(ramoDesktop));
 dice('premessa: quella di Claude Code non usa npx', true, ramoCode.length > 0 && !/npx/.test(ramoCode));
 dice('premessa: quella di Cursor (url diretto) non usa npx', true, /url: indirizzoMcp/.test(ramoCursor) && !/npx/.test(ramoCursor));
-dice('premessa: la nota sta nella finestra "?" di MCP', true, /mcp: \{ titolo: t\.mcpTitle, testi: \[t\.mcpHint, t\.mcpDesktopNote\] \}/.test(app));
+dice('premessa: la nota sta nella finestra "?" di MCP', true, /mcp: \{ titolo: t\.mcpTitle, testi: \[t\.mcpHint, t\.mcpDesktopNote(, [^\]]*)?\] \}/.test(app));
 
 // ITALIANO: la nota, lingua per lingua.
 // ENGLISH: the note, language by language.
