@@ -128,10 +128,22 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         // ENGLISH: the box that has the focus is left, even when it belongs to another card or to the
         //          trigger box: its text goes in by its own rules (its handleBlur), as before the X
         //          held the focus. Only this box's blur is skipped.
+        // ITALIANO: la casella di un altro TagInput si lascia dopo il ridisegno: il suo handleBlur,
+        //           chiamato qui, vedrebbe i tag di prima del clic e la sua lista sovrascriverebbe
+        //           questa modifica (la X su una trigger la rimetteva sulla card con del testo scritto).
+        // ENGLISH: another TagInput's box is left after the re-render: its handleBlur, called here,
+        //          would see the tags from before the click and its list would overwrite this change
+        //          (the X on a trigger put it back on the card with typed text).
         const attivo: any = typeof document !== 'undefined' ? document.activeElement : null;
         if (attivo && attivo !== document.body && typeof attivo.blur === 'function') {
-            if (attivo === inputRef.current) saltaBlurRef.current = true;
-            attivo.blur();
+            if (attivo === inputRef.current) {
+                saltaBlurRef.current = true;
+                attivo.blur();
+            } else {
+                setTimeout(() => {
+                    try { if (document.activeElement === attivo) attivo.blur(); } catch (_) { }
+                }, 0);
+            }
         }
     };
     const occorrenze = new Map<string, number>();

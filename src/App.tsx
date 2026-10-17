@@ -3885,7 +3885,11 @@ export default function App() {
         //          summary (z 300) opened UNDER it: the drop looked ignored and a second drop silently
         //          replaced the pending one. The user is told to close that window first (the message
         //          sits above everything).
-        if (isTagEditorOpen || isApiKeyDialogOpen) { showNotification(t.dropCloseWindowFirst, 'info'); return; }
+        // ITALIANO: lo stesso con la spiegazione «?» delle Impostazioni (z 450, anche quella del server
+        //           MCP che si apre da sola) e con «Salvare prima di chiudere?» (z 500).
+        // ENGLISH: the same with the Settings "?" explanation (z 450, also the MCP server one that
+        //          opens by itself) and with "Save before closing?" (z 500).
+        if (isTagEditorOpen || isApiKeyDialogOpen || aiuto || saveCloseDialog.isOpen) { showNotification(t.dropCloseWindowFirst, 'info'); return; }
         // ITALIANO: una cartella trascinata da sola si apre come con «Carica Cartella»; piu' cartelle,
         //           o una cartella insieme ad altri file, non si indovinano: lo si dice.
         // ENGLISH: a folder dropped on its own opens as with "Load Folder"; several folders, or a
@@ -3923,7 +3927,7 @@ export default function App() {
             if (folderOf) for (const f of imgFiles) { const d = folderOf.get(f); if (typeof d === 'string' && d) chiavePercorso.set(f, d); }
             calculateImportSummary(imgFiles, droppedTxt, null, null, chiavePercorso.size > 0 ? chiavePercorso : null);
         }
-    }, [t, isTagEditorOpen, isApiKeyDialogOpen]);
+    }, [t, isTagEditorOpen, isApiKeyDialogOpen, aiuto, saveCloseDialog.isOpen]);
     // ITALIANO: riferimento SEMPRE aggiornato al gestore, cosi' i listener globali (sotto) restano
     //           registrati una volta sola ma chiamano sempre la versione corrente.
     // ENGLISH: an always-current ref to the handler, so the global listeners (below) subscribe once
@@ -7777,9 +7781,11 @@ export default function App() {
                                                             {/* ENGLISH: copies the single tag to the clipboard (appears on hover) */}
                                                             <button
                                                                 onClick={() => {
-                                                                    navigator.clipboard?.writeText(tag)
+                                                                    // ITALIANO: se gli appunti rifiutano (o mancano) lo si dice con la frase sugli appunti.
+                                                                    // ENGLISH: if the clipboard refuses (or is missing) the clipboard sentence says so.
+                                                                    Promise.resolve().then(() => navigator.clipboard.writeText(tag))
                                                                         .then(() => { soundManager.pop(); showNotification(`${t.statsTagCopied}: ${tag}`, 'success'); })
-                                                                        .catch(() => showNotification(t.importTagsError, 'error'));
+                                                                        .catch(() => showNotification(t.mcpCopyFailed, 'error'));
                                                                 }}
                                                                 title={t.statsCopyTag}
                                                                 className={`shrink-0 p-1 rounded-md opacity-0 group-hover/riga:opacity-100 transition-all ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-200'}`}

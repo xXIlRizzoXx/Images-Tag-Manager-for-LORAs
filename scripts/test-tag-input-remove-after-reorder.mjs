@@ -201,6 +201,11 @@ dice('"dog" scritto di nuovo, X su "dog": sparisce, come col blur seguito dalla 
     casellaA().props.onChange({ target: { value: 'foo' } });
     const pillola = pillole(disegnaB()).find(p => p.testo === 'smile');
     trova(pillola.nodo.props.children, n => n.type === 'button')[0].props.onClick({ stopPropagation() { } });
+    // ITALIANO: la casella di un'altra card si lascia dopo il ridisegno (vedi
+    //           test-tag-input-remove-trigger-pending-text.mjs): si aspetta un giro.
+    // ENGLISH: another card's box is left after the re-render (see
+    //          test-tag-input-remove-trigger-pending-text.mjs): wait one turn.
+    await new Promise(r => setTimeout(r, 5));
     dice('X nella card B con il cursore nella card A: A lasciata, "foo" entra in A, B perde "smile"',
         { a: ['cat', 'foo'], b: ['blue eyes'], fuoco: null }, { a: tagsA, b: tagsB, fuoco: globalThis.document.activeElement });
     delete globalThis.document;

@@ -63,7 +63,7 @@ if (!fineDrop) { console.log('NO  apriCartellaTrascinata / handleDroppedFiles no
 const pezzoDrop = sorgente.slice(inizioDrop, fineDrop.index + fineDrop[0].length);
 const js = (await esbuild.transform(pezzoCartella + pezzoDrop, { loader: 'ts' })).code;
 const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
-    'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aperturaCartellaRef',
+    'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aperturaCartellaRef', 'aiuto', 'saveCloseDialog',
     js + '\nreturn { handleLoadFolderClick, apriCartellaTrascinata, handleDroppedFiles };');
 
 const OCCUPATO = t.folderOpenBusy || '(testo folderOpenBusy mancante)';
@@ -116,7 +116,7 @@ const ambiente = ({ selettore = null } = {}) => {
             r.riepiloghi.push({ cartella: handle ? handle.name : null, percorsi: pathOf ? img.map(f => pathOf.get(f) || '') : null });
         },
         { current: { click: () => { r.campo++; } } }, scanDirectoryHandle,
-        (f) => f, async () => ({ txtFiles: [], folderOf: null }), false, false, fileDiMac, { current: false });
+        (f) => f, async () => ({ txtFiles: [], folderOf: null }), false, false, fileDiMac, { current: false }, null, { isOpen: false });
     return { r, ...fn };
 };
 const giri = async (n = 20) => { for (let i = 0; i < n; i++) await new Promise(ok => setImmediate(ok)); };
