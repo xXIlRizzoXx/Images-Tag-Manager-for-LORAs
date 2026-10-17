@@ -1,7 +1,18 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 16 ottobre 2026
+**Ultimo aggiornamento:** 17 ottobre 2026
 **Versione attuale:** 2.0.1 in lavorazione (non ancora costruita né pubblicata). La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+Novità 2.0.1 (traguardo 111, 17 ottobre 2026): **terzo ciclo di controllo completo, 65 difetti corretti.**
+Tre giri di ricerca, verifica e correzione su tutto il programma (62 segnalati, 57 confermati, 5
+scartati), più le ultime correzioni fatte a mano dopo il terzo giro: 27 salvataggi, 217 prove
+automatiche tutte verdi. Le più importanti per chi usa il programma: il salvataggio di emergenza
+(backup anti-crash) ritrova le modifiche anche dopo aver chiuso una foto con la X, averla ripresa
+e richiusa; nella card la X di un tag toglie quel tag al primo clic, anche con un testo scritto e
+non ancora confermato con Invio, che ora entra invece di perdersi; foto con lo stesso nome (a.png e
+a.jpg) e cestino si comportano bene in altri casi rari; l'installer chiude anche la versione
+portable aperta prima di installare; i Termini d'uso dell'installer dicono la stessa cosa della
+licenza MIT; la spiegazione del server MCP dice come ricollegare Claude Code dopo un codice nuovo
+o un'installazione pulita. Restano da rifare a mano due immagini del README, prima di pubblicare.
 Novità 2.0.1 (traguardo 110, 16 ottobre 2026): **sistemato tutto quello che era rimasto aperto.**
 I 9 difetti minori lasciati dal secondo ciclo di controllo: una foto HEIC i cui dati nascosti (come
 la posizione GPS) stanno in un posto che il programma non sa pulire non parte più verso Google, e un
