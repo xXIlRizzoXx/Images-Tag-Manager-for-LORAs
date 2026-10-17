@@ -54,8 +54,8 @@ del respeto de los derechos de terceros y de las leyes aplicables.
 
 6. MARCAS
 
-Este programa no está afiliado ni aprobado por Google, Stability AI ni
-otros titulares de las marcas citadas.
+Este programa no está afiliado a Google, Stability AI ni otros titulares
+de las marcas citadas, ni cuenta con su aprobación.
 
 
 Si no aceptas estas condiciones, cierra el programa de instalación.

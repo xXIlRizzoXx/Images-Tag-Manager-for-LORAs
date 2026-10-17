@@ -50,4 +50,18 @@ for (const lingua of LINGUE) {
     dice(`${lingua}: nessun carattere sostitutivo (codifica intatta)`, false, testo.includes('�'));
 }
 
+
+// ITALIANO: ricontrollo lingue del 17/10/2026: i Termini tedeschi davano del "du" mentre le pagine
+//           dell'installer intorno e tutto il programma danno del "Sie"; in spagnolo "afiliado"
+//           regge "a", non "por".
+// ENGLISH: language recheck of 2026-10-17: the German terms used "du" while the installer pages
+//          around them and the whole app use "Sie"; in Spanish "afiliado" takes "a", not "por".
+{
+    const de = fs.readFileSync(path.join(radice, 'build', 'license_de.txt'), 'utf8');
+    dice('de: i Termini danno del Sie, niente du/dein', null, (de.match(/\b(du|Du|dein[a-z]*|Dein[a-z]*|DEIN[A-Z]*)\b/) || [null])[0]);
+    dice('de: virgolette tedesche, non dritte', false, de.includes('"'));
+    const es = fs.readFileSync(path.join(radice, 'build', 'license_es.txt'), 'utf8');
+    dice('es: "afiliado a", non "afiliado ni aprobado por"', [false, true], [/afiliado ni aprobado por/.test(es), /afiliado a Google/.test(es)]);
+}
+
 process.exit(esito());

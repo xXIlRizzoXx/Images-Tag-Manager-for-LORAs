@@ -244,4 +244,13 @@ for (const l of ['it', 'en', 'fr', 'es', 'de', 'zh', 'ja', 'pt', 'ru']) {
         [typeof L.dropOneFolder === 'string' && L.dropOneFolder.trim().length > 0, typeof L.dropFolderNoAccess === 'string' && L.dropFolderNoAccess.includes(L.loadFolder)]);
 }
 
+// ITALIANO: in giapponese le frasi della cartella trascinata scrivono フォルダー come il resto del
+//           blocco (trashInfo, deleteNoRecycleBin); solo la citazione del pulsante 「フォルダを読み込む」 resta com'e'.
+// ENGLISH: in Japanese the dropped-folder sentences spell フォルダー like the rest of the block
+//          (trashInfo, deleteNoRecycleBin); only the quoted button 「フォルダを読み込む」 stays as it is.
+for (const k of ['dropImagesHere', 'dropOnlyImages', 'dropOneFolder', 'dropFolderNoAccess']) {
+    const testo = String(lingue.ja[k] || '').split(lingue.ja.loadFolder).join('');
+    dice('ja: ' + k + ' scrive フォルダー', false, /フォルダ(?!ー)/.test(testo));
+}
+
 process.exit(esito());
