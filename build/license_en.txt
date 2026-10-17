@@ -7,7 +7,8 @@ By installing and using this program you accept the terms below.
 1. USING THE PROGRAM
 
 The program is free and you can use it freely, including for work.
-You may not resell it or distribute it as if it were your own.
+It is open source, released under the MIT License: you may use, copy,
+modify and redistribute it, keeping the copyright notice and the license.
 
 
 2. NO WARRANTY

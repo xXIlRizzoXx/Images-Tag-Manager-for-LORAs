@@ -9,7 +9,9 @@ ci-dessous.
 
 Le programme est gratuit et vous pouvez l'utiliser librement, y compris à
 des fins professionnelles.
-Vous ne pouvez ni le revendre ni le distribuer comme s'il était le vôtre.
+Il est open source, publié sous licence MIT : vous pouvez l'utiliser, le
+copier, le modifier et le redistribuer, en conservant la mention de
+copyright et la licence.
 
 
 2. AUCUNE GARANTIE

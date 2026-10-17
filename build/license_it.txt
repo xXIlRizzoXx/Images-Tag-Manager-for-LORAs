@@ -7,7 +7,8 @@ Installando e usando questo programma accetti le condizioni qui sotto.
 1. USO DEL PROGRAMMA
 
 Il programma è gratuito e puoi usarlo liberamente, anche per lavoro.
-Non puoi rivenderlo né distribuirlo come se fosse tuo.
+È open source, rilasciato con licenza MIT: puoi usarlo, copiarlo,
+modificarlo e ridistribuirlo, mantenendo l'avviso di copyright e la licenza.
 
 
 2. NESSUNA GARANZIA

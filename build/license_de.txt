@@ -8,7 +8,9 @@ folgenden Bedingungen.
 1. NUTZUNG DES PROGRAMMS
 
 Das Programm ist kostenlos und du kannst es frei verwenden, auch beruflich.
-Du darfst es weder weiterverkaufen noch als dein eigenes verbreiten.
+Es ist Open Source und steht unter der MIT-Lizenz: Du darfst es nutzen,
+kopieren, verändern und weitergeben, wenn der Copyright-Hinweis und die
+Lizenz erhalten bleiben.
 
 
 2. KEINE GARANTIE

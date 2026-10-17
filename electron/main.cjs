@@ -1092,7 +1092,8 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
    arrivano i "controlli", che portano lo stesso percorso. Per questo si ascoltano entrambi.
    SICUREZZA: il percorso non arriva mai dalla pagina — e' il processo principale l'unica
    fonte. La finestra di registrazione resta aperta solo fra `begin-pick` e `take-picked-dir`,
-   e il valore passa comunque per isSafeLocalPath e per un controllo che sia una cartella.
+   e il valore restituito passa comunque per isSafeLocalPath e per un controllo che sia una
+   cartella (una cartella di rete conta nel confronto ma non viene mai restituita).
    ENGLISH: PATH OF THE FOLDER PICKED WITH "LOAD FOLDER"
    The page opens the folder with the browser's picker, which deliberately does NOT tell it
    where that folder lives on disk: the files it yields carry no path, and with no path there
@@ -1103,29 +1104,56 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
    folder raises no request (the grant is cached) but does raise "checks", which carry the same
    path. That is why both are listened to.
    SECURITY: the path never comes from the page - the main process is the only source. The
-   recording window is open only between `begin-pick` and `take-picked-dir`, and the value still
-   goes through isSafeLocalPath plus a check that it really is a directory. */
+   recording window is open only between `begin-pick` and `take-picked-dir`, and the returned
+   value still goes through isSafeLocalPath plus a check that it really is a directory (a network
+   folder counts in the comparison but is never returned). */
 let pickPending = false;
 let pickedDirCandidates = [];
 const PICK_MAX_CANDIDATES = 32;
 
+// ITALIANO: una cartella di rete scritta per esteso, \\server\condivisione o piu' in basso (anche la
+//           sola radice della condivisione, che isSafeSidecarPath non accetta perche' vuole un file).
+//           Restano fuori \\?\, \\.\, la forma //host e ogni "..", come negli altri canali.
+// ENGLISH: a network folder spelled out, \\server\share or deeper (the bare share root too, which
+//          isSafeSidecarPath refuses because it wants a file). \\?\, \\.\, the //host form and any
+//          ".." stay out, as in the other channels.
+const isNetworkFolderPath = (p) => {
+    if (typeof p !== 'string' || isSafeLocalPath(p)) return false;
+    if (!/^\\\\[^\\/?.][^\\/]*\\[^\\/]+/.test(p)) return false;
+    if (p.split(/[\\/]+/).includes('..')) return false;
+    return path.isAbsolute(p);
+};
+
 const rememberPickedDir = (p) => {
     if (!pickPending) return;
     if (typeof p !== 'string' || !p) return;
-    // ITALIANO: le cartelle di RETE non passano di qui, ed e' voluto: Windows non ha un Cestino
-    //           per le condivisioni di rete, quindi un percorso del genere non servirebbe a
-    //           niente. Restando vuoto, la pagina ricade sulla strada gia' esistente, cioe' la
-    //           seconda conferma con la cancellazione definitiva, che li' e' l'unica verita'.
+    // ITALIANO: una cartella di RETE (\\server\condivisione\...) non viene mai restituita alla
+    //           pagina, ed e' voluto: Windows non ha un Cestino per le condivisioni di rete, quindi
+    //           quel percorso non servirebbe a niente. Restando vuoto, la pagina ricade sulla strada
+    //           gia' esistente, cioe' la seconda conferma con la cancellazione definitiva, che li'
+    //           e' l'unica verita'. Pero' entra fra i candidati: deve CONTARE nel confronto di
+    //           `take-picked-dir`. Prima veniva scartata qui, e se nella finestra arrivava anche una
+    //           copia LOCALE gia' aperta con gli stessi file, vinceva quella da sola e le foto di rete
+    //           ricevevano i percorsi della copia. Niente statSync qui: la rete si tocca solo se
+    //           serve davvero al confronto (vedi sotto), mai nel controllo dei permessi.
     //           Una cartella su una LETTERA collegata alla rete (Z:\) invece passa: per quella e'
     //           il canale del Cestino a rispondere 'rifiutato', che porta alla stessa strada.
-    // ENGLISH: NETWORK folders do not get through here, deliberately: Windows has no Recycle Bin
-    //          for network shares, so such a path would buy nothing. Left empty, the page falls
-    //          back to the road that already exists - the second confirmation with the permanent
-    //          delete - which over there is the only truthful answer.
+    // ENGLISH: a NETWORK folder (\\server\share\...) is never returned to the page, deliberately:
+    //          Windows has no Recycle Bin for network shares, so that path would buy nothing. Left
+    //          empty, the page falls back to the road that already exists - the second confirmation
+    //          with the permanent delete - which over there is the only truthful answer. It does
+    //          join the candidates though: it must COUNT in `take-picked-dir`'s comparison. It used
+    //          to be dropped here, and when an already open LOCAL copy with the same files arrived
+    //          in the window too, that copy won alone and the network photos got the copy's paths.
+    //          No statSync here: the network is touched only when the comparison really needs it
+    //          (see below), never inside the permission check.
     //          A folder on a network-MAPPED drive letter (Z:\) does get through: for that one the
     //          Recycle Bin channel answers 'rifiutato', which leads to the same road.
-    if (!isSafeLocalPath(p)) return;
-    try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
+    const inRete = isNetworkFolderPath(p);
+    if (!isSafeLocalPath(p) && !inRete) return;
+    if (!inRete) {
+        try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
+    }
     // ITALIANO: si RACCOLGONO tutti i candidati, non si tiene solo l'ultimo. In quella finestra
     //           arrivano anche cartelle che non c'entrano: basta che la pagina rilegga una foto di
     //           una cartella aperta prima (succede al rientro del fuoco, quando il selettore si
@@ -1175,7 +1203,7 @@ ipcMain.handle('folder:take-picked-dir', (_event, proofs) => {
         if (pr.name.includes('/') || pr.name.includes('\\')) return false;
         if (rel.split(/[\\/]+/).includes('..')) return false;
         const full = path.join(dir, rel, pr.name);
-        if (!isSafeLocalPath(full)) return false;
+        if (!(isSafeLocalPath(dir) ? isSafeLocalPath(full) : isSafeSidecarPath(full))) return false;
         if (path.relative(dir, full).startsWith('..')) return false;
         try {
             const st = fs.statSync(full);
@@ -1187,8 +1215,18 @@ ipcMain.handle('folder:take-picked-dir', (_event, proofs) => {
         }
     });
 
-    const winners = candidates.filter(holdsAll);
-    return winners.length === 1 ? winners[0] : '';
+    // ITALIANO: torna solo una cartella LOCALE, e solo se e' l'unica che combacia. Le cartelle di
+    //           rete contano nel confronto (una che combacia fa tornare '', seconda conferma) ma non
+    //           vengono mai restituite; si leggono solo se c'e' un vincitore locale da mettere in
+    //           dubbio, cosi' una scelta di rete normale non tocca la rete qui.
+    // ENGLISH: only a LOCAL folder is returned, and only when it is the only one that matches.
+    //          Network folders count in the comparison (one that matches makes it '', second
+    //          confirmation) but are never returned; they are read only when there is a local
+    //          winner to question, so a plain network pick does not touch the network here.
+    const winners = candidates.filter((dir) => isSafeLocalPath(dir) && holdsAll(dir));
+    if (winners.length !== 1) return '';
+    if (candidates.some((dir) => !isSafeLocalPath(dir) && holdsAll(dir))) return '';
+    return winners[0];
 });
 
 // ITALIANO: Header Content-Security-Policy applicato in produzione

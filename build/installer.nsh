@@ -239,14 +239,54 @@
 
 !endif
 
+; ITALIANO: Il controllo "il programma e' aperto?" prima di installare (e di disinstallare).
+;           Quello standard di electron-builder, con PowerShell, cerca SOLO i processi il cui
+;           percorso comincia con la cartella di installazione. La versione portable gira invece
+;           da %TEMP%\<codice>\, con la stessa cartella dati e lo stesso blocco "una sola istanza":
+;           non veniva vista ne' chiusa. Alla fine "Esegui" avviava l'exe nuovo, che si chiudeva
+;           subito e rimetteva davanti la finestra VECCHIA, e l'installazione pulita cancellava la
+;           cartella dati sotto un programma aperto.
+;           Qui si riusa lo stesso flusso standard (messaggio, chiusura gentile, poi forzata,
+;           nuovo tentativo) ma con il suo ramo che cerca per NOME dell'exe fra i processi
+;           dell'utente, in qualunque cartella (tasklist/taskkill): basta dire che PowerShell
+;           "non c'e'" ($IsPowerShellAvailable = 1).
+;           Definendo questa macro, electron-builder non include piu' getProcessInfo.nsh e non
+;           dichiara $pid (allowOnlyOneInstallerInstance.nsh, !ifmacrondef in cima): il flusso
+;           standard li usa, quindi li mettiamo qui, al livello principale, per tutte e due le
+;           passate. Questo file e' incluso PRIMA di quello del modello (intestazione comune).
+; ENGLISH: The "is the program open?" check before installing (and uninstalling). The standard
+;          electron-builder one, with PowerShell, looks ONLY at processes whose path starts with
+;          the install folder. The portable version runs from %TEMP%\<id>\ instead, with the same
+;          data folder and the same single-instance lock: it was neither seen nor closed. At the
+;          end "Run" started the new exe, which quit at once and brought the OLD window back, and
+;          the clean install deleted the data folder under a running program.
+;          Here the same standard flow is reused (message, graceful close, then forced, retry) but
+;          through its branch that searches by the exe NAME among the user's processes, in any
+;          folder (tasklist/taskkill): it is enough to say PowerShell "is not there"
+;          ($IsPowerShellAvailable = 1).
+;          With this macro defined, electron-builder no longer includes getProcessInfo.nsh nor
+;          declares $pid (allowOnlyOneInstallerInstance.nsh, !ifmacrondef at its top): the standard
+;          flow uses them, so they go here, at top level, for both passes. This file is included
+;          BEFORE the template's one (common header).
+!include "getProcessInfo.nsh"
+Var pid
+
+!macro customCheckAppRunning
+  Var /GLOBAL IsPowerShellAvailable
+  StrCpy $IsPowerShellAvailable 1
+  !insertmacro _CHECK_APP_RUNNING
+!macroend
+
 ; ITALIANO: La cancellazione vera, solo se la casella era spuntata. Sta in customInstall, che
 ;           gira dentro la sezione di installazione: i file nuovi sono gia' al loro posto e il
-;           programma e' gia' stato chiuso da CHECK_APP_RUNNING. Tocca SOLO la cartella dei
+;           programma e' gia' stato chiuso da CHECK_APP_RUNNING, che con customCheckAppRunning
+;           (qui sopra) lo cerca per nome, anche la versione portable. Tocca SOLO la cartella dei
 ;           dati dell'app: le foto e i .txt dell'utente stanno nelle sue cartelle, non qui.
 ; ENGLISH: The deletion itself, only when the box was ticked. It sits in customInstall, which
 ;          runs inside the install section: the new files are already in place and the app has
-;          already been closed by CHECK_APP_RUNNING. It touches ONLY the app's own data folder;
-;          the user's photos and .txt files live in their own folders, not here.
+;          already been closed by CHECK_APP_RUNNING, which with customCheckAppRunning (above)
+;          looks for it by name, the portable version included. It touches ONLY the app's own
+;          data folder; the user's photos and .txt files live in their own folders, not here.
 !macro customInstall
   !ifdef APP_PACKAGE_NAME
     ${If} $CleanInstall == ${BST_CHECKED}
