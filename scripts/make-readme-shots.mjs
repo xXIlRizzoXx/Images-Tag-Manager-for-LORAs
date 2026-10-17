@@ -1,16 +1,28 @@
 /*
  * ITALIANO: genera gli SCREENSHOT per il README.
  *   Apre l'app dentro una finestra Electron nascosta (quindi con lo stesso aspetto del
- *   programma vero), la riempie con un piccolo set di immagini di esempio DISEGNATE
- *   al momento — nessuna foto reale, nessun volto di persone vere — e fotografa le
- *   varie schermate. Serve il server di sviluppo gia' avviato (npm run dev).
+ *   programma vero), la riempie di immagini e fotografa le varie schermate.
+ *   Senza --folder le immagini sono di esempio, DISEGNATE al momento: nessuna foto reale,
+ *   nessun volto di persone vere. Con --folder <cartella> usa invece --count foto VERE di
+ *   quella cartella (solo quelle con il .txt accanto, predefinito 14): le copia con i loro
+ *   .txt in public/__shots (ignorata da git, esclusa dall'exe, tolta a fine giro).
+ *   Va lanciata con electron, non con node. Serve il server di sviluppo gia' avviato:
+ *   con npm run dev (porta 3000) si passa --url http://localhost:3000; senza --url lo
+ *   script cerca la porta 3100 (server avviato con node_modules/.bin/vite --port=3100).
  *
  * ENGLISH: generates the README screenshots. It opens the app inside a hidden Electron
- *   window (so it looks exactly like the real program), fills it with a small set of
- *   sample images DRAWN on the fly — no real photos, no real faces — and captures the
- *   various screens. Requires the dev server to be running (npm run dev).
+ *   window (so it looks exactly like the real program), fills it with images and captures
+ *   the various screens.
+ *   Without --folder the images are samples DRAWN on the fly: no real photos, no real
+ *   faces. With --folder <folder> it uses --count REAL photos of that folder instead (only
+ *   those with a .txt next to them, 14 by default): it copies them with their .txt files
+ *   into public/__shots (ignored by git, left out of the exe, removed at the end).
+ *   Launch it with electron, not with node. Requires the dev server to be running: with
+ *   npm run dev (port 3000) pass --url http://localhost:3000; without --url the script
+ *   looks for port 3100 (server started with node_modules/.bin/vite --port=3100).
  *
- *   node scripts/make-readme-shots.mjs [--url http://localhost:3100] [--only 02,03]
+ *   npx electron scripts/make-readme-shots.mjs [--url http://localhost:3000] [--only 02,03]
+ *       [--folder <cartella con foto e .txt / folder with photos and .txt>] [--count 14]
  */
 import { app, BrowserWindow, session } from 'electron';
 import fs from 'fs';
