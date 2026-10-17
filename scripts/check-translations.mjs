@@ -101,6 +101,7 @@ const CITAZIONI = [
     ['mcpHint', 'saveChanges'],
     ['mcpEditedNotice', 'saveChanges'],
     ['mcpNewTokenDone', 'mcpCopyClaudeCode'],
+    ['mcpClaudeCodeReconnect', 'mcpCopyClaudeCode'],
     ['bulkHiddenWarn', 'deleteSelected'],
 ];
 

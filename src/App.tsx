@@ -1423,7 +1423,7 @@ export default function App() {
         ai: { titolo: t.aiSettings, testi: [t.aiCloudInfo, t.aiBetaHint] },
         modello: { titolo: t.aiModelLabel, testi: [t.aiModelAutoHint, t.aiProbeHint, t.aiModelLegend] },
         tagga: { titolo: t.aiCardTagging, testi: [t.aiRpmHint, t.aiSkipTaggedHint] },
-        mcp: { titolo: t.mcpTitle, testi: [t.mcpHint, t.mcpDesktopNote] },
+        mcp: { titolo: t.mcpTitle, testi: [t.mcpHint, t.mcpDesktopNote, t.mcpClaudeCodeReconnect] },
     };
 
     // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
