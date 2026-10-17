@@ -59,7 +59,9 @@ const senzaPeso = s => {
 //   'miku ( vocaloid )' become 'miku (vocaloid)'. Only with a letter or a digit both before and
 //   after the parenthesis, so '(o)_(o)', '(x)', ':(' and Japanese emoticons such as 'o(^-^)o' or
 //   'ヽ(・∀・)ﾉ' stay as they are.
-const spaziParentesi = s => s.replace(/([\p{L}\p{N}])\s*\(\s*(?=[\p{L}\p{N}])/gu, '$1 (').replace(/([\p{L}\p{N}])\s+\)/gu, '$1)');
+// ITALIANO: lettere latine soltanto: gli occhi di 'ლ(ಠ益ಠლ)' o 'щ(ﾟдﾟщ)' per Unicode sono lettere.
+// ENGLISH: Latin letters only: the eyes of 'ლ(ಠ益ಠლ)' or 'щ(ﾟдﾟщ)' are letters for Unicode.
+const spaziParentesi = s => s.replace(/([\p{Script=Latin}0-9])\s*\(\s*(?=[\p{Script=Latin}0-9])/gu, '$1 (').replace(/([\p{Script=Latin}0-9])\s+\)/gu, '$1)');
 const chiave = t => spaziParentesi(senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim());
 
 // ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con

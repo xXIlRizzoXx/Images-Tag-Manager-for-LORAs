@@ -165,7 +165,7 @@ try {
         lancia('--apply', 'spazi.json');
         return tagScritti().length;
     })());
-    const KAOMOJI = ['ヽ(・∀・)ﾉ', 'o(^-^)o', 'ლ(╹◡╹ლ)', 'ε(´∀｀)з'];
+    const KAOMOJI = ['ヽ(・∀・)ﾉ', 'o(^-^)o', 'ლ(╹◡╹ლ)', 'ε(´∀｀)з', 'ლ(ಠ益ಠლ)', 'щ(ﾟдﾟщ)', 'ヽ(ﾟдﾟ)ﾉ'];
     fs.writeFileSync(path.join(prova, 'emoticon.txt'), ['(o)_(o)', '(x)', ...KAOMOJI, 'zzq(1)'].join(', ') + '\n');
     lancia('emoticon.txt', '--out', 'piano-emo.json');
     const pianoEmo = Object.keys(JSON.parse(fs.readFileSync(path.join(prova, 'piano-emo.json'), 'utf8')));
