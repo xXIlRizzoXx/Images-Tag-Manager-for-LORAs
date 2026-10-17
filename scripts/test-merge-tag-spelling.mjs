@@ -152,6 +152,24 @@ try {
         lancia('--apply', 'prec2.json');
         return tagScritti().length;
     })());
+    // ITALIANO: gli spazi attorno alla parentesi non fanno un tag nuovo: 'spring(object)' e
+    //           'spring ( object )' sono 'spring (object)', gia' inserito sopra. Le emoticon restano.
+    // ENGLISH: the spaces around the parenthesis do not make a new tag: 'spring(object)' and
+    //          'spring ( object )' are 'spring (object)', inserted above. Emoticons stay as they are.
+    fs.writeFileSync(path.join(prova, 'spazi.txt'), 'spring(object), spring ( object ), Spring_(Object)\n');
+    const rapportoSpazi = lancia('spazi.txt', '--out', 'piano-spazi.json');
+    dice('spring(object) e spring ( object ) non sono proposti come nuovi', [], Object.keys(JSON.parse(fs.readFileSync(path.join(prova, 'piano-spazi.json'), 'utf8'))));
+    dice('il rapporto vede un tag solo, gia\' nel dizionario', [true, true], [/tag distinti nei file\s*: 1\b/.test(rapportoSpazi), /gia' nel dizionario\s*: 1\b/.test(rapportoSpazi)]);
+    dice('--apply di spring(object) non lo reinserisce', tagScritti().length, (() => {
+        fs.writeFileSync(path.join(prova, 'spazi.json'), JSON.stringify({ 'spring(object)': { categoria: 'seasons', it: 'molla' } }));
+        lancia('--apply', 'spazi.json');
+        return tagScritti().length;
+    })());
+    fs.writeFileSync(path.join(prova, 'emoticon.txt'), '(o)_(o), (x), zzq(1)\n');
+    lancia('emoticon.txt', '--out', 'piano-emo.json');
+    const pianoEmo = Object.keys(JSON.parse(fs.readFileSync(path.join(prova, 'piano-emo.json'), 'utf8')));
+    dice('le emoticon (o)_(o) e (x) non cambiano forma', true, pianoEmo.filter((t) => !t.startsWith('zzq')).every((t) => t === '(o)_(o)' || t === '(x)'));
+    dice('un nome attaccato alla parentesi entra con lo spazio, come nel dizionario', ['zzq (1)'], pianoEmo.filter((t) => t.startsWith('zzq')));
 
     // ITALIANO: rifare lo stesso inserimento non aggiunge niente (niente doppioni).
     // ENGLISH: repeating the same insertion adds nothing (no duplicates).

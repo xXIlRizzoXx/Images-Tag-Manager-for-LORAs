@@ -51,7 +51,14 @@ const senzaPeso = s => {
     const m = /^[([]+([^()[\]]*?)(:[\d.]+)?[)\]]+$/.exec(s);
     return m && (m[2] || /[\p{L}\p{N}].*[\p{L}\p{N}]/u.test(m[1])) ? m[1].trim() : s;
 };
-const chiave = t => senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim();
+// ITALIANO: gli spazi attorno alla parentesi di una precisazione non contano: 'miku(vocaloid)' e
+//   'miku ( vocaloid )' diventano 'miku (vocaloid)'. Solo dopo una lettera o una cifra, cosi'
+//   '(o)_(o)', '(x)' e le emoticon come ':(' restano come sono.
+// ENGLISH: the spaces around a qualifier's parenthesis do not count: 'miku(vocaloid)' and
+//   'miku ( vocaloid )' become 'miku (vocaloid)'. Only after a letter or a digit, so '(o)_(o)',
+//   '(x)' and emoticons such as ':(' stay as they are.
+const spaziParentesi = s => s.replace(/([\p{L}\p{N}])\s*\(\s*/gu, '$1 (').replace(/([\p{L}\p{N}])\s+\)/gu, '$1)');
+const chiave = t => spaziParentesi(senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim());
 
 // ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con
 //   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (come in chiave),
@@ -72,7 +79,7 @@ const tieneTrattino = s => /^[^\s_]_[^\s_]$/u.test(s) || EMOTICON_LUNGHE.has(s) 
 const grafia = t => {
     const s = senzaPeso(String(t).toLowerCase().trim());
     if (tieneTrattino(s)) return s;
-    return (/[\p{L}\p{N}]/u.test(s) ? s.replace(/[_\s]+/g, ' ') : s.replace(/\s+/g, ' ')).trim();
+    return (/[\p{L}\p{N}]/u.test(s) ? spaziParentesi(s.replace(/[_\s]+/g, ' ')) : s.replace(/\s+/g, ' ')).trim();
 };
 
 function leggiDizionario() {
