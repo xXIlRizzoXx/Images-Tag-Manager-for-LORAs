@@ -131,6 +131,28 @@ try {
     dice('i tag con il peso noti non sono proposti come nuovi; smile entra senza peso', ['smile'], Object.keys(pianoPesi).sort());
     dice('il rapporto conta 4 tag gia\' nel dizionario: masterpiece, best quality, blue sky e (x)', true, /gia' nel dizionario\s*: 4\b/.test(rapportoPesi));
 
+    // ITALIANO: una precisazione tra parentesi fa un tag diverso: 'spring (object)' (la molla) non e'
+    //           'spring' (la stagione), che c'e' gia'. La chiave toglieva tutto il testo tra parentesi
+    //           e il rapporto li dava per "gia' nel dizionario"; con --apply finivano fra i saltati.
+    // ENGLISH: a parenthesised qualifier makes a different tag: 'spring (object)' (the coil) is not
+    //          'spring' (the season), which is already there. The key removed all text in parentheses
+    //          and the report called them "already in the dictionary"; with --apply they were skipped.
+    const conBase = tagScritti();
+    dice('premessa: il dizionario ha spring, aura, fire e hood', [true, true, true, true], ['spring', 'aura', 'fire', 'hood'].map((t) => conBase.includes(t)));
+    fs.writeFileSync(path.join(prova, 'precisazioni.txt'), 'spring (object), Aura_(Sousou_no_Frieren), Fire_(Element), hood (clothing), spring, Hood, zzqx\n');
+    const rapportoPrec = lancia('precisazioni.txt', '--out', 'piano-prec.json');
+    const pianoPrec = JSON.parse(fs.readFileSync(path.join(prova, 'piano-prec.json'), 'utf8'));
+    dice('il piano propone i tag con la precisazione, non spring e hood', ['aura (sousou no frieren)', 'fire (element)', 'hood (clothing)', 'spring (object)', 'zzqx'], Object.keys(pianoPrec).sort());
+    dice('il rapporto conta 2 tag gia\' nel dizionario: spring e hood', true, /gia' nel dizionario\s*: 2\b/.test(rapportoPrec));
+    fs.writeFileSync(path.join(prova, 'prec.json'), JSON.stringify({ 'Spring_(Object)': { categoria: 'seasons', it: 'molla' } }));
+    const rapportoApplyPrec = lancia('--apply', 'prec.json');
+    dice('--apply inserisce { tag: \'spring (object)\', ... } e non lo salta', [true, false], [fs.readFileSync(dizionario, 'utf8').includes("{ tag: 'spring (object)', translations: { it: 'molla', en: 'spring (object)' } },"), /gia' presente/.test(rapportoApplyPrec)]);
+    dice('spring_(object) e spring (object) sono lo stesso tag: un secondo --apply non lo reinserisce', tagScritti().length, (() => {
+        fs.writeFileSync(path.join(prova, 'prec2.json'), JSON.stringify({ 'spring_(object)': { categoria: 'seasons', it: 'molla' } }));
+        lancia('--apply', 'prec2.json');
+        return tagScritti().length;
+    })());
+
     // ITALIANO: rifare lo stesso inserimento non aggiunge niente (niente doppioni).
     // ENGLISH: repeating the same insertion adds nothing (no duplicates).
     const quanti = tagScritti().length;

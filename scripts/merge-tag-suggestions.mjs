@@ -33,10 +33,12 @@ const ingressi = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i 
 //   o maiuscole diverse: e' cosi' che si evitano i doppioni veri.
 // ENGLISH: two tags are "the same tag" even when spelled with underscores, extra spaces or
 //   different case: that is what actually prevents duplicates.
-// ITALIANO: un tag fatto solo di parentesi ('(o)_(o)') senza di loro resterebbe vuoto, e il
-//   rapporto lo scarterebbe: in quel caso la chiave tiene le parentesi.
-// ENGLISH: a tag made only of parentheses ('(o)_(o)') would be empty without them, and the report
-//   would drop it: in that case the key keeps the parentheses.
+// ITALIANO: il testo tra parentesi resta nella chiave: 'spring (object)' (la molla) e
+//   'aura (sousou no frieren)' (un personaggio) sono tag diversi da 'spring' e 'aura'. Prima la
+//   chiave lo toglieva e il rapporto li dava per "gia' nel dizionario" senza avvisare.
+// ENGLISH: the text in parentheses stays in the key: 'spring (object)' (the coil) and
+//   'aura (sousou no frieren)' (a character) are different tags from 'spring' and 'aura'. The key
+//   used to remove it and the report called them "already in the dictionary" without a word.
 // ITALIANO: i pesi dei prompt: '(masterpiece)', '((best quality))', '(smile:1.2)', '[blue sky]' sono
 //   i tag masterpiece, best quality, smile, blue sky con un peso intorno. Si tolgono prima di tutto,
 //   altrimenti il rapporto li proponeva come tag nuovi. Restano i tag che sono parentesi e basta:
@@ -49,16 +51,13 @@ const senzaPeso = s => {
     const m = /^[([]+([^()[\]]*?)(:[\d.]+)?[)\]]+$/.exec(s);
     return m && (m[2] || /[\p{L}\p{N}].*[\p{L}\p{N}]/u.test(m[1])) ? m[1].trim() : s;
 };
-const chiave = t => {
-    const base = senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim();
-    return base.replace(/\s*\(.*?\)\s*/g, ' ').trim() || base;
-};
+const chiave = t => senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim();
 
 // ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con
-//   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (a differenza di chiave),
+//   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (come in chiave),
 //   e un'emoticon senza lettere ne' cifre (^_^) tiene i suoi trattini bassi.
 // ENGLISH: the form in which a new tag enters the dictionary, where every tag is lowercase with
-//   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (unlike chiave), and an
+//   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (as in chiave), and an
 //   emoticon without letters or digits (^_^) keeps its underscores.
 // ITALIANO: il trattino basso resta anche dove fa parte del tag, perche' i modelli conoscono
 //   solo quella forma: le emoticon di WD14 (o_o, x_x, 0_0: un segno, _, un segno, piu' le poche
