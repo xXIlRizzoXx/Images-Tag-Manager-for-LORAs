@@ -37,7 +37,12 @@ const { dice, esito } = creaControlli();
 const B = String.fromCharCode(92);
 const PREFISSO = B + B + 'nas' + B + 'dataset' + B;
 const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'itm-unc-'));
-const veri = { statSync: fs.statSync, readFileSync: fs.readFileSync, writeFileSync: fs.writeFileSync, existsSync: fs.existsSync };
+// ITALIANO: anche lstatSync, openSync, unlinkSync e renameSync (entrambi i percorsi): il .txt si scrive
+//           in un temporaneo accanto che poi lo sostituisce.
+// ENGLISH: lstatSync, openSync, unlinkSync and renameSync (both paths) too: the .txt is written to a
+//          temporary file beside it which then replaces it.
+const veri = { statSync: fs.statSync, readFileSync: fs.readFileSync, writeFileSync: fs.writeFileSync, existsSync: fs.existsSync,
+    lstatSync: fs.lstatSync, openSync: fs.openSync, unlinkSync: fs.unlinkSync, renameSync: fs.renameSync };
 const realpathVero = fs.realpathSync.native;
 // ITALIANO: ogni accesso a un percorso \\... fuori dal prefisso finto finisce qui (e la prova fallisce).
 // ENGLISH: every access to a \\... path outside the fake prefix lands here (and fails the test).
@@ -53,6 +58,7 @@ try {
     fs.writeFileSync(path.join(cartella, '0001.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
     fs.writeFileSync(path.join(cartella, '0001.txt'), 'sks, red hair');
     for (const nome of Object.keys(veri)) fs[nome] = (p, ...resto) => veri[nome](traduci(p), ...resto);
+    fs.renameSync = (da, a, ...resto) => veri.renameSync(traduci(da), traduci(a), ...resto);
     fs.realpathSync.native = (p, ...resto) => realpathVero(traduci(p), ...resto);
 
     const foto = PREFISSO + '0001.jpg';

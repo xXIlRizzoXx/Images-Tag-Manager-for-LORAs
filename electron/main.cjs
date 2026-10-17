@@ -366,6 +366,42 @@ const WRITE_MAX_BYTES = 1024 * 1024;
 // ENGLISH: as for reading, no cap on the number of photos: from the 5001st on nothing used to be
 //          written, and the answer, shorter than the request, still said ok:true.
 
+/* ITALIANO: il .txt non si riscrive piu' sul posto: aprirlo in scrittura lo svuota subito, e se poi
+   la scrittura falliva (rete che cade, chiavetta staccata, disco pieno) restava vuoto mentre la
+   pagina diceva "non salvato". Il testo va prima in un temporaneo nella stessa cartella, creato in
+   modo esclusivo con un'estensione che nessun canale legge, e poi prende il posto del .txt. Se la
+   scrittura del temporaneo fallisce si toglie solo quello e il .txt resta com'era. Si scrive sul
+   posto, come prima, solo dove il temporaneo non aiuta: .txt che e' un collegamento (la
+   sostituzione lo romperebbe), temporaneo che non si puo' creare, sostituzione rifiutata (un
+   antivirus o un'anteprima che tiene aperto il .txt).
+   ENGLISH: the .txt is no longer rewritten in place: opening it for writing empties it at once, and
+   if the write then failed (network dropping, USB stick pulled, full disk) it was left empty while
+   the page said "not saved". The text goes first to a temporary file in the same folder, created
+   exclusively with an extension no channel reads, which then takes the .txt's place. If writing the
+   temporary file fails only that file is removed and the .txt stays as it was. It is written in
+   place, as before, only where the temporary file does not help: a .txt that is a link (replacing
+   it would break the link), a temporary file that cannot be created, a refused replacement (an
+   antivirus or a preview holding the .txt open). */
+const scriviTxtSostituendo = (txtPath, content) => {
+    const sulPosto = () => fs.writeFileSync(txtPath, content, 'utf8');
+    let st = null;
+    try { st = fs.lstatSync(txtPath); } catch (e) { if (!(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'))) return sulPosto(); }
+    if (st && (st.isSymbolicLink() || st.nlink > 1)) return sulPosto();
+    const tmp = txtPath + '.' + require('crypto').randomBytes(4).toString('hex') + '.itm-tmp';
+    let fd;
+    try { fd = fs.openSync(tmp, 'wx'); } catch (_) { return sulPosto(); }
+    try {
+        try { fs.writeFileSync(fd, content, 'utf8'); } finally { fs.closeSync(fd); }
+    } catch (e) {
+        try { fs.unlinkSync(tmp); } catch (_) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
+        throw e;
+    }
+    try { fs.renameSync(tmp, txtPath); } catch (_) {
+        try { fs.unlinkSync(tmp); } catch (__) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
+        sulPosto();
+    }
+};
+
 ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
     if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
     let written = 0;
@@ -391,7 +427,7 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
             //          stop Kohya ("caption file is empty"), a missing one does not. The photo counts
             //          as saved (the disk already matches it). A .txt that was there is really emptied.
             if (content === '' && !fs.existsSync(txtPath)) { results.push(true); continue; }
-            fs.writeFileSync(txtPath, content, 'utf8');
+            scriviTxtSostituendo(txtPath, content);
             written++;
             results.push(true);
         } catch (e) {
