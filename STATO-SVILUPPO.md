@@ -19,7 +19,8 @@ non ancora confermato con Invio, che ora entra invece di perdersi; foto con lo s
 a.jpg) e cestino si comportano bene in altri casi rari; l'installer chiude anche la versione
 portable aperta prima di installare; i Termini d'uso dell'installer dicono la stessa cosa della
 licenza MIT; la spiegazione del server MCP dice come ricollegare Claude Code dopo un codice nuovo
-o un'installazione pulita. Restano da rifare a mano due immagini del README, prima di pubblicare.
+o un'installazione pulita. Le due immagini del README (tag in blocco e viste) sono state rifatte
+il 17 ottobre.
 Novità 2.0.1 (traguardo 110, 16 ottobre 2026): **sistemato tutto quello che era rimasto aperto.**
 I 9 difetti minori lasciati dal secondo ciclo di controllo: una foto HEIC i cui dati nascosti (come
 la posizione GPS) stanno in un posto che il programma non sa pulire non parte più verso Google, e un
