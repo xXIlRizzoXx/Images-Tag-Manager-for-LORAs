@@ -5,10 +5,15 @@
    avevano come key la loro posizione e la X toglieva per posizione: React riusava il pulsante della
    posizione 2, che ora era di "cat", e il clic toglieva "cat" invece di "dog". Il caso tipico e' la
    correzione di un tag: si scrive "blond hair" e si clicca la X di "blonde hair", e sparisce il tag
-   appena scritto. La regola: ogni pillola ha una key legata al suo tag e la X toglie quel tag,
-   qualunque sia la sua posizione dopo il riordino.
-   Si esegue il TagInput VERO di src/components/ui.tsx con un React finto, senza DOM: come fa
-   React, il clic arriva al pulsante che nel disegno nuovo ha la STESSA key di quello premuto.
+   appena scritto. Prima correzione: key legata al tag e X che toglie per valore. Restava un
+   difetto: nel browser il clic arriva all'elemento che sta SOTTO il puntatore al rilascio; dopo
+   il riordino li' c'era un'altra pillola, il clic finiva al contenitore e il primo clic andava a
+   vuoto. La regola: premere la X non toglie il fuoco alla casella (onMouseDown con
+   preventDefault), quindi niente riordino prima del clic; la X toglie il suo tag e il testo
+   scritto resta nella casella, ed entra con Invio o al prossimo blur.
+   Si esegue il TagInput VERO di src/components/ui.tsx con un React finto, senza DOM, e un modello
+   del browser: il blur avviene solo se la pressione non e' stata annullata, e il clic arriva al
+   pulsante solo se nella stessa posizione c'e' ancora la stessa pillola.
    Uso:  node scripts/test-tag-input-remove-after-reorder.mjs   (esce con codice 1 se qualcosa non torna)
 
    ENGLISH: TEST OF A PILL'S X AFTER THE CARD HAS REORDERED ITSELF
@@ -18,9 +23,15 @@
    the X removed by position: React reused the button at position 2, which now belonged to "cat",
    and the click removed "cat" instead of "dog". The typical case is correcting a tag: typing
    "blond hair" and clicking the X of "blonde hair" removed the tag just typed. The rule: every pill
-   has a key tied to its tag and the X removes that tag, whatever its position after the reorder.
-   The REAL TagInput of src/components/ui.tsx runs with a fake React, no DOM: as React does, the
-   click reaches the button that has the SAME key as the pressed one in the new render.
+   First fix: key tied to the tag and X removing by value. A defect remained: in the browser the
+   click reaches the element UNDER the pointer on release; after the reorder another pill was
+   there, the click went to the container and the first click was lost. The rule: pressing the X
+   does not take the focus from the box (onMouseDown with preventDefault), so no reorder before
+   the click; the X removes its tag and the typed text stays in the box, going in with Enter or
+   on the next blur.
+   The REAL TagInput of src/components/ui.tsx runs with a fake React, no DOM, and a browser model:
+   the blur happens only if the press was not cancelled, and the click reaches the button only if
+   the same pill is still at the same position.
    Usage:  node scripts/test-tag-input-remove-after-reorder.mjs   (exits with code 1 if anything is off) */
 
 import * as esbuild from 'esbuild';
@@ -94,51 +105,74 @@ const regolaCard = (trigger) => (nuovi) => {
     return [...trigger.filter(t => unici.includes(t)), ...unici.filter(t => !trigger.includes(t)).sort((a, b) => a.localeCompare(b))];
 };
 
-// ITALIANO: scrive `testo` nella casella (se c'e'), preme il mouse sulla X della pillola `bersaglio`
-//           (la casella perde il fuoco), React ridisegna e il clic arriva al pulsante con la stessa
-//           key. `regola` e' quello che fa chi riceve setTags (la card riordina, le trigger no).
-// ENGLISH: types `testo` in the box (if any), presses the mouse on the X of the `bersaglio` pill (the
-//          box loses focus), React re-renders and the click reaches the button with the same key.
+// ITALIANO: scrive `testo` nella casella (se c'e'), preme il mouse sulla X della pillola `bersaglio`:
+//           se la pressione non e' annullata la casella perde il fuoco (blur) e React ridisegna.
+//           Al rilascio il browser manda il clic all'elemento sotto il puntatore: se nella stessa
+//           posizione c'e' un'altra pillola il clic va al contenitore e non toglie niente.
+//           `regola` e' quello che fa chi riceve setTags (la card riordina, le trigger no).
+//           Restituisce i tag e il testo rimasto nella casella.
+// ENGLISH: types `testo` in the box (if any), presses the mouse on the X of the `bersaglio` pill:
+//          unless the press is cancelled the box loses focus (blur) and React re-renders. On
+//          release the browser sends the click to the element under the pointer: if another pill
+//          sits at the same position the click goes to the container and removes nothing.
 //          `regola` is what the setTags receiver does (the card reorders, the triggers do not).
+//          Returns the tags and the text left in the box.
 const clicX = (iniziali, testo, bersaglio, { regola = (n) => n, isGlobal = false, occorrenza = 0 } = {}) => {
     globalThis.__GANCI__ = { i: 0, v: {} };
     globalThis.document = { hasFocus: () => true };
     let tags = [...iniziali];
     const disegna = () => { globalThis.__GANCI__.i = 0; return UI.TagInput({ tags, setTags: (n) => { tags = regola(n); }, isGlobal, lang: 'en' }); };
-    if (testo) trova(disegna(), n => n.type === 'input')[0].props.onChange({ target: { value: testo } });
+    const casella = () => trova(disegna(), n => n.type === 'input')[0];
+    const fine = (errore) => { const r = { tags, casella: casella().props.value, errore }; delete globalThis.document; return r; };
+    if (testo) casella().props.onChange({ target: { value: testo } });
     const prima = disegna();
-    const premuta = pillole(prima).filter(p => p.testo === bersaglio)[occorrenza];
-    if (!premuta) { delete globalThis.document; return { tags, errore: 'pillola non trovata: ' + bersaglio }; }
-    trova(prima, n => n.type === 'input')[0].props.onBlur({ target: {} });
-    const dopo = pillole(disegna()).find(p => p.key === premuta.key);
-    if (!dopo) { delete globalThis.document; return { tags, errore: '' }; }
-    const pulsante = trova(dopo.nodo.props.children, n => n.type === 'button')[0];
-    pulsante.props.onClick({ stopPropagation() { } });
-    delete globalThis.document;
-    return { tags, errore: '' };
+    const tutte = pillole(prima);
+    const premuta = tutte.filter(p => p.testo === bersaglio)[occorrenza];
+    if (!premuta) return fine('pillola non trovata: ' + bersaglio);
+    const posto = tutte.indexOf(premuta);
+    let annullata = false;
+    const pulsantePremuto = trova(premuta.nodo.props.children, n => n.type === 'button')[0];
+    pulsantePremuto.props.onMouseDown?.({ preventDefault() { annullata = true; }, stopPropagation() { } });
+    if (!annullata) trova(prima, n => n.type === 'input')[0].props.onBlur({ target: {} });
+    const sotto = pillole(disegna())[posto];
+    if (!sotto || sotto.key !== premuta.key) return fine('clic perso');
+    trova(sotto.nodo.props.children, n => n.type === 'button')[0].props.onClick({ stopPropagation() { } });
+    return fine('');
 };
 
 console.log('\n--- card della galleria: testo senza Invio, poi X su una pillola ---');
-dice('"apple" scritto, X su "dog": sparisce "dog", "cat" resta',
-    { tags: ['apple', 'blue eyes', 'cat'], errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'apple', 'dog', { regola: regolaCard([]) }));
-dice('correzione: "blond hair" scritto, X su "blonde hair": resta il tag nuovo',
-    { tags: ['blond hair', 'smile'], errore: '' }, clicX(['blonde hair', 'smile'], 'blond hair', 'blonde hair', { regola: regolaCard([]) }));
+dice('"apple" scritto, X su "dog": al primo clic sparisce "dog", "apple" resta nella casella',
+    { tags: ['blue eyes', 'cat'], casella: 'apple', errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'apple', 'dog', { regola: regolaCard([]) }));
+dice('correzione: "blond hair" scritto, X su "blonde hair": al primo clic sparisce il vecchio',
+    { tags: ['smile'], casella: 'blond hair', errore: '' }, clicX(['blonde hair', 'smile'], 'blond hair', 'blonde hair', { regola: regolaCard([]) }));
 dice('con una trigger davanti: "bird" scritto, X su "dog"',
-    { tags: ['ohwx', 'bird', 'cat'], errore: '' }, clicX(['ohwx', 'cat', 'dog'], 'bird', 'dog', { regola: regolaCard(['ohwx']) }));
+    { tags: ['ohwx', 'cat'], casella: 'bird', errore: '' }, clicX(['ohwx', 'cat', 'dog'], 'bird', 'dog', { regola: regolaCard(['ohwx']) }));
 dice('tag nuovo che finisce in fondo: "zebra" scritto, X su "cat"',
-    { tags: ['blue eyes', 'dog', 'zebra'], errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'zebra', 'cat', { regola: regolaCard([]) }));
+    { tags: ['blue eyes', 'dog'], casella: 'zebra', errore: '' }, clicX(['blue eyes', 'cat', 'dog'], 'zebra', 'cat', { regola: regolaCard([]) }));
 
 console.log('\n--- quello che NON deve cambiare ---');
 dice('X senza aver scritto niente: sparisce il tag cliccato',
-    { tags: ['a', 'c'], errore: '' }, clicX(['a', 'b', 'c'], '', 'b', { regola: regolaCard([]) }));
+    { tags: ['a', 'c'], casella: '', errore: '' }, clicX(['a', 'b', 'c'], '', 'b', { regola: regolaCard([]) }));
 dice('riquadro delle trigger (non riordina): "zz" scritto, X su "tok"',
-    { tags: ['ohwx', 'zz'], errore: '' }, clicX(['tok', 'ohwx'], 'zz', 'tok', { isGlobal: true }));
+    { tags: ['ohwx'], casella: 'zz', errore: '' }, clicX(['tok', 'ohwx'], 'zz', 'tok', { isGlobal: true }));
 dice('due tag identici (caso teorico): la X del secondo ne toglie uno solo',
-    { tags: ['a', 'b'], errore: '' }, clicX(['a', 'a', 'b'], '', 'a', { occorrenza: 1 }));
+    { tags: ['a', 'b'], casella: '', errore: '' }, clicX(['a', 'a', 'b'], '', 'a', { occorrenza: 1 }));
 {
     globalThis.__GANCI__ = { i: 0, v: {} };
     const chiavi = pillole(UI.TagInput({ tags: ['a', 'a', 'b'], setTags: () => { }, lang: 'en' })).map(p => p.key);
     dice('le key delle pillole non si ripetono, anche con due tag identici', 3, new Set(chiavi).size);
+}
+{
+    // ITALIANO: il testo lasciato nella casella entra ancora uscendo dalla casella (blur).
+    // ENGLISH: the text left in the box still goes in when leaving the box (blur).
+    globalThis.__GANCI__ = { i: 0, v: {} };
+    globalThis.document = { hasFocus: () => true };
+    let tags = ['cat'];
+    const campo = () => { globalThis.__GANCI__.i = 0; return trova(UI.TagInput({ tags, setTags: (n) => { tags = n; }, lang: 'en' }), n => n.type === 'input')[0]; };
+    campo().props.onChange({ target: { value: 'apple' } });
+    campo().props.onBlur({ target: {} });
+    delete globalThis.document;
+    dice('il testo rimasto nella casella entra al blur', ['cat', 'apple'], tags);
 }
 {
     globalThis.__GANCI__ = { i: 0, v: {} };

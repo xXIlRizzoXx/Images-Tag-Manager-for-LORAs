@@ -93,6 +93,14 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
     //          the text typed without Enter goes in (handleBlur) and the card reorders alphabetically
     //          before the click arrives. With the position, the button under the mouse belonged to
     //          another tag by then, and that one was removed. `occorrenza` tells two identical tags apart.
+    // ITALIANO: in piu' la pressione sulla X non toglie il fuoco alla casella (vedi onMouseDown):
+    //           senza, il riordino spostava la pillola, al rilascio sotto il puntatore c'era un'altra
+    //           pillola, il browser mandava il clic al contenitore e il primo clic andava a vuoto. Il
+    //           testo scritto resta nella casella ed entra con Invio o al prossimo blur.
+    // ENGLISH: also, pressing the X does not take the focus from the box (see onMouseDown): without
+    //          it the reorder moved the pill, on release another pill was under the pointer, the
+    //          browser sent the click to the container and the first click was lost. The typed text
+    //          stays in the box and goes in with Enter or on the next blur.
     const removeTag = (tag: string, occorrenza: number) => {
         if (readOnly) return;
         let visti = -1;
@@ -120,7 +128,7 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
                     {isNsfw && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm mr-0.5">+18</span>}
                     {tag}
                     {!readOnly && (
-                        <button onClick={(e) => { e.stopPropagation(); removeTag(tag, occorrenza); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
+                        <button onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); removeTag(tag, occorrenza); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
                     )}
                 </span>
             );
