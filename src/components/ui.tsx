@@ -85,26 +85,42 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         setInputValue('');
     };
 
-    const removeTag = (idx: number) => {
+    // ITALIANO: la X toglie il SUO tag, non una posizione. Il clic sulla X fa perdere il fuoco alla
+    //           casella: il testo scritto senza Invio entra (handleBlur) e la card si riordina in
+    //           alfabetico prima che il clic arrivi. Con la posizione, il pulsante sotto il mouse era
+    //           ormai di un altro tag e si toglieva quello. `occorrenza` distingue due tag identici.
+    // ENGLISH: the X removes ITS tag, not a position. Clicking the X takes the focus from the box:
+    //          the text typed without Enter goes in (handleBlur) and the card reorders alphabetically
+    //          before the click arrives. With the position, the button under the mouse belonged to
+    //          another tag by then, and that one was removed. `occorrenza` tells two identical tags apart.
+    const removeTag = (tag: string, occorrenza: number) => {
         if (readOnly) return;
-        setTags(tags.filter((_: any, i: number) => i !== idx)); 
-        soundManager.click(); 
+        let visti = -1;
+        setTags(tags.filter((x: string) => x !== tag || ++visti !== occorrenza));
+        soundManager.click();
     };
-    
+    const occorrenze = new Map<string, number>();
+
     return (
         <div onClick={() => !readOnly && inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-3.5 p-2 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto lightbox-scroll ${readOnly ? 'cursor-default' : 'cursor-text'} ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
-        {tags.map((tag: string, index: number) => {
+        {tags.map((tag: string) => {
+            // ITALIANO: key legata al tag (e a quante volte e' gia' comparso), cosi' React tiene ogni
+            //           pillola, e la sua X, attaccata al suo tag anche dopo un riordino.
+            // ENGLISH: key tied to the tag (and to how many times it has already appeared), so React
+            //          keeps each pill, and its X, attached to its tag even after a reorder.
+            const occorrenza = occorrenze.get(tag) ?? 0;
+            occorrenze.set(tag, occorrenza + 1);
             const category = getTagCategory(tag);
             const isNsfw = category === 'nsfw';
             const colorClass = getActiveCategoryColor(category);
             
             const traduzione = translateTag(tag, lang);
             return (
-                <span key={index} title={traduzione ? `${tag} — ${traduzione}` : tag} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
+                <span key={occorrenza === 0 ? tag : `${tag}\u0000${occorrenza}`} title={traduzione ? `${tag} — ${traduzione}` : tag} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
                     {isNsfw && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm mr-0.5">+18</span>}
                     {tag}
                     {!readOnly && (
-                        <button onClick={(e) => { e.stopPropagation(); removeTag(index); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); removeTag(tag, occorrenza); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
                     )}
                 </span>
             );
