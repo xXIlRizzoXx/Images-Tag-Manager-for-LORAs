@@ -172,7 +172,24 @@ function leggiTagDaFile(file) {
 // Passo 2: inserimento vero
 // ---------------------------------------------------------------------------
 if (APPLY) {
-    const piano = JSON.parse(fs.readFileSync(APPLY, 'utf8'));
+    // ITALIANO: il piano corretto a mano passa dalla stessa decodifica dei file di tag: risalvato con
+    //   Windows PowerShell 5.1 o con il Blocco note ha un BOM (o e' UTF-16), e prima JSON.parse si
+    //   fermava con uno stack trace. Un piano illeggibile o con un JSON rotto ferma tutto con un messaggio.
+    // ENGLISH: the hand-corrected plan goes through the same decoding as the tag files: saved again
+    //   with Windows PowerShell 5.1 or Notepad it has a BOM (or is UTF-16), and JSON.parse used to stop
+    //   with a stack trace. An unreadable plan or broken JSON stops everything with a message.
+    const testoPiano = decodifica(fs.readFileSync(APPLY));
+    if (testoPiano === null) {
+        console.error(`${APPLY}: non e' UTF-8 ne' UTF-16 con BOM, impossibile leggerlo. Risalvalo in UTF-8 e rilancia.`);
+        process.exit(1);
+    }
+    let piano;
+    try {
+        piano = JSON.parse(testoPiano);
+    } catch (_) {
+        console.error(`${APPLY}: non e' un JSON valido (controlla virgole, virgolette e parentesi), nessun tag aggiunto.`);
+        process.exit(1);
+    }
     const { src, categorie, perChiave } = leggiDizionario();
     const perCategoria = new Map();
     const saltati = [];
