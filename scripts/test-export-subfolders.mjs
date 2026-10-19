@@ -245,10 +245,45 @@ console.log('\n--- due cartelle Kohya aperte una dopo l\'altra, "Tag e immagini"
 }
 {
     // ITALIANO: una cartella madre (dataset con 10_face dentro) e una seconda cartella aperta a parte.
+    //           La foto in 10_face tiene 10_face come primo livello (sd-scripts legge solo le
+    //           cartelle N_nome sotto train_data_dir): usciva dataset/10_face/a.txt, saltata.
+    //           Solo cover.png, alla radice della sua scelta, va sotto il nome della scelta.
     // ENGLISH: a parent folder (dataset with 10_face inside) and a second folder opened apart.
+    //          The photo in 10_face keeps 10_face as its first level (sd-scripts only reads the
+    //          N_name folders under train_data_dir): it came out as dataset/10_face/a.txt, skipped.
+    //          Only cover.png, at the root of its pick, goes under the pick's name.
     const sonda = creaSonda();
     const voci = await (await creaApp(dueRadici(sonda, [['dataset', '10_face', 'a.png', 'ta'], ['dataset', '', 'cover.png', 'tc'], ['30_extra', '', 'x.png', 'tx']]), sonda).esporta(false)).archivio() || {};
-    dice('cartella madre e sottocartella si sommano, senza raddoppi', ['30_extra/x.txt', 'dataset/10_face/a.txt', 'dataset/cover.txt'], Object.keys(voci).sort());
+    dice('cartella madre e cartella a parte: 10_face resta al primo livello', ['10_face/a.txt', '30_extra/x.txt', 'dataset/cover.txt'], Object.keys(voci).sort());
+}
+{
+    // ITALIANO: due cartelle madri aperte una dopo l'altra (char_anna con 10_anna, char_bea con
+    //           10_bea): l'archivio usciva char_anna/10_anna/a.png e char_bea/10_bea/b.png, e
+    //           sd-scripts non addestrava nessuna foto. Le cartelle N_nome restano al primo livello.
+    // ENGLISH: two parent folders opened one after the other (char_anna with 10_anna, char_bea with
+    //          10_bea): the archive came out as char_anna/10_anna/a.png and char_bea/10_bea/b.png,
+    //          and sd-scripts trained no photo. The N_name folders stay at the first level.
+    const madri = [['char_anna', '10_anna', 'a.png', 'ta'], ['char_bea', '10_bea', 'b.png', 'tb']];
+    const sonda = creaSonda();
+    const r = await creaApp(dueRadici(sonda, madri), sonda).esporta(true);
+    const voci = await r.archivio() || {};
+    dice('due cartelle madri, "Tag e immagini": 10_anna/ e 10_bea/ al primo livello',
+        ['10_anna/a.png', '10_anna/a.txt', '10_bea/b.png', '10_bea/b.txt'], Object.keys(voci).sort());
+    dice('10_bea/b.txt ha i tag di b.png', 'tb,', voci['10_bea/b.txt'] ? voci['10_bea/b.txt'].toString('utf8') : null);
+    const s2 = creaSonda();
+    const soloTag = await (await creaApp(dueRadici(s2, madri), s2).esporta(false)).archivio() || {};
+    dice('due cartelle madri, "Solo i tag": 10_anna/a.txt e 10_bea/b.txt', ['10_anna/a.txt', '10_bea/b.txt'], Object.keys(soloTag).sort());
+    const s3 = creaSonda();
+    const numerate = await (await creaApp(dueRadici(s3, madri), s3).esporta(true, true)).archivio() || {};
+    dice('due cartelle madri, rinominando in sequenza: 10_anna/0001 e 10_bea/0002',
+        ['10_anna/0001.png', '10_anna/0001.txt', '10_bea/0002.png', '10_bea/0002.txt'], Object.keys(numerate).sort());
+    // ITALIANO: una madre con una foto alla radice e una sottocartella "." o ".." soltanto: conta
+    //           come radice della scelta, quindi va sotto il nome della scelta e non resta sciolta.
+    // ENGLISH: a parent with a photo at its root and a subfolder made only of "." or "..": it
+    //          counts as the root of the pick, so it goes under the pick's name, not loose.
+    const s4 = creaSonda();
+    const punti = await (await creaApp(dueRadici(s4, [['char_anna', '.', 'p.png', 'tp'], ['char_bea', '10_bea', 'b.png', 'tb']]), s4).esporta(false)).archivio() || {};
+    dice('una sottocartella fatta solo di "." vale come radice della scelta', ['10_bea/b.txt', 'char_anna/p.txt'], Object.keys(punti).sort());
 }
 {
     // ITALIANO: una sola cartella aperta, anche insieme a foto sciolte ("Carica immagini"): come prima.

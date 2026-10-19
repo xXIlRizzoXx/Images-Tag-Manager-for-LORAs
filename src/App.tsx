@@ -4826,12 +4826,16 @@ export default function App() {
             let senzaTag = 0;
             // ITALIANO: foto di piu' cartelle aperte una dopo l'altra (10_face, poi 20_body): ognuna e'
             //           alla radice della sua scelta (cartellaRel ""), quindi finivano tutte mescolate
-            //           alla radice tranne gli omonimi. Con piu' cartelle scelte ogni foto va sotto il
-            //           nome della sua (cartellaImport); con una sola l'archivio resta com'era.
+            //           alla radice tranne gli omonimi. Con piu' cartelle scelte ogni foto alla radice
+            //           della sua va sotto il nome della sua (cartellaImport); una foto che ha gia' una
+            //           sottocartella (char_anna/10_anna) la tiene come primo livello, 10_anna/a.png:
+            //           sd-scripts salta char_anna/10_anna. Con una sola l'archivio resta com'era.
             // ENGLISH: photos of several folders opened one after the other (10_face, then 20_body):
             //          each sits at the root of its pick (cartellaRel ""), so they all ended mixed at
-            //          the root except the namesakes. With several picked folders each photo goes
-            //          under its own folder's name (cartellaImport); with one the archive is as before.
+            //          the root except the namesakes. With several picked folders each photo at the
+            //          root of its pick goes under its folder's name (cartellaImport); a photo that
+            //          already has a subfolder (char_anna/10_anna) keeps it as the first level,
+            //          10_anna/a.png: sd-scripts skips char_anna/10_anna. With one, as before.
             const piuCartelle = new Set(imagesToExport.map(img => String(img.cartellaImport || '')).filter(Boolean)).size > 1;
             imagesToExport.forEach((img) => {
                 // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
@@ -4852,7 +4856,8 @@ export default function App() {
                 //          namesakes, and sd-scripts (train_data_dir) only reads N_name folders: the
                 //          root photos were left out and the repeat counts vanished. Every part is
                 //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
-                const sotto = [piuCartelle ? String(img.cartellaImport || '') : '', ...String(img.cartellaRel || '').split(/[\\/]/)]
+                const pezziRel = String(img.cartellaRel || '').split(/[\\/]/).filter(p => p && p !== '.' && p !== '..');
+                const sotto = [(piuCartelle && pezziRel.length === 0) ? String(img.cartellaImport || '') : '', ...pezziRel]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
                 // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
                 //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
