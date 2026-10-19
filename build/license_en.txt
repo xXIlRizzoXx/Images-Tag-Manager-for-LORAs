@@ -26,6 +26,10 @@ images and of the .txt tag files.
 The program does not collect statistics, does not track how you use it
 and does not send anything over the network on its own initiative.
 
+The MCP server is off by default. If you switch it on and connect an AI
+app, the photos and tags that app reads are passed to it; an app that
+works in the cloud sends them to its servers.
+
 Settings, archive and emergency backups are kept in the folder
 %APPDATA%\images-tag-manager on your PC.
 

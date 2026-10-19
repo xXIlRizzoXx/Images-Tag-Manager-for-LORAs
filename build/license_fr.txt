@@ -29,6 +29,11 @@ sauvegarde des images et des fichiers .txt contenant les tags.
 Le programme ne collecte pas de statistiques, ne suit pas votre utilisation
 et n'envoie rien sur le réseau de sa propre initiative.
 
+Le serveur MCP est désactivé par défaut. Si vous l'activez et y
+connectez une application d'IA, les photos et les tags que cette
+application lit lui sont transmis ; une application qui fonctionne dans
+le cloud les envoie à ses serveurs.
+
 Les réglages, l'archive et les copies de secours se trouvent dans le
 dossier %APPDATA%\images-tag-manager de votre PC.
 

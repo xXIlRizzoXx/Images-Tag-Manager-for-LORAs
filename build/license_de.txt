@@ -28,6 +28,11 @@ Praktischer Tipp: Legen Sie eine Sicherungskopie der Bilder und der
 Das Programm sammelt keine Statistiken, verfolgt Ihre Nutzung nicht und
 sendet von sich aus nichts über das Netz.
 
+Der MCP-Server ist standardmäßig ausgeschaltet. Wenn Sie ihn
+einschalten und eine KI-App verbinden, erhält diese App die Fotos und
+Tags, die sie liest; eine App, die in der Cloud läuft, sendet sie an ihre
+Server.
+
 Einstellungen, Archiv und Notfallkopien liegen im Ordner
 %APPDATA%\images-tag-manager auf Ihrem PC.
 

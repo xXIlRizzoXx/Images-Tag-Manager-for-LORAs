@@ -26,6 +26,10 @@ sicurezza delle immagini e dei file .txt dei tag.
 Il programma non raccoglie statistiche, non traccia il tuo utilizzo e non
 invia nulla in rete di propria iniziativa.
 
+Il server MCP è spento di serie. Se lo accendi e colleghi un'app AI,
+le foto e i tag che quell'app legge passano a lei; un'app che lavora in
+cloud li manda ai suoi server.
+
 Impostazioni, archivio e copie di emergenza stanno nella cartella
 %APPDATA%\images-tag-manager del tuo PC.
 

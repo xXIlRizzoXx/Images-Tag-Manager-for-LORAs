@@ -27,6 +27,11 @@ seguridad de las imágenes y de los archivos .txt de las etiquetas.
 El programa no recoge estadísticas, no rastrea tu uso y no envía nada a
 la red por iniciativa propia.
 
+El servidor MCP está desactivado por defecto. Si lo activas y conectas
+una aplicación de IA, las fotos y las etiquetas que esa aplicación lee
+pasan a ella; una aplicación que funciona en la nube las envía a sus
+servidores.
+
 Los ajustes, el archivo de datos y las copias de emergencia están en la
 carpeta %APPDATA%\images-tag-manager de tu PC.
 
