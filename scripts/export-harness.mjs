@@ -148,7 +148,7 @@ export const cartellaFinta = (attuali) => ({
    rename) presses "Export" in the choice dialog. Returns notifications, the choice shown, the
    archive bytes and how the destination file ended. `ordine` = the "Sort by" choice (the app's
    sortOrder). */
-export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc' } = {}) => {
+export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc', lang = 'en' } = {}) => {
     const r = { notifiche: [], scelta: null, pezzi: [], chiuso: false, annullato: false, scaricato: null };
     const finestra = {};
     if (conFinestra) {
@@ -186,14 +186,14 @@ export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc'
     };
     const nomi = ['images', 't', 'showNotification', 'setIsSaving', 'setImportProgress', 'getOrderedTagString', 'soundManager', 'window', 'document', 'URL', 'console',
         'setExportChoice', 'exportChoice', 'JSZip', 'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'scriviZip', 'ERRORE_LETTURA_ZIP',
-        'applySort', 'sortOrder', 'isSaving', 'txtNonLettoInVigore', 'fileDiAdesso'];
+        'applySort', 'sortOrder', 'isSaving', 'txtNonLettoInVigore', 'fileDiAdesso', 'lang'];
     const costruisci = (exportChoice) => new Function(...nomi,
         pezzi.formatoPeso + '\n' + pezzi.exportAllAsZip + '\n' + pezzi.handleExportAll + '\n' + pezzi.avviaExport +
         '\nreturn { exportAllAsZip, handleExportAll, avviaExport: typeof avviaExport === "function" ? avviaExport : null };')(
         images, t, (m, tipo) => r.notifiche.push([m, tipo]), () => { }, () => { }, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         { chime() { }, pop() { } }, finestra, documento, url, { log() { }, warn() { }, error() { } },
         (v) => { r.scelta = v; }, exportChoice, JSZip, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, Z.scriviZip, Z.ERRORE_LETTURA_ZIP,
-        applySort, ordine, false, S.txtNonLettoInVigore, F.fileDiAdesso);
+        applySort, ordine, false, S.txtNonLettoInVigore, F.fileDiAdesso, lang);
     r.apri = () => { costruisci(null).handleExportAll(); return r; };
     r.conferma = async (conImmagini, rinomina = false) => {
         const f = costruisci(r.scelta);

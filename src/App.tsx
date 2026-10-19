@@ -1757,9 +1757,13 @@ export default function App() {
     const mcpGestoreRef = useRef<(r: McpRichiesta) => void>(() => { });
     // ITALIANO: le foto cambiate dall'AI esterna, per l'avviso: set_tags accetta un solo id, quindi
     //           un'AI che tagga 40 foto fa 40 chiamate, e l'avviso diceva il numero dell'ultima (1).
+    //           Per ogni foto si tiene l'originalTags del momento della modifica: ogni salvataggio ne
+    //           mette uno nuovo, quindi una foto salvata e poi ritoccata a mano non si conta piu'.
     // ENGLISH: the photos changed by the external AI, for the notice: set_tags takes one id only, so
     //          an AI tagging 40 photos makes 40 calls, and the notice said the last call's number (1).
-    const mcpCambiateRef = useRef<Set<string>>(new Set());
+    //          For each photo the originalTags of the moment of the change is kept: every save puts a
+    //          new one there, so a photo saved and then retouched by hand no longer counts.
+    const mcpCambiateRef = useRef<Map<string, unknown>>(new Map());
     mcpGestoreRef.current = async (r: McpRichiesta) => {
         let risposta: RispostaMcp;
         try {
@@ -1769,7 +1773,7 @@ export default function App() {
                 applica: (nuovi) => {
                     imagesRef.current = imagesRef.current.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img));
                     setImages(prev => prev.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img)));
-                    nuovi.forEach((_tags, id) => mcpCambiateRef.current.add(id));
+                    imagesRef.current.forEach(img => { if (nuovi.has(img.id)) mcpCambiateRef.current.set(img.id, img.originalTags); });
                 },
                 // ITALIANO: la foto com'e' adesso sul disco, non l'istantanea dell'import (vedi fileDiAdesso).
                 // ENGLISH: the photo as it is on disk now, not the import snapshot (see fileDiAdesso).
@@ -1791,11 +1795,12 @@ export default function App() {
             //          trashed ones leave), each once. The notice does not cover an error still on screen
             //          (for example the "Save Changes" one): it comes with the next call.
             const vive = new Map(imagesRef.current.map(img => [img.id, img]));
-            const ancora = [...mcpCambiateRef.current].filter(id => {
+            const rimaste = [...mcpCambiateRef.current].filter(([id, originali]) => {
                 const img = vive.get(id);
-                return !!img && !img.isTrashed && fotoDaSalvare(img, globalTriggersRef.current);
+                return !!img && !img.isTrashed && img.originalTags === originali && fotoDaSalvare(img, globalTriggersRef.current);
             });
-            mcpCambiateRef.current = new Set(ancora);
+            mcpCambiateRef.current = new Map(rimaste);
+            const ancora = rimaste.map(([id]) => id);
             if (ancora.length > 0) {
                 const message = ancora.length === 1 ? t.mcpEditedNoticeOne : t.mcpEditedNotice.replace('{n}', String(ancora.length));
                 setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message, type: 'info', id: Date.now() }));
@@ -4341,10 +4346,18 @@ export default function App() {
             //          shortened or left out, it is said.
             const { tags: clean, truncated } = pulisciTagProgetto([...tags, ...triggers]);
             if (clean.length === 0) { showNotification(t.importTagsError, 'error'); return; }
-            setCustomProjectTags(prev => [...new Set([...prev, ...clean])]);
+            // ITALIANO: entrano solo i tag che il progetto non ha gia', a parte le maiuscole, come nella
+            //           casella "aggiungi al progetto": "Smile" non si aggiunge accanto a "smile". L'avviso
+            //           conta solo quelli entrati davvero.
+            // ENGLISH: only the tags the project does not have yet go in, apart from case, as in the
+            //          "add to project" box: "Smile" is not added next to "smile". The notice counts only
+            //          the ones that really went in.
+            const nuovi = uniqueTagsIgnoringCase(clean).filter(tag => !hasTagIgnoringCase(allUniqueTags, tag));
+            if (nuovi.length === 0) { showNotification(t.projectTagsImportNothingNew, 'info'); return; }
+            setCustomProjectTags(prev => [...prev, ...nuovi.filter(tag => !hasTagIgnoringCase(prev, tag))]);
             soundManager.chime();
-            if (truncated) showNotification(t.projectTagsImportShortened.replace('{n}', String(clean.length)), 'info');
-            else showNotification(`${t.projectTagsImported} (${clean.length})`, 'success');
+            if (truncated) showNotification(t.projectTagsImportShortened.replace('{n}', String(nuovi.length)), 'info');
+            else showNotification(`${t.projectTagsImported} (${nuovi.length})`, 'success');
         } catch (err) {
             showNotification(t.importTagsError, 'error');
         } finally {
@@ -4893,13 +4906,18 @@ export default function App() {
     //           la differenza fra le due strade e' fra i KB e i GB, e va vista PRIMA di premere.
     // ENGLISH: Human-readable size, shown before starting: the gap between the two roads is
     //          KB against GB, and it has to be visible BEFORE the button is pressed.
+    // ITALIANO: in inglese, cinese e giapponese i decimali si scrivono col punto (2.5 GB), nelle altre
+    //           lingue con la virgola (2,5 GB).
+    // ENGLISH: in English, Chinese and Japanese decimals take a point (2.5 GB), in the other
+    //          languages a comma (2,5 GB).
     const formatoPeso = (byte: number): string => {
         if (byte < 1024) return byte + ' B';
         const unita = ['KB', 'MB', 'GB', 'TB'];
         let v = byte / 1024;
         let i = 0;
         while (v >= 1024 && i < unita.length - 1) { v /= 1024; i++; }
-        return (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace('.', ',') + ' ' + unita[i];
+        const virgola = (lang === 'en' || lang === 'zh' || lang === 'ja') ? '.' : ',';
+        return (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace('.', virgola) + ' ' + unita[i];
     };
 
     // ITALIANO: `fraseNonLette` = la frase sulle foto lasciate fuori da handleExportAll perche' il
@@ -5349,6 +5367,9 @@ export default function App() {
     }, [t]);
     const handlePasteThumbTags = useCallback((img: any) => {
         if (!copiedTags || copiedTags.length === 0) return;
+        // ITALIANO: la foto ha gia' tutti i tag copiati (a parte le maiuscole): non si dice "incollati".
+        // ENGLISH: the photo already has every copied tag (apart from case): do not say "pasted".
+        if (countNewTagsIgnoringCase(img.tags || [], copiedTags) === 0) { showNotification(t.tagsPasteNothingNew, 'info'); return; }
         updateImageTags(img.id, [...new Set([...(img.tags || []), ...copiedTags])]);
         showNotification(t.tagsPastedNotif, 'success');
         soundManager.pop();
@@ -6432,11 +6453,13 @@ export default function App() {
                 projectTags={allUniqueTags}
                 onImportTagsToProject={(tagsFromEditor: string[]) => {
                     // ITALIANO: i tag aperti/importati nell'editor entrano anche nella palette del
-                    //           progetto (riquadro di selezione in blocco), senza doppioni.
+                    //           progetto (riquadro di selezione in blocco), senza doppioni a parte le
+                    //           maiuscole, come nella casella "aggiungi al progetto".
                     // ENGLISH: tags opened/imported in the editor also enter the project palette
-                    //          (bulk-selection panel), without duplicates.
-                    const puliti = [...new Set(tagsFromEditor.map(s => String(s).trim()).filter(Boolean))];
-                    if (puliti.length > 0) setCustomProjectTags(prev => [...new Set([...prev, ...puliti])]);
+                    //          (bulk-selection panel), without duplicates apart from case, as in the
+                    //          "add to project" box.
+                    const puliti = uniqueTagsIgnoringCase(tagsFromEditor.map(s => String(s).trim()).filter(Boolean)).filter(tag => !hasTagIgnoringCase(allUniqueTags, tag));
+                    if (puliti.length > 0) setCustomProjectTags(prev => [...prev, ...puliti.filter(tag => !hasTagIgnoringCase(prev, tag))]);
                 }}
             />
             <SaveBeforeCloseDialog
@@ -6718,7 +6741,7 @@ export default function App() {
                     onClose={() => setSelectedImageId(null)}
                     updateTags={updateImageTags}
                     allTags={allUniqueTags}
-                    addProjectTag={(tag: string) => setCustomProjectTags(prev => prev.includes(tag) ? prev : [...prev, tag])}
+                    addProjectTag={(tag: string) => { if (!hasTagIgnoringCase(allUniqueTags, tag)) setCustomProjectTags(prev => hasTagIgnoringCase(prev, tag) ? prev : [...prev, tag]); }}
                     t={t}
                     onNext={handleNext}
                     onPrev={handlePrev}

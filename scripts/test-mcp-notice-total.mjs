@@ -66,13 +66,14 @@ const app = (quante) => {
         setImages: () => { }, fotoPerMcp: async () => null, fileDiAdesso: async () => null, console: muto,
         window: { electronAPI: { mcp: { respond: (id, r) => a.risposte.push([id, r]) } } },
         showNotification: (message, type = 'info') => setToast({ show: true, message, type, id: Date.now() }),
-        t, setToast, fotoDaSalvare: G.fotoDaSalvare, mcpCambiateRef: { current: new Set() },
+        t, setToast, fotoDaSalvare: G.fotoDaSalvare, mcpCambiateRef: { current: new Map() },
     };
     new Function(...NOMI, codice)(...NOMI.map(n => dip[n]));
     let n = 0;
     a.chiama = (strumento, argomenti) => rif.current({ id: 'r' + (++n), strumento, argomenti });
     a.salva = () => { a.imagesRef.current = a.imagesRef.current.map(f => ({ ...f, originalTags: f.tags })); };
     a.chiudi = (id) => { a.imagesRef.current = a.imagesRef.current.filter(f => f.id !== id); };
+    a.ritocca = (id, tags) => { a.imagesRef.current = a.imagesRef.current.map(f => (f.id === id ? { ...f, tags } : f)); };
     a.ultimo = () => (a.toast.show ? [a.toast.message, a.toast.type] : null);
     return a;
 };
@@ -99,6 +100,28 @@ console.log('\n--- dopo "Salva Modifiche" e con una foto chiusa ---');
     a.chiudi('p3');
     await a.chiama('set_tags', { id: 'p1', tags: ['dog'] });
     dice('una foto chiusa con la X non si conta piu\'', [avvisoDi(2), 'info'], a.ultimo());
+}
+
+// ITALIANO: dopo il salvataggio una foto ritoccata A MANO non e' "cambiata dall'AI": l'avviso contava
+//           ancora le foto salvate e poi ritoccate (5 AI, Salva, 3 a mano, 1 AI -> "...: 4").
+// ENGLISH: after saving, a photo retouched BY HAND is not "changed by the AI": the notice still counted
+//          the photos saved and then retouched (5 AI, Save, 3 by hand, 1 AI -> "...: 4").
+console.log('\n--- Salva, ritocchi a mano, poi l\'AI cambia un\'altra foto ---');
+{
+    const a = app(6);
+    for (let i = 0; i < 5; i++) await a.chiama('set_tags', { id: 'p' + i, tags: ['red hair'] });
+    dice('prima del salvataggio: 5', [avvisoDi(5), 'info'], a.ultimo());
+    a.salva();
+    a.ritocca('p0', ['red hair', 'smile']);
+    a.ritocca('p1', ['red hair', 'hat']);
+    a.ritocca('p2', ['blue eyes']);
+    await a.chiama('set_tags', { id: 'p5', tags: ['cat'] });
+    dice('le 3 foto salvate e poi ritoccate a mano non si contano: 1', [avvisoDi(1), 'info'], a.ultimo());
+    await a.chiama('set_tags', { id: 'p3', tags: ['dog'] });
+    dice('una foto salvata che l\'AI cambia di nuovo torna nel conto: 2', [avvisoDi(2), 'info'], a.ultimo());
+    a.ritocca('p5', ['cat', 'tail']);
+    await a.chiama('set_tags', { id: 'p4', tags: ['fox'] });
+    dice('una foto dell\'AI non ancora salvata, ritoccata a mano, resta nel conto: 3', [avvisoDi(3), 'info'], a.ultimo());
 }
 
 console.log('\n--- un avviso d\'errore a schermo ---');

@@ -39,6 +39,7 @@ const carica = async (rel) => {
     return import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'));
 };
 const S = await carica('src/utils/sidecarTags.ts');
+const TC = await carica('src/utils/tagCase.ts');
 const t = (await carica('src/constants.ts')).translations.en;
 const { dice, esito } = creaControlli();
 
@@ -68,12 +69,12 @@ const leggi = (testo, nome) => {
     try { return editor.parseTagFile(testo, nome); } catch (err) { return 'ERRORE: ' + (err && err.name); }
 };
 
-const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto', 'leggiTestoSidecar',
+const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto', 'leggiTestoSidecar', 'allUniqueTags', 'hasTagIgnoringCase', 'uniqueTagsIgnoringCase',
     (await ritaglia('src/App.tsx', '    const handleImportProjectTags = async (e: any) => {', /\r?\n    \};\r?\n/g)) + '\nreturn handleImportProjectTags;');
 const importa = async (testo, iniziale = []) => {
     const r = { palette: [...iniziale], notifiche: [] };
     const fn = fabbrica(t, (m, tipo) => r.notifiche.push([m, tipo]), (f) => { r.palette = typeof f === 'function' ? f(r.palette) : f; },
-        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto, S.leggiTestoSidecar);
+        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto, S.leggiTestoSidecar, [...r.palette], TC.hasTagIgnoringCase, TC.uniqueTagsIgnoringCase);
     await fn({ target: { files: [{ size: Buffer.byteLength(testo), text: async () => testo }] } });
     return r;
 };

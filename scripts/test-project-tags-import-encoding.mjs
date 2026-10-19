@@ -37,6 +37,7 @@ const carica = async (rel) => {
     return import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'));
 };
 const S = await carica('src/utils/sidecarTags.ts');
+const TC = await carica('src/utils/tagCase.ts');
 const t = (await carica('src/constants.ts')).translations.en;
 const { dice, esito } = creaControlli();
 
@@ -50,7 +51,7 @@ if (inizio < 0 || !fine) {
     process.exit(1);
 }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
-const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto', 'leggiTestoSidecar',
+const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', 'soundManager', 'projectTagsImportRef', 'pulisciTagProgetto', 'leggiTestoSidecar', 'allUniqueTags', 'hasTagIgnoringCase', 'uniqueTagsIgnoringCase',
     js + '\nreturn handleImportProjectTags;');
 
 // ITALIANO: `byte` = il contenuto del file su disco; si passa un File vero, come il selettore.
@@ -58,7 +59,7 @@ const fabbrica = new Function('t', 'showNotification', 'setCustomProjectTags', '
 const importa = async (byte, nome, iniziale = []) => {
     const r = { palette: [...iniziale], notifiche: [] };
     const fn = fabbrica(t, (m, tipo) => r.notifiche.push([m, tipo]), (f) => { r.palette = typeof f === 'function' ? f(r.palette) : f; },
-        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto, S.leggiTestoSidecar);
+        { chime() { } }, { current: { value: 'x' } }, S.pulisciTagProgetto, S.leggiTestoSidecar, [...r.palette], TC.hasTagIgnoringCase, TC.uniqueTagsIgnoringCase);
     await fn({ target: { files: [new File([byte], nome, { type: nome.endsWith('.json') ? 'application/json' : 'text/plain' })] } });
     return r;
 };

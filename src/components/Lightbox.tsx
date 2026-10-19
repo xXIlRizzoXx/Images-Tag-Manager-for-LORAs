@@ -22,7 +22,7 @@ import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../uti
 import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
-import { hasTagIgnoringCase, splitTagInput } from '../utils/tagCase';
+import { hasTagIgnoringCase, splitTagInput, countNewTagsIgnoringCase } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: any) => {
@@ -183,6 +183,9 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     };
     const handlePasteTags = () => {
         if (!copiedTags || !copiedTags.length) return;
+        // ITALIANO: la foto ha gia' tutti i tag copiati (a parte le maiuscole): non si dice "incollati".
+        // ENGLISH: the photo already has every copied tag (apart from case): do not say "pasted".
+        if (countNewTagsIgnoringCase(currentTags, copiedTags) === 0) { if (showNotification) showNotification(t.tagsPasteNothingNew, 'info'); return; }
         updateTags(image.id, [...new Set([...currentTags, ...copiedTags])]);
         if (showNotification) showNotification(t.tagsPastedNotif, 'success');
         soundManager.pop();
