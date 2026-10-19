@@ -46,9 +46,14 @@ const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].
 const { fileDiMac } = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
     entryPoints: [path.join(radice, 'src/utils/folderScan.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
 })).outputFiles[0].text).toString('base64'));
-const fabbricaVera = new Function('t', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'fileDiMac',
+// ITALIANO: la regola vera di "e' un'immagine?" (src/utils/imageFile.ts), che le strade di import usano.
+// ENGLISH: the real "is it an image?" rule (src/utils/imageFile.ts), which the import roads use.
+const { eFileImmagine } = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/imageFile.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+})).outputFiles[0].text).toString('base64'));
+const fabbricaVera = new Function('t', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'fileDiMac', 'eFileImmagine',
     js + '\nreturn handleFolderUploadFallback;');
-const fabbrica = (...a) => fabbricaVera(...a, fileDiMac);
+const fabbrica = (...a) => fabbricaVera(...a, fileDiMac, eFileImmagine);
 
 const prova = async (nomi) => {
     const r = { notifiche: [], riepiloghi: 0 };

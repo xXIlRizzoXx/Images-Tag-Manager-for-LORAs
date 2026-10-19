@@ -205,6 +205,35 @@ console.log('\n--- modello bloccato, "Controlla ora" in corso, si sceglie Automa
         [[t.aiModelSwitched.replace('{da}', 'gemini-3.5-flash').replace('{a}', 'gemini-3.7-flash'), 'info']], s.notifiche);
 }
 
+console.log('\n--- modello bloccato, "Controlla ora" in corso, si sceglie un ALTRO modello preciso ---');
+{
+    // ITALIANO: l'avviso nominava il modello di quando il controllo era partito: bloccato su 3.7 e
+    //           scelto 3.5 durante l'elenco, diceva "sei gia' sul piu' recente: gemini-3.7-flash";
+    //           bloccato su 3.5 e scelto 3.7, "e' disponibile uno piu' recente: gemini-3.7-flash",
+    //           cioe' proprio quello appena scelto. Ora parla del modello in uso.
+    // ENGLISH: the notice named the model the check had started with: locked on 3.7 and 3.5 picked
+    //          during the list, it said "already on the newest: gemini-3.7-flash"; locked on 3.5 and
+    //          3.7 picked, "a newer one is available: gemini-3.7-flash", the very one just picked.
+    //          Now it speaks of the model in use.
+    const s = scenario({ aiModel: 'gemini-3.7-flash', aiModelloFissato: true }, { elencoAperto: true });
+    s.disegna().controllaModello(false, true);
+    await s.provaInCorso;
+    scegli(s, 'gemini-3.5-flash');
+    s.sblocca(); await s.finito();
+    dice('bloccato su 3.7, scelto 3.5: resta 3.5, bloccato', ['gemini-3.5-flash', true], quadro(s));
+    dice('...e l\'avviso dice che ce n\'e\' uno piu\' recente (non "sei gia\' sul piu\' recente")',
+        [[t.aiModelNewerAvailable.replace('{a}', 'gemini-3.7-flash'), 'info']], s.notifiche);
+
+    const r = scenario({ aiModel: 'gemini-3.5-flash', aiModelloFissato: true }, { elencoAperto: true });
+    r.disegna().controllaModello(false, true);
+    await r.provaInCorso;
+    scegli(r, 'gemini-3.7-flash');
+    r.sblocca(); await r.finito();
+    dice('bloccato su 3.5, scelto 3.7: resta 3.7, bloccato', ['gemini-3.7-flash', true], quadro(r));
+    dice('...e l\'avviso dice che e\' gia\' il piu\' recente',
+        [[t.aiModelUpToDate.replace('{a}', 'gemini-3.7-flash'), 'success']], r.notifiche);
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const s = scenario({ aiModel: 'gemini-3.5-flash', aiModelloFissato: true }, { elencoAperto: true });

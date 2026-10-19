@@ -16,11 +16,11 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { stripImageMetadata, METADATI_NON_PULIBILI } from '../utils/imageMetadata';
 import { fileDiAdesso, type FotoConCartella } from '../utils/freshFile';
+import { eFileImmagine } from '../utils/imageFile';
 
 const CUSTOM_PROMPT_MAX_LENGTH = 500;
 const TAG_MAX_LENGTH = 60;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
-const ALLOWED_MIME_PREFIX = 'image/';
 const REQUEST_TIMEOUT_MS = 90_000;
 const VERIFY_TIMEOUT_MS = 30_000;
 
@@ -121,7 +121,11 @@ const redrawAsPng = async (file: File): Promise<Blob> => {
 const imageForGemini = async (file: File): Promise<{ data: string; mimeType: string }> => {
     if (!file || file.size === 0) throw fotoNonUsabile('Invalid or empty file');
     if (file.size > MAX_FILE_SIZE_BYTES) throw fotoNonUsabile('Image too large (> 20 MB)');
-    if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw fotoNonUsabile('Unsupported file type');
+    // ITALIANO: una HEIC dell'iPhone arriva spesso con il tipo vuoto: decide l'estensione (imageFile.ts);
+    //           il tipo mandato a Google viene comunque dai byte, qui sotto.
+    // ENGLISH: an iPhone HEIC often arrives with an empty type: the extension decides (imageFile.ts);
+    //          the type sent to Google comes from the bytes anyway, below.
+    if (!eFileImmagine(file)) throw fotoNonUsabile('Unsupported file type');
     // ITALIANO: una foto cancellata, spostata, risalvata da un altro programma o su una chiavetta
     //           staccata non si legge piu' (NotReadableError, NotFoundError): e' un problema della
     //           foto, Google non e' stato nemmeno chiamato. Senza il segno l'app diceva "Google non

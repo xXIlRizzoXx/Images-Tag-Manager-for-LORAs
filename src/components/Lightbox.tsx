@@ -248,12 +248,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 const imagePath = api.getPathForFile(image.file) || '';
                 const res = await api.writeSidecarTags([{ imagePath, content: tagString }]);
                 if (res && Array.isArray(res.results) && res.results[0]) {
-                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo: si e' svuotato
-                    //           solo se sul disco la foto aveva dei tag.
-                    // ENGLISH: the main process does not create a new empty .txt: it was emptied
-                    //          only if the photo had tags on disk.
-                    const avevaTag = (image.originalTags || []).length > 0;
-                    salvato(vuoto && avevaTag, vuoto && !avevaTag);
+                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo, ma svuota quello che
+                    //           c'e' (anche gia' vuoto): decide `written`, cioe' quello che e' successo sul
+                    //           disco, non i tag letti all'import. Senza `written` (risposta vecchia) vale
+                    //           la regola di prima.
+                    // ENGLISH: the main process does not create a new empty .txt, but empties the one that
+                    //          is there (even one already empty): `written` decides, i.e. what happened on
+                    //          disk, not the tags read at import. Without `written` (old answer) the earlier
+                    //          rule applies.
+                    const scritto = typeof res.written === 'number' ? res.written > 0 : (image.originalTags || []).length > 0;
+                    salvato(vuoto && scritto, vuoto && !scritto);
                 } else if (showNotification) {
                     showNotification(t.errorSaveGen || t.dirError, 'error');
                 }

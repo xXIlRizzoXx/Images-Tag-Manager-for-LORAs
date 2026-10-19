@@ -66,10 +66,18 @@ const salvaUna = async ({ dir = null, finestra = {}, tags = [], originalTags = [
     await f();
     return { notifiche, salvata, ultimo: notifiche[notifiche.length - 1] || null };
 };
-const electronFinto = (scritti) => ({
+// ITALIANO: risponde come il processo principale: un contenuto vuoto senza un .txt sul disco non
+//           crea niente (written 0); un .txt che c'e' (`esiste`) si riscrive anche vuoto (written 1).
+// ENGLISH: answers like the main process: empty content with no .txt on disk creates nothing
+//          (written 0); a .txt that is there (`esiste`) is rewritten even when empty (written 1).
+const electronFinto = (scritti, { esiste = false } = {}) => ({
     electronAPI: {
         getPathForFile: () => 'E:/foto/a.png',
-        writeSidecarTags: async (voci) => { scritti.push(...voci); return { results: voci.map(() => true) }; },
+        writeSidecarTags: async (voci) => {
+            scritti.push(...voci);
+            const written = voci.filter(v => v.content !== '' || esiste).length;
+            return { ok: true, written, failed: 0, results: voci.map(() => true) };
+        },
     },
 });
 
@@ -99,7 +107,7 @@ console.log('\n--- casi vicini che non cambiano ---');
     dice('cartella, il .txt c\'era: si svuota e il messaggio parla del .txt vuoto', ['', true, 'info'],
         [dir.file.get('a.txt'), !!r.ultimo && r.ultimo[0] === t.successSaveSingle + ' ' + t.saveEmptyCaptionOne, r.ultimo && r.ultimo[1]]);
     const scritti = [];
-    const r2 = await salvaUna({ finestra: electronFinto(scritti), originalTags: ['smile'] });
+    const r2 = await salvaUna({ finestra: electronFinto(scritti, { esiste: true }), originalTags: ['smile'] });
     dice('Electron, la foto aveva tag sul disco: messaggio del .txt vuoto', [t.successSaveSingle + ' ' + t.saveEmptyCaptionOne, 'info'], r2.ultimo);
     const dir3 = cartella();
     const r3 = await salvaUna({ dir: dir3, tags: ['red hair'] });
@@ -107,6 +115,26 @@ console.log('\n--- casi vicini che non cambiano ---');
     const scritti4 = [];
     const r4 = await salvaUna({ finestra: electronFinto(scritti4), tags: ['red hair'] });
     dice('Electron, foto con tag: messaggio verde', [['red hair,'], [t.successSaveSingle, 'success']], [scritti4.map(v => v.content), r4.ultimo]);
+}
+
+// ITALIANO: in Electron il messaggio si decideva dai tag letti all'import (originalTags), non da
+//           quello che il processo principale ha fatto: con un .txt VUOTO gia' sul disco
+//           (originalTags vuoti) il .txt si riscrive ma l'avviso diceva "nessun .txt e' stato
+//           scritto", senza la frase del .txt vuoto che ferma Kohya. E col .txt tolto nel frattempo
+//           (originalTags pieni) diceva che era stato svuotato.
+// ENGLISH: in Electron the message was decided from the tags read at import (originalTags), not
+//          from what the main process did: with an EMPTY .txt already on disk (empty originalTags)
+//          the .txt is rewritten but the notice said "no .txt was written", without the empty .txt
+//          sentence that stops Kohya. And with the .txt removed meanwhile (full originalTags) it said
+//          it had been emptied.
+console.log('\n--- "Carica immagini" in Electron: il messaggio segue quello che e\' successo sul disco ---');
+{
+    const scritti = [];
+    const r = await salvaUna({ finestra: electronFinto(scritti, { esiste: true }), originalTags: [] });
+    dice('.txt vuoto gia\' sul disco, riscritto: messaggio del .txt vuoto', [t.successSaveSingle + ' ' + t.saveEmptyCaptionOne, 'info'], r.ultimo);
+    const scritti2 = [];
+    const r2 = await salvaUna({ finestra: electronFinto(scritti2, { esiste: false }), originalTags: ['smile'] });
+    dice('.txt tolto nel frattempo, niente scritto: nessun .txt e\' stato scritto', [t.saveNoTagsNoFile, 'info'], r2.ultimo);
 }
 
 console.log('\n--- la frase esiste nelle nove lingue ---');

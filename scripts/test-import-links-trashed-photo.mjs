@@ -33,8 +33,15 @@
 import { creaApp, cartella, riepilogo, t } from './import-harness.mjs';
 import * as Cestino from './trash-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
+import * as esbuild from 'esbuild';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const { dice, esito } = creaControlli();
+const radice = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const B = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/tagBackup.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+})).outputFiles[0].text).toString('base64'));
 // ITALIANO: una foto senza cartella (Carica immagini / trascinata), con il suo percorso su disco.
 // ENGLISH: a folder-less photo (Load images / dropped), with its path on disk.
 const sciolta = (id, nome, { cestinata = true, dirHandle = null, percorso = 'E:\\img\\' + nome } = {}) => ({
@@ -66,7 +73,9 @@ console.log('\n--- la cartella riaperta con "Carica Cartella" ---');
     const x = app.images.find(i => i.id === 'x');
     const g = app.images.find(i => i.id === 'g');
     dice('entra solo la foto nuova c.png', ['a.png', 'b.png', 'c.png'], app.nomi());
-    dice('la foto nel cestino dell\'app riceve la cartella aperta', [true, 'img', true], [x.dirHandle === h, x.cartellaImport, x.isTrashed]);
+    // ITALIANO: cartellaImport non cambia: la foto resta nel lotto di "Carica immagini" (vedi sotto).
+    // ENGLISH: cartellaImport does not change: the photo stays in the "Load images" batch (see below).
+    dice('la foto nel cestino dell\'app riceve la cartella aperta', [true, undefined, true], [x.dirHandle === h, x.cartellaImport, x.isTrashed]);
     dice('...e tiene i suoi tag', [['tag x'], ['tag x']], [x.tags, x.originalTags]);
     dice('la foto in galleria senza cartella NON cambia', [null, undefined], [g.dirHandle, g.cartellaImport]);
     const dopo = await svuota([x]);
@@ -128,6 +137,29 @@ console.log('\n--- stessa cartella con i percorsi (chiavetta, scheda SD, lettera
     const app = creaApp({ iniziali: [sciolta('x', 'a.png', { percorso: 'e:/DATASET/a.png' })] });
     await app.conferma(riepilogo(h, ['a.png'], { percorsi: true }));
     dice('lo stesso percorso (maiuscole e barre a parte) collega', true, app.images[0].dirHandle === h);
+}
+
+// ITALIANO: il collegamento metteva sulla foto del cestino cartellaImport = nome della cartella, ma
+//           la foto resta nel lotto delle foto caricate una per una: il backup anti-crash dava a quel
+//           lotto il nome della cartella ('img|3|...' invece di '|3|...'), e dopo un crash, ricaricando
+//           le stesse foto una per una, le modifiche non salvate delle altre foto del lotto non tornavano.
+// ENGLISH: the link put cartellaImport = the folder's name on the trashed photo, but the photo stays in
+//          the batch of the photos loaded one by one: the crash backup gave that batch the folder's
+//          name ('img|3|...' instead of '|3|...'), and after a crash, reloading the same photos one by
+//          one, the unsaved edits of the batch's other photos did not come back.
+console.log('\n--- il collegamento non cambia l\'impronta del backup del lotto "Carica immagini" ---');
+{
+    const lotto = (f) => ({ ...f, lottoImport: 'L0', backupKey: 'E:\\img' + B.BACKUP_KEY_SEP + f.file.name });
+    const a = { ...lotto(sciolta('a', 'a.png', { cestinata: false })), tags: ['tag a', 'red hair'] };
+    const app = creaApp({ iniziali: [a, lotto(sciolta('b', 'b.png', { cestinata: false })), lotto(sciolta('x', 'x.png'))] });
+    await app.conferma(riepilogo(cartella('E:img', 'img'), ['a.png', 'b.png', 'x.png']));
+    dice('premessa: la foto del cestino e\' collegata', true, !!app.images.find(i => i.id === 'x').dirHandle);
+    const firma = B.folderSignature('', ['a.png', 'b.png', 'x.png']);
+    const backup = B.costruisciBackup(app.images, [], '', null, [], null);
+    dice('l\'impronta del lotto resta quella senza cartella', [firma], backup ? backup.sources.map(s => s.signature) : null);
+    const ripreso = backup ? B.backupDellImport(JSON.stringify({ ts: Date.now(), ...backup }), '', firma) : null;
+    dice('dopo un crash, ricaricando a.png b.png x.png una per una, la modifica di a.png torna', true,
+        !!ripreso && Object.values(ripreso.voci).some(v => Array.isArray(v.tags) && v.tags.includes('red hair')));
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

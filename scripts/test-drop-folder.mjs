@@ -42,6 +42,9 @@ const carica = async (rel) => {
 const lingue = (await carica('src/constants.ts')).translations;
 const t = lingue.en;
 const { scanDirectoryHandle, fileDiMac } = await carica('src/utils/folderScan.ts');
+// ITALIANO: la regola vera di "e' un'immagine?" (src/utils/imageFile.ts), che le strade di import usano.
+// ENGLISH: the real "is it an image?" rule (src/utils/imageFile.ts), which the import roads use.
+const { eFileImmagine } = await carica('src/utils/imageFile.ts');
 const { dice, esito } = creaControlli();
 console.warn = () => {};
 console.error = () => {};
@@ -66,7 +69,7 @@ if (!fineDrop) { console.log('NO  apriCartellaTrascinata / handleDroppedFiles no
 const pezzoDrop = sorgente.slice(inizioDrop, fineDrop.index + fineDrop[0].length);
 const js = (await esbuild.transform(pezzoCartella + pezzoDrop, { loader: 'ts' })).code;
 const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
-    'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aperturaCartellaRef', 'aiuto', 'saveCloseDialog',
+    'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aperturaCartellaRef', 'aiuto', 'saveCloseDialog', 'eFileImmagine',
     js + '\nreturn { handleLoadFolderClick, apriCartellaTrascinata, handleDroppedFiles };');
 
 // --- cartelle finte della File System Access API (come in test-load-folder-scan.mjs)
@@ -105,7 +108,7 @@ const ambiente = ({ electron = true, radiceVera = 'D:\\prova\\foto', editor = fa
                 percorsi: pathOf ? img.map(f => pathOf.get(f) || '') : null };
         },
         { current: { click: () => { r.log.push('campo nascosto'); } } }, scanDirectoryHandle,
-        (f) => f, async () => { r.sidecar++; return { txtFiles: [], folderOf: null }; }, editor, chiave, fileDiMac, { current: false }, null, { isOpen: false });
+        (f) => f, async () => { r.sidecar++; return { txtFiles: [], folderOf: null }; }, editor, chiave, fileDiMac, { current: false }, null, { isOpen: false }, eFileImmagine);
     return { r, ...fn };
 };
 const a = file('a.jpg', 'image/jpeg');

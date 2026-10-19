@@ -32,6 +32,12 @@ const { fileDiMac } = await import('data:text/javascript;base64,' + Buffer.from(
     entryPoints: [path.join(radice, 'src/utils/folderScan.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
 })).outputFiles[0].text).toString('base64'));
 
+// ITALIANO: la regola vera di "e' un'immagine?" (src/utils/imageFile.ts), che le strade di import usano.
+// ENGLISH: the real "is it an image?" rule (src/utils/imageFile.ts), which the import roads use.
+const { eFileImmagine } = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/imageFile.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+})).outputFiles[0].text).toString('base64'));
+
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
 const inizio = sorgente.indexOf('    const handleDroppedFiles = useCallback(');
 const chiusura = /\r?\n    \}, \[([^\]]*)\]\);\r?\n/g;
@@ -43,9 +49,9 @@ const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine
 const trascina = async ({ editor = false, chiave = false, aiuto = null, chiusura = false } = {}) => {
     const r = { notifiche: [], riepiloghi: 0 };
     const f = new Function('useCallback', 'showNotification', 't', 'loadSidecarTxtFiles', 'calculateImportSummary', 'isTagEditorOpen', 'isApiKeyDialogOpen',
-        'fileDiMac', 'aiuto', 'saveCloseDialog', codice + '\nreturn handleDroppedFiles;')(
+        'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine', codice + '\nreturn handleDroppedFiles;')(
         (fn) => fn, (m, tipo) => r.notifiche.push([m, tipo]), t, async () => ({ txtFiles: [], folderOf: null }),
-        () => { r.riepiloghi++; }, editor, chiave, fileDiMac, aiuto, { isOpen: chiusura, isSaving: false });
+        () => { r.riepiloghi++; }, editor, chiave, fileDiMac, aiuto, { isOpen: chiusura, isSaving: false }, eFileImmagine);
     await f([{ name: 'a.png', type: 'image/png' }, { name: 'a.txt', type: 'text/plain' }]);
     return r;
 };

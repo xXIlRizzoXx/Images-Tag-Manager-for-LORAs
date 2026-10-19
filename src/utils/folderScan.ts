@@ -13,6 +13,8 @@
 *******************************************************************************
 *******************************************************************************/
 
+import { eFileImmagine } from './imageFile';
+
 // ITALIANO: Ogni immagine ricorda la SOTTOCARTELLA in cui si trova (folderOf), cosi' il suo .txt
 //           viene riscritto li' dentro e non nella cartella principale. I dataset LoRA sono spesso
 //           divisi in sottocartelle (es. "10_soggetto"). Il .txt la ricorda anche lui, cosi' viene
@@ -70,7 +72,9 @@ export const scanDirectoryHandle = async (handle: any, maxDepth = 8): Promise<{ 
                 if (entry.kind === 'file' ? fileDiMac(entry.name) : fileDiMac('', entry.name)) continue;
                 if (entry.kind === 'file') {
                     const file = await entry.getFile();
-                    if (file.type.startsWith('image/')) {
+                    // ITALIANO: anche le HEIC dell'iPhone, che arrivano con il tipo vuoto (vedi imageFile.ts).
+                    // ENGLISH: iPhone HEIC photos too, which arrive with an empty type (see imageFile.ts).
+                    if (eFileImmagine(file)) {
                         imgFiles.push(file);
                         folderOf.set(file, dir);
                         relPathOf.set(file, prefix);

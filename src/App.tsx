@@ -49,6 +49,7 @@ import { purgeIdsFromHistory, addPhotosToHistory, withLiveOriginalTags, nearestD
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
 import { scriviZip, ERRORE_LETTURA_ZIP, type VoceZip } from './utils/zipWriter';
 import { scanDirectoryHandle, fileDiMac } from './utils/folderScan';
+import { eFileImmagine } from './utils/imageFile';
 import { fileDiAdesso } from './utils/freshFile';
 import { fotoGiaAperte } from './utils/alreadyOpen';
 import { flagUri, flagUriForLang } from './utils/flags';
@@ -1579,9 +1580,16 @@ export default function App() {
                         // ENGLISH: a model locked outside the compared line (a pro picked after "Test
                         //          recent models") is not "the newest of the free line": it is said to
                         //          be outside the comparison and stays as chosen.
-                        if (confrontaVersioni(versioneDi(elenco[0].id), versioneDi(aiModel)) > 0) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
-                        else if (!elenco.some(m => m.id === aiModel)) showNotification(t.aiModelOutsideFreeLine.replace('{a}', aiModel), 'info');
-                        else showNotification(t.aiModelUpToDate.replace('{a}', aiModel), 'success');
+                        // ITALIANO: il modello in uso ADESSO: scelto a mano mentre Google rispondeva, e' quello
+                        //           (ultimaSceltaRef, come nel ramo Automatico qui sotto). Prima l'avviso
+                        //           parlava del modello di quando il controllo era partito.
+                        // ENGLISH: the model in use NOW: picked by hand while Google was answering, it is
+                        //          that one (ultimaSceltaRef, as in the Automatic branch below). The notice
+                        //          used to speak of the model the check had started with.
+                        const inUso = sceltaManualeRef.current !== scelteAllInizio ? ultimaSceltaRef.current : aiModel;
+                        if (confrontaVersioni(versioneDi(elenco[0].id), versioneDi(inUso)) > 0) showNotification(t.aiModelNewerAvailable.replace('{a}', elenco[0].id), 'info');
+                        else if (!elenco.some(m => m.id === inUso)) showNotification(t.aiModelOutsideFreeLine.replace('{a}', inUso), 'info');
+                        else showNotification(t.aiModelUpToDate.replace('{a}', inUso), 'success');
                     }
                     return;
                 }
@@ -2501,8 +2509,9 @@ export default function App() {
         const progetto = progettoGenRef.current;
 
         let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
+        const spostati: { img?: boolean; txt?: boolean; condiviso?: boolean } = {};
         try {
-            esito = await deleteImageFiles(img);
+            esito = await deleteImageFiles(img, spostati);
         } catch (error) {
             console.error(error);
         }
@@ -2559,7 +2568,11 @@ export default function App() {
         // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
         //          would keep counting it and acting on an id that is gone.
         setSelectedForBulk(prev => prev.filter(x => x !== id));
-        showNotification(t.deleteSuccess, 'success');
+        // ITALIANO: il file non c'era piu' sul disco (cancellato da Esplora file, come consiglia
+        //           deleteNoRecycleBin): la foto esce, ma nel Cestino di Windows non e' andato niente.
+        // ENGLISH: the file was no longer on disk (deleted in File Explorer, as deleteNoRecycleBin
+        //          suggests): the photo leaves, but nothing went to the Windows Recycle Bin.
+        showNotification(spostati.img === false ? t.deleteAlreadyGoneOne : t.deleteSuccess, 'success');
         soundManager.pop();
     };
 
@@ -2918,6 +2931,11 @@ export default function App() {
         // ITALIANO: quante fra le non rimosse sono senza Cestino di Windows e senza cartella aperta.
         // ENGLISH: how many of the ones not removed have no Windows Recycle Bin and no open folder.
         let senzaCestino = 0;
+        // ITALIANO: quante fra le tolte avevano gia' perso il loro file (niente spostato): il messaggio
+        //           non deve dire che sono nel Cestino di Windows.
+        // ENGLISH: how many of the removed ones had already lost their file (nothing moved): the message
+        //          must not say they are in the Windows Recycle Bin.
+        let sparite = 0;
         for (const scelta of trashedImages) {
             // ITALIANO: l'elenco e' quello del clic su "Svuota"; la foto si guarda com'e' ADESSO.
             //           Una foto tornata in galleria nel frattempo (Ctrl+Z con la conferma aperta,
@@ -2952,6 +2970,7 @@ export default function App() {
             if (esito === 'trashed') {
                 removedIds.add(img.id);
                 tolte.push(img);
+                if (spostati.img === false) sparite++;
                 if (percorsi.imgPath && spostati.img) ripescabili.push({ img, imgPath: percorsi.imgPath, txtPath: spostati.txt ? percorsi.txtPath : '', txtCondiviso: !!spostati.condiviso });
             }
             else if (esito === 'nopath') senzaPercorso.push(img);
@@ -3041,15 +3060,15 @@ export default function App() {
         // ENGLISH: the count of this first part travels with them (moved to the Windows Recycle
         //          Bin, failed): it used to be lost here, and the final message said nothing of it.
         if (senzaPercorso.length > 0) {
-            chiediEliminazioneDefinitiva(senzaPercorso, { done: removedIds.size, failed, senzaCestino });
+            chiediEliminazioneDefinitiva(senzaPercorso, { done: removedIds.size, failed, senzaCestino, sparite });
             return;
         }
         if (failed > 0) {
-            showNotification(fraseCestinoWindows({ done: removedIds.size, failed, senzaCestino }), 'error');
+            showNotification(fraseCestinoWindows({ done: removedIds.size, failed, senzaCestino, sparite }), 'error');
             return;
         }
         setIsTrashOpen(false);
-        showNotification(t.deleteSuccess, 'success');
+        showNotification(fraseCestinoWindows({ done: removedIds.size, failed: 0, sparite }), 'success');
         soundManager.pop();
     };
 
@@ -3070,13 +3089,20 @@ export default function App() {
     //           la cartella aperta: per quelle si aggiunge la frase che dice perche' e cosa fare.
     // ENGLISH: `senzaCestino` = how many of the ones not removed have neither the Windows Recycle
     //          Bin nor an open folder: for those the sentence saying why and what to do is added.
-    const fraseCestinoWindows = (prima: { done: number; failed: number; senzaCestino?: number }): string => {
-        if (prima.failed > 0) return [t.deletePartial.replace('{done}', String(prima.done)).replace('{failed}', String(prima.failed)),
-            (prima.senzaCestino || 0) > 0 ? t.deleteNoRecycleBin : ''].filter(Boolean).join(' · ');
-        return prima.done > 0 ? t.deleteSuccess : '';
+    // ITALIANO: `sparite` = quante fra le `done` avevano gia' perso il loro file (cancellato da Esplora
+    //           file): sono uscite dal progetto ma non sono nel Cestino di Windows, e lo si dice a parte.
+    // ENGLISH: `sparite` = how many of the `done` ones had already lost their file (deleted in File
+    //          Explorer): they left the project but are not in the Windows Recycle Bin, and that is said apart.
+    const fraseCestinoWindows = (prima: { done: number; failed: number; senzaCestino?: number; sparite?: number }): string => {
+        const sparite = Math.min(prima.sparite || 0, prima.done);
+        const spostate = prima.done - sparite;
+        const fraseSparite = sparite === 1 ? t.deleteAlreadyGoneOne : sparite > 1 ? t.deleteAlreadyGone.replace('{n}', String(sparite)) : '';
+        if (prima.failed > 0) return [t.deletePartial.replace('{done}', String(spostate)).replace('{failed}', String(prima.failed)),
+            fraseSparite, (prima.senzaCestino || 0) > 0 ? t.deleteNoRecycleBin : ''].filter(Boolean).join(' · ');
+        return [spostate > 0 ? t.deleteSuccess : '', fraseSparite].filter(Boolean).join(' · ');
     };
 
-    const chiediEliminazioneDefinitiva = (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
+    const chiediEliminazioneDefinitiva = (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number; sparite?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog({
             isOpen: true,
             title: t.deleteForGood,
@@ -3090,7 +3116,7 @@ export default function App() {
         });
     };
 
-    const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number } = { done: 0, failed: 0 }) => {
+    const eliminaPerSempre = async (imgs: any[], prima: { done: number; failed: number; senzaCestino?: number; sparite?: number } = { done: 0, failed: 0 }) => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsEmptyingTrash(true);
         const progetto = progettoGenRef.current;
@@ -3270,6 +3296,12 @@ export default function App() {
             //          for an identical copy in another folder with the same name: once linked, "Empty Trash"
             //          deleted it FOR GOOD (image and .txt) and the original stayed. There the photo stays
             //          folder-less and the earlier message applies.
+            // ITALIANO: cartellaImport resta com'era: la foto resta nel suo lotto di foto sciolte, e il
+            //           nome della cartella cambiava l'impronta del backup anti-crash di quel lotto (dopo
+            //           un crash le modifiche delle altre foto non tornavano) e divideva l'esportazione.
+            // ENGLISH: cartellaImport stays as it was: the photo stays in its batch of loose photos, and
+            //          the folder's name changed that batch's crash-backup fingerprint (after a crash the
+            //          other photos' edits did not come back) and split the export.
             const stessoPercorso = (a: string, b: string) => !!a && !!b && a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase();
             const daCollegare = new Map<string, { cartella: any; rel: string }>();
             doppi.forEach((aperta: any, f: any) => {
@@ -3280,7 +3312,7 @@ export default function App() {
             if (daCollegare.size > 0) {
                 isUndoRedoAction.current = true;
                 setImages(prev => prev.map(img => (daCollegare.has(img.id) && img.isTrashed && !img.dirHandle
-                    ? { ...img, dirHandle: daCollegare.get(img.id)!.cartella, cartellaImport: importFolder, cartellaRel: daCollegare.get(img.id)!.rel } : img)));
+                    ? { ...img, dirHandle: daCollegare.get(img.id)!.cartella, cartellaRel: daCollegare.get(img.id)!.rel } : img)));
             }
             const nuove = doppi.size > 0 ? d.imgFiles.filter((f: any) => !doppi.has(f)) : d.imgFiles;
             if (nuove.length === 0) {
@@ -3304,9 +3336,16 @@ export default function App() {
             //          The same goes for "Load images" and drag and drop (no picked folder, ''): the new
             //          photos join the folder-less batch of the photos already open, never a "Load folder"
             //          batch. They used to always take a separate batch.
-            const combacianti = [...doppi.values()] as any[];
+            // ITALIANO: contano solo le foto gia' aperte DI QUESTA cartella: una foto della stessa
+            //           cartella caricata prima da sola (lotto sciolto, cartellaImport '') faceva prendere
+            //           alle foto nuove un altro lotto, e l'esportazione divideva la cartella in 10_face/ e
+            //           10_face_2/.
+            // ENGLISH: only the already open photos OF THIS folder count: a photo of the same folder
+            //          loaded alone before (loose batch, cartellaImport '') made the new photos take
+            //          another batch, and the export split the folder into 10_face/ and 10_face_2/.
+            const combacianti = ([...doppi.values()] as any[]).filter(a => a.cartellaImport === importFolder);
             const lottoDaRiusare = combacianti.length > 0
-                && combacianti.every(a => a.lotto && a.lotto === combacianti[0].lotto && a.cartellaImport === importFolder)
+                && combacianti.every(a => a.lotto && a.lotto === combacianti[0].lotto)
                 ? String(combacianti[0].lotto) : '';
             const lotto = lottoDaRiusare || nuovoIdFoto();
             // ITALIANO: i .txt delle foto gia' aperte non si rileggono: l'avviso di fine import li
@@ -3815,7 +3854,7 @@ export default function App() {
         // ITALIANO: senza i file nascosti del Mac (__MACOSX, "._nome"), come "Carica cartella".
         // ENGLISH: without the Mac hidden files (__MACOSX, "._name"), as in "Load folder".
         const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name, f.webkitRelativePath));
-        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        const imgFiles = files.filter(f => eFileImmagine(f));
         const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
         // ITALIANO: una cartella senza immagini va detta, come nelle altre strade, e il campo va
         //           liberato: altrimenti riscegliendo la stessa cartella il browser non avvisa piu'.
@@ -3914,7 +3953,7 @@ export default function App() {
         // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
         // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
         const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name));
-        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        const imgFiles = files.filter(f => eFileImmagine(f));
         if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
         // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
         // ENGLISH: .txt files are not picked by hand: I find them next to the images
@@ -4004,7 +4043,7 @@ export default function App() {
         // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
         // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
         const files = Array.from(fileList || []).filter((f: any) => !fileDiMac(f.name));
-        const imgFiles = files.filter(f => f.type.startsWith('image/'));
+        const imgFiles = files.filter(f => eFileImmagine(f));
         if (imgFiles.length === 0) { showNotification(t.dropOnlyImages, 'info'); return; }
         const droppedTxt = files.filter(f => f.name.toLowerCase().endsWith('.txt'));
         const { txtFiles: diskTxt, folderOf } = await loadSidecarTxtFiles(imgFiles);
@@ -4908,6 +4947,9 @@ export default function App() {
             //          the wrong tags). The name in the archive stays as it is.
             const usedNames = new Set<string>();
             const occupato = (n: string) => usedNames.has(n.toLowerCase());
+            // ITALIANO: per ogni nome preso, il nome della cartella della foto che l'ha preso.
+            // ENGLISH: for every name taken, the folder name of the photo that took it.
+            const cartellaDelNome = new Map<string, string>();
             let collisionCount = 0;
             // ITALIANO: rinominando, il nome e' il posto in fila: 0001, 0002... Le cifre sono
             //           almeno quattro (e' la convenzione dei dataset LoRA) e diventano di piu'
@@ -4979,7 +5021,14 @@ export default function App() {
                 //          root photos were left out and the repeat counts vanished. Every part is
                 //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
                 const pezziRel = String(img.cartellaRel || '').split(/[\\/]/).filter(p => p && p !== '.' && p !== '..');
-                const sotto = [(piuCartelle && pezziRel.length === 0) ? String(nomiScelte.get(sceltaDi(img)) || '') : '', ...pezziRel]
+                // ITALIANO: sale al primo livello solo una sottocartella Kohya (N_nome). Ogni altra
+                //           (10_face/old, anna/closeup) resta sotto il nome della sua scelta: prima
+                //           old/x.txt si staccava da 10_face e due closeup/ si mescolavano.
+                // ENGLISH: only a Kohya subfolder (N_name) goes up to the first level. Any other one
+                //          (10_face/old, anna/closeup) stays under its pick's name: old/x.txt used to
+                //          come off 10_face and two closeup/ folders got mixed.
+                const tieniScelta = piuCartelle && !(pezziRel.length > 0 && /^\d+_/.test(pezziRel[0]));
+                const sotto = [tieniScelta ? String(nomiScelte.get(sceltaDi(img)) || '') : '', ...pezziRel]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
                 // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
                 //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
@@ -5010,8 +5059,16 @@ export default function App() {
                     collisionCount += (conTag ? 1 : 0) + (conImmagini ? 1 : 0);
                     // ITALIANO: con la sottocartella gia' nel nome resta il suffisso numerico.
                     // ENGLISH: with the subfolder already in the name, the numeric suffix remains.
+                    // ITALIANO: il nome della cartella serve solo se chi ha preso il nome viene da una
+                    //           cartella con un ALTRO nome. a.png e a.jpg della stessa cartella (un solo
+                    //           a.txt sul disco) finivano in 10_face/a.png, una cartella nuova col nome
+                    //           di quella che e' gia' la radice dell'archivio: resta il suffisso.
+                    // ENGLISH: the folder name helps only if whoever took the name comes from a folder
+                    //          with ANOTHER name. a.png and a.jpg of the same folder (one a.txt on disk)
+                    //          ended up in 10_face/a.png, a new folder named after the one that already
+                    //          is the archive's root: the suffix remains.
                     const dir = (!sotto && img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
-                    if (dir && !occupato(`${dir}/${baseName}`)) {
+                    if (dir && dir.toLowerCase() !== (cartellaDelNome.get(baseName.toLowerCase()) || '').toLowerCase() && !occupato(`${dir}/${baseName}`)) {
                         name = `${dir}/${baseName}`;
                     } else {
                         const dot = baseName.lastIndexOf('.');
@@ -5023,6 +5080,7 @@ export default function App() {
                     }
                 }
                 usedNames.add(name.toLowerCase());
+                cartellaDelNome.set(name.toLowerCase(), (img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '');
                 if (conTag) voci.push({ nome: name, dati: getOrderedTagString(img.tags) });
                 if (conImmagini) {
                     // ITALIANO: la foto prende lo STESSO nome del suo .txt, estensione a parte. Cosi'
@@ -6460,7 +6518,7 @@ export default function App() {
             {/* ENGLISH: Picker for individual images + their .txt files (item 12) */}
             {/* ITALIANO: accept solo immagini = nel selettore i file di testo NON si vedono */}
             {/* ENGLISH: images-only accept = text files are NOT shown in the picker */}
-            <input type="file" accept="image/*" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
+            <input type="file" accept="image/*,.heic,.heif" multiple ref={imagesInputRef} className="hidden" onChange={handleImagesUpload} />
 
             {/* ITALIANO: la finestra con la spiegazione di una sezione delle Impostazioni (tasto "?").
                           Si chiude con Chiudi, con Esc o cliccando fuori; il pannello resta aperto.

@@ -196,6 +196,17 @@ for (const [nome, opz] of [
     dice('una HEIC senza dati nascosti parte identica', !!r.dati && r.dati.equals(file) && r.mime === 'image/heic', String(r.errore || r.mime));
 }
 {
+    // ITALIANO: su molti PC Windows una .HEIC arriva con il tipo VUOTO (Chromium non la conosce): veniva
+    //           rifiutata con "Unsupported file type" prima ancora di guardare i byte.
+    // ENGLISH: on many Windows PCs a .HEIC arrives with an EMPTY type (Chromium does not know it): it was
+    //          refused with "Unsupported file type" before even looking at the bytes.
+    const r = await invia(heic(), 'IMG_0003.HEIC', '');
+    dice('una HEIC con il tipo vuoto parte come image/heic, pulita',
+        r.chiamate === 1 && !!r.dati && contieneSegreto(r.dati).length === 0 && r.mime === 'image/heic', String(r.errore || r.mime));
+    const n = await invia(heic(), 'nota.txt', '');
+    dice('un file non immagine con il tipo vuoto resta rifiutato', !!n.errore && n.chiamate === 0, String(n.errore));
+}
+{
     const r = await invia(heic(), 'finta.jpg', 'image/jpeg');
     dice('una HEIC chiamata .jpg si pulisce come HEIC e parte come image/heic',
         !!r.dati && contieneSegreto(r.dati).length === 0 && r.mime === 'image/heic', String(r.errore || r.mime));
