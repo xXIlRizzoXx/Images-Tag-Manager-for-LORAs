@@ -78,11 +78,11 @@ export const creaServerMcp = (chiedi, versione) => {
 
     server.registerTool('list_photos', {
         title: 'List photos',
-        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. A photo marked txt_unreadable has a .txt that could not be read when it was opened: "Save Changes" does not write it. Optional filters: tags that must all be present, or only photos without tags. With tags or untagged_only the list is computed again at every call from the current tags: photos whose tags you change leave it and the others move up. To work through such a list, change a page and then ask again with offset 0 (do not advance offset) until total is 0.',
+        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. A photo marked txt_unreadable has a .txt that could not be read when it was opened: "Save Changes" does not write it. Optional filters: tags that must all be present, or only photos without tags. With tags or untagged_only the list is computed again at every call from the current tags: a photo whose tags you change leaves it only if it no longer matches the filter, so changing tags while you page through it makes you skip or repeat photos. To work through a long list, first read all its pages without changing anything (advance offset by the number of photos returned, and stop when a page comes back empty or offset reaches total), note the ids, and only then change the tags of those ids.',
         inputSchema: {
             tags: z.array(TAG).max(20).optional().describe('Only photos that have ALL these tags (case-insensitive).'),
-            untagged_only: z.boolean().optional().describe('Only photos with no tags. Photos you tag leave this list: ask again with offset 0 until total is 0.'),
-            offset: z.number().int().min(0).optional().describe('Skip this many photos of the list. Do not advance it while you change the tags of a list filtered by tags or untagged_only: ask again with offset 0.'),
+            untagged_only: z.boolean().optional().describe('Only photos with no tags. Photos you tag leave this list, photos you leave untagged stay in it: read all its pages and note the ids before you start tagging.'),
+            offset: z.number().int().min(0).optional().describe('Skip this many photos of the list. To read the next page, advance it by the number of photos returned; stop when a page comes back empty. With tags or untagged_only read all the pages before you change any tags, because the list is computed again at every call.'),
             limit: z.number().int().min(1).max(500).optional().describe('Default 100.'),
         },
         annotations: { readOnlyHint: true },
