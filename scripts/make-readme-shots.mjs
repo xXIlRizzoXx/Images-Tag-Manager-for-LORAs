@@ -8,7 +8,7 @@
  *   .txt in public/__shots (ignorata da git, esclusa dall'exe, tolta a fine giro).
  *   Va lanciata con electron, non con node. Serve il server di sviluppo gia' avviato:
  *   con npm run dev (porta 3000) si passa --url http://localhost:3000; senza --url lo
- *   script cerca la porta 3100 (server avviato con node_modules/.bin/vite --port=3100).
+ *   script cerca la porta 3100 (server avviato con npx vite --port=3100).
  *
  * ENGLISH: generates the README screenshots. It opens the app inside a hidden Electron
  *   window (so it looks exactly like the real program), fills it with images and captures
@@ -19,7 +19,7 @@
  *   into public/__shots (ignored by git, left out of the exe, removed at the end).
  *   Launch it with electron, not with node. Requires the dev server to be running: with
  *   npm run dev (port 3000) pass --url http://localhost:3000; without --url the script
- *   looks for port 3100 (server started with node_modules/.bin/vite --port=3100).
+ *   looks for port 3100 (server started with npx vite --port=3100).
  *
  *   npx electron scripts/make-readme-shots.mjs [--url http://localhost:3000] [--only 02,03]
  *       [--folder <cartella con foto e .txt / folder with photos and .txt>] [--count 14]

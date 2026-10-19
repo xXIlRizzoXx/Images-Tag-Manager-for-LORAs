@@ -51,6 +51,14 @@ if (portaPredefinita && portaPredefinita !== portaDev) {
     dice(`l'intestazione dice come avere un server sulla porta predefinita ${portaPredefinita}`,
         testa.includes(`--port=${portaPredefinita}`) || testa.includes(`--port ${portaPredefinita}`));
 }
+// i comandi dell'intestazione partono anche nel Prompt dei comandi di Windows (cmd.exe, la shell
+// di npm su Windows): li' un percorso con la barra normale come node_modules/.bin/vite viene letto
+// come un'opzione e il comando non parte; npx funziona in cmd, PowerShell e Git Bash.
+dice('l\'intestazione non usa node_modules/.bin/ (con la barra normale cmd non lo esegue)', !/node_modules\/\.bin\//.test(testa));
+if (portaPredefinita && portaPredefinita !== portaDev) {
+    dice(`l'intestazione avvia il server sulla porta ${portaPredefinita} con npx vite`,
+        testa.includes(`npx vite --port=${portaPredefinita}`));
+}
 
 // 3. Opzioni: tutte quelle lette dal codice compaiono nell'intestazione.
 const opzioni = [...src.matchAll(/argOf\('([a-z]+)'/g)].map(m => m[1]);
