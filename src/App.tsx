@@ -3260,10 +3260,22 @@ export default function App() {
             //          and delete them from there: the photo used to stay "already open" and folder-less, and
             //          "Empty Trash" gave the same message again for ever. Gallery photos do not change (the
             //          folder decides where Save writes). It is not a Ctrl+Z step.
+            // ITALIANO: solo con lo STESSO percorso su disco. Senza percorsi (cartella di rete
+            //           \\server\condivisione) la foto combacia solo per la coppia mista (nome, dimensione,
+            //           data, nome della cartella), che vale anche per una copia identica in un'altra cartella
+            //           con lo stesso nome: collegata, "Svuota Cestino" la cancellava PER SEMPRE (immagine e
+            //           .txt) e l'originale restava. Li' la foto resta senza cartella e vale il messaggio di prima.
+            // ENGLISH: only with the SAME path on disk. Without paths (network folder \\server\share) the photo
+            //          matches only through the mixed pair (name, size, date, folder name), which also holds
+            //          for an identical copy in another folder with the same name: once linked, "Empty Trash"
+            //          deleted it FOR GOOD (image and .txt) and the original stayed. There the photo stays
+            //          folder-less and the earlier message applies.
+            const stessoPercorso = (a: string, b: string) => !!a && !!b && a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase();
             const daCollegare = new Map<string, { cartella: any; rel: string }>();
             doppi.forEach((aperta: any, f: any) => {
                 const sua = descritte.get(f);
-                if (aperta && aperta.id && aperta.cestinata && !aperta.cartella && sua && sua.cartella) daCollegare.set(aperta.id, { cartella: sua.cartella, rel: (d.cartellaRelOf && d.cartellaRelOf.get(f)) || '' });
+                if (aperta && aperta.id && aperta.cestinata && !aperta.cartella && sua && sua.cartella
+                    && stessoPercorso(String(aperta.percorso || ''), String(sua.percorso || ''))) daCollegare.set(aperta.id, { cartella: sua.cartella, rel: (d.cartellaRelOf && d.cartellaRelOf.get(f)) || '' });
             });
             if (daCollegare.size > 0) {
                 isUndoRedoAction.current = true;

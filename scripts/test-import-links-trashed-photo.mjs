@@ -10,6 +10,8 @@
    Casi vicini che non devono cambiare: le foto nuove della cartella entrano, quelle gia' aperte non
    entrano due volte (lo stesso avviso), una foto in galleria senza cartella non cambia, una foto nel
    cestino che ha gia' una cartella non cambia, il collegamento non diventa un passo di Ctrl+Z.
+   Si collega solo con lo stesso percorso su disco: una cartella di rete \\server\condivisione (senza
+   percorsi) non collega, perche' una copia identica in un'altra cartella omonima veniva cancellata.
    Uso:  node scripts/test-import-links-trashed-photo.mjs      (esce con codice 1 se qualcosa non torna)
 
    ENGLISH: TEST: REOPENING THE FOLDER OF A PHOTO IN THE APP'S TRASH GIVES IT THE FOLDER
@@ -24,6 +26,8 @@
    Neighbouring cases that must not change: the folder's new photos come in, those already open do not
    come in twice (same notice), a folder-less gallery photo does not change, a trashed photo that already
    has a folder does not change, the link does not become a Ctrl+Z step.
+   Only the same path on disk links: a network folder \\server\share (no paths) does not, because an
+   identical copy in another folder with the same name used to be deleted.
    Usage:  node scripts/test-import-links-trashed-photo.mjs      (exits with code 1 if anything is off) */
 
 import { creaApp, cartella, riepilogo, t } from './import-harness.mjs';
@@ -82,14 +86,48 @@ console.log('\n--- tutte le foto gia\' aperte ---');
     dice('il collegamento non e\' un passo di Ctrl+Z', 1, app.passiSaltati);
 }
 
-console.log('\n--- cartella di rete senza percorsi (coppia mista: nome, dimensione, data, nome della cartella) ---');
+// ITALIANO: senza percorsi (cartella di rete \\server\condivisione) la foto e' "gia' aperta" solo per la
+//           coppia mista (nome, dimensione, data, nome della cartella): un'ipotesi, non una prova. Una copia
+//           identica in un'altra cartella con lo stesso nome combacia lo stesso, e collegandola "Svuota
+//           Cestino" cancellava PER SEMPRE la copia (immagine e .txt) lasciando l'originale. Si collega solo
+//           con lo stesso percorso su disco; qui la foto resta senza cartella e vale il messaggio di prima.
+// ENGLISH: without paths (network folder \\server\share) the photo is "already open" only through the mixed
+//          pair (name, size, date, folder name): a guess, not a proof. An identical copy in another folder
+//          with the same name matches all the same, and once linked "Empty Trash" deleted the copy FOR GOOD
+//          (image and .txt) and left the original. Only the same path on disk links; here the photo stays
+//          folder-less and the earlier message applies.
+console.log('\n--- cartella di rete senza percorsi (coppia mista): NON collega ---');
 {
     const h = cartella('UNC:share/img', 'img');
     const app = creaApp({ iniziali: [sciolta('x', 'a.png', { percorso: '\\\\server\\share\\img\\a.png' })] });
     await app.conferma(riepilogo(h, ['a.png'], { percorsi: false }));
-    dice('la foto nel cestino riceve la cartella di rete', true, app.images[0].dirHandle === h);
+    dice('la foto resta gia\' aperta (non entra due volte)', [['a.png'], [t.importAlreadyOpen.replace('{n}', '1'), 'info']], [app.nomi(), app.ultimo()]);
+    dice('la foto nel cestino NON riceve la cartella di rete', [null, undefined], [app.images[0].dirHandle, app.images[0].cartellaImport]);
     const dopo = await svuota([app.images[0]]);
-    dice('Svuota arriva alla seconda conferma', true, dopo.stato.confirmDialog.isOpen);
+    dice('Svuota non apre la seconda conferma e non cancella niente', [false, []], [dopo.stato.confirmDialog.isOpen, h.rimossi]);
+    dice('...e ridice di cancellarla da Esplora file', true, dopo.notifiche.some(([m]) => m.includes(Cestino.t.deleteNoRecycleBin)));
+}
+
+console.log('\n--- copia identica in un\'ALTRA cartella di rete con lo stesso nome ---');
+{
+    const backup = cartella('UNC:nas/backup/dataset', 'dataset');
+    const app = creaApp({ iniziali: [sciolta('x', 'a.png', { percorso: '\\\\nas\\lavoro\\dataset\\a.png' })] });
+    await app.conferma(riepilogo(backup, ['a.png', 'b.png'], { percorsi: false }));
+    const x = app.images.find(i => i.id === 'x');
+    dice('la foto del cestino NON punta alla cartella backup', [null, undefined], [x.dirHandle, x.cartellaImport]);
+    const dopo = await svuota([x]);
+    if (dopo.stato.confirmDialog.isOpen) await dopo.stato.confirmDialog.onConfirm();
+    await dopo.attendi();
+    dice('nessun file cancellato per sempre dalla cartella backup', [], backup.rimossi);
+    dice('...la foto resta nel cestino dell\'app', ['x(cestino)'], dopo.vista());
+}
+
+console.log('\n--- stessa cartella con i percorsi (chiavetta, scheda SD, lettera di rete): collega ancora ---');
+{
+    const h = cartella('E:dataset', 'dataset');
+    const app = creaApp({ iniziali: [sciolta('x', 'a.png', { percorso: 'e:/DATASET/a.png' })] });
+    await app.conferma(riepilogo(h, ['a.png'], { percorsi: true }));
+    dice('lo stesso percorso (maiuscole e barre a parte) collega', true, app.images[0].dirHandle === h);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
