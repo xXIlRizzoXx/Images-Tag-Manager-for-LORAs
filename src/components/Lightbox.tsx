@@ -25,7 +25,7 @@ import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
 import { hasTagIgnoringCase, splitTagInput } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: any) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -53,11 +53,18 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
 
     const handleKeyDown = useCallback((e: any) => {
         if (!imageRef.current) return;
+        // ITALIANO: con una finestra aperta SOPRA il visualizzatore (chiave API, riepilogo
+        //           dell'importazione...) Esc chiudeva il visualizzatore sotto e lasciava la finestra,
+        //           e le frecce cambiavano foto dietro di lei. App.tsx passa le stesse finestre di Ctrl+Z.
+        // ENGLISH: with a dialog open OVER the viewer (API key, import summary...) Esc closed the
+        //          viewer underneath and left the dialog, and the arrows changed photo behind it.
+        //          App.tsx passes the same dialogs as Ctrl+Z.
+        if (tastiBloccati) return;
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
         if (e.key === 'ArrowRight' && hasNext) onNext();
         else if (e.key === 'ArrowLeft' && hasPrev) onPrev();
         else if (e.key === 'Escape') onClose();
-    }, [hasNext, hasPrev, onNext, onPrev, onClose]);
+    }, [hasNext, hasPrev, onNext, onPrev, onClose, tastiBloccati]);
 
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [handleKeyDown]);
 

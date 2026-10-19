@@ -4924,7 +4924,29 @@ export default function App() {
             //          root of its pick goes under its folder's name (cartellaImport); a photo that
             //          already has a subfolder (char_anna/10_anna) keeps it as the first level,
             //          10_anna/a.png: sd-scripts skips char_anna/10_anna. With one, as before.
-            const piuCartelle = new Set(imagesToExport.map(img => String(img.cartellaImport || '')).filter(Boolean)).size > 1;
+            // ITALIANO: le scelte si contano per apertura (lottoImport), non per nome: char_anna\10_face
+            //           e char_bea\10_face hanno lo stesso nome e sembravano una sola, e l'archivio usciva
+            //           piatto. Ogni apertura ha il suo nome nell'archivio: la seconda con lo stesso nome
+            //           (anche con maiuscole diverse, per Windows e' la stessa cartella) prende un
+            //           suffisso che lascia il prefisso N_ di sd-scripts: 10_face_2.
+            // ENGLISH: picks are counted per opening (lottoImport), not by name: char_anna\10_face and
+            //          char_bea\10_face share the name and looked like one, and the archive came out
+            //          flat. Every opening gets its own name in the archive: the second with the same
+            //          name (even with different capitals, to Windows it is the same folder) gets a
+            //          suffix that keeps sd-scripts' N_ prefix: 10_face_2.
+            const sceltaDi = (img: any) => String(img.lottoImport || '') + '\u0000' + String(img.cartellaImport || '');
+            const nomiScelte = new Map<string, string>();
+            const nomiPresi = new Set<string>();
+            imagesToExport.forEach((img) => {
+                const nomeScelta = String(img.cartellaImport || '');
+                if (!nomeScelta || nomiScelte.has(sceltaDi(img))) return;
+                const base = sanitizeFileName(nomeScelta, '_');
+                let nome = base;
+                for (let n = 2; nomiPresi.has(nome.toLowerCase()); n++) nome = `${base}_${n}`;
+                nomiPresi.add(nome.toLowerCase());
+                nomiScelte.set(sceltaDi(img), nome);
+            });
+            const piuCartelle = nomiScelte.size > 1;
             imagesToExport.forEach((img) => {
                 // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
                 //           vuoto fa fermare l'addestramento di Kohya ("caption file is empty"), uno
@@ -4945,7 +4967,7 @@ export default function App() {
                 //          root photos were left out and the repeat counts vanished. Every part is
                 //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
                 const pezziRel = String(img.cartellaRel || '').split(/[\\/]/).filter(p => p && p !== '.' && p !== '..');
-                const sotto = [(piuCartelle && pezziRel.length === 0) ? String(img.cartellaImport || '') : '', ...pezziRel]
+                const sotto = [(piuCartelle && pezziRel.length === 0) ? String(nomiScelte.get(sceltaDi(img)) || '') : '', ...pezziRel]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
                 // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
                 //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
@@ -6646,6 +6668,7 @@ export default function App() {
                     aiEnabled={aiEnabled}
                     aiBusy={isAIBusy}
                     onAITagSingle={handleAITagSingle}
+                    tastiBloccati={isTagEditorOpen || confirmDialog.isOpen || saveCloseDialog.isOpen || importSummary.isOpen || isApiKeyDialogOpen || isStatsOpen || !!exportChoice || updateAskOpen || !!updateFound || !!aiuto}
                 />
             )}
 

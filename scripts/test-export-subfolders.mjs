@@ -295,6 +295,67 @@ console.log('\n--- due cartelle Kohya aperte una dopo l\'altra, "Tag e immagini"
     dice('una sola cartella aperta: l\'archivio resta piatto', ['a.png', 'a.txt', 'b.png', 'b.txt', 'z.png', 'z.txt'], Object.keys(voci).sort());
 }
 
+// ITALIANO: due cartelle Kohya con lo STESSO nome aperte una dopo l'altra (char_anna\10_face, poi
+//           char_bea\10_face): le scelte si contavano per nome, quindi sembravano una sola e
+//           l'archivio usciva piatto (a, b, img alla radice, solo l'omonima in 10_face/): sd-scripts
+//           leggeva una foto. Ora le scelte si contano per apertura (lottoImport), e la seconda con
+//           lo stesso nome prende un suffisso che tiene il prefisso N_: 10_face_2.
+// ENGLISH: two Kohya folders with the SAME name opened one after the other (char_anna\10_face, then
+//          char_bea\10_face): the picks were counted by name, so they looked like one and the archive
+//          came out flat (a, b, img at the root, only the namesake in 10_face/): sd-scripts read one
+//          photo. Now picks are counted per opening (lottoImport), and the second one with the same
+//          name gets a suffix that keeps the N_ prefix: 10_face_2.
+const aperture = (sonda, voci) => voci.map(([lotto, radiceScelta, rel, nome, tag], i) => ({
+    id: lotto + '/' + rel + '/' + nome, file: new FotoFinta(byteDi(30, i), nome, sonda), tags: [tag], isTrashed: false,
+    dirHandle: { name: rel ? rel.split('/').pop() : radiceScelta }, cartellaRel: rel,
+    cartellaImport: radiceScelta, lottoImport: lotto,
+}));
+const omonime = [['L1', '10_face', '', 'a.png', 'ta'], ['L1', '10_face', '', 'img.png', 'ti1'], ['L2', '10_face', '', 'b.png', 'tb'], ['L2', '10_face', '', 'img.png', 'ti2']];
+console.log('\n--- due cartelle Kohya con lo stesso nome aperte una dopo l\'altra ---');
+{
+    const sonda = creaSonda();
+    const r = await creaApp(aperture(sonda, omonime), sonda).esporta(true);
+    const voci = await r.archivio() || {};
+    dice('"Tag e immagini": 10_face/ e 10_face_2/, niente alla radice',
+        ['10_face/a.png', '10_face/a.txt', '10_face/img.png', '10_face/img.txt', '10_face_2/b.png', '10_face_2/b.txt', '10_face_2/img.png', '10_face_2/img.txt'],
+        Object.keys(voci).sort());
+    dice('10_face/img.txt ha i tag della prima, 10_face_2/img.txt della seconda', ['ti1,', 'ti2,'],
+        [voci['10_face/img.txt'] ? voci['10_face/img.txt'].toString('utf8') : null, voci['10_face_2/img.txt'] ? voci['10_face_2/img.txt'].toString('utf8') : null]);
+    dice('nessun avviso di nomi doppi', [[t.zipSuccess, 'success']], r.notifiche.filter(([, tipo]) => tipo !== 'info'));
+    const s2 = creaSonda();
+    const soloTag = await (await creaApp(aperture(s2, omonime), s2).esporta(false)).archivio() || {};
+    dice('"Solo i tag": 10_face/a, 10_face/img, 10_face_2/b, 10_face_2/img',
+        ['10_face/a.txt', '10_face/img.txt', '10_face_2/b.txt', '10_face_2/img.txt'], Object.keys(soloTag).sort());
+    const s3 = creaSonda();
+    const numerate = await (await creaApp(aperture(s3, omonime), s3).esporta(true, true)).archivio() || {};
+    const nomi = Object.keys(numerate);
+    dice('rinominando in sequenza: 8 voci, nessuna alla radice', [8, []], [nomi.length, nomi.filter(n => !n.includes('/'))]);
+    const delB = nomi.find(n => n.endsWith('.txt') && numerate[n].toString('utf8') === 'tb,');
+    dice('...e b.png resta nella cartella della seconda apertura', true, !!delB && delB.startsWith('10_face_2/'));
+}
+{
+    // ITALIANO: maiuscole diverse sono la stessa cartella per Windows: anche qui un suffisso.
+    //           Una terza apertura che si chiama gia' 10_face_2 non si mescola con la seconda.
+    // ENGLISH: different capitals are the same folder to Windows: a suffix here too. A third
+    //          opening already named 10_face_2 does not mix with the second one.
+    const sonda = creaSonda();
+    const voci = await (await creaApp(aperture(sonda, [['L1', '10_Face', '', 'a.png', 'ta'], ['L2', '10_face', '', 'b.png', 'tb'], ['L3', '10_face_2', '', 'c.png', 'tc']]), sonda).esporta(false)).archivio() || {};
+    const nomi = Object.keys(voci).sort();
+    dice('tre aperture, tre cartelle diverse, niente alla radice', [3, 3, []],
+        [nomi.length, new Set(nomi.map(n => n.split('/')[0].toLowerCase())).size, nomi.filter(n => !n.includes('/'))]);
+    dice('10_Face tiene il suo nome', '10_Face/a.txt', nomi.find(n => n.endsWith('/a.txt')) || null);
+    dice('ogni cartella comincia ancora con N_ (sd-scripts la legge)', true, nomi.every(n => /^\d+_/.test(n)));
+}
+{
+    // ITALIANO: la stessa cartella riaperta che riusa il suo lotto (lottoDaRiusare) resta una sola
+    //           scelta: l'archivio resta piatto come con una sola cartella.
+    // ENGLISH: the same folder reopened reusing its batch (lottoDaRiusare) stays a single pick: the
+    //          archive stays flat as with a single folder.
+    const sonda = creaSonda();
+    const voci = await (await creaApp(aperture(sonda, [['L1', '10_face', '', 'a.png', 'ta'], ['L1', '10_face', '', 'b.png', 'tb']]), sonda).esporta(false)).archivio() || {};
+    dice('stesso lotto, stesso nome: piatto', ['a.txt', 'b.txt'], Object.keys(voci).sort());
+}
+
 console.log('\n--- l\'avviso dei nomi doppi conta i file rinominati ---');
 {
     // ITALIANO: con le immagini un nome doppio sposta due file (la foto e il suo .txt): l'avviso
