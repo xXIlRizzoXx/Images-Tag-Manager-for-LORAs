@@ -90,7 +90,8 @@ const DIP = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomPromp
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'hasTagsBeyondTriggers',
-    'globalTriggersRef', 'txtNonLettoInVigore', 'useCallback', 'Date', 'setTimeout', 'console', 'progettoGenRef', 'geminiApiKeyRef'];
+    'globalTriggersRef', 'txtNonLettoInVigore', 'useCallback', 'Date', 'setTimeout', 'console', 'progettoGenRef', 'geminiApiKeyRef',
+    'aiEnabledRef', 'aiSingolaControllerRef'];
 const fabbricaUna = new Function(...DIP, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaTutte = new Function(...DIP, codiceTutte + '\nreturn handleAITagAll;');
 
@@ -128,6 +129,7 @@ const nuovaApp = (foto, getGeminiTags = S.getGeminiTags) => {
         console: muto,
         progettoGenRef: { current: 0 },
         geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
+        aiEnabledRef: { current: true }, aiSingolaControllerRef: { current: null },
     };
     const args = DIP.map(n => dip[n]);
     app.una = (id) => fabbricaUna(...args)(id);

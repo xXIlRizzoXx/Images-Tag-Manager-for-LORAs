@@ -92,7 +92,7 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
     'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef',
-    'geminiApiKeyRef'];
+    'geminiApiKeyRef', 'aiSingolaControllerRef'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -145,6 +145,8 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         // ITALIANO: la chiave com'e' adesso (geminiApiKeyRef in App.tsx): all'inizio quella del lotto.
         // ENGLISH: the key as it is now (geminiApiKeyRef in App.tsx): at first the batch's one.
         geminiApiKeyRef: { current: chiave },
+        // ITALIANO: la richiesta AI di una sola foto (nessuna qui). ENGLISH: the single-photo AI request (none here).
+        aiSingolaControllerRef: { current: null },
     };
     const pezzi = () => fabbrica(...DIPENDENZE.map(n => dip[n]));
     app.tutte = () => pezzi().handleAITagAll();

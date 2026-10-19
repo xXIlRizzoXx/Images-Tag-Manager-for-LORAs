@@ -105,7 +105,7 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'useCallback', 'Date', 'setTimeout', 'console', 'progettoGenRef',
-    'geminiApiKeyRef'];
+    'geminiApiKeyRef', 'aiEnabledRef', 'aiSingolaControllerRef'];
 const fabbricaUna = new Function(...DIPENDENZE, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaTutte = new Function(...DIPENDENZE, codiceTutte + '\nreturn handleAITagAll;');
 const fabbricaChiave = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
@@ -163,6 +163,7 @@ const nuovaApp = (t, quante, generate) => {
         console: muto,
         progettoGenRef: { current: 0 },
         geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
+        aiEnabledRef: { current: true }, aiSingolaControllerRef: { current: null },
     };
     const args = DIPENDENZE.map(n => dip[n]);
     app.una = (id) => fabbricaUna(...args)(id);

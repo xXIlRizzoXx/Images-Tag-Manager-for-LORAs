@@ -79,14 +79,14 @@ if (!fine) { console.log('NO  handleClearApiKey non trovato in src/App.tsx'); pr
 const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 const NOMI = ['aiCancelRequestedRef', 'setAiCancelRequested', 'aiAbortControllerRef', 'deleteSecret', 'setGeminiApiKey', 'setIsAIBusy',
     'setIsGlobalAITagging', 'setGlobalAIProgress', 'soundManager', 'showNotification', 't', 'useCallback', 'console',
-    'provaModelliRef', 'geminiApiKeyRef'];
+    'provaModelliRef', 'geminiApiKeyRef', 'aiSingolaControllerRef'];
 const togli = async (cancellata) => {
     const r = { notifiche: [], suoni: [], chiave: 'AIza-finta', fermato: false, prova: new AbortController(), chiaveRef: { current: 'AIza-finta' } };
     const nulla = () => { };
     const f = new Function(...NOMI, js + '\nreturn handleClearApiKey;')(
         { current: false }, () => { r.fermato = true; }, { current: null }, async () => cancellata, (v) => { r.chiave = v; }, nulla,
         nulla, nulla, { chime: () => r.suoni.push('chime'), pop: () => r.suoni.push('pop') }, (m, tipo) => r.notifiche.push([m, tipo]),
-        t, (fn) => fn, muto, { current: r.prova }, r.chiaveRef);
+        t, (fn) => fn, muto, { current: r.prova }, r.chiaveRef, { current: null });
     await f();
     return r;
 };

@@ -531,6 +531,11 @@ export default function App() {
     // ITALIANO: AbortController del batch AI in corso — permette di interrompere anche la richiesta HTTP appesa
     // ENGLISH: AbortController of the running AI batch — lets Cancel interrupt even a hung HTTP request
     const aiAbortControllerRef = useRef<AbortController | null>(null);
+    // ITALIANO: AbortController della richiesta AI di UNA foto ("Genera tag con AI"): l'interruttore
+    //           dell'AI e "Togli la chiave" la fermano, come fanno con il lotto.
+    // ENGLISH: AbortController of the AI request for ONE photo ("Generate tags with AI"): the AI
+    //          switch and "Remove the key" stop it, as they do with the batch.
+    const aiSingolaControllerRef = useRef<AbortController | null>(null);
     const [geminiApiKey, setGeminiApiKey] = useState<string>('');
     const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState<boolean>(false);
     const [tempApiKey, setTempApiKey] = useState<string>('');
@@ -541,6 +546,15 @@ export default function App() {
     const [isGlobalAITagging, setIsGlobalAITagging] = useState<boolean>(false);
     const [globalAIProgress, setGlobalAIProgress] = useState<{ done: number; total: number; ok: number; errors: number; skipped: number }>({ done: 0, total: 0, ok: 0, errors: 0, skipped: 0 });
     const apiKeyLoadedRef = useRef<boolean>(false);
+    // ITALIANO: la chiave che si sa essere nell'archivio cifrato (letta all'avvio o salvata con
+    //           successo); null = non si sa. L'effetto che salva la chiave non riscrive questo valore:
+    //           all'avvio riscriveva la chiave appena letta e, con il file non scrivibile, diceva
+    //           "chiave NON salvata" a ogni avvio anche se la chiave era salvata.
+    // ENGLISH: the key known to be in the encrypted store (read at start or saved successfully);
+    //          null = unknown. The effect that saves the key does not write this value again: at
+    //          start it rewrote the key just read and, with the file not writable, said "key NOT
+    //          saved" at every start even though the key was saved.
+    const chiaveSuDiscoRef = useRef<string | null>(null);
 
     // ITALIANO: Versione mostrata nelle impostazioni — letta da package.json tramite Electron,
     //           così nell'exe è SEMPRE aggiornata senza doverla cambiare a mano. In browser/dev
@@ -572,6 +586,13 @@ export default function App() {
         let cancelled = false;
         getSecret('geminiApiKey').then((value) => {
             if (cancelled) return;
+            // ITALIANO: un residuo in chiaro rimasto in localStorage vuol dire che lo spostamento
+            //           nell'archivio cifrato non e' riuscito: la chiave non e' sul disco, si ritenta.
+            // ENGLISH: a clear-text leftover still in localStorage means the move into the
+            //          encrypted store failed: the key is not on disk, it is retried.
+            let residuo = false;
+            try { residuo = !!localStorage.getItem('geminiApiKey'); } catch (_) { /* ignore */ }
+            if (!residuo) chiaveSuDiscoRef.current = value || '';
             if (value) setGeminiApiKey(value);
             apiKeyLoadedRef.current = true;
             setChiaveApiCaricata(true);
@@ -596,7 +617,10 @@ export default function App() {
     // ENGLISH: Persist the API key in safeStorage (encrypted) on every change
     useEffect(() => {
         if (!apiKeyLoadedRef.current) return;
-        setSecret('geminiApiKey', geminiApiKey).then((ok) => {
+        if (geminiApiKey === chiaveSuDiscoRef.current) return;
+        const valore = geminiApiKey;
+        setSecret('geminiApiKey', valore).then((ok) => {
+            chiaveSuDiscoRef.current = ok ? valore : null;
             // ITALIANO: Fail-closed: se lo storage cifrato non è disponibile la chiave NON viene
             //           salvata in chiaro — avvisiamo l'utente che resterà valida solo per la sessione
             // ENGLISH: Fail-closed: if encrypted storage is unavailable the key is NOT saved in
@@ -642,6 +666,7 @@ export default function App() {
             //          calling Google with the key just removed.
             geminiApiKeyRef.current = '';
             provaModelliRef.current?.abort();
+            aiSingolaControllerRef.current?.abort();
             const cancellata = await deleteSecret('geminiApiKey');
             setGeminiApiKey('');
             setIsAIBusy(false);
@@ -1078,6 +1103,12 @@ export default function App() {
         }
     }, [history, historyIndex, t]);
 
+    // ITALIANO: la finestra di aiuto "?" delle Impostazioni (vedi tastoAiuto): qui perche' il gestore
+    //           di Ctrl+Z qui sotto la legge.
+    // ENGLISH: the Settings "?" help window (see tastoAiuto): here because the Ctrl+Z handler below
+    //          reads it.
+    const [aiuto, setAiuto] = useState<AiutoImpostazioni | null>(null);
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             // ITALIANO: solo i campi dove si scrive testo tengono Ctrl+Z per se' (vedi isTextEditingElement):
@@ -1091,14 +1122,15 @@ export default function App() {
             //           di tag (dopo la X su una pillola il fuoco torna alla pagina) annullava in
             //           silenzio l'ultima modifica del progetto dietro la finestra, e su una conferma
             //           cambiava le foto prima del "Conferma". Restano attivi galleria, visualizzatore,
-            //           cestino e gestione dei tag del progetto, dove il progetto si vede.
+            //           cestino e gestione dei tag del progetto, dove il progetto si vede. Vale anche
+            //           per la finestra di aiuto "?" delle Impostazioni.
             // ENGLISH: with a dialog open OVER the project, Ctrl+Z leaves it alone: in the tag editor
             //          (after the X on a pill the focus goes back to the page) it silently undid the
             //          project's last edit behind the dialog, and on a confirmation it changed the
             //          photos before "Confirm". Gallery, viewer, trash and project tag manager keep
-            //          it, as the project is in view there.
+            //          it, as the project is in view there. The Settings "?" help window counts too.
             if (isTagEditorOpen || confirmDialog.isOpen || saveCloseDialog.isOpen || importSummary.isOpen
-                || isApiKeyDialogOpen || isStatsOpen || !!exportChoice || updateAskOpen || !!updateFound) {
+                || isApiKeyDialogOpen || isStatsOpen || !!exportChoice || updateAskOpen || !!updateFound || !!aiuto) {
                 return;
             }
             // ITALIANO: anche con una tastiera non latina (russa: "я"), vedi isLetterShortcut.
@@ -1114,7 +1146,7 @@ export default function App() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleUndo, handleRedo, isTagEditorOpen, confirmDialog.isOpen, saveCloseDialog.isOpen, importSummary.isOpen,
-        isApiKeyDialogOpen, isStatsOpen, exportChoice, updateAskOpen, updateFound]);
+        isApiKeyDialogOpen, isStatsOpen, exportChoice, updateAskOpen, updateFound, aiuto]);
 
     const allUniqueTags = useMemo(() => {
         // ITALIANO: solo le foto in galleria: una foto nel cestino non porta piu' il suo vocabolario
@@ -1379,7 +1411,8 @@ export default function App() {
     // ENGLISH: the long Settings explanations no longer sit in the panel: a "?" button next to each
     //          section opens them in a window. `aiutoRef` keeps the panel open when clicking inside
     //          the window (which lives outside the panel).
-    const [aiuto, setAiuto] = useState<AiutoImpostazioni | null>(null);
+    // ITALIANO: lo stato `aiuto` e' dichiarato piu' in alto, prima del gestore di Ctrl+Z che lo legge.
+    // ENGLISH: the `aiuto` state is declared further up, before the Ctrl+Z handler that reads it.
     const aiutoRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         if (!aiuto) return undefined;
@@ -1714,6 +1747,11 @@ export default function App() {
     const [mcpStato, setMcpStato] = useState<McpStatus | null>(null);
     const [mcpCodiceVisibile, setMcpCodiceVisibile] = useState(false);
     const mcpGestoreRef = useRef<(r: McpRichiesta) => void>(() => { });
+    // ITALIANO: le foto cambiate dall'AI esterna, per l'avviso: set_tags accetta un solo id, quindi
+    //           un'AI che tagga 40 foto fa 40 chiamate, e l'avviso diceva il numero dell'ultima (1).
+    // ENGLISH: the photos changed by the external AI, for the notice: set_tags takes one id only, so
+    //          an AI tagging 40 photos makes 40 calls, and the notice said the last call's number (1).
+    const mcpCambiateRef = useRef<Set<string>>(new Set());
     mcpGestoreRef.current = async (r: McpRichiesta) => {
         let risposta: RispostaMcp;
         try {
@@ -1723,6 +1761,7 @@ export default function App() {
                 applica: (nuovi) => {
                     imagesRef.current = imagesRef.current.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img));
                     setImages(prev => prev.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img)));
+                    nuovi.forEach((_tags, id) => mcpCambiateRef.current.add(id));
                 },
                 // ITALIANO: la foto com'e' adesso sul disco, non l'istantanea dell'import (vedi fileDiAdesso).
                 // ENGLISH: the photo as it is on disk now, not the import snapshot (see fileDiAdesso).
@@ -1736,7 +1775,24 @@ export default function App() {
             risposta = { errore: 'Images Tag Manager could not answer this request.' };
         }
         window.electronAPI?.mcp?.respond(r.id, risposta);
-        if (risposta.cambiate) showNotification(t.mcpEditedNotice.replace('{n}', String(risposta.cambiate)), 'info');
+        if (risposta.cambiate) {
+            // ITALIANO: si contano le foto cambiate dall'AI ancora da salvare (salvate, chiuse o nel
+            //           cestino escono), ognuna una volta. L'avviso non copre un errore ancora a schermo
+            //           (per esempio quello di "Salva Modifiche"): arriva alla chiamata dopo.
+            // ENGLISH: the photos changed by the AI that still need saving are counted (saved, closed or
+            //          trashed ones leave), each once. The notice does not cover an error still on screen
+            //          (for example the "Save Changes" one): it comes with the next call.
+            const vive = new Map(imagesRef.current.map(img => [img.id, img]));
+            const ancora = [...mcpCambiateRef.current].filter(id => {
+                const img = vive.get(id);
+                return !!img && !img.isTrashed && fotoDaSalvare(img, globalTriggersRef.current);
+            });
+            mcpCambiateRef.current = new Set(ancora);
+            if (ancora.length > 0) {
+                const message = t.mcpEditedNotice.replace('{n}', String(ancora.length));
+                setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message, type: 'info', id: Date.now() }));
+            }
+        }
     };
     useEffect(() => {
         const api = window.electronAPI?.mcp;
@@ -3144,6 +3200,15 @@ export default function App() {
     const confermaImport = async () => {
         const d = importSummary.pendingData;
         if (!d) return;
+        // ITALIANO: "Annulla lo svuotamento" in corso: le immagini gia' tornate entravano come foto nuove
+        //           senza tag (il loro .txt era ancora nel Cestino di Windows) e poi tornavano anche quelle
+        //           vecchie: due card per lo stesso file. Il riepilogo resta aperto: finito l'annullamento si
+        //           preme di nuovo "Importa" e le foto tornate contano come gia' aperte.
+        // ENGLISH: "Undo the emptying" running: the images already back came in as new untagged photos (their
+        //          .txt was still in the Windows Recycle Bin) and then the old ones came back too: two cards
+        //          for the same file. The summary stays open: once the undo is over "Import" is pressed again
+        //          and the photos back count as already open.
+        if (ripristinoInCorsoRef.current) { showNotification(t.undoEmptyWorking, 'info'); return; }
         // ITALIANO: il riepilogo si chiude SUBITO: il controllo qui sotto aspetta (isSameEntry), e un
         //           secondo clic su Importa non deve far partire lo stesso import un'altra volta.
         // ENGLISH: the summary closes AT ONCE: the check below waits (isSameEntry), and a second click
@@ -3165,6 +3230,7 @@ export default function App() {
                 percorso: percorsiSuDisco(img).imgPath, nome: String((img.file && img.file.name) || ''), cartella: img.dirHandle || null,
                 dimensione: img.file && img.file.size, modificata: img.file && img.file.lastModified,
                 lotto: String(img.lottoImport || ''), cartellaImport: String(img.cartellaImport || ''),
+                id: String(img.id), cestinata: !!img.isTrashed,
             })),
             ...importInCorsoRef.current.filter(v => v.progetto === progetto).flatMap(v => v.foto),
         ];
@@ -3181,6 +3247,28 @@ export default function App() {
             if (progetto !== progettoGenRef.current) {
                 if (folderInputRef.current) folderInputRef.current.value = '';
                 return;
+            }
+            // ITALIANO: una foto nel cestino dell'app senza cartella (caricata una per una o trascinata)
+            //           che arriva di nuovo con la sua cartella riceve quella cartella. Il Cestino di Windows
+            //           non c'e' su chiavette, schede SD e rete, e il messaggio dice di aprire la cartella con
+            //           "Carica Cartella" ed eliminarle da li': prima la foto restava "gia' aperta" e senza
+            //           cartella, e "Svuota Cestino" ridava lo stesso messaggio per sempre. Le foto in galleria
+            //           non cambiano (la cartella decide dove Salva scrive). Non e' un passo di Ctrl+Z.
+            // ENGLISH: a folder-less photo in the app's trash (loaded one by one or dropped) that comes in
+            //          again with its folder gets that folder. There is no Windows Recycle Bin on USB sticks,
+            //          SD cards and network drives, and the message says to open the folder with "Load Folder"
+            //          and delete them from there: the photo used to stay "already open" and folder-less, and
+            //          "Empty Trash" gave the same message again for ever. Gallery photos do not change (the
+            //          folder decides where Save writes). It is not a Ctrl+Z step.
+            const daCollegare = new Map<string, { cartella: any; rel: string }>();
+            doppi.forEach((aperta: any, f: any) => {
+                const sua = descritte.get(f);
+                if (aperta && aperta.id && aperta.cestinata && !aperta.cartella && sua && sua.cartella) daCollegare.set(aperta.id, { cartella: sua.cartella, rel: (d.cartellaRelOf && d.cartellaRelOf.get(f)) || '' });
+            });
+            if (daCollegare.size > 0) {
+                isUndoRedoAction.current = true;
+                setImages(prev => prev.map(img => (daCollegare.has(img.id) && img.isTrashed && !img.dirHandle
+                    ? { ...img, dirHandle: daCollegare.get(img.id)!.cartella, cartellaImport: importFolder, cartellaRel: daCollegare.get(img.id)!.rel } : img)));
             }
             const nuove = doppi.size > 0 ? d.imgFiles.filter((f: any) => !doppi.has(f)) : d.imgFiles;
             if (nuove.length === 0) {
@@ -5381,6 +5469,15 @@ export default function App() {
         const img = images.find(i => i.id === imageId);
         if (!img) return 0;
         setIsAIBusy(true);
+        // ITALIANO: l'AI spenta o la chiave tolta o cambiata mentre Google risponde fermano la richiesta:
+        //           il risultato si scarta in silenzio, come fa "Tagga tutte". Prima i tag arrivavano lo
+        //           stesso, con il suono e il verde "Tag generati: N".
+        // ENGLISH: the AI turned off or the key removed or changed while Google answers stop the request:
+        //          the result is dropped silently, as "Auto-tag all" does. The tags used to arrive anyway,
+        //          with the chime and the green "Tags generated: N".
+        const controller = new AbortController();
+        aiSingolaControllerRef.current = controller;
+        const fermata = () => controller.signal.aborted || !aiEnabledRef.current || geminiApiKeyRef.current !== geminiApiKey;
         try {
             // ITALIANO: la foto intera, non img.file: il servizio la rilegge dalla sua cartella (vedi fileDiAdesso).
             // ENGLISH: the whole photo, not img.file: the service re-reads it from its folder (see fileDiAdesso).
@@ -5389,7 +5486,12 @@ export default function App() {
                 modelName: aiModel,
                 maxTags: aiMaxTags,
                 customPrompt: aiCustomPrompt,
+                signal: controller.signal,
             });
+            if (fermata()) {
+                console.log('[AI] single: AI turned off or key removed/changed during the request, result discarded');
+                return 0;
+            }
             // ITALIANO: Merge sui tag LIVE (via imagesRef), non sullo snapshot pre-richiesta:
             //           i tag modificati a mano durante l'attesa non vengono persi
             // ENGLISH: Merge against LIVE tags (via imagesRef), not the pre-request snapshot:
@@ -5415,6 +5517,10 @@ export default function App() {
             showNotification(t.aiTagsGenerated.replace('{n}', String(added)), 'success');
             return added;
         } catch (e: any) {
+            if (fermata()) {
+                console.log('[AI] single: request stopped (AI turned off or key removed/changed)');
+                return 0;
+            }
             console.error('AI tag failed', e);
             const { kind, quotaGiorno, progetto } = classifyGeminiError(e);
             if (kind === 'invalid_key') setIsApiKeyDialogOpen(true);
@@ -5467,6 +5573,7 @@ export default function App() {
             if (kind === 'model_unavailable') setRiparaModello(n => n + 1);
             return 0;
         } finally {
+            if (aiSingolaControllerRef.current === controller) aiSingolaControllerRef.current = null;
             setIsAIBusy(false);
         }
     }, [aiEnabled, geminiApiKey, aiModel, aiMaxTags, aiCustomPrompt, images, t, updateImageTags]);
@@ -6623,7 +6730,7 @@ export default function App() {
                                                 </div>
                                                 {/* ITALIANO: spegnere l'AI ferma anche la taggatura in blocco in corso, come Annulla: prima le foto continuavano a partire verso Google con l'AI "spenta" */}
                                                 {/* ENGLISH: switching the AI off also stops the running bulk tagging, like Cancel: photos used to keep going to Google with the AI "off" */}
-                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (!v && aiAbortControllerRef.current) handleCancelAITagging(); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
+                                                <AppleToggle checked={aiEnabled} onChange={(v: boolean) => { setAiEnabled(v); if (!v && aiAbortControllerRef.current) handleCancelAITagging(); if (!v) aiSingolaControllerRef.current?.abort(); if (v && !geminiApiKey) setIsApiKeyDialogOpen(true); }} colorClass="bg-purple-500" />
                                             </div>
                                             {aiEnabled && (
                                                 <div className={`flex flex-col gap-2.5 p-2 rounded-xl text-[10px] ${isDarkMode ? 'bg-gray-900/60 text-gray-400' : 'bg-purple-50/60 text-gray-600'}`}>

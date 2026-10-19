@@ -83,7 +83,7 @@ export const render = (env: any, snap: { aiModel: string; aiModelloFissato: bool
             elencaModelliRemoti, aggiornaModelloAutomatico, classifyGeminiError, confrontaVersioni, versioneDi, localStorage,
             provaModelliRef, improntaChiave, setProvaModelliStato, setModelliChiave, provaTuttiIModelli,
             aiCancelRequestedRef, setAiCancelRequested, aiAbortControllerRef, deleteSecret, setGeminiApiKey, setIsAIBusy,
-            setIsGlobalAITagging, setGlobalAIProgress, soundManager, useCallback } = env;
+            setIsGlobalAITagging, setGlobalAIProgress, soundManager, useCallback, aiSingolaControllerRef } = env;
     const aiModel = snap.aiModel;
     const aiModelloFissato = snap.aiModelloFissato;
 ${testoTogli}
@@ -137,6 +137,7 @@ const scenario = ({ aiModel = 'gemini-3.5-flash', fissato = false, trattieni = n
         setGeminiApiKey: (v) => { stato.chiave = v; env.geminiApiKeyRef.current = v; },
         setIsAIBusy: nulla, setIsGlobalAITagging: nulla, setGlobalAIProgress: nulla,
         soundManager: { chime: nulla, pop: nulla }, useCallback: (f) => f,
+        aiSingolaControllerRef: { current: null },
     };
     const f = () => render(env, { aiModel, aiModelloFissato: fissato });
     return { stato, notifiche, env, f, inAttesa, apri: () => apri(), chiamate: () => globalThis.__GOOGLE__.chiamate };

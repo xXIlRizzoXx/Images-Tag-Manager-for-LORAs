@@ -78,11 +78,11 @@ export const creaServerMcp = (chiedi, versione) => {
 
     server.registerTool('list_photos', {
         title: 'List photos',
-        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. A photo marked txt_unreadable has a .txt that could not be read when it was opened: "Save Changes" does not write it. Optional filters: tags that must all be present, or only photos without tags.',
+        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. A photo marked txt_unreadable has a .txt that could not be read when it was opened: "Save Changes" does not write it. Optional filters: tags that must all be present, or only photos without tags. With tags or untagged_only the list is computed again at every call from the current tags: photos whose tags you change leave it and the others move up. To work through such a list, change a page and then ask again with offset 0 (do not advance offset) until total is 0.',
         inputSchema: {
             tags: z.array(TAG).max(20).optional().describe('Only photos that have ALL these tags (case-insensitive).'),
-            untagged_only: z.boolean().optional().describe('Only photos with no tags.'),
-            offset: z.number().int().min(0).optional(),
+            untagged_only: z.boolean().optional().describe('Only photos with no tags. Photos you tag leave this list: ask again with offset 0 until total is 0.'),
+            offset: z.number().int().min(0).optional().describe('Skip this many photos of the list. Do not advance it while you change the tags of a list filtered by tags or untagged_only: ask again with offset 0.'),
             limit: z.number().int().min(1).max(500).optional().describe('Default 100.'),
         },
         annotations: { readOnlyHint: true },

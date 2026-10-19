@@ -192,10 +192,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         //          is empty"), not on a missing one: a NEW empty .txt is not created, one that was
         //          there is emptied (as asked) and the message says so.
         const vuoto = tagString === '';
-        const salvato = (svuotato: boolean) => {
+        // ITALIANO: senza tag e senza un .txt sul disco non si scrive niente: il messaggio lo dice
+        //           invece di "salvato con successo", che faceva credere a una didascalia inesistente.
+        // ENGLISH: with no tags and no .txt on disk nothing is written: the message says so instead
+        //          of "saved successfully", which made the user believe in a caption that is not there.
+        const salvato = (svuotato: boolean, nessunFile = false) => {
             updateOriginalTags(image.id, currentTags);
             soundManager.chime();
-            if (showNotification) showNotification(svuotato ? t.successSaveSingle + ' ' + t.saveEmptyCaptionOne : t.successSaveSingle, svuotato ? "info" : "success");
+            if (!showNotification) return;
+            if (nessunFile) showNotification(t.saveNoTagsNoFile, "info");
+            else showNotification(svuotato ? t.successSaveSingle + ' ' + t.saveEmptyCaptionOne : t.successSaveSingle, svuotato ? "info" : "success");
         };
 
         try {
@@ -217,7 +223,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     await writable.write(tagString);
                     await writable.close();
                 }
-                salvato(vuoto && !!fileHandle);
+                salvato(vuoto && !!fileHandle, vuoto && !fileHandle);
                 return;
             }
             // ITALIANO: foto senza cartella (caricata con "Carica immagini"): in Electron scrivo il
@@ -239,7 +245,8 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     //           solo se sul disco la foto aveva dei tag.
                     // ENGLISH: the main process does not create a new empty .txt: it was emptied
                     //          only if the photo had tags on disk.
-                    salvato(vuoto && (image.originalTags || []).length > 0);
+                    const avevaTag = (image.originalTags || []).length > 0;
+                    salvato(vuoto && avevaTag, vuoto && !avevaTag);
                 } else if (showNotification) {
                     showNotification(t.errorSaveGen || t.dirError, 'error');
                 }

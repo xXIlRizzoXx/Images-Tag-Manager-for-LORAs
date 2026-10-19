@@ -42,7 +42,7 @@ if (!fine) { console.log('NO  handleAITagSingle non trovato in src/App.tsx'); pr
 const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 const DIP = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomPrompt', 'images', 'imagesRef', 't', 'updateImageTags',
     'getGeminiTags', 'classifyGeminiError', 'showNotification', 'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy',
-    'countNewTagsIgnoringCase', 'useCallback', 'console'];
+    'countNewTagsIgnoringCase', 'useCallback', 'console', 'aiEnabledRef', 'geminiApiKeyRef', 'aiSingolaControllerRef'];
 const fabbrica = new Function(...DIP, codice + '\nreturn handleAITagSingle;');
 const muto = { log() { }, warn() { }, error() { } };
 
@@ -60,6 +60,7 @@ const una = async (mentreAttende) => {
         showNotification: (m, tipo) => r.notifiche.push([m, tipo]), soundManager: { chime() { r.suoni++; } },
         setRiparaModello: () => { }, setIsApiKeyDialogOpen: () => { }, setIsAIBusy: (v) => r.occupato.push(v),
         countNewTagsIgnoringCase: C.countNewTagsIgnoringCase, useCallback: (f) => f, console: muto,
+        aiEnabledRef: { current: true }, geminiApiKeyRef: { current: 'chiave-finta' }, aiSingolaControllerRef: { current: null },
     };
     r.restituito = await fabbrica(...DIP.map(n => dip[n]))('f0');
     return r;

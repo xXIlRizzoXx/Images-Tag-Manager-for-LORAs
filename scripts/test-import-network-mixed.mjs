@@ -66,7 +66,8 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'progettoGenRef', 'importInCorsoRef', 'nuovoIdFoto', 'makeFolderKeyer', 'BACKUP_KEY_SEP',
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
-    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef'];
+    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef',
+    'ripristinoInCorsoRef', 'isUndoRedoAction'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
 
 // ITALIANO: l'app finta in Electron: getPathForFile da' il percorso del file (vuoto per quelli della cartella di rete).
@@ -82,7 +83,7 @@ const creaApp = () => {
         B.folderSignature, B.backupDellImport, { getItem: () => null }, 1024 * 1024, S.parseSidecarText,
         async () => ({ url: '', width: 1, height: 1 }), S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef);
+        refs.importAttiviRef, { current: false }, { current: false });
     app.refs = refs;
     app.conferma = async (d) => {
         const prima = refs.importAttiviRef.current;
