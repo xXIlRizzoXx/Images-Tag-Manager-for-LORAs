@@ -53,7 +53,7 @@ const giro = async ({ altra = 'a.jpg', png = {}, disco = {} } = {}) => {
     return { P: P ? [P.tags, P.originalTags, P.isTrashed] : null, notifiche: app.notifiche.slice(n) };
 };
 const verde = [[t.undoEmptyDone.replace('{n}', '1'), 'success']];
-const parlaDiTxt = (r) => r.notifiche.length === 1 && r.notifiche[0][0].includes(t.undoEmptyTxtNotBack.replace('{n}', '1'));
+const parlaDiTxt = (r) => r.notifiche.length === 1 && r.notifiche[0][0].includes(t.undoEmptyTxtNotBackOne);
 
 console.log('\n--- gemella a.jpg, nessun a.txt sul disco ---');
 {

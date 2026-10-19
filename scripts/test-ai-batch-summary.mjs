@@ -82,7 +82,7 @@ console.log('\n--- foto non mandate per i dati nascosti, in coda al riepilogo --
 for (const l of ['zh', 'ja', 'en']) {
     const t = lingue[l];
     const [[m]] = prova(t, false, { ...DUE, nonPulibili: 1 });
-    const atteso = riempi(t.aiBatchDone, DUE) + (l === 'en' ? ' ' : '') + t.aiBatchHiddenData.replace('{n}', '1');
+    const atteso = riempi(t.aiBatchDone, DUE) + (l === 'en' ? ' ' : '') + t.aiBatchHiddenDataOne;
     dice(`${l}: la frase segue il riepilogo ${l === 'en' ? 'con uno spazio' : 'senza spazio'}`, atteso, m);
 }
 

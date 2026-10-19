@@ -78,7 +78,7 @@ console.log('\n--- quello che NON deve cambiare: a.png e a.jpg con un solo a.txt
     const n = app.notifiche.length;
     await app.render().annullaSvuotamento();
     await app.attendi();
-    dice('a.txt sparito con a.jpg: l\'avviso dice ancora il .txt non ripreso', [[[t.undoEmptyDone.replace('{n}', '1'), t.undoEmptyTxtNotBack.replace('{n}', '1')].join(' · '), 'info']],
+    dice('a.txt sparito con a.jpg: l\'avviso dice ancora il .txt non ripreso', [[[t.undoEmptyDone.replace('{n}', '1'), t.undoEmptyTxtNotBackOne].join(' · '), 'info']],
         app.notifiche.slice(n));
     dice('...e a.png resta da salvare (originalTags vuoto)', [[]], app.stato.images.filter(i => i.id === 'P').map(i => i.originalTags));
 }

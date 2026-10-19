@@ -84,7 +84,7 @@ Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to 
 
 ## 🤖 About the AI
 
-The AI is **optional and off by default** — with it off, none of your images or tags ever leave your computer.
+The AI is **optional and off by default** — with it off, nothing is sent to Google. Your images and tags leave your computer only if you switch the AI on, or if you switch on the MCP server and connect an AI assistant that works in the cloud (see below).
 
 If you want it, get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into Settings. The app checks the key works before saving it, then keeps it **encrypted with Windows' own data protection**, tied to your Windows account, in the app's folder under %APPDATA%: it is never stored in plain text. Only the images you actually ask it to tag are sent, and you can stop a batch halfway. Only the picture itself goes: the hidden details a photo file carries (GPS position, camera serial number, author's name, editing history) are removed first. JPEG, PNG, WebP and HEIC photos are sent in their own format, and GIF, BMP, AVIF and the other formats the app can convert are sent as a PNG copy of their pixels (a JPEG copy when the PNG would be too big). TIFF and SVG files (and damaged ones) cannot be converted, so they are never sent and cannot be tagged with AI.
 

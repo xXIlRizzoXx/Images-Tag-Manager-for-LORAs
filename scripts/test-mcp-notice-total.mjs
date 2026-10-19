@@ -50,7 +50,7 @@ const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine
 const NOMI = ['mcpGestoreRef', 'eseguiStrumentoMcp', 'imagesRef', 'globalTriggersRef', 'setImages', 'fotoPerMcp', 'fileDiAdesso', 'console',
     'window', 'showNotification', 't', 'setToast', 'fotoDaSalvare', 'mcpCambiateRef'];
 const muto = { log() { }, warn() { }, error() { } };
-const avvisoDi = (n) => t.mcpEditedNotice.replace('{n}', String(n));
+const avvisoDi = (n) => (n === 1 ? t.mcpEditedNoticeOne : t.mcpEditedNotice.replace('{n}', String(n)));
 
 // ITALIANO: un'app finta con `quante` foto senza tag; il toast e' uno solo, come in App.tsx.
 // ENGLISH: a fake app with `quante` untagged photos; there is a single toast, as in App.tsx.

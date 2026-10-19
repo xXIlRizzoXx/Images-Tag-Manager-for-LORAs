@@ -35,7 +35,7 @@ const S = await import('data:text/javascript;base64,' + Buffer.from((await esbui
     bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
 })).outputFiles[0].text).toString('base64'));
 
-const fraseTesti = (n) => (typeof t.undoEmptyTxtNotBack === 'string' ? t.undoEmptyTxtNotBack.replace('{n}', String(n)) : '(manca undoEmptyTxtNotBack)');
+const fraseTesti = (n) => (typeof t.undoEmptyTxtNotBack === 'string' ? (n === 1 ? t.undoEmptyTxtNotBackOne : t.undoEmptyTxtNotBack.replace('{n}', String(n))) : '(manca undoEmptyTxtNotBack)');
 // ITALIANO: la foto, come la vedrebbe "Salva Modifiche" dopo "Ripristina": va scritta?
 // ENGLISH: the photo, as "Save Changes" would see it after "Restore": does it need writing?
 const daScrivere = (app, id) => {

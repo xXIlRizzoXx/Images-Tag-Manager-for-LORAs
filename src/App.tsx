@@ -1789,7 +1789,7 @@ export default function App() {
             });
             mcpCambiateRef.current = new Set(ancora);
             if (ancora.length > 0) {
-                const message = t.mcpEditedNotice.replace('{n}', String(ancora.length));
+                const message = ancora.length === 1 ? t.mcpEditedNoticeOne : t.mcpEditedNotice.replace('{n}', String(ancora.length));
                 setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message, type: 'info', id: Date.now() }));
             }
         }
@@ -2839,8 +2839,8 @@ export default function App() {
             // ITALIANO: quelli mai letti con la loro frase (vedi testoNonLetto).
             // ENGLISH: the never-read ones with their own sentence (see testoNonLetto).
             const conTesti = (frase: string) => [frase,
-                ...(senzaTesto.size > 0 ? [t.undoEmptyTxtNotBack.replace('{n}', String(senzaTesto.size))] : []),
-                ...(testoNonLetto.size > 0 ? [t.undoEmptyTxtNotBackUnread.replace('{n}', String(testoNonLetto.size))] : [])].join(' · ');
+                ...(senzaTesto.size > 0 ? [senzaTesto.size === 1 ? t.undoEmptyTxtNotBackOne : t.undoEmptyTxtNotBack.replace('{n}', String(senzaTesto.size))] : []),
+                ...(testoNonLetto.size > 0 ? [testoNonLetto.size === 1 ? t.undoEmptyTxtNotBackUnreadOne : t.undoEmptyTxtNotBackUnread.replace('{n}', String(testoNonLetto.size))] : [])].join(' · ');
             if (tornate.length === 0 && bloccate.length > 0 && bloccate.length === rimaste.length) {
                 showNotification(t.undoEmptyBlocked.replace('{n}', String(bloccate.length)), 'info');
             } else if (tornate.length === 0 && nonTrovate.length === rimaste.length) {
@@ -5900,7 +5900,7 @@ export default function App() {
             // ITALIANO: dopo un punto a larghezza piena (cinese, giapponese) niente spazio fra le due frasi.
             // ENGLISH: after a full-width full stop (Chinese, Japanese) no space between the two sentences.
             const summary = base + (nonPulibiliCount > 0
-                ? (/[。！？]$/.test(base) ? '' : ' ') + t.aiBatchHiddenData.replace('{n}', String(nonPulibiliCount)) : '');
+                ? (/[。！？]$/.test(base) ? '' : ' ') + (nonPulibiliCount === 1 ? t.aiBatchHiddenDataOne : t.aiBatchHiddenData.replace('{n}', String(nonPulibiliCount))) : '');
             if (!fatalAbort) showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;

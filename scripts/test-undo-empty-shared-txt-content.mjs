@@ -138,7 +138,7 @@ console.log('\n--- quello che deve restare com\'era ---');
     // ENGLISH: a.txt gone (it left with a.jpg): the photo stays to be saved, as before.
     const r = await scenario({ dopo: (disco) => { delete disco[D + 'a.txt']; } });
     dice('a.txt sparito: a.png torna da salvare (originalTags vuoto)', [['cat'], [], true], statoDi(r.P));
-    dice('a.txt sparito: l\'avviso lo dice', true, r.notifiche.length === 1 && r.notifiche[0][0].includes(t.undoEmptyTxtNotBack.replace('{n}', '1')));
+    dice('a.txt sparito: l\'avviso lo dice', true, r.notifiche.length === 1 && r.notifiche[0][0].includes(t.undoEmptyTxtNotBackOne));
 }
 
 process.exit(esito());

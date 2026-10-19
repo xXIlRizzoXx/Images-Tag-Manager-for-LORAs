@@ -68,7 +68,7 @@ console.log('\n--- svuotata a.png da sola, poi la X su a.jpg, poi "Annulla lo sv
     dice('a.png torna nel cestino dell\'app', true, !!png && png.isTrashed === true);
     dice('ma resta DA SALVARE (originalTags vuoto): Salva riscrivera\' a.txt dai tag in memoria', [[], ['smile', 'red dress']], [png?.originalTags, png?.tags]);
     const messaggi = app.notifiche.slice(prima).map(([m]) => m).join(' | ');
-    dice('il messaggio dice che il file di tag non e\' tornato', true, messaggi.includes(t.undoEmptyTxtNotBack.replace('{n}', '1')));
+    dice('il messaggio dice che il file di tag non e\' tornato', true, messaggi.includes(t.undoEmptyTxtNotBackOne));
 }
 
 console.log('\n--- quello che NON deve cambiare: a.txt e\' ancora sul disco ---');

@@ -69,8 +69,8 @@ for (const esitoTxt of ['occupato', 'fallito', 'nonTrovato']) {
     dice('resta protetta: Salva non scrive la sola trigger al posto del .txt mai letto', true, !!a && S.txtNonLettoInVigore(a));
     dice('...e non risulta da salvare', false, !!a && S.fotoDaSalvare(a, ['ohwx']));
     const m = messaggi(app, da);
-    dice('l\'avviso NON promette che i tag sono nel programma e che Salva li riscrive', false, m.includes(t.undoEmptyTxtNotBack.replace('{n}', '1')));
-    dice('l\'avviso dice di riprendere a mano dal Cestino di Windows il file mai letto', true, m.includes(NON_LETTO.replace('{n}', '1')));
+    dice('l\'avviso NON promette che i tag sono nel programma e che Salva li riscrive', false, m.includes(t.undoEmptyTxtNotBackOne));
+    dice('l\'avviso dice di riprendere a mano dal Cestino di Windows il file mai letto', true, m.includes(t.undoEmptyTxtNotBackUnreadOne));
 }
 
 console.log('\n--- .txt condiviso non letto (a.png e a.jpg), andato via con la X su a.jpg ---');
@@ -94,8 +94,8 @@ console.log('\n--- .txt condiviso non letto (a.png e a.jpg), andato via con la X
     const a = fotoCon(app, 'PNG');
     dice('a.png torna e resta protetta', [true, true], [!!a && a.isTrashed === true, !!a && S.txtNonLettoInVigore(a)]);
     const m = messaggi(app, da);
-    dice('l\'avviso non promette di riscrivere un .txt mai letto', false, m.includes(t.undoEmptyTxtNotBack.replace('{n}', '1')));
-    dice('...e dice di riprenderlo a mano', true, m.includes(NON_LETTO.replace('{n}', '1')));
+    dice('l\'avviso non promette di riscrivere un .txt mai letto', false, m.includes(t.undoEmptyTxtNotBackOne));
+    dice('...e dice di riprenderlo a mano', true, m.includes(t.undoEmptyTxtNotBackUnreadOne));
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
@@ -106,8 +106,8 @@ console.log('\n--- quello che NON deve cambiare ---');
     const da = await svuotaEAnnulla(app);
     const b = fotoCon(app, 'B');
     dice('.txt letto e non tornato: originalTags vuoto, da salvare', [[], true], [b?.originalTags, !!b && S.fotoDaSalvare(b, [])]);
-    dice('...con l\'avviso "i tag sono ancora nel programma"', true, messaggi(app, da).includes(t.undoEmptyTxtNotBack.replace('{n}', '1')));
-    dice('...e senza la frase del .txt mai letto', false, messaggi(app, da).includes(NON_LETTO.replace('{n}', '1')));
+    dice('...con l\'avviso "i tag sono ancora nel programma"', true, messaggi(app, da).includes(t.undoEmptyTxtNotBackOne));
+    dice('...e senza la frase del .txt mai letto', false, messaggi(app, da).includes(t.undoEmptyTxtNotBackUnreadOne));
 }
 {
     const app = creaApp([nonLetta('A')], { api: apiCon('ok') });
@@ -120,7 +120,7 @@ console.log('\n--- quello che NON deve cambiare ---');
     const app = creaApp([nonLetta('A'), foto('B')], { api: apiCon('occupato') });
     const da = await svuotaEAnnulla(app);
     const m = messaggi(app, da);
-    dice('una per tipo: le due frasi, ognuna con 1', [true, true], [m.includes(t.undoEmptyTxtNotBack.replace('{n}', '1')), m.includes(NON_LETTO.replace('{n}', '1'))]);
+    dice('una per tipo: le due frasi, ognuna con 1', [true, true], [m.includes(t.undoEmptyTxtNotBackOne), m.includes(t.undoEmptyTxtNotBackUnreadOne)]);
     dice('...l\'avviso non e\' verde', 'info', (app.notifiche[app.notifiche.length - 1] || [])[1]);
 }
 
