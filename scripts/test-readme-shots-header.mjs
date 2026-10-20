@@ -76,8 +76,12 @@ for (const frase of ['nessuna foto reale', 'no real photos']) {
     }
 }
 
-// 5. Fine riga: il file resta LF.
-dice('make-readme-shots.mjs resta LF', !src.includes('\r'));
+// 5. Fine riga: coerenti (tutte LF nel ramo, tutte CRLF nella cartella principale con core.autocrlf=true).
+//    Line endings: consistent (all LF on the branch, all CRLF in the main checkout with core.autocrlf=true).
+const fineRigheCoerenti = (t) => !t.includes('\r') || (!/\r(?!\n)/.test(t) && !/(^|[^\r])\n/.test(t));
+dice('make-readme-shots.mjs ha fine riga coerenti', fineRigheCoerenti(src));
+dice('una copia tutta CRLF va bene', fineRigheCoerenti(src.replace(/\r?\n/g, '\r\n')));
+dice('una copia mista LF/CRLF viene segnalata', !fineRigheCoerenti(src.replace(/\r\n/g, '\n').replace('\n', '\r\n')));
 
 if (falliti) { console.log(`\nFALLITO: ${falliti} controlli`); process.exit(1); }
 console.log('\nTUTTO OK');

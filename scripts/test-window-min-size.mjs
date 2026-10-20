@@ -28,9 +28,15 @@ const dice = (cosa, atteso, avuto) => {
     console.log(`${ok ? 'OK  ' : 'NO  '} ${cosa}${ok ? '' : `  (atteso ${JSON.stringify(atteso)}, avuto ${JSON.stringify(avuto)})`}`);
 };
 
-const main = fs.readFileSync(path.join(radice, 'electron/main.cjs'), 'utf8');
-const pezzo = /const FINESTRA_MIN_LARGHEZZA[\s\S]*?\n};\n/.exec(main)?.[0] || '';
+// ITALIANO: il file si legge con le fine riga rese LF: nella cartella principale, dopo l'unione, git
+//           con core.autocrlf=true lo scrive in CRLF e la ricerca qui sotto non lo trovava piu'.
+// ENGLISH: the file is read with line endings turned into LF: in the main checkout, after the merge,
+//          git with core.autocrlf=true writes it as CRLF and the search below no longer found it.
+const estraiMisura = (testo) => /const FINESTRA_MIN_LARGHEZZA[\s\S]*?\n};\n/.exec(testo.replace(/\r\n/g, '\n'))?.[0] || '';
+const main = fs.readFileSync(path.join(radice, 'electron/main.cjs'), 'utf8').replace(/\r\n/g, '\n');
+const pezzo = estraiMisura(main);
 dice('il calcolo della misura minima si trova in main.cjs', true, pezzo.length > 0);
+dice('lo trova anche in una copia con fine riga CRLF', pezzo, estraiMisura(main.replace(/\n/g, '\r\n')).replace(/\r\n/g, '\n'));
 const crea = (screen) => new Function('screen', `${pezzo}\nreturn misuraMinima;`)(screen);
 const schermo = (width, height) => ({ getPrimaryDisplay: () => ({ workAreaSize: { width, height } }) });
 
