@@ -2,6 +2,14 @@
 
 **Ultimo aggiornamento:** 20 ottobre 2026
 **Versione attuale:** 2.0.1 costruita, non ancora pubblicata. La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+Novità 2.0.1 (traguardo 115, 20 ottobre 2026, sera): **galleria fluida con mille foto, backup che regge un'uscita brusca, Electron 43.**
+La vista Quadrate scorre a circa 60 fotogrammi al secondo invece di 20: le pillole dei tag non tengono
+più un'animazione sempre accesa, che costringeva a comporre centinaia di livelli a ogni fotogramma. Il
+backup anti-crash va anche in un file scritto subito: se il programma muore di colpo pochi secondi dopo
+una modifica, al riavvio la modifica si recupera ancora. Electron passa dalla 40 alla 43 (chiusi gli
+avvisi di sicurezza), electron-builder alla 26.17, con l'installer verificato sul modello nuovo. Il
+ricaricamento al primo avvio di una versione nuova era l'AutoSandbox di Avast, non il programma. 272
+prove automatiche verdi; prove dal vivo sull'exe nuovo: galleria, backup, cestino di Windows.
 Novità 2.0.1 (traguardo 114, 20 ottobre 2026): **chiusi i difetti minori rimasti, tranne la vista Quadrate.**
 Il backup anti-crash non si applica più da solo: il riepilogo dell'importazione chiede con una casella,
 con il numero di foto e la data della copia. Le letture e le scritture dei .txt non bloccano più la
