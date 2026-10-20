@@ -26,7 +26,11 @@ import { z } from 'zod';
 
 const CORPO_MAX = 1024 * 1024;
 export const PERCORSO_MCP = '/images-tag-manager';
-const TAG = z.string().min(1).max(200);
+// ITALIANO: un tag puo' essere una didascalia in frase (Flux/SDXL): stesso tetto dei .txt, cioe'
+//           TXT_TAG_MAX_CHARS di src/utils/sidecarTags.ts (4000). Gli input enormi li ferma CORPO_MAX.
+// ENGLISH: a tag may be a sentence caption (Flux/SDXL): same cap as the .txt files, i.e.
+//          TXT_TAG_MAX_CHARS in src/utils/sidecarTags.ts (4000). Huge inputs are stopped by CORPO_MAX.
+const TAG = z.string().min(1).max(4000);
 
 // ITALIANO: il confronto del codice non dipende da quante lettere sono giuste (niente indizi dai tempi).
 // ENGLISH: the token comparison does not depend on how many characters match (no timing hints).

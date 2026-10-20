@@ -95,7 +95,7 @@ console.log('\n--- cambiare ---');
     const prima = stato.applicati.length;
     const r4 = await B.eseguiStrumentoMcp('add_tags', { ids: ['c'], tags: ['portrait'] }, ctx);
     dice('niente da cambiare: nessuna modifica (nessun passo vuoto nella cronologia)', [0, prima], [r4.cambiate, stato.applicati.length]);
-    dice('set_tags con un tag lungo: tagliato a 200 caratteri', 200, B.pulisciTag(['x'.repeat(300)])[0].length);
+    dice('set_tags con un tag lungo: tagliato a 4000 caratteri, come i .txt', [300, 4000], [B.pulisciTag(['x'.repeat(300)])[0].length, B.pulisciTag(['x'.repeat(5000)])[0].length]);
     dice('tag vuoti o di soli spazi: scartati', ['a'], B.pulisciTag(['  ', '', ' a ', null]));
     dice('add_tags senza tag: errore', true, /No tag/.test((await B.eseguiStrumentoMcp('add_tags', { ids: ['a'], tags: [] }, ctx)).errore || ''));
 }

@@ -16,7 +16,7 @@
 //   in case merged, keeping the spelling already there; a comma inside a tag splits it in two (in
 //   the .txt the comma separates tags).
 import { uniqueTagsIgnoringCase } from './tagCase';
-import { txtNonLettoInVigore } from './sidecarTags';
+import { txtNonLettoInVigore, TXT_TAG_MAX_CHARS } from './sidecarTags';
 
 export type FotoMcp = {
     id: string;
@@ -46,7 +46,9 @@ export type RispostaMcp = {
     cambiate?: number;
 };
 
-const TAG_MAX = 200;
+// ITALIANO: stesso tetto dei .txt: una didascalia in frase (Flux/SDXL) resta intera.
+// ENGLISH: same cap as the .txt files: a sentence caption (Flux/SDXL) stays whole.
+const TAG_MAX = TXT_TAG_MAX_CHARS;
 const LIMITE_STANDARD = 100;
 const LIMITE_MAX = 500;
 const NOTA_SALVA = 'Changed in the program only, not saved to disk yet: the user reviews them and presses "Save Changes".';

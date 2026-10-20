@@ -1076,9 +1076,13 @@ const avviaMcp = async () => {
         mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion });
     } catch (e) {
         mcpServer = null;
-        // ITALIANO: 'porta' = un altro programma usa gia' la porta; 'avvio' = qualunque altro guasto.
-        // ENGLISH: 'porta' = another program already uses the port; 'avvio' = any other fault.
-        mcpErrore = e && e.code === 'EADDRINUSE' ? 'porta' : 'avvio';
+        // ITALIANO: 'porta' = un altro programma usa gia' la porta (EADDRINUSE) oppure Windows l'ha riservata
+        //           (EACCES: blocchi di Hyper-V, WSL2, Docker), e riaprire il programma non serve; 'avvio' =
+        //           qualunque altro guasto.
+        // ENGLISH: 'porta' = another program already uses the port (EADDRINUSE) or Windows reserved it
+        //          (EACCES: Hyper-V, WSL2, Docker blocks), and reopening the program does not help; 'avvio' =
+        //          any other fault.
+        mcpErrore = e && (e.code === 'EADDRINUSE' || e.code === 'EACCES') ? 'porta' : 'avvio';
         console.error('[MCP] start failed', e);
     }
 };
