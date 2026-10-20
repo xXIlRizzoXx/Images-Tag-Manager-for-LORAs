@@ -39,7 +39,7 @@ dice('progetto vuoto: niente da scartare', [], await regola([f1], (f) => percors
 console.log('\n--- "Importa" del riepilogo ---');
 const s = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
 dice('il riepilogo chiama confermaImport', true, s.includes('onConfirm={confermaImport}'));
-const i = s.indexOf('    const confermaImport = async () => {');
+const i = s.indexOf('    const confermaImport = async (');
 const fine = /\r?\n    \};\r?\n/g;
 fine.lastIndex = i;
 const m = i < 0 ? null : fine.exec(s);

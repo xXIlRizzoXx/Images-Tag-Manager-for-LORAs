@@ -448,8 +448,17 @@ export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave
 
 // ITALIANO: Finestra che mostra cosa è stato trovato durante l'importazione
 // ENGLISH: Window showing what was found during import
-export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
+export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode, lang = 'it' }: { t: Strings; [chiave: string]: any }) => {
+    // ITALIANO: la casella del recupero dal backup anti-crash: spuntata di serie a ogni apertura.
+    // ENGLISH: the crash-backup recovery checkbox: ticked by default at every opening.
+    const [recupera, setRecupera] = useState(true);
+    useEffect(() => { if (isOpen) setRecupera(true); }, [isOpen]);
     if (!isOpen) return null;
+    const recupero = summary && summary.recupero;
+    let dataRecupero = '';
+    if (recupero && typeof recupero.ts === 'number') {
+        try { dataRecupero = new Date(recupero.ts).toLocaleString(lang); } catch (_) { dataRecupero = new Date(recupero.ts).toLocaleString(); }
+    }
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
@@ -478,10 +487,21 @@ export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, i
                             <span className={`text-sm font-bold ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{summary.imagesWithoutText}</span>
                         </div>
                     </div>
+                    {recupero && (
+                        <label className={`mt-4 flex items-start gap-3 p-3 rounded-xl border cursor-pointer ${isDarkMode ? 'border-amber-500/40 bg-amber-500/10' : 'border-amber-300 bg-amber-50'}`}>
+                            <input type="checkbox" checked={recupera} onChange={(e) => setRecupera(e.target.checked)} className="mt-1 h-4 w-4 accent-amber-500" />
+                            <span className="text-sm">
+                                <span className={`block font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.importRecoverBackup}</span>
+                                <span className={`block ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.importRecoverBackupPhotos.replace('{n}', String(recupero.n))}</span>
+                                {dataRecupero && <span className={`block ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.importRecoverBackupDate.replace('{data}', dataRecupero)}</span>}
+                                {!recupera && <span className={`block mt-1 ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>{t.importRecoverBackupWarn}</span>}
+                            </span>
+                        </label>
+                    )}
                 </div>
                 <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
                     <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{t.cancel}</button>
-                    <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.importButton}</button>
+                    <button onClick={() => onConfirm(recupero ? recupera : true)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.importButton}</button>
                 </div>
             </div>
         </div>

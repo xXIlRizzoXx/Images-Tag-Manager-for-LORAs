@@ -58,7 +58,7 @@ const testo = [
     ritaglia(/const asDirHandle = /, /;\r?\n/g),
     ritaglia(/const makeBackupKeyer = /, /\r?\n\};\r?\n/g),
     ritaglia(/    const percorsiSuDisco = /, dentro()),
-    ritaglia(/    const confermaImport = (async )?\(\) => \{/, dentro()),
+    ritaglia(/    const confermaImport = (async )?\([^)]*\) => \{/, dentro()),
     ritaglia(/    const processImportData = async \(/, dentro()),
 ].join('\n');
 const codice = (await esbuild.transform(testo, { loader: 'ts' })).code;

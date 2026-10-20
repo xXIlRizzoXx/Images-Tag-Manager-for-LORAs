@@ -39,7 +39,7 @@ const testo = [
     ritaglia(/const asDirHandle = /, /;\r?\n/g),
     ritaglia(/const makeBackupKeyer = /, /\r?\n\};\r?\n/g),
     ritaglia(/    const percorsiSuDisco = /, dentro()),
-    ritaglia(/    const confermaImport = (async )?\(\) => \{/, dentro()),
+    ritaglia(/    const confermaImport = (async )?\([^)]*\) => \{/, dentro()),
     ritaglia(/    const processImportData = async \(/, dentro()),
 ].join('\n');
 const codice = (await esbuild.transform(testo, { loader: 'ts' })).code;
@@ -56,7 +56,7 @@ const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, proc
    ENGLISH: the fake app, with the `iniziali` photos already open. `percorsi` = Electron with paths on
    disk (getPathForFile gives file.percorso). render(d) = the real functions with summary `d` open;
    `riepilogoAperto` tells whether "Import" closed it. */
-export const creaApp = ({ iniziali = [], percorsi = true } = {}) => {
+export const creaApp = ({ iniziali = [], percorsi = true, backup = null } = {}) => {
     // ITALIANO: cambiStoria = gli aggiornamenti passati a setHistory, da applicare a una cronologia (vedi trash-harness).
     // ENGLISH: cambiStoria = the updates handed to setHistory, to apply to a history (see trash-harness).
     const app = { images: [...iniziali], notifiche: [], riepilogoAperto: true, passiSaltati: 0, cambiStoria: [] };
@@ -75,16 +75,18 @@ export const creaApp = ({ iniziali = [], percorsi = true } = {}) => {
         (v) => { if (v && v.isOpen === false) app.riepilogoAperto = false; }, { current: null },
         (m, tipo) => app.notifiche.push([m, tipo]), t, refs.progettoGenRef, refs.importInCorsoRef, () => 'lotto' + (++id), S.makeFolderKeyer, B.BACKUP_KEY_SEP,
         { current: [] }, setImages, () => { }, () => { }, () => { },
-        B.folderSignature, B.backupDellImport, { getItem: () => null }, 1024 * 1024, S.parseSidecarText,
+        B.folderSignature, B.backupDellImport, { getItem: (k) => (k === 'tagBackup' ? backup : null) }, 1024 * 1024, S.parseSidecarText,
         async () => ({ url: '', width: 1, height: 1 }), S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
         refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction, (f) => { app.cambiStoria.push(f); });
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).
-    app.conferma = async (d) => {
+    // ITALIANO: `recupera` = la casella "Recupera dalla copia di sicurezza" del riepilogo (assente = come prima).
+    // ENGLISH: `recupera` = the summary's "Recover from the local backup" checkbox (absent = as before).
+    app.conferma = async (d, ...recupera) => {
         const prima = refs.importAttiviRef.current;
-        await app.render(d).confermaImport();
+        await app.render(d).confermaImport(...recupera);
         for (let i = 0; i < 500 && refs.importAttiviRef.current > prima; i++) await new Promise(ok => setTimeout(ok, 10));
     };
     app.nomi = () => app.images.map(i => i.file.name);

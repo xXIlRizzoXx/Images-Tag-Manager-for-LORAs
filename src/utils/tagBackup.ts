@@ -347,6 +347,23 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
     return null;
 };
 
+// ITALIANO: cosa c'e' da recuperare per l'import che sta per partire (quante foto e di quando), o null.
+//   Lo usa il riepilogo dell'importazione per chiedere prima di applicare il backup: stessa impronta
+//   di processImportData (nome della cartella scelta + nomi delle immagini).
+// ENGLISH: what there is to recover for the import about to start (how many photos and from when), or
+//   null. The import summary uses it to ask before applying the backup: same fingerprint as
+//   processImportData (picked folder's name + image names).
+export const recuperoDellImport = (grezzo: string | null, cartellaScelta: { name?: string } | null, immagini: Array<{ name: string }>): { n: number; ts: number | null } | null => {
+    try {
+        const nome = cartellaScelta && cartellaScelta.name ? String(cartellaScelta.name) : '';
+        const b = backupDellImport(grezzo, nome, folderSignature(nome, immagini.map(f => f.name)));
+        const n = b ? Object.keys(b.voci).length : 0;
+        return b && n > 0 ? { n, ts: b.ts } : null;
+    } catch (_) {
+        return null;
+    }
+};
+
 // ITALIANO: I tag da rimettere su una foto appena importata, o null = restano quelli del .txt.
 //   Una voce scritta da questa versione porta l'impronta dei tag su disco di quel momento (`base`):
 //   se il .txt ora e' diverso, e' cambiato dopo il backup e vince lui. Le voci della versione

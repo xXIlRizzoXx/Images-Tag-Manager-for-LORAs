@@ -40,7 +40,7 @@ import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, leggiTestoSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
-import { BACKUP_KEY_SEP, folderSignature, backupDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { BACKUP_KEY_SEP, folderSignature, backupDellImport, recuperoDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
@@ -3299,7 +3299,11 @@ export default function App() {
     // ENGLISH: without paths (network folder \\server\share) the folder decides, with isSameEntry
     //          (see fotoGiaAperte); and the photos of an import still running count too
     //          (importInCorsoRef), since they enter the gallery only at the end.
-    const confermaImport = async () => {
+    // ITALIANO: `recuperaBackup` = la casella del riepilogo "Recupera dalla copia di sicurezza locale..."
+    //           (spuntata di serie; senza la casella, come prima, il backup si applica).
+    // ENGLISH: `recuperaBackup` = the summary's "Recover ... from the local backup" checkbox (ticked by
+    //          default; with no checkbox, as before, the backup is applied).
+    const confermaImport = async (recuperaBackup = true) => {
         const d = importSummary.pendingData;
         if (!d) return;
         // ITALIANO: "Annulla lo svuotamento" in corso: le immagini gia' tornate entravano come foto nuove
@@ -3446,13 +3450,13 @@ export default function App() {
                 txtFiles = d.txtFiles.filter((x: any) => chiaviNuove.has(chiaveDi(x)) || !chiaviAperte.has(chiaveDi(x)));
             }
             voce.foto = nuove.map((f: any) => ({ ...descritte.get(f), lotto, cartellaImport: importFolder }));
-            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto);
+            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto, recuperaBackup !== false);
         } finally {
             importInCorsoRef.current = importInCorsoRef.current.filter(v => v !== voce);
         }
     };
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0, lottoDaRiusare = '') => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0, lottoDaRiusare = '', recuperaBackup = true) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -3496,9 +3500,13 @@ export default function App() {
             //          already open); without it, a new one as always.
             const lottoImport = lottoDaRiusare || nuovoIdFoto();
             let backup: { voci: Record<string, any>; ts: number | null } | null = null;
-            try {
-                backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature);
-            } catch (_) { backup = null; }
+            // ITALIANO: senza la spunta del riepilogo il backup non si applica: si prendono i .txt cosi' come sono.
+            // ENGLISH: without the summary's tick the backup is not applied: the .txt files are taken as they are.
+            if (recuperaBackup) {
+                try {
+                    backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature);
+                } catch (_) { backup = null; }
+            }
             const backupMap = backup ? backup.voci : null;
 
             // ITALIANO: chiave cartella+nome (vedi makeFolderKeyer): stessa immagine e stesso
@@ -3778,13 +3786,23 @@ export default function App() {
             }
         });
 
+        // ITALIANO: il backup anti-crash si applicava senza chiedere: ora il riepilogo dice prima se c'e'
+        //           qualcosa da recuperare per questa cartella (quante foto, di quando), con una casella
+        //           spuntata di serie. Stessa impronta che usa l'import (backupDellImport).
+        // ENGLISH: the crash backup was applied without asking: the summary now says first whether there is
+        //          something to recover for this folder (how many photos, from when), with a checkbox ticked
+        //          by default. Same fingerprint the import uses (backupDellImport).
+        let recupero: { n: number; ts: number | null } | null = null;
+        try { recupero = recuperoDellImport(localStorage.getItem('tagBackup'), handle, imgFiles); } catch (_) { recupero = null; }
+
         setImportSummary({
             isOpen: true,
             summary: {
                 imagesCount: imgFiles.length,
                 textFilesCount: txtFiles.length,
                 imagesWithText: withText,
-                imagesWithoutText: withoutText
+                imagesWithoutText: withoutText,
+                recupero
             },
             pendingData: { imgFiles, txtFiles, handle, folderOf, relPathOf, pathOf, cartellaRelOf }
         });
@@ -6705,7 +6723,7 @@ export default function App() {
                 t={t}
                 isDarkMode={isDarkMode}
             />
-            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} onConfirm={confermaImport} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
+            <ImportSummaryDialog isOpen={importSummary.isOpen} summary={importSummary.summary} lang={lang} onConfirm={confermaImport} onCancel={() => { setImportSummary({ isOpen: false, summary: null, pendingData: null }); if (folderInputRef.current) folderInputRef.current.value = ''; }} t={t} isDarkMode={isDarkMode} />
 
             {/* ITALIANO: Dialog inserimento / verifica API Key Gemini */}
             {/* ENGLISH: Gemini API Key entry / verification dialog */}
