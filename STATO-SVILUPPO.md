@@ -1,7 +1,17 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 17 ottobre 2026
+**Ultimo aggiornamento:** 20 ottobre 2026
 **Versione attuale:** 2.0.1 costruita, non ancora pubblicata. La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+Novità 2.0.1 (traguardo 113, 19-20 ottobre 2026): **quarto ciclo di controllo, 50 difetti corretti.**
+Tre giri di ricerca su tutto il programma, ogni difetto verificato da tre revisori, corretto con la sua
+prova e ricontrollato. I più importanti: l'esportazione di due cartelle aperte una dopo l'altra torna a
+mettere le cartelle Kohya (10_nome) al primo livello; su una cartella di rete «Elimina per sempre» non
+può più cancellare una copia con lo stesso nome in un'altra cartella né il .txt che serve ancora a una
+foto gemella; chiudendo il progetto mentre l'AI tagga i tag in arrivo non si perdono più; il server MCP
+fa scorrere all'AI tutte le pagine delle foto. Poi le foto HEIC dell'iPhone che entrano di nuovo, le
+miniature @eaDir dei NAS Synology che non entrano più come foto, i messaggi giusti col numero 1, la
+protezione dei contenuti (CSP) stretta anche nell'exe e molti avvisi più veri. 264 prove automatiche
+verdi.
 Novità 2.0.1 (traguardo 112, 17 ottobre 2026): **si può trascinare una cartella sulla finestra.**
 Prima il trascinamento accettava solo immagini. Ora una cartella trascinata da sola si apre come
 con «Carica Cartella»: stesso riepilogo dell'importazione, i tag si salvano nella cartella e le foto
