@@ -74,8 +74,12 @@ console.log('--- premesse sul modello di electron-builder ---');
 const controlloStandard = corpo(unico, 'CHECK_APP_RUNNING') || '';
 dice('CHECK_APP_RUNNING usa customCheckAppRunning al posto del controllo standard, se esiste', true,
     /!ifmacrodef customCheckAppRunning\s*\n\s*!insertmacro customCheckAppRunning\s*\n\s*!else/.test(controlloStandard));
-dice('CHECK_APP_RUNNING imposta CmdPath e FindPath prima di chiamarla', true,
-    /StrCpy \$CmdPath "\$SYSDIR\\cmd\.exe"[\s\S]*StrCpy \$FindPath "\$SYSDIR\\find\.exe"[\s\S]*!ifmacrodef customCheckAppRunning/.test(controlloStandard));
+// ITALIANO: da electron-builder 26.15 il ramo per nome usa findstr (percorso scritto nel comando) e non
+//           piu' $FindPath; la nostra macro non usa nessuno dei due percorsi, le basta $CmdPath.
+// ENGLISH: since electron-builder 26.15 the by-name branch uses findstr (path written in the command)
+//          instead of $FindPath; our macro uses neither path, it only needs $CmdPath.
+dice('CHECK_APP_RUNNING imposta CmdPath prima di chiamarla', true,
+    /StrCpy \$CmdPath "\$SYSDIR\\cmd\.exe"[\s\S]*!ifmacrodef customCheckAppRunning/.test(controlloStandard));
 dice('con customCheckAppRunning il modello NON include getProcessInfo.nsh e NON dichiara $pid (tocca a noi)', true,
     /!ifmacrondef customCheckAppRunning\s*\n\s*!include "getProcessInfo\.nsh"\s*\n\s*Var pid\s*\n\s*!endif/.test(unico));
 const trova = corpo(unico, 'FIND_PROCESS') || '';
@@ -89,7 +93,7 @@ dice('_CHECK_APP_RUNNING usa ${GetProcessInfo} e $pid', true,
     /\$\{GetProcessInfo\} 0 \$pid/.test(corpo(unico, '_CHECK_APP_RUNNING') || ''));
 dice('build/installer.nsh entra nell\'intestazione comune, cioe\' PRIMA di allowOnlyOneInstallerInstance.nsh', [true, true],
     [/computeCommonInstallerScriptHeader\(\)\s*\{[\s\S]*?scriptGenerator\.include\(customInclude\)[\s\S]*?\n {4}\}/.test(target),
-        /sharedHeader \+ \(await this\.computeFinalScript\(script, true/.test(target)]);
+        /sharedHeader \+ \(await this\.computeFinalScript\((script|rawScript), true/.test(target)]);
 dice('getProcessInfo.nsh sta nella cartella degli include del modello', true, fs.existsSync(path.join(radice, modelli, 'include/getProcessInfo.nsh')));
 
 console.log('\n--- build/installer.nsh ---');
