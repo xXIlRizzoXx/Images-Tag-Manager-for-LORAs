@@ -127,4 +127,25 @@ const dati = { size: 1234, lastModified: 1700000000000 };
     dice('copia chiusa con un\'altra data di modifica: resta fra le chiuse', true, r.chiusaRimasta);
 }
 
+// ITALIANO: tutte e due le gemelle con la cartella, piu' la copia chiusa di a.png col percorso (stesso
+//           file). Prima la copia chiusa non era riconosciuta come "gia' tolta" (il blocco giaTolte
+//           confrontava solo percorso con percorso o cartella con cartella) e a.txt restava orfano.
+// ENGLISH: both twins with the folder, plus the closed copy of a.png with the path (same file). The
+//          closed copy was not recognised as "already removed" (the giaTolte block only compared path
+//          with path or folder with folder) and a.txt stayed orphaned.
+console.log('\n--- tutte e due le gemelle con la cartella e una copia chiusa di a.png col percorso ---');
+for (const ordine of [['png', 'jpg'], ['jpg', 'png']]) {
+    const cartella = cartellaFinta(); cartella.name = 'ds';
+    const foto = { png: conCartella('png', 'a.png', cartella, dati), jpg: conCartella('jpg', 'a.jpg', cartella, { size: 77, lastModified: 5 }) };
+    const r = await svuota(ordine.map(k => foto[k]), cartella, conPercorso('vecchia', 'a.png', rete('ds', 'a.png'), dati));
+    dice(`ordine ${ordine.join(', ')}: a.png, a.jpg e a.txt rimossi, nessun a.txt orfano`, JSON.stringify(['a.jpg', 'a.png', 'a.txt']), JSON.stringify([...r.rimossi].sort()));
+    dice(`ordine ${ordine.join(', ')}: la copia chiusa esce dalle chiuse`, false, r.chiusaRimasta);
+}
+{
+    const cartella = cartellaFinta(); cartella.name = 'ds';
+    const r = await svuota([conCartella('png', 'a.png', cartella, dati), conCartella('jpg', 'a.jpg', cartella, { size: 77, lastModified: 5 })], cartella,
+        conPercorso('vecchia', 'a.png', rete('ds', 'a.png'), { size: 999, lastModified: 1 }));
+    dice('copia chiusa di un ALTRO file (dimensione e data diverse): a.txt resta, nel dubbio vince la didascalia', true, !r.rimossi.includes('a.txt'));
+}
+
 process.exit(esito());

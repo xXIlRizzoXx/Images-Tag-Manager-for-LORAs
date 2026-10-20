@@ -2314,7 +2314,22 @@ export default function App() {
                     for (const tolta of imagesRef.current as any[]) {
                         if (!giaTolte.has(tolta.id) || !tolta.file || String(tolta.file.name).toLowerCase() !== String(altra.file.name).toLowerCase()) continue;
                         const imgTolta = percorsiSuDisco(tolta).imgPath.toLowerCase();
+                        // ITALIANO: anche la coppia MISTA (la copia chiusa col solo percorso, la foto tolta con
+                        //           la sola cartella), con la regola severa di copieChiuseDelloStessoFile:
+                        //           cartella con il nome di quella del percorso, stessa dimensione e data.
+                        //           Prima restava "viva" e a.txt rimaneva orfano dopo aver tolto le due gemelle.
+                        // ENGLISH: the MIXED pair too (the closed copy with only the path, the removed photo
+                        //          with only the folder), with the strict rule of copieChiuseDelloStessoFile:
+                        //          folder named like the path's one, same size and date. It used to stay
+                        //          "alive" and a.txt was left orphaned after removing both twins.
+                        const pTolta = imgTolta && !suaImg ? tolta : suaImg && !imgTolta ? altra : null;
+                        const cTolta = pTolta === tolta ? altra : tolta;
+                        const partiTolta = pTolta && !pTolta.dirHandle && cTolta.dirHandle
+                            ? (imgTolta || suaImg).replace(/\//g, '\\').split('\\').filter(Boolean) : null;
                         giaTolta = suaImg && imgTolta ? suaImg === imgTolta
+                            : partiTolta ? partiTolta.length >= 2 && partiTolta[partiTolta.length - 2] === String(cTolta.dirHandle.name || '').toLowerCase()
+                                && typeof tolta.file.size === 'number' && tolta.file.size === altra.file.size
+                                && typeof tolta.file.lastModified === 'number' && tolta.file.lastModified === altra.file.lastModified
                             : !!(tolta.dirHandle && altra.dirHandle && (tolta.dirHandle === altra.dirHandle
                                 || (typeof tolta.dirHandle.isSameEntry === 'function' && await tolta.dirHandle.isSameEntry(altra.dirHandle))));
                         if (giaTolta) break;
