@@ -6103,13 +6103,17 @@ export default function App() {
             //          Tags added: N" summary used to cover "Project closed" at once (a single notice
             //          slot), talking about tags of a project already closed.
             if (progetto !== progettoGenRef.current) return;
-            // ITALIANO: fermato da una chiave tolta o cambiata: nemmeno. Il riepilogo arrivava un decimo di
-            //           secondo dopo l'avviso della chiave ("API key rimossa", o l'errore "verra' caricata
-            //           di nuovo al prossimo avvio") e lo copriva prima che si potesse leggere.
-            // ENGLISH: stopped by a removed or changed key: not either. The summary came a tenth of a second
-            //          after the key notice ("API key removed", or the error "it will be loaded again at the
-            //          next start") and covered it before it could be read.
-            if (cancelled && chiaveCambiata()) return;
+            // ITALIANO: fermato da una chiave TOLTA: nemmeno. Il riepilogo arrivava un decimo di secondo dopo
+            //           l'avviso della chiave ("API key rimossa", o l'errore "verra' caricata di nuovo al
+            //           prossimo avvio") e lo copriva prima che si potesse leggere. Con una chiave CAMBIATA
+            //           invece il riepilogo "annullato" resta: e' l'unica frase che dice che il lotto si e'
+            //           fermato, e arriva dopo la richiesta in volo, non sopra "chiave salvata".
+            // ENGLISH: stopped by a REMOVED key: not either. The summary came a tenth of a second after the
+            //          key notice ("API key removed", or the error "it will be loaded again at the next
+            //          start") and covered it before it could be read. With a CHANGED key the "cancelled"
+            //          summary stays instead: it is the only sentence saying the batch stopped, and it comes
+            //          after the request in flight, not over "key saved".
+            if (cancelled && chiaveCambiata() && !geminiApiKeyRef.current) return;
             soundManager.chime();
             const successType: 'success' | 'info' | 'error' = cancelled
                 ? 'info'

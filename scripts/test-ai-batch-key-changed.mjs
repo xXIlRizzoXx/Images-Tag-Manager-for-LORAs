@@ -48,9 +48,13 @@ console.log('\n--- chiave nuova salvata mentre parte la prima foto ---');
     dice('dopo il cambio nessuna altra foto parte con la chiave vecchia', 1, app.chiamate());
     dice('la foto gia\' partita resta taggata', ['cat', 'sofa'], app.foto[0].tags);
     dice('le altre restano come erano', [[], [], []], app.foto.slice(1).map(f => f.tags));
-    // ITALIANO: senza riepilogo: coprirebbe l'avviso della chiave appena salvata (vedi test-ai-batch-key-removed-notice).
-    // ENGLISH: with no summary: it would cover the notice of the key just saved (see test-ai-batch-key-removed-notice).
-    dice('il lotto si ferma come un annullamento, senza riepilogo sopra l\'avviso della chiave', [false, undefined], annullato(app));
+    // ITALIANO: con una chiave CAMBIATA il riepilogo "annullato" resta: e' l'unica frase che dice che il
+    //           lotto si e' fermato (l'utente aveva cambiato chiave proprio per andare avanti). Arriva dopo
+    //           la richiesta in volo, non sopra l'avviso "chiave salvata". Solo per una chiave TOLTA si tace.
+    // ENGLISH: with a CHANGED key the "cancelled" summary stays: it is the only sentence saying the batch
+    //          stopped (the user changed key precisely to go on). It comes after the request in flight, not
+    //          over the "key saved" notice. Only for a REMOVED key does it stay silent.
+    dice('il lotto si ferma e il riepilogo "annullato" lo dice', [true, 'info'], annullato(app));
     dice('nessuna finestra della chiave riaperta', false, app.finestraChiave);
 }
 
@@ -63,7 +67,7 @@ console.log('\n--- chiave cambiata e la vecchia revocata: la richiesta in volo t
     dice('nessun "API key non valida" per la chiave che l\'utente ha gia\' sostituito', false,
         app.notifiche.some(([m]) => m.includes(t.aiKeyInvalid)));
     dice('nessuna finestra della chiave riaperta', false, app.finestraChiave);
-    dice('il lotto si ferma come un annullamento, senza riepilogo', [false, undefined], annullato(app));
+    dice('il lotto si ferma e il riepilogo "annullato" lo dice', [true, 'info'], annullato(app));
 }
 
 console.log('\n--- chiave tolta a meta\' lotto (il ref torna vuoto) ---');
@@ -72,6 +76,7 @@ console.log('\n--- chiave tolta a meta\' lotto (il ref torna vuoto) ---');
     app = nuovaApp(fotoQuattro(), (n) => { if (n === 2) app.cambiaChiave(''); return BUONA; });
     await app.tutte();
     dice('si ferma dopo la richiesta in volo', 2, app.chiamate());
+    dice('chiave tolta: nessun riepilogo sopra l\'avviso della chiave', [false, undefined], annullato(app));
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
