@@ -448,6 +448,52 @@ const coppieGiuste = (nomi) => nomi.filter(n => !n.endsWith('.txt')).every(n => 
     dice('foto ricollegata alla stessa cartella: nessuna voce in 10_face/', [], conCollegata.filter(n => n.startsWith('10_face/')));
 }
 
+// ITALIANO: con piu' cartelle aperte una sottocartella col nome che comincia con cifre e "_" (una data,
+//           2024_05_mare) dentro una cartella che e' GIA' una cartella Kohya (10_anna) saliva al primo
+//           livello, e sd-scripts la leggeva come una cartella con 2024 ripetizioni. Sale al primo livello
+//           solo una sottocartella N_nome di una cartella madre che non e' N_nome (char_anna/10_anna).
+// ENGLISH: with several folders opened a subfolder whose name starts with digits and "_" (a date,
+//          2024_05_mare) inside a folder that is ALREADY a Kohya folder (10_anna) went up to the first
+//          level, and sd-scripts read it as a folder with 2024 repeats. Only an N_name subfolder of a
+//          parent folder that is not N_name (char_anna/10_anna) goes up to the first level.
+console.log('\n--- piu\' cartelle aperte: sottocartella con una data dentro una cartella Kohya ---');
+{
+    const sonda = creaSonda();
+    const voci = await (await creaApp(dueRadici(sonda, [['10_anna', '', 'a.png', 'ta'], ['10_anna', '2024_05_mare', 'm.png', 'tm'], ['20_bea', '', 'b.png', 'tb']]), sonda).esporta(false)).archivio() || {};
+    dice('2024_05_mare resta dentro 10_anna', ['10_anna/2024_05_mare/m.txt', '10_anna/a.txt', '20_bea/b.txt'], Object.keys(voci).sort());
+    const s2 = creaSonda();
+    const madri = await (await creaApp(dueRadici(s2, [['char_anna', '10_anna', 'a.png', 'ta'], ['char_bea', '10_bea', 'b.png', 'tb']]), s2).esporta(false)).archivio() || {};
+    dice('cartelle madri normali: le cartelle Kohya dentro salgono ancora al primo livello', ['10_anna/a.txt', '10_bea/b.txt'], Object.keys(madri).sort());
+}
+
+// ITALIANO: una foto caricata da sola, messa nel cestino e collegata alla cartella 10_face riaperta
+//           (cartellaImport vuoto, lo STESSO oggetto cartella delle sue sorelle), poi ripristinata con
+//           una seconda cartella aperta: finiva alla radice dell'archivio e sd-scripts non la leggeva.
+//           Ora va dove vanno le foto della stessa cartella.
+// ENGLISH: a photo loaded alone, put in the trash and linked to the reopened 10_face folder (empty
+//          cartellaImport, the SAME folder object as its sisters), then restored with a second folder
+//          open: it ended at the archive root and sd-scripts did not read it. It now goes where the
+//          photos of the same folder go.
+console.log('\n--- foto del cestino collegata alla cartella e ripristinata, con due cartelle aperte ---');
+{
+    const sonda = creaSonda();
+    const faccia = { name: '10_face' };
+    const corpo = { name: '20_body' };
+    const f = (id, nome, i, cartella, scelta, lotto) => ({ id, file: new FotoFinta(byteDi(30, i), nome, sonda), tags: ['t' + id], isTrashed: false,
+        dirHandle: cartella, cartellaRel: '', cartellaImport: scelta, lottoImport: lotto });
+    const foto = [f('a', 'a.png', 1, faccia, '', 'L0'), f('b', 'b.png', 2, faccia, '10_face', 'L1'), f('c', 'c.png', 3, faccia, '10_face', 'L1'), f('x', 'x.png', 4, corpo, '20_body', 'L2')];
+    const voci = await (await creaApp(foto, sonda).esporta(false)).archivio() || {};
+    dice('a.png va in 10_face con le sue sorelle, niente alla radice', ['10_face/a.txt', '10_face/b.txt', '10_face/c.txt', '20_body/x.txt'], Object.keys(voci).sort());
+    const s2 = creaSonda();
+    const g = (id, nome, i, cartella, scelta, lotto) => ({ ...f(id, nome, i, cartella, scelta, lotto), file: new FotoFinta(byteDi(30, i), nome, s2) });
+    const conImmagini = await (await creaApp([g('a', 'a.png', 1, faccia, '', 'L0'), g('x', 'x.png', 4, corpo, '20_body', 'L2'), g('b', 'b.png', 2, faccia, '10_face', 'L1')], s2).esporta(true)).archivio() || {};
+    dice('...anche se viene prima delle sorelle e con "Tag e immagini"', ['10_face/a.png', '10_face/a.txt', '10_face/b.png', '10_face/b.txt', '20_body/x.png', '20_body/x.txt'], Object.keys(conImmagini).sort());
+    const s3 = creaSonda();
+    const h = (id, nome, i, cartella, scelta, lotto) => ({ ...f(id, nome, i, cartella, scelta, lotto), file: new FotoFinta(byteDi(30, i), nome, s3) });
+    const sciolta = await (await creaApp([h('z', 'z.png', 5, null, '', 'L0'), h('b', 'b.png', 2, faccia, '10_face', 'L1'), h('x', 'x.png', 4, corpo, '20_body', 'L2')], s3).esporta(false)).archivio() || {};
+    dice('una foto sciolta senza cartella resta alla radice come prima', ['10_face/b.txt', '20_body/x.txt', 'z.txt'], Object.keys(sciolta).sort());
+}
+
 console.log('\n--- l\'avviso dei nomi doppi conta i file rinominati ---');
 {
     // ITALIANO: con le immagini un nome doppio sposta due file (la foto e il suo .txt): l'avviso

@@ -5116,6 +5116,17 @@ export default function App() {
             //          name (even with different capitals, to Windows it is the same folder) gets a
             //          suffix that keeps sd-scripts' N_ prefix: 10_face_2.
             const sceltaDi = (img: any) => String(img.lottoImport || '') + '\u0000' + String(img.cartellaImport || '');
+            // ITALIANO: una foto senza scelta propria ma con lo STESSO oggetto cartella di una foto aperta con
+            //           "Carica Cartella" (una foto del cestino collegata alla cartella riaperta, poi
+            //           ripristinata) va dove va quella sua "sorella": prima finiva alla radice dell'archivio
+            //           appena c'erano due cartelle aperte, e sd-scripts non la leggeva.
+            // ENGLISH: a photo with no pick of its own but with the SAME folder object as a photo opened with
+            //          "Load Folder" (a trash photo linked to the reopened folder, then restored) goes where
+            //          that "sister" goes: it used to end at the archive root as soon as two folders were
+            //          open, and sd-scripts did not read it.
+            const sorelle = new Map<any, any>();
+            imagesToExport.forEach((img) => { if (img.cartellaImport && img.dirHandle && !sorelle.has(img.dirHandle)) sorelle.set(img.dirHandle, img); });
+            const postoDi = (img: any) => (!img.cartellaImport && img.dirHandle && sorelle.get(img.dirHandle)) || img;
             const nomiScelte = new Map<string, string>();
             const nomiPresi = new Set<string>();
             imagesToExport.forEach((img) => {
@@ -5153,15 +5164,21 @@ export default function App() {
                 //          namesakes, and sd-scripts (train_data_dir) only reads N_name folders: the
                 //          root photos were left out and the repeat counts vanished. Every part is
                 //          cleaned; "", "." and ".." are skipped, so nothing escapes the archive.
-                const pezziRel = String(img.cartellaRel || '').split(/[\\/]/).filter(p => p && p !== '.' && p !== '..');
-                // ITALIANO: sale al primo livello solo una sottocartella Kohya (N_nome). Ogni altra
-                //           (10_face/old, anna/closeup) resta sotto il nome della sua scelta: prima
-                //           old/x.txt si staccava da 10_face e due closeup/ si mescolavano.
-                // ENGLISH: only a Kohya subfolder (N_name) goes up to the first level. Any other one
-                //          (10_face/old, anna/closeup) stays under its pick's name: old/x.txt used to
-                //          come off 10_face and two closeup/ folders got mixed.
-                const tieniScelta = piuCartelle && !(pezziRel.length > 0 && /^\d+_/.test(pezziRel[0]));
-                const sotto = [tieniScelta ? String(nomiScelte.get(sceltaDi(img)) || '') : '', ...pezziRel]
+                const posto = postoDi(img);
+                const pezziRel = String(posto.cartellaRel || '').split(/[\\/]/).filter(p => p && p !== '.' && p !== '..');
+                // ITALIANO: sale al primo livello solo una sottocartella Kohya (N_nome) di una cartella madre
+                //           che NON e' a sua volta N_nome (char_anna/10_anna). Ogni altra (10_face/old,
+                //           anna/closeup, 10_anna/2024_05_mare) resta sotto il nome della sua scelta: prima
+                //           old/x.txt si staccava da 10_face, due closeup/ si mescolavano, e una sottocartella
+                //           con una data dentro 10_anna saliva e sd-scripts la leggeva con 2024 ripetizioni.
+                // ENGLISH: only a Kohya subfolder (N_name) of a parent folder that is NOT itself N_name
+                //          (char_anna/10_anna) goes up to the first level. Any other one (10_face/old,
+                //          anna/closeup, 10_anna/2024_05_mare) stays under its pick's name: old/x.txt used to
+                //          come off 10_face, two closeup/ folders got mixed, and a dated subfolder inside
+                //          10_anna went up and sd-scripts read it with 2024 repeats.
+                const sceltaKohya = /^\d+_/.test(String(posto.cartellaImport || ''));
+                const tieniScelta = piuCartelle && (sceltaKohya || !(pezziRel.length > 0 && /^\d+_/.test(pezziRel[0])));
+                const sotto = [tieniScelta ? String(nomiScelte.get(sceltaDi(posto)) || '') : '', ...pezziRel]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
                 // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi
                 //           niente nomi doppi) sta nella sottocartella della foto, 10_face/0001.png.
