@@ -4181,6 +4181,13 @@ export default function App() {
         const onDragEnter = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; setIsDragging(true); };
         const onDragOver = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); };
         const onDragLeave = (e: DragEvent) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (dragDepth === 0) setIsDragging(false); };
+        // ITALIANO: trascinamento annullato con Esc: il browser non manda sempre l'ultimo dragleave e il
+        //           velo restava a schermo. Durante un trascinamento non arrivano eventi del mouse: il
+        //           primo movimento (o clic) dopo vuol dire che e' finito, e il velo si spegne.
+        // ENGLISH: drag cancelled with Esc: the browser does not always send the last dragleave and the
+        //          overlay stayed on screen. During a drag no mouse events arrive: the first move (or
+        //          click) afterwards means it is over, and the overlay turns off.
+        const onMouseDopo = () => { if (dragDepth === 0) return; dragDepth = 0; setIsDragging(false); };
         const onDrop = (e: DragEvent) => {
             e.preventDefault();
             dragDepth = 0;
@@ -4200,11 +4207,15 @@ export default function App() {
         window.addEventListener('dragover', onDragOver);
         window.addEventListener('dragleave', onDragLeave);
         window.addEventListener('drop', onDrop);
+        window.addEventListener('mousemove', onMouseDopo);
+        window.addEventListener('pointerdown', onMouseDopo);
         return () => {
             window.removeEventListener('dragenter', onDragEnter);
             window.removeEventListener('dragover', onDragOver);
             window.removeEventListener('dragleave', onDragLeave);
             window.removeEventListener('drop', onDrop);
+            window.removeEventListener('mousemove', onMouseDopo);
+            window.removeEventListener('pointerdown', onMouseDopo);
         };
     }, []);
 
