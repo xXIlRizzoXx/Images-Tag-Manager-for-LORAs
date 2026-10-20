@@ -218,7 +218,7 @@ if (fileCodice.length) {
             };
             visita(sf);
         }
-        console.log(`\nchiavi lette dal codice senza tipo: ${lette} (in ${fileCodice.length} file)`);
+        console.log(`\nchiavi lette dal codice controllate: ${lette} (in ${fileCodice.length} file)`);
     }
 }
 
