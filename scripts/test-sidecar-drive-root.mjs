@@ -76,7 +76,7 @@ try {
     const img = path.join(cartella, 'img_001.jpg');
     fs.writeFileSync(img, 'x');
     fs.writeFileSync(path.join(cartella, 'img_001.txt'), '1girl, smile,');
-    const letti = handlers.get('images:read-sidecar-tags')(null, [img]);
+    const letti = await handlers.get('images:read-sidecar-tags')(null, [img]);
     dice('il .txt viene letto', '1girl, smile,', letti.length === 1 ? letti[0].content : null);
     if (letti.length === 1) {
         const [kf, kt] = chiavi(img, letti[0].dir);

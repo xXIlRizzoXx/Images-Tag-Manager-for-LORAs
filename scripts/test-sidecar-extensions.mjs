@@ -47,11 +47,11 @@ try {
     const txtDi = (n) => n.replace(/\.[^.]+$/, '.txt');
 
     console.log('\n--- lettura dei .txt accanto alle foto ---');
-    const letti = handlers.get('images:read-sidecar-tags')(null, tutte);
+    const letti = await handlers.get('images:read-sidecar-tags')(null, tutte);
     dice('un .txt per ogni immagine, nessuno per la pagina .html', nomi.map(txtDi), letti.map((s) => s.name));
 
     console.log('\n--- scrittura dei .txt ---');
-    const scritti = handlers.get('images:write-sidecar-tags')(null, tutte.map((p) => ({ imagePath: p, content: 'nuovo,' })));
+    const scritti = await handlers.get('images:write-sidecar-tags')(null, tutte.map((p) => ({ imagePath: p, content: 'nuovo,' })));
     dice('scritte tutte le immagini, rifiutata la pagina .html', [...nomi.map(() => true), false], scritti.results);
     dice('il .txt del .jfif contiene davvero il testo nuovo', 'nuovo,', fs.readFileSync(path.join(cartella, 'foto.txt'), 'utf8'));
     dice('anche quello dello .svg', 'nuovo,', fs.readFileSync(path.join(cartella, 'disegno.txt'), 'utf8'));

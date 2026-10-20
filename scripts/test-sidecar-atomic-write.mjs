@@ -35,8 +35,10 @@ const { handlers } = caricaMain();
 const { dice, esito } = creaControlli();
 const scrivi = handlers.get('images:write-sidecar-tags');
 const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'itm-atomic-'));
-const veri = { writeFileSync: fs.writeFileSync, renameSync: fs.renameSync, openSync: fs.openSync };
-const ripristina = () => { for (const nome of Object.keys(veri)) fs[nome] = veri[nome]; };
+// ITALIANO: il canale scrive con fs.promises (dal 20/10/2026): i guasti si simulano li'.
+// ENGLISH: the channel writes through fs.promises (since 20/10/2026): the failures are simulated there.
+const veri = { writeFile: fs.promises.writeFile, rename: fs.promises.rename, open: fs.promises.open };
+const ripristina = () => { for (const nome of Object.keys(veri)) fs.promises[nome] = veri[nome]; };
 const ORIGINALE = 'ohwx, woman, red hair';
 const enospc = () => { const e = new Error('ENOSPC: no space left on device, write'); e.code = 'ENOSPC'; return e; };
 // ITALIANO: disco che si riempie: chi apre un file della cartella per scriverci lo apre davvero
@@ -44,10 +46,16 @@ const enospc = () => { const e = new Error('ENOSPC: no space left on device, wri
 // ENGLISH: a disk that fills up: whoever opens a file of the folder to write it really opens it
 //          (with 'w' opening empties the file, as Node does), then the write fails.
 const discoPieno = () => {
-    fs.writeFileSync = (p, dati, ...resto) => {
-        if (typeof p === 'number') throw enospc();
-        if (typeof p === 'string' && path.dirname(p) === sub) { fs.closeSync(veri.openSync(p, 'w')); throw enospc(); }
-        return veri.writeFileSync(p, dati, ...resto);
+    fs.promises.writeFile = async (p, dati, ...resto) => {
+        if (typeof p === 'string' && path.dirname(p) === sub) { await (await veri.open(p, 'w')).close(); throw enospc(); }
+        return veri.writeFile(p, dati, ...resto);
+    };
+    // ITALIANO: anche il temporaneo si apre davvero, poi la sua scrittura fallisce.
+    // ENGLISH: the temporary file is really opened too, then writing it fails.
+    fs.promises.open = async (p, ...resto) => {
+        const fh = await veri.open(p, ...resto);
+        if (typeof p === 'string' && path.dirname(p) === sub) return { writeFile: async () => { throw enospc(); }, close: () => fh.close() };
+        return fh;
     };
 };
 let sub = '';
@@ -58,8 +66,8 @@ const prepara = (txt) => {
     sub = path.join(cartella, 'c' + (++n));
     fs.mkdirSync(sub);
     const img = path.join(sub, 'a.png');
-    veri.writeFileSync(img, Buffer.from([137, 80, 78, 71]));
-    if (txt !== null) veri.writeFileSync(path.join(sub, 'a.txt'), txt, 'utf8');
+    fs.writeFileSync(img, Buffer.from([137, 80, 78, 71]));
+    if (txt !== null) fs.writeFileSync(path.join(sub, 'a.txt'), txt, 'utf8');
     return img;
 };
 const txtDi = () => { try { return fs.readFileSync(path.join(sub, 'a.txt'), 'utf8'); } catch (_) { return null; } };
@@ -70,7 +78,7 @@ try {
     console.log('\n--- la scrittura si interrompe a meta\' su un .txt che c\'era ---');
     let img = prepara(ORIGINALE);
     discoPieno();
-    let r = scrivi(null, [{ imagePath: img, content: 'ohwx, woman, blue hair' }]);
+    let r = await scrivi(null, [{ imagePath: img, content: 'ohwx, woman, blue hair' }]);
     ripristina();
     dice('la foto risulta non salvata', { ok: false, written: 0, failed: 1, results: [false] }, r);
     dice('il .txt sul disco e\' ancora quello di prima, byte per byte', ORIGINALE, txtDi());
@@ -79,48 +87,48 @@ try {
     console.log('\n--- la scrittura si interrompe a meta\' su una foto che non aveva il .txt ---');
     img = prepara(null);
     discoPieno();
-    r = scrivi(null, [{ imagePath: img, content: 'ohwx, woman' }]);
+    r = await scrivi(null, [{ imagePath: img, content: 'ohwx, woman' }]);
     ripristina();
     dice('la foto risulta non salvata', [false], r.results);
     dice('non nasce un .txt vuoto o tagliato, e non resta il temporaneo', ['a.png'], elenco());
 
     console.log('\n--- casi normali: devono restare come prima ---');
     img = prepara(ORIGINALE);
-    r = scrivi(null, [{ imagePath: img, content: 'ohwx, woman, blue hair' }]);
+    r = await scrivi(null, [{ imagePath: img, content: 'ohwx, woman, blue hair' }]);
     dice('.txt che c\'era: salvato', { ok: true, written: 1, failed: 0, results: [true] }, r);
     dice('...con il testo nuovo', 'ohwx, woman, blue hair', txtDi());
     dice('...e nessun temporaneo rimasto', ['a.png', 'a.txt'], elenco());
 
     img = prepara(null);
-    r = scrivi(null, [{ imagePath: img, content: 'ohwx, ragazza, città, 東京' }]);
+    r = await scrivi(null, [{ imagePath: img, content: 'ohwx, ragazza, città, 東京' }]);
     dice('.txt nuovo: salvato in UTF-8 senza BOM', [[true], 'ohwx, ragazza, città, 東京', ['a.png', 'a.txt']], [r.results, txtDi(), elenco()]);
     dice('...i byte sono esattamente quelli del testo', Buffer.from('ohwx, ragazza, città, 東京', 'utf8').toString('hex'), fs.readFileSync(path.join(sub, 'a.txt')).toString('hex'));
 
     img = prepara(ORIGINALE);
-    r = scrivi(null, [{ imagePath: img, content: '' }]);
+    r = await scrivi(null, [{ imagePath: img, content: '' }]);
     dice('.txt che c\'era, foto senza piu\' tag: il .txt si svuota davvero', [[true], '', ['a.png', 'a.txt']], [r.results, txtDi(), elenco()]);
 
     img = prepara(null);
-    r = scrivi(null, [{ imagePath: img, content: '' }]);
+    r = await scrivi(null, [{ imagePath: img, content: '' }]);
     dice('foto senza tag e senza .txt: nessun file nuovo', [{ ok: true, written: 0, failed: 0, results: [true] }, ['a.png']], [r, elenco()]);
 
     console.log('\n--- ripieghi: si scrive sul posto, come prima ---');
     img = prepara(ORIGINALE);
-    fs.renameSync = (da, a, ...resto) => {
+    fs.promises.rename = async (da, a, ...resto) => {
         if (path.dirname(String(da)) === sub) { const e = new Error('EPERM: operation not permitted, rename'); e.code = 'EPERM'; throw e; }
-        return veri.renameSync(da, a, ...resto);
+        return veri.rename(da, a, ...resto);
     };
-    r = scrivi(null, [{ imagePath: img, content: 'ohwx, smile' }]);
+    r = await scrivi(null, [{ imagePath: img, content: 'ohwx, smile' }]);
     ripristina();
     dice('sostituzione rifiutata (antivirus): salvato lo stesso, sul posto', [[true], 'ohwx, smile'], [r.results, txtDi()]);
     dice('...e il temporaneo e\' stato tolto', ['a.png', 'a.txt'], elenco());
 
     img = prepara(ORIGINALE);
-    fs.openSync = (p, ...resto) => {
+    fs.promises.open = async (p, ...resto) => {
         if (String(p).endsWith('.itm-tmp')) { const e = new Error('EACCES: permission denied, open'); e.code = 'EACCES'; throw e; }
-        return veri.openSync(p, ...resto);
+        return veri.open(p, ...resto);
     };
-    r = scrivi(null, [{ imagePath: img, content: 'ohwx, smile' }]);
+    r = await scrivi(null, [{ imagePath: img, content: 'ohwx, smile' }]);
     ripristina();
     dice('cartella dove non si possono creare file nuovi: salvato sul posto', [[true], 'ohwx, smile', ['a.png', 'a.txt']], [r.results, txtDi(), elenco()]);
 
@@ -129,7 +137,7 @@ try {
     let collegato = true;
     try { fs.linkSync(path.join(sub, 'a.txt'), gemello); } catch (_) { collegato = false; }
     if (collegato) {
-        r = scrivi(null, [{ imagePath: img, content: 'ohwx, linked' }]);
+        r = await scrivi(null, [{ imagePath: img, content: 'ohwx, linked' }]);
         dice('.txt con un collegamento fisico: salvato e il collegamento vede il testo nuovo',
             [[true], 'ohwx, linked', 'ohwx, linked'], [r.results, txtDi(), fs.readFileSync(gemello, 'utf8')]);
     } else {

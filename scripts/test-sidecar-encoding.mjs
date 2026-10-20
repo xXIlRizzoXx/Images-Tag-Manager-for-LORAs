@@ -74,7 +74,7 @@ try {
         fs.writeFileSync(path.join(cartella, nome.replace('.txt', '.png')), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
         fs.writeFileSync(path.join(cartella, nome), byte);
     }
-    letti = handlers.get('images:read-sidecar-tags')(null, Object.keys(FILE).map(n => path.join(cartella, n.replace('.txt', '.png'))));
+    letti = await handlers.get('images:read-sidecar-tags')(null, Object.keys(FILE).map(n => path.join(cartella, n.replace('.txt', '.png'))));
 } finally {
     fs.rmSync(cartella, { recursive: true, force: true });
 }

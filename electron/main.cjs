@@ -289,7 +289,14 @@ const decodificaSidecar = (buf) => {
     }
 };
 
-ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
+// ITALIANO: lettura e scrittura dei .txt con fs.promises: prima erano sincrone, e con migliaia di foto o
+//           una cartella di rete lenta il processo principale restava fermo e la finestra sembrava
+//           bloccata. Le chiamate restano una dopo l'altra, nello stesso ordine e con gli stessi esiti.
+// ENGLISH: .txt reading and writing with fs.promises: they used to be synchronous, and with thousands of
+//          photos or a slow network folder the main process stood still and the window looked frozen.
+//          The calls stay one after the other, in the same order and with the same outcomes.
+const fsp = fs.promises;
+ipcMain.handle('images:read-sidecar-tags', async (_event, imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
     const out = [];
     const seen = new Set();
@@ -299,7 +306,7 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
             // ITALIANO: dev'essere un'immagine VERA presente su disco
             // ENGLISH: it must be a REAL image present on disk
             if (!SIDECAR_IMAGE_EXT.has(path.extname(raw).toLowerCase())) continue;
-            const imgStat = fs.statSync(raw);
+            const imgStat = await fsp.stat(raw);
             if (!imgStat.isFile()) continue;
 
             const base = path.basename(raw, path.extname(raw));
@@ -323,11 +330,11 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
             const saltato = { name: base + '.txt', dir: path.dirname(txtPath), skipped: true };
             const nonCe = (e) => Boolean(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'));
             let txtStat;
-            try { txtStat = fs.statSync(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            try { txtStat = await fsp.stat(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
             if (!txtStat.isFile()) continue;
             if (txtStat.size > SIDECAR_MAX_BYTES) { out.push(saltato); continue; }
             let byte;
-            try { byte = fs.readFileSync(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            try { byte = await fsp.readFile(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
             const content = decodificaSidecar(byte);
             if (content === null) { out.push(saltato); continue; }
             // ITALIANO: torno anche la cartella del .txt: cosi' il rinnovo lato app puo' abbinare
@@ -382,27 +389,27 @@ const WRITE_MAX_BYTES = 1024 * 1024;
    place, as before, only where the temporary file does not help: a .txt that is a link (replacing
    it would break the link), a temporary file that cannot be created, a refused replacement (an
    antivirus or a preview holding the .txt open). */
-const scriviTxtSostituendo = (txtPath, content) => {
-    const sulPosto = () => fs.writeFileSync(txtPath, content, 'utf8');
+const scriviTxtSostituendo = async (txtPath, content) => {
+    const sulPosto = () => fsp.writeFile(txtPath, content, 'utf8');
     let st = null;
-    try { st = fs.lstatSync(txtPath); } catch (e) { if (!(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'))) return sulPosto(); }
+    try { st = await fsp.lstat(txtPath); } catch (e) { if (!(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'))) return sulPosto(); }
     if (st && (st.isSymbolicLink() || st.nlink > 1)) return sulPosto();
     const tmp = txtPath + '.' + require('crypto').randomBytes(4).toString('hex') + '.itm-tmp';
-    let fd;
-    try { fd = fs.openSync(tmp, 'wx'); } catch (_) { return sulPosto(); }
+    let fh;
+    try { fh = await fsp.open(tmp, 'wx'); } catch (_) { return sulPosto(); }
     try {
-        try { fs.writeFileSync(fd, content, 'utf8'); } finally { fs.closeSync(fd); }
+        try { await fh.writeFile(content, 'utf8'); } finally { await fh.close(); }
     } catch (e) {
-        try { fs.unlinkSync(tmp); } catch (_) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
+        try { await fsp.unlink(tmp); } catch (_) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
         throw e;
     }
-    try { fs.renameSync(tmp, txtPath); } catch (_) {
-        try { fs.unlinkSync(tmp); } catch (__) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
-        sulPosto();
+    try { await fsp.rename(tmp, txtPath); } catch (_) {
+        try { await fsp.unlink(tmp); } catch (__) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
+        await sulPosto();
     }
 };
 
-ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
+ipcMain.handle('images:write-sidecar-tags', async (_event, items) => {
     if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
     let written = 0;
     let failed = 0;
@@ -415,7 +422,7 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
             // ENGLISH: it must be a REAL image present on disk (same contract as reading)
             if (!isSafeSidecarPath(imagePath) || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
             if (Buffer.byteLength(content, 'utf8') > WRITE_MAX_BYTES) { failed++; results.push(false); continue; }
-            const imgStat = fs.statSync(imagePath);
+            const imgStat = await fsp.stat(imagePath);
             if (!imgStat.isFile()) { failed++; results.push(false); continue; }
             const base = path.basename(imagePath, path.extname(imagePath));
             const txtPath = path.join(path.dirname(imagePath), base + '.txt');
@@ -426,8 +433,8 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
             // ENGLISH: a photo with no tags and no .txt stays without one: a NEW empty .txt would
             //          stop Kohya ("caption file is empty"), a missing one does not. The photo counts
             //          as saved (the disk already matches it). A .txt that was there is really emptied.
-            if (content === '' && !fs.existsSync(txtPath)) { results.push(true); continue; }
-            scriviTxtSostituendo(txtPath, content);
+            if (content === '' && !(await fsp.access(txtPath).then(() => true, () => false))) { results.push(true); continue; }
+            await scriviTxtSostituendo(txtPath, content);
             written++;
             results.push(true);
         } catch (e) {

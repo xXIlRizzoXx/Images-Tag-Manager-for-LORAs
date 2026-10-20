@@ -147,10 +147,10 @@ console.log('\n--- "Carica immagini" in Electron: il canale del processo princip
         fs.writeFileSync(a, 'png');
         fs.writeFileSync(b, 'png');
         fs.writeFileSync(path.join(tmp, 'b.txt'), 'smile,');
-        const r = scrivi(null, [{ imagePath: a, content: '' }, { imagePath: b, content: '' }]);
+        const r = await scrivi(null, [{ imagePath: a, content: '' }, { imagePath: b, content: '' }]);
         dice('a.png senza .txt e senza tag: risulta salvata, nessun a.txt creato', [true, false], [r.results[0], fs.existsSync(path.join(tmp, 'a.txt'))]);
         dice('b.txt c\'era: si svuota', [true, ''], [r.results[1], fs.readFileSync(path.join(tmp, 'b.txt'), 'utf8')]);
-        const r2 = scrivi(null, [{ imagePath: a, content: 'red hair,' }]);
+        const r2 = await scrivi(null, [{ imagePath: a, content: 'red hair,' }]);
         dice('con dei tag il .txt si crea come prima', [true, 'red hair,'], [r2.results[0], fs.readFileSync(path.join(tmp, 'a.txt'), 'utf8')]);
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });

@@ -34,13 +34,13 @@ try {
     }
 
     console.log(`\n--- lettura dei .txt di ${QUANTE} foto ---`);
-    const letti = handlers.get('images:read-sidecar-tags')(null, immagini);
+    const letti = await handlers.get('images:read-sidecar-tags')(null, immagini);
     dice('un .txt per ogni foto', QUANTE, letti.length);
     const ultimo = letti.find((s) => s.name === `img${QUANTE}.txt`);
     dice(`letto anche il .txt della foto numero ${QUANTE}`, `orig_${QUANTE},`, ultimo ? ultimo.content : null);
 
     console.log(`\n--- scrittura dei .txt di ${QUANTE} foto ---`);
-    const res = handlers.get('images:write-sidecar-tags')(null, immagini.map((p, i) => ({ imagePath: p, content: `trig, orig_${i + 1},` })));
+    const res = await handlers.get('images:write-sidecar-tags')(null, immagini.map((p, i) => ({ imagePath: p, content: `trig, orig_${i + 1},` })));
     dice('un esito per ogni foto, nello stesso ordine', QUANTE, res.results.length);
     dice('tutte scritte, nessuna fallita', [true, QUANTE, 0], [res.ok, res.written, res.failed]);
     dice(`l'esito della foto numero ${QUANTE} e' "scritto"`, true, res.results[QUANTE - 1]);
