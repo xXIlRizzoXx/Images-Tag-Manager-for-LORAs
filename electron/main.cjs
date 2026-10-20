@@ -296,7 +296,20 @@ const decodificaSidecar = (buf) => {
 //          photos or a slow network folder the main process stood still and the window looked frozen.
 //          The calls stay one after the other, in the same order and with the same outcomes.
 const fsp = fs.promises;
-ipcMain.handle('images:read-sidecar-tags', async (_event, imagePaths) => {
+// ITALIANO: una coda unica per i due canali: le richieste si servono nell'ordine di arrivo, come quando
+//           erano sincrone. Senza, un "Salva .txt" del visualizzatore premuto durante un "Salva" lungo
+//           veniva poi riscritto dal lotto con i tag vecchi. Un errore non blocca la coda.
+// ENGLISH: a single queue for both channels: requests are served in arrival order, as when they were
+//          synchronous. Without it, a viewer "Save .txt" pressed during a long "Save" was then written
+//          over by the batch with the old tags. An error does not block the queue.
+let codaSidecar = Promise.resolve();
+const inCodaSidecar = (lavoro) => {
+    const risultato = codaSidecar.then(lavoro, lavoro);
+    codaSidecar = risultato.then(() => undefined, () => undefined);
+    return risultato;
+};
+ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => inCodaSidecar(() => leggiSidecar(imagePaths)));
+const leggiSidecar = async (imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
     const out = [];
     const seen = new Set();
@@ -349,7 +362,7 @@ ipcMain.handle('images:read-sidecar-tags', async (_event, imagePaths) => {
         }
     }
     return out;
-});
+};
 
 /* ITALIANO: SCRITTURA DEL .txt "GEMELLO" (per le foto caricate con "Carica immagini")
    Le foto scelte come file singoli non hanno un handle di cartella scrivibile: prima il loro
@@ -409,7 +422,8 @@ const scriviTxtSostituendo = async (txtPath, content) => {
     }
 };
 
-ipcMain.handle('images:write-sidecar-tags', async (_event, items) => {
+ipcMain.handle('images:write-sidecar-tags', (_event, items) => inCodaSidecar(() => scriviSidecar(items)));
+const scriviSidecar = async (items) => {
     if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
     let written = 0;
     let failed = 0;
@@ -444,7 +458,7 @@ ipcMain.handle('images:write-sidecar-tags', async (_event, items) => {
         }
     }
     return { ok: failed === 0, written, failed, results };
-});
+};
 
 /* ITALIANO: CESTINO DI SISTEMA
    Sposta i file nel Cestino di Windows invece di cancellarli per sempre, cosi' un
