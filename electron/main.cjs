@@ -74,6 +74,48 @@ ipcMain.handle('app:persist-lang', (_event, lang) => {
     }
 });
 
+// ITALIANO: COPIA SU FILE DEL BACKUP ANTI-CRASH (vedi src/utils/backupFile.ts). Chromium scrive il
+//           localStorage sul disco qualche secondo dopo: un'uscita brusca perdeva l'ultima modifica.
+//           Il renderer manda qui ogni scrittura del backup; si scrive SUBITO in un file temporaneo,
+//           con fsync, poi lo si rinomina sul file vero: un'interruzione lascia il file vecchio intero,
+//           mai uno a meta'. Un solo file fisso in userData, solo testo, al massimo 16 MB.
+// ENGLISH: FILE COPY OF THE CRASH BACKUP (see src/utils/backupFile.ts). Chromium writes localStorage
+//          to disk a few seconds later: a sudden exit lost the last edit. The renderer sends every
+//          backup write here; it is written AT ONCE to a temporary file, with fsync, then renamed over
+//          the real file: an interruption leaves the old file whole, never a half one. One fixed file
+//          in userData, text only, at most 16 MB.
+const BACKUP_FILE_MAX = 16 * 1024 * 1024;
+const getCrashBackupPath = () => path.join(app.getPath('userData'), 'crash-backup.json');
+ipcMain.handle('backup:read', () => {
+    try {
+        const p = getCrashBackupPath();
+        if (fs.statSync(p).size > BACKUP_FILE_MAX) return null;
+        return fs.readFileSync(p, 'utf8');
+    } catch (_) {
+        return null;
+    }
+});
+ipcMain.handle('backup:write', (_event, valore) => {
+    if (typeof valore !== 'string' || valore.length === 0 || valore.length > BACKUP_FILE_MAX) return false;
+    const p = getCrashBackupPath();
+    const temp = p + '.tmp';
+    let fd = null;
+    try {
+        fd = fs.openSync(temp, 'w');
+        fs.writeSync(fd, valore, null, 'utf8');
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+        fd = null;
+        fs.renameSync(temp, p);
+        return true;
+    } catch (e) {
+        if (fd !== null) { try { fs.closeSync(fd); } catch (_) { /* ignore */ } }
+        try { fs.unlinkSync(temp); } catch (_) { /* ignore */ }
+        console.error('Failed to write the crash backup copy', e && e.code);
+        return false;
+    }
+});
+
 // ITALIANO: Lettura della versione una sola volta all'avvio
 // ENGLISH: Read the version once at startup
 let appVersion = '0.0.0';

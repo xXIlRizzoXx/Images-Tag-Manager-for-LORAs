@@ -138,6 +138,8 @@ for (const [chiave, { canali, avuto }] of esitoDi) {
 const ATTESI = {
     getAppVersion: ['app:get-version', []],
     persistLang: ['app:persist-lang', ['a']],
+    readCrashBackup: ['backup:read', []],
+    writeCrashBackup: ['backup:write', ['a']],
     'secureStorage.get': ['secure-storage:get', ['a']],
     'secureStorage.set': ['secure-storage:set', ['a', 'b']],
     'secureStorage.delete': ['secure-storage:delete', ['a']],

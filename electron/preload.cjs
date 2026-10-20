@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ENGLISH: persists the chosen language to a file, so the splash screen (a separate window) can
     //          show its text translated already on the next launch
     persistLang: (lang) => ipcRenderer.invoke('app:persist-lang', String(lang || '')),
+    // ITALIANO: copia su file del backup anti-crash (vedi src/utils/backupFile.ts): solo testo, un file fisso.
+    // ENGLISH: file copy of the crash backup (see src/utils/backupFile.ts): text only, one fixed file.
+    readCrashBackup: () => ipcRenderer.invoke('backup:read'),
+    writeCrashBackup: (valore) => ipcRenderer.invoke('backup:write', typeof valore === 'string' ? valore : null),
     secureStorage: {
         get: (key) => ipcRenderer.invoke('secure-storage:get', String(key)),
         set: (key, value) => ipcRenderer.invoke('secure-storage:set', String(key), String(value ?? '')),

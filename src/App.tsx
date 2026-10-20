@@ -55,6 +55,17 @@ import { fotoGiaAperte } from './utils/alreadyOpen';
 import { flagUri, flagUriForLang } from './utils/flags';
 import { translateTag, translateCategory } from './utils/tagTranslation';
 import { TagFileEditor } from './components/TagFileEditor';
+import { archivioConCopiaSuFile } from './utils/backupFile';
+
+// ITALIANO: in tutto App.tsx "localStorage" e' questo involucro: passa tutto al localStorage vero, e il
+//           backup anti-crash va anche in un file scritto subito dal processo principale (vedi
+//           backupFile.ts): Chromium scrive il localStorage sul disco qualche secondo dopo, e un'uscita
+//           brusca perdeva l'ultima modifica.
+// ENGLISH: throughout App.tsx "localStorage" is this wrapper: everything goes to the real localStorage,
+//          and the crash backup also goes to a file written at once by the main process (see
+//          backupFile.ts): Chromium writes localStorage to disk a few seconds later, and a sudden exit
+//          lost the last edit.
+const localStorage = archivioConCopiaSuFile(() => window.localStorage, (window as any).electronAPI);
 
 // ITALIANO: Profilo GitHub dell'autore, aperto dal copyright della schermata di avvio.
 // ENGLISH: The author's GitHub profile, opened from the splash screen's copyright line.

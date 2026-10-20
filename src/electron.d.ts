@@ -47,6 +47,10 @@ export interface ElectronAPI {
     isElectron: true;
     getAppVersion: () => Promise<string>;
     persistLang: (lang: string) => Promise<boolean>;
+    // ITALIANO: copia su file del backup anti-crash (vedi src/utils/backupFile.ts).
+    // ENGLISH: file copy of the crash backup (see src/utils/backupFile.ts).
+    readCrashBackup: () => Promise<string | null>;
+    writeCrashBackup: (valore: string | null) => Promise<boolean>;
     secureStorage: ElectronSecureStorage;
     getPathForFile: (file: File) => string;
     readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content?: string; dir?: string; skipped?: boolean }>>;
