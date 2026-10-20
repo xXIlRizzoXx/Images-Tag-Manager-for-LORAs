@@ -144,7 +144,17 @@ function leggiTagDaFile(file) {
     }
     let grezzi = [];
     if (file.toLowerCase().endsWith('.json')) {
-        const d = JSON.parse(testo);
+        // ITALIANO: un .json rotto (una virgola in fondo all'elenco) ferma tutto con il nome del file,
+        //   come in --apply: prima usciva un SyntaxError con lo stack trace e non si sapeva quale file.
+        // ENGLISH: a broken .json (a trailing comma in the list) stops everything naming the file, as
+        //   in --apply: it used to throw a SyntaxError with the stack trace and no file name.
+        let d;
+        try {
+            d = JSON.parse(testo);
+        } catch (_) {
+            console.error(`${file}: non e' un JSON valido (controlla virgole, virgolette e parentesi), nessun rapporto scritto.`);
+            process.exit(1);
+        }
         // ITALIANO: il .json salvato dall'editor porta anche nome dell'app, tipo e versione:
         //   se ne prendessi tutte le stringhe finirebbe "Images Tag Manager for LORAs" fra i tag.
         // ENGLISH: the .json written by the editor also carries the app name, type and version:
