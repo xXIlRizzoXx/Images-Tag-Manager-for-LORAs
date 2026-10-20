@@ -5188,8 +5188,13 @@ export default function App() {
             // ENGLISH: a pick is a Kohya folder when its name is N_name AND it has photos of its own at its root:
             //          a parent folder whose name starts with a date or a number (2024_05_anna, 01_anna) holds
             //          only subfolders, and its 10_anna folders must go up to the first level.
+            // ITALIANO: si contano tutte le foto del progetto, anche quelle nel cestino: con l'unica foto alla
+            //           radice di 10_anna nel cestino la cartella sembrava una madre e le sue sottocartelle
+            //           salivano al primo livello.
+            // ENGLISH: every photo of the project counts, trashed ones too: with 10_anna's only root photo in
+            //          the trash the folder looked like a parent and its subfolders went up to the first level.
             const scelteConFotoProprie = new Set<string>();
-            imagesToExport.forEach((img) => { const p = postoDi(img); if (p.cartellaImport && !String(p.cartellaRel || '').split(/[\\/]/).some(x => x && x !== '.' && x !== '..')) scelteConFotoProprie.add(sceltaDi(p)); });
+            [...images, ...imagesToExport].forEach((img) => { const p = postoDi(img); if (p.cartellaImport && !String(p.cartellaRel || '').split(/[\\/]/).some(x => x && x !== '.' && x !== '..')) scelteConFotoProprie.add(sceltaDi(p)); });
             const nomiScelte = new Map<string, string>();
             const nomiPresi = new Set<string>();
             imagesToExport.forEach((img) => {
@@ -5239,8 +5244,13 @@ export default function App() {
                 //          anna/closeup, 10_anna/2024_05_mare) stays under its pick's name: old/x.txt used to
                 //          come off 10_face, two closeup/ folders got mixed, and a dated subfolder inside
                 //          10_anna went up and sd-scripts read it with 2024 repeats.
-                const sceltaKohya = /^\d+_/.test(String(posto.cartellaImport || '')) && scelteConFotoProprie.has(sceltaDi(posto));
-                const tieniScelta = piuCartelle && (sceltaKohya || !(pezziRel.length > 0 && /^\d+_/.test(pezziRel[0])));
+                // ITALIANO: un nome che comincia con una data (2024_05_mare, 20240501_mare) non e' N_nome:
+                //           nessuno addestra con 2024 ripetizioni, e la cartella sarebbe salita lo stesso.
+                // ENGLISH: a name starting with a date (2024_05_mare, 20240501_mare) is not N_name: nobody
+                //          trains with 2024 repeats, and the folder would have gone up all the same.
+                const nomeKohya = (nome: string) => /^\d+_/.test(nome) && !/^(\d{4}_\d{1,2}(_|$)|\d{8}_)/.test(nome);
+                const sceltaKohya = nomeKohya(String(posto.cartellaImport || '')) && scelteConFotoProprie.has(sceltaDi(posto));
+                const tieniScelta = piuCartelle && (sceltaKohya || !(pezziRel.length > 0 && nomeKohya(pezziRel[0])));
                 const sotto = [tieniScelta ? String(nomiScelte.get(sceltaDi(posto)) || '') : '', ...pezziRel]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');
                 // ITALIANO: rinominando, vale lo stesso: il numero (unico in tutto l'archivio, quindi

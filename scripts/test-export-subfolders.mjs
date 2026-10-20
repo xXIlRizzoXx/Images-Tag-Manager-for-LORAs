@@ -474,6 +474,22 @@ console.log('\n--- piu\' cartelle aperte: sottocartella con una data dentro una 
     const s4 = creaSonda();
     const mista = await (await creaApp(dueRadici(s4, [['01_anna', '10_anna', 'a.png', 'ta'], ['20_bea', '', 'b.png', 'tb']]), s4).esporta(false)).archivio() || {};
     dice('madre numerata 01_anna piu\' una cartella Kohya 20_bea', ['10_anna/a.txt', '20_bea/b.txt'], Object.keys(mista).sort());
+    // ITALIANO: le foto proprie di 10_anna si contano su tutto il progetto: con a.png nel cestino 10_anna
+    //           sembrava una cartella madre e la sua 2024_05_mare saliva al primo livello.
+    // ENGLISH: 10_anna's own photos are counted over the whole project: with a.png in the trash 10_anna
+    //          looked like a parent folder and its 2024_05_mare went up to the first level.
+    const s5 = creaSonda();
+    const conCestino = dueRadici(s5, [['10_anna', '', 'a.png', 'ta'], ['10_anna', '2024_05_mare', 'm.png', 'tm'], ['20_bea', '', 'b.png', 'tb']]);
+    conCestino[0].isTrashed = true;
+    const cestino = await (await creaApp(conCestino, s5).esporta(false)).archivio() || {};
+    dice('foto alla radice nel cestino: 2024_05_mare resta dentro 10_anna', ['10_anna/2024_05_mare/m.txt', '20_bea/b.txt'], Object.keys(cestino).sort());
+    // ITALIANO: una sottocartella col nome-data (anno_mese) non e' una cartella Kohya nemmeno dentro una
+    //           madre normale: salendo, sd-scripts la leggeva con 2024 ripetizioni.
+    // ENGLISH: a subfolder with a date name (year_month) is not a Kohya folder even inside a normal
+    //          parent: going up, sd-scripts read it with 2024 repeats.
+    const s6 = creaSonda();
+    const dataInMadre = await (await creaApp(dueRadici(s6, [['char_anna', '2024_05_mare', 'm.png', 'tm'], ['char_anna', '10_anna', 'a.png', 'ta'], ['20_bea', '', 'b.png', 'tb']]), s6).esporta(false)).archivio() || {};
+    dice('madre normale: 2024_05_mare resta sotto char_anna, 10_anna sale', ['10_anna/a.txt', '20_bea/b.txt', 'char_anna/2024_05_mare/m.txt'], Object.keys(dataInMadre).sort());
 }
 
 // ITALIANO: una foto caricata da sola, messa nel cestino e collegata alla cartella 10_face riaperta
