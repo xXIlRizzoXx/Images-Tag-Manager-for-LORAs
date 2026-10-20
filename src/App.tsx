@@ -3306,6 +3306,7 @@ export default function App() {
     const confermaImport = async (recuperaBackup = true) => {
         const d = importSummary.pendingData;
         if (!d) return;
+        const riepilogoAlClic = importSummary.summary;
         // ITALIANO: "Annulla lo svuotamento" in corso: le immagini gia' tornate entravano come foto nuove
         //           senza tag (il loro .txt era ancora nel Cestino di Windows) e poi tornavano anche quelle
         //           vecchie: due card per lo stesso file. Il riepilogo resta aperto: finito l'annullamento si
@@ -3449,8 +3450,24 @@ export default function App() {
                 const chiaviAperte = new Set([...doppi.keys()].map(chiaveDi));
                 txtFiles = d.txtFiles.filter((x: any) => chiaviNuove.has(chiaveDi(x)) || !chiaviAperte.has(chiaveDi(x)));
             }
+            // ITALIANO: l'import usa solo le foto nuove, e la loro impronta puo' trovare un backup che il
+            //           riepilogo (calcolato su tutte) non aveva annunciato: il backup non si applica senza
+            //           chiedere, il riepilogo si riapre con la casella. Se invece il riepilogo l'aveva
+            //           annunciato ma sulle foto nuove non c'e' niente, non c'e' niente da applicare.
+            // ENGLISH: the import uses only the new photos, and their fingerprint can find a backup the
+            //          summary (computed on all of them) had not announced: the backup is not applied without
+            //          asking, the summary reopens with the checkbox. When the summary had announced it but
+            //          there is nothing for the new photos, there is nothing to apply.
+            const chiesto = !!(riepilogoAlClic && riepilogoAlClic.recupero);
+            let recuperoNuove: { n: number; ts: number | null } | null = null;
+            try { recuperoNuove = recuperoDellImport(localStorage.getItem('tagBackup'), d.handle, nuove); } catch (_) { recuperoNuove = null; }
+            if (recuperoNuove && !chiesto) {
+                if (folderInputRef.current) folderInputRef.current.value = '';
+                setImportSummary({ isOpen: true, summary: { ...(riepilogoAlClic || {}), recupero: recuperoNuove }, pendingData: d });
+                return;
+            }
             voce.foto = nuove.map((f: any) => ({ ...descritte.get(f), lotto, cartellaImport: importFolder }));
-            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto, recuperaBackup !== false);
+            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto, recuperaBackup !== false && !!recuperoNuove);
         } finally {
             importInCorsoRef.current = importInCorsoRef.current.filter(v => v !== voce);
         }

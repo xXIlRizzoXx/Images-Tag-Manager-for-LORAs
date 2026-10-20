@@ -452,7 +452,9 @@ export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, i
     // ITALIANO: la casella del recupero dal backup anti-crash: spuntata di serie a ogni apertura.
     // ENGLISH: the crash-backup recovery checkbox: ticked by default at every opening.
     const [recupera, setRecupera] = useState(true);
-    useEffect(() => { if (isOpen) setRecupera(true); }, [isOpen]);
+    // ITALIANO: anche quando un riepilogo nuovo prende il posto di quello aperto (un altro trascinamento).
+    // ENGLISH: also when a new summary takes the place of the open one (another drop).
+    useEffect(() => { if (isOpen) setRecupera(true); }, [isOpen, summary]);
     if (!isOpen) return null;
     const recupero = summary && summary.recupero;
     let dataRecupero = '';

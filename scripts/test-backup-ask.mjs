@@ -60,8 +60,18 @@ const riepilogoCon = (salvato, d) => {
     )(d.imgFiles, d.txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf);
     return stato && stato.summary;
 };
-dice('con un backup per questa cartella il riepilogo lo annuncia (foto e data)', { n: 1, ts: Date.UTC(2026, 9, 18, 10, 30) },
+// ITALIANO: la data e' quella della sorgente di questa cartella (visto), non quella generale del backup.
+// ENGLISH: the date is this folder's source one (visto), not the backup's overall one.
+const vistoDs = JSON.parse(backup).sources[0].visto;
+dice('con un backup per questa cartella il riepilogo lo annuncia (foto e data della sua sorgente)', { n: 1, ts: vistoDs },
     (riepilogoCon(backup, riepilogo(h, NOMI)) || {}).recupero || null);
+{
+    // ITALIANO: un'altra cartella scritta dopo rinnova la data generale, non quella di "ds".
+    // ENGLISH: another folder written later renews the overall date, not "ds"'s one.
+    const dati = JSON.parse(backup);
+    const conAltra = JSON.stringify({ ...dati, ts: Date.UTC(2026, 9, 25), sources: [...dati.sources, { signature: B.folderSignature('mario', ['m.png']), data: { x: { tags: ['t'] } }, visto: Date.UTC(2026, 9, 25) }] });
+    dice('...anche dopo che un\'altra cartella ha riscritto il backup', vistoDs, ((riepilogoCon(conAltra, riepilogo(h, NOMI)) || {}).recupero || {}).ts);
+}
 dice('senza backup niente casella', null, (riepilogoCon(null, riepilogo(h, NOMI)) || {}).recupero || null);
 dice('backup di un\'altra cartella (impronta diversa): niente casella', null, (riepilogoCon(backup, riepilogo(cartella('disco2', 'altra'), NOMI)) || {}).recupero || null);
 
@@ -98,6 +108,31 @@ console.log('\n--- "Importa" senza spunta: si prendono i .txt cosi\' come sono -
     dice('b.png resta come sul disco', [], (app.images.find(i => i.file.name === 'b.png') || {}).tags);
     dice('nessuna foto da salvare', [], app.images.filter(i => JSON.stringify(i.tags) !== JSON.stringify(i.originalTags)).map(i => i.file.name));
 }
+console.log('\n--- foto gia\' aperte: l\'impronta dell\'import puo\' trovare un backup che il riepilogo non aveva annunciato ---');
+{
+    // ITALIANO: crash con "ds" = a, b, c, d (b modificata). Nella sessione nuova d.png e' gia' aperta da sola:
+    //           il riepilogo (tutte e quattro) non trova il backup, l'import (a, b, c) si'. Prima lo applicava
+    //           senza chiedere; ora il riepilogo si riapre con la casella.
+    // ENGLISH: crash with "ds" = a, b, c, d (b edited). In the new session d.png is already open on its own:
+    //          the summary (all four) does not find the backup, the import (a, b, c) does. It used to apply it
+    //          without asking; now the summary reopens with the checkbox.
+    const h2 = cartella('disco3', 'ds');
+    const tre = ['a.png', 'b.png', 'c.png'];
+    const prima2 = creaApp();
+    await prima2.conferma(riepilogo(h2, tre));
+    const salvato = JSON.stringify({ ts: 1, ...B.costruisciBackup(prima2.images.map(i => i.file.name === 'b.png' ? { ...i, tags: [...i.tags, 'nuovo'] } : i), [], 'ds') });
+    const sciolta = { id: 'gia', file: { name: 'd.png', percorso: 'E:\\ds\\d.png', size: 10, lastModified: 1000 }, tags: [], originalTags: [], isTrashed: false, dirHandle: null, lottoImport: 'L0', cartellaImport: '' };
+    const app = creaApp({ backup: salvato, iniziali: [sciolta] });
+    const d = riepilogo(h2, [...tre, 'd.png']);
+    let riaperto = null;
+    const fab = app.render(d, { recupero: B.recuperoDellImport(salvato, d.handle, d.imgFiles) });
+    dice('premessa: il riepilogo su tutte e quattro non annuncia niente', null, B.recuperoDellImport(salvato, d.handle, d.imgFiles));
+    void fab; void riaperto;
+    await app.conferma(d);
+    dice('b.png NON prende il backup senza che l\'utente l\'abbia visto', [], (app.images.find(i => i.file.name === 'b.png') || {}).tags || []);
+    dice('il riepilogo si riapre con la casella (foto: 1)', 1, ((app.riepilogoRiaperto || {}).summary || {}).recupero?.n);
+}
+
 console.log('\n--- senza dire niente (vecchi chiamanti): come prima, il backup si applica ---');
 {
     const app = creaApp({ backup });

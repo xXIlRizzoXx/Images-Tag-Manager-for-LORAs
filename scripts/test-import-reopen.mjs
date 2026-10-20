@@ -68,7 +68,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
     'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef',
-    'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory'];
+    'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
 
 /* ITALIANO: l'app finta. `percorsi` = Electron con i percorsi su disco (false = cartella di rete,
@@ -82,19 +82,19 @@ const creaApp = ({ percorsi = true, backup = null } = {}) => {
     const refs = { imagesRef: { current: [] }, importInCorsoRef: { current: [] }, progettoGenRef: { current: 0 }, importAttiviRef: { current: 0 } };
     let id = 0;
     const finestra = percorsi ? { electronAPI: { getPathForFile: (f) => f.percorso || '' } } : {};
-    app.render = (d) => fabbrica({ isOpen: true, pendingData: d }, finestra, A.fotoGiaAperte, A.fileGiaAperti, refs.imagesRef, () => { }, { current: null },
+    app.render = (d, riepilogo = null) => fabbrica({ isOpen: true, pendingData: d, summary: riepilogo }, finestra, A.fotoGiaAperte, A.fileGiaAperti, refs.imagesRef, () => { }, { current: null },
         (m, tipo) => app.notifiche.push([m, tipo]), t, refs.progettoGenRef, refs.importInCorsoRef, () => 'lotto' + (++id), S.makeFolderKeyer, B.BACKUP_KEY_SEP,
         { current: [] }, (f) => { app.images = typeof f === 'function' ? f(app.images) : f; refs.imagesRef.current = app.images; }, () => { }, () => { }, () => { },
         B.folderSignature, B.backupDellImport, { getItem: () => backup }, 1024 * 1024, S.parseSidecarText,
         async (f) => { await app.cancelli.get(f.name); return { url: '', width: 1, height: 1 }; }, S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef, { current: false }, { current: false }, () => { });
+        refs.importAttiviRef, { current: false }, { current: false }, () => { }, B.recuperoDellImport);
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).
     app.conferma = async (d) => {
         const prima = refs.importAttiviRef.current;
-        await app.render(d).confermaImport();
+        await app.render(d, { recupero: B.recuperoDellImport(backup, d.handle, d.imgFiles) }).confermaImport();
         for (let i = 0; i < 500 && refs.importAttiviRef.current > prima; i++) await new Promise(ok => setTimeout(ok, 10));
     };
     app.cancello = (nome) => { let apri; app.cancelli.set(nome, new Promise(ok => { apri = ok; })); return apri; };

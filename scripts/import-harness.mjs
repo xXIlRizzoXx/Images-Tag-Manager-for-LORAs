@@ -47,7 +47,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'progettoGenRef', 'importInCorsoRef', 'nuovoIdFoto', 'makeFolderKeyer', 'BACKUP_KEY_SEP',
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
-    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory'];
+    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
 
 /* ITALIANO: l'app finta, con le foto `iniziali` gia' aperte. `percorsi` = Electron con i percorsi
@@ -71,14 +71,14 @@ export const creaApp = ({ iniziali = [], percorsi = true, backup = null } = {}) 
         app.images = typeof f === 'function' ? f(app.images) : f;
         refs.imagesRef.current = app.images;
     };
-    app.render = (d) => fabbrica({ isOpen: true, pendingData: d }, finestra, A.fotoGiaAperte, A.fileGiaAperti, refs.imagesRef,
-        (v) => { if (v && v.isOpen === false) app.riepilogoAperto = false; }, { current: null },
+    app.render = (d, riepilogo = null) => fabbrica({ isOpen: true, pendingData: d, summary: riepilogo }, finestra, A.fotoGiaAperte, A.fileGiaAperti, refs.imagesRef,
+        (v) => { if (v && v.isOpen === false) app.riepilogoAperto = false; if (v && v.isOpen === true) app.riepilogoRiaperto = v; }, { current: null },
         (m, tipo) => app.notifiche.push([m, tipo]), t, refs.progettoGenRef, refs.importInCorsoRef, () => 'lotto' + (++id), S.makeFolderKeyer, B.BACKUP_KEY_SEP,
         { current: [] }, setImages, () => { }, () => { }, () => { },
         B.folderSignature, B.backupDellImport, { getItem: (k) => (k === 'tagBackup' ? backup : null) }, 1024 * 1024, S.parseSidecarText,
         async () => ({ url: '', width: 1, height: 1 }), S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction, (f) => { app.cambiStoria.push(f); });
+        refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction, (f) => { app.cambiStoria.push(f); }, B.recuperoDellImport);
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).
@@ -86,7 +86,9 @@ export const creaApp = ({ iniziali = [], percorsi = true, backup = null } = {}) 
     // ENGLISH: `recupera` = the summary's "Recover from the local backup" checkbox (absent = as before).
     app.conferma = async (d, ...recupera) => {
         const prima = refs.importAttiviRef.current;
-        await app.render(d).confermaImport(...recupera);
+        // ITALIANO: il riepilogo come lo calcola il programma (calculateImportSummary): con la casella se c'e' un backup.
+        // ENGLISH: the summary as the program computes it (calculateImportSummary): with the checkbox when there is a backup.
+        await app.render(d, { recupero: B.recuperoDellImport(backup, d.handle, d.imgFiles) }).confermaImport(...recupera);
         for (let i = 0; i < 500 && refs.importAttiviRef.current > prima; i++) await new Promise(ok => setTimeout(ok, 10));
     };
     app.nomi = () => app.images.map(i => i.file.name);

@@ -316,7 +316,7 @@ const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiA
 //   safe side. An import with no folder ("Load images", drag and drop) has an empty name in its
 //   fingerprint: it only matches another folder-less import of the same photos, never a picked
 //   folder, and the other way round.
-export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string): { voci: Record<string, any>; ts: number | null } | null => {
+export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string): { voci: Record<string, any>; ts: number | null; visto?: number } | null => {
     if (!grezzo) return null;
     let parsed: any = null;
     try { parsed = JSON.parse(grezzo); } catch (_) { return null; }
@@ -338,7 +338,7 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
         for (const [chiave, v] of Object.entries(uguali[0].data as Record<string, any>)) {
             if (!chiave.startsWith(BACKUP_KEY_SEP)) voci[chiave] = v;
         }
-        return { voci, ts };
+        return { voci, ts, ...(typeof uguali[0].visto === 'number' ? { visto: uguali[0].visto } : {}) };
     }
     // ITALIANO: il formato precedente vale solo per una cartella scelta, come allora.
     // ENGLISH: the previous format only applies to a picked folder, as back then.
@@ -358,7 +358,11 @@ export const recuperoDellImport = (grezzo: string | null, cartellaScelta: { name
         const nome = cartellaScelta && cartellaScelta.name ? String(cartellaScelta.name) : '';
         const b = backupDellImport(grezzo, nome, folderSignature(nome, immagini.map(f => f.name)));
         const n = b ? Object.keys(b.voci).length : 0;
-        return b && n > 0 ? { n, ts: b.ts } : null;
+        // ITALIANO: la data della SORGENTE di questa cartella (visto), non quella generale del backup, che
+        //           ogni scrittura rinnova (aprire un'altra cartella la faceva diventare "adesso").
+        // ENGLISH: the date of THIS folder's SOURCE (visto), not the backup's overall one, which every
+        //          write renews (opening another folder made it "now").
+        return b && n > 0 ? { n, ts: typeof b.visto === 'number' ? b.visto : b.ts } : null;
     } catch (_) {
         return null;
     }
