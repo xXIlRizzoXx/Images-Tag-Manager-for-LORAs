@@ -32,7 +32,7 @@ import {
     YAxis,
     CartesianGrid
 } from 'recharts';
-import { translations } from './constants';
+import { translations, type Strings } from './constants';
 import { soundManager } from './utils/soundManager';
 import { generateThumbnail } from './utils/imageUtils';
 import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialog, ImportSummaryDialog, UpdateDialog, ExportChoiceDialog } from './components/ui';
@@ -239,7 +239,7 @@ const applySort = (list: any[], order: string): any[] => {
 //          address that does not open: the gallery showed the broken-image icon. In its place a box
 //          with the file's extension and a sentence.
 const senzaAnteprima = (img: any): boolean => !!img && img.width === 0 && img.height === 0;
-const AnteprimaNonDisponibile = ({ img, isDarkMode, t }: any) => {
+const AnteprimaNonDisponibile = ({ img, isDarkMode, t }: { t: Strings; [chiave: string]: any }) => {
     const nome = String(img?.file?.name || '');
     const punto = nome.lastIndexOf('.');
     const estensione = punto > 0 ? nome.slice(punto + 1).toUpperCase() : '';

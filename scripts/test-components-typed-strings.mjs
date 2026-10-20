@@ -48,6 +48,7 @@ dice('TagSuggestionsPanel: t: Strings nelle props', true, /\bt:\s*Strings;/.test
 for (const file of ['src/components/Lightbox.tsx', 'src/components/TagFileEditor.tsx', 'src/components/ui.tsx', 'src/components/TagSuggestionsPanel.tsx']) {
     dice(`${path.basename(file)}: nessun "t: any" rimasto`, false, /\bt\??:\s*any\b/.test(leggi(file)));
 }
+dice('App.tsx: AnteprimaNonDisponibile dichiara t: Strings', true, /const AnteprimaNonDisponibile = \(\{[^}]*\}: \{ t: Strings;/.test(leggi('src/App.tsx')));
 dice('constants.ts esporta il tipo Strings', true, /export type Strings = typeof translations\.en;/.test(leggi('src/constants.ts')));
 
 // ITALIANO: 2. il compilatore si accorge di una chiave inventata usata in un componente.
