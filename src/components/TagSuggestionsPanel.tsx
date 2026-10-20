@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, ChevronDown, ChevronRight, User, MapPin, Palette, Camera, Tag as TagIcon, Tags, ChevronsDown, ChevronsUp, Eye, Hand, Footprints, Crown, Brush, Aperture, Sparkles, Shirt, Image as ImageIcon, Scissors, GripVertical } from 'lucide-react';
 import { suggestedTagsData, TagCategoryList } from '../constants/tagSuggestions';
 import { getCategoryColor, getActiveCategoryColor, TagCategory } from '../utils/tagCategorization';
+import type { Strings } from '../constants';
 
 interface TagSuggestionsPanelProps {
     isOpen: boolean;
@@ -9,7 +10,7 @@ interface TagSuggestionsPanelProps {
     onTagClick: (tag: string) => void;
     lang: string;
     isDarkMode: boolean;
-    t: any;
+    t: Strings;
     isLightbox?: boolean;
     selectedTags?: string[];
 }

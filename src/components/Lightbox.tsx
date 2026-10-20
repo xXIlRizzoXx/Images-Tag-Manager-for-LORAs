@@ -24,8 +24,9 @@ import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
 import { hasTagIgnoringCase, splitTagInput, countNewTagsIgnoringCase } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
+import type { Strings } from '../constants';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: { t: Strings; [chiave: string]: any }) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');

@@ -3676,3 +3676,9 @@ export const translations = {
         aiRpmHint: "Бесплатный тариф: макс. 15. Больше = быстрее, но риск лимита.",
     }
 };
+
+// ITALIANO: il tipo dei testi di una lingua: i componenti lo usano per `t`, cosi' una chiave che non
+//           c'e' ferma il controllo dei tipi invece di lasciare un pulsante vuoto a schermo.
+// ENGLISH: the type of one language's texts: the components use it for `t`, so a key that does not
+//          exist stops the type check instead of leaving an empty button on screen.
+export type Strings = typeof translations.en;

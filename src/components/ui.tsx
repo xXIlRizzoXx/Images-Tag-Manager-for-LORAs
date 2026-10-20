@@ -30,6 +30,7 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from '../utils/tagCase';
+import type { Strings } from '../constants';
 
 // ITALIANO: `lang` serve a mostrare la traduzione del tag al passaggio del mouse: prima
 //           accadeva solo nel visualizzatore a foto singola, non sulle miniature.
@@ -266,7 +267,7 @@ export const Toast = ({ message, type, onClose, id }: any) => {
  *   weigh wildly differently: a few KB against several GB. Each option shows its file count and
  *   size, so nobody ends up with a 12 GB archive from a button they thought was light.
  */
-export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm, onCancel }: any) => {
+export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm, onCancel }: { t: Strings; [chiave: string]: any }) => {
     const [conImmagini, setConImmagini] = React.useState(false);
     const [rinomina, setRinomina] = React.useState(false);
     React.useEffect(() => { if (isOpen) { setConImmagini(false); setRinomina(false); } }, [isOpen]);
@@ -362,7 +363,7 @@ export const UpdateDialog = ({ isOpen, title, message, confirmLabel, cancelLabel
     );
 };
 
-export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: any) => {
+export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
@@ -397,7 +398,7 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
  *     - Cancel                (orange) does nothing
  *   The green button is disabled while saving, so it cannot be pressed twice.
  */
-export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: any) => {
+export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
     if (!isOpen) return null;
     // ITALIANO: z-[500], sopra l'editor dei file di tag (320/340), la finestra della API key (400) e
     //           le altre finestre: la X della finestra puo' arrivare con una di loro aperta, e la
@@ -447,7 +448,7 @@ export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave
 
 // ITALIANO: Finestra che mostra cosa è stato trovato durante l'importazione
 // ENGLISH: Window showing what was found during import
-export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode }: any) => {
+export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">

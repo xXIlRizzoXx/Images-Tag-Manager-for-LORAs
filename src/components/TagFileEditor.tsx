@@ -17,6 +17,7 @@ import { translateTag } from '../utils/tagTranslation';
 import { soundManager } from '../utils/soundManager';
 import { uniqueTagsIgnoringCase, hasTagIgnoringCase } from '../utils/tagCase';
 import { leggiTestoSidecar } from '../utils/sidecarTags';
+import type { Strings } from '../constants';
 
 // ITALIANO: Legge i tag da un testo. Il .json accetta sia il formato esportato
 //           dall'app ({tags: [...]}) sia un semplice elenco ["a","b"]. Il .txt usa
@@ -105,7 +106,7 @@ export const serializeTagFile = (tags: string[], fileName: string, triggers: str
     return tags.length > 0 ? tags.join(', ') + ',' : '';
 };
 
-export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject, onDirtyChange }: any) => {
+export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject, onDirtyChange }: { t: Strings; [chiave: string]: any }) => {
     const [tags, setTags] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string>('');
     const [inputValue, setInputValue] = useState('');
