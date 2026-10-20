@@ -2,6 +2,14 @@
 
 **Ultimo aggiornamento:** 20 ottobre 2026
 **Versione attuale:** 2.0.1 costruita, non ancora pubblicata. La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+Novità 2.0.1 (traguardo 114, 20 ottobre 2026): **chiusi i difetti minori rimasti, tranne la vista Quadrate.**
+Il backup anti-crash non si applica più da solo: il riepilogo dell'importazione chiede con una casella,
+con il numero di foto e la data della copia. Le letture e le scritture dei .txt non bloccano più la
+finestra e passano da una sola coda. Cambiando la chiave AI durante «Tagga tutte» il lotto si ferma e
+lo dice. L'esportazione non fa più salire le sottocartelle con una data nel nome. Il velo del
+trascinamento sparisce con Esc. Le traduzioni dei componenti sono controllate dal compilatore.
+Dipendenze aggiornate: quelle del programma non hanno più avvisi di sicurezza. 270 prove automatiche
+verdi.
 Novità 2.0.1 (traguardo 113, 19-20 ottobre 2026): **quarto ciclo di controllo, 50 difetti corretti.**
 Tre giri di ricerca su tutto il programma, ogni difetto verificato da tre revisori, corretto con la sua
 prova e ricontrollato. I più importanti: l'esportazione di due cartelle aperte una dopo l'altra torna a
