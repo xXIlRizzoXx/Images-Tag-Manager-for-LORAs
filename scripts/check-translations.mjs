@@ -192,13 +192,21 @@ if (fileCodice.length) {
         });
         const controllore = programma.getTypeChecker();
         const nostri = new Set(fileCodice.map(f => path.resolve(f)));
+        // ITALIANO: anche una `t` col tipo dei testi (Strings, i componenti dal 20/10/2026): la riconosce
+        //           una chiave del blocco di riferimento presente nel suo tipo. Il compilatore la
+        //           controlla gia'; qui resta una seconda guardia che non dipende dalle opzioni di tsc.
+        // ENGLISH: also a `t` with the texts' type (Strings, the components since 20/10/2026): a key of the
+        //          reference block present in its type identifies it. The compiler already checks it;
+        //          this stays a second guard that does not depend on tsc's options.
+        const unaChiave = [...chiaviRif][0];
+        const daControllare = (tipo) => (tipo.flags & ts.TypeFlags.Any) || (unaChiave && !!controllore.getPropertyOfType(tipo, unaChiave));
         let lette = 0;
         for (const sf of programma.getSourceFiles()) {
             if (!nostri.has(path.resolve(sf.fileName))) continue;
             const visita = (nodo) => {
                 if (ts.isPropertyAccessExpression(nodo) && ts.isIdentifier(nodo.expression)
                     && (nodo.expression.text === 't' || nodo.expression.text === 'tPending')
-                    && (controllore.getTypeAtLocation(nodo.expression).flags & ts.TypeFlags.Any)) {
+                    && daControllare(controllore.getTypeAtLocation(nodo.expression))) {
                     lette++;
                     const nome = nodo.name.text;
                     if (!chiaviRif.has(nome)) {
