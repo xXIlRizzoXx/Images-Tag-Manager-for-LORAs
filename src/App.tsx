@@ -5675,7 +5675,11 @@ export default function App() {
         });
         if (cambiateDopo) {
             setSaveCloseDialog({ isOpen: true, isSaving: false });
-            showNotification([t.closeNewChangesMeanwhile, avvisoSalvataggioRef.current].filter(Boolean).join(' '), 'info');
+            // ITALIANO: dopo un punto a larghezza piena (cinese, giapponese) niente spazio fra le due frasi.
+            // ENGLISH: after a full-width full stop (Chinese, Japanese) no space between the two sentences.
+            const fraseChiusura = t.closeNewChangesMeanwhile;
+            const avvisoSalvataggio = avvisoSalvataggioRef.current;
+            showNotification(avvisoSalvataggio ? fraseChiusura + (/[。！？]$/.test(fraseChiusura) ? '' : ' ') + avvisoSalvataggio : fraseChiusura, 'info');
             return;
         }
         setSaveCloseDialog({ isOpen: false, isSaving: false });
