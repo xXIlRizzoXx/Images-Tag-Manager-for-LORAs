@@ -4,9 +4,10 @@
    closure: le foto rimaste partivano con la chiave VECCHIA, e se era revocata usciva "API key non
    valida" con la finestra della chiave riaperta, anche se quella appena salvata era buona.
    "Togli la chiave", il controllo del modello e la prova dei modelli si fermavano gia' con una
-   chiave tolta o cambiata; ora anche il lotto: si ferma come un annullamento (senza riepilogo, che
-   coprirebbe l'avviso della chiave), le foto gia' taggate restano. Salvare di nuovo la STESSA
-   chiave non lo ferma.
+   chiave tolta o cambiata; ora anche il lotto: si ferma come un annullamento e lo dice con il
+   riepilogo "annullato", 3 secondi dopo e senza coprire un errore a schermo (con una chiave TOLTA
+   niente riepilogo, che coprirebbe l'avviso della chiave), le foto gia' taggate restano. Salvare
+   di nuovo la STESSA chiave non lo ferma.
    Si esegue il codice VERO di handleAITagAll (vedi ai-batch-harness.mjs), senza rete.
    Uso:  node scripts/test-ai-batch-key-changed.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -16,8 +17,9 @@
    photos went out with the OLD key, and if it was revoked "API key not valid" showed up with the
    key dialog reopened, even though the key just saved was good. "Remove the key", the model check
    and the model test already stopped on a removed or changed key; now the batch does too: it stops
-   like a cancel (with no summary, which would cover the key notice), the photos already tagged
-   stay. Saving the SAME key again does not stop it.
+   like a cancel and says so with the "cancelled" summary, 3 seconds later and without covering an
+   error on screen (with a REMOVED key no summary, which would cover the key notice), the photos
+   already tagged stay. Saving the SAME key again does not stop it.
    The REAL code of handleAITagAll runs (see ai-batch-harness.mjs), with no network.
    Usage:  node scripts/test-ai-batch-key-changed.mjs      (exits with code 1 if anything is off) */
 
@@ -68,6 +70,16 @@ console.log('\n--- chiave cambiata e la vecchia revocata: la richiesta in volo t
         app.notifiche.some(([m]) => m.includes(t.aiKeyInvalid)));
     dice('nessuna finestra della chiave riaperta', false, app.finestraChiave);
     dice('il lotto si ferma e il riepilogo "annullato" lo dice', [true, 'info'], annullato(app));
+}
+
+console.log('\n--- chiave cambiata e un errore a schermo: il riepilogo non lo copre ---');
+{
+    let app = null;
+    app = nuovaApp(fotoQuattro(), (n) => { if (n === 1) { app.cambiaChiave(NUOVA); app.avviso(t.apiKeyNotSaved, 'error'); } return BUONA; });
+    await app.tutte();
+    await new Promise(r => setTimeout(r, 0));
+    const ultimo = app.notifiche[app.notifiche.length - 1] || [];
+    dice('l\'errore della chiave resta a schermo, il riepilogo non lo copre', [t.apiKeyNotSaved, 'error'], [ultimo[0], ultimo[1]]);
 }
 
 console.log('\n--- chiave tolta a meta\' lotto (il ref torna vuoto) ---');

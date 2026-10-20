@@ -41,10 +41,12 @@ const mostra = sorgente.indexOf('showNotification(summary, successType);', inizi
 if (inizio < 0 || mostra < 0) { console.log('NO  riepilogo di handleAITagAll non trovato in src/App.tsx'); process.exit(1); }
 const fineRiga = sorgente.indexOf('\n', mostra);
 const codice = (await esbuild.transform(sorgente.slice(inizio, fineRiga), { loader: 'ts' })).code;
-const riepilogo = new Function('t', 'cancelled', 'fatalAbort', 'okCount', 'errorCount', 'skippedCount', 'totalTagsAdded', 'showNotification', 'nonPulibiliCount', codice);
+// ITALIANO: chiaveCambiata dice "no": il caso della chiave cambiata ha la sua prova (test-ai-batch-key-changed).
+// ENGLISH: chiaveCambiata says "no": the changed-key case has its own test (test-ai-batch-key-changed).
+const riepilogo = new Function('t', 'cancelled', 'fatalAbort', 'okCount', 'errorCount', 'skippedCount', 'totalTagsAdded', 'showNotification', 'nonPulibiliCount', 'chiaveCambiata', codice);
 const prova = (t, cancelled, n, fatalAbort = false) => {
     const notifiche = [];
-    riepilogo(t, cancelled, fatalAbort, n.ok, n.err, n.skip, n.tag, (m, tipo) => notifiche.push([m, tipo]), n.nonPulibili || 0);
+    riepilogo(t, cancelled, fatalAbort, n.ok, n.err, n.skip, n.tag, (m, tipo) => notifiche.push([m, tipo]), n.nonPulibili || 0, () => false);
     return notifiche;
 };
 const riempi = (s, n) => String(s || '').replace('{ok}', String(n.ok)).replace('{err}', String(n.err)).replace('{skip}', String(n.skip)).replace('{n}', String(n.tag));

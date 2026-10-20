@@ -92,7 +92,7 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
     'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef',
-    'geminiApiKeyRef', 'aiSingolaControllerRef'];
+    'geminiApiKeyRef', 'aiSingolaControllerRef', 'setToast'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -124,7 +124,10 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         aiRpm: 14, aiSkipTagged: skip, images: foto, imagesRef: { current: foto }, isGlobalAITagging: false, t,
         updateImageTags: (id, tags) => { const f = foto.find(x => x.id === id); if (f) f.tags = tags; },
         getGeminiTags: S.getGeminiTags, classifyGeminiError: S.classifyGeminiError,
-        showNotification: (m, tipo) => app.notifiche.push([m, tipo]),
+        showNotification: (m, tipo) => { app.notifiche.push([m, tipo]); app.toast = { show: true, message: m, type: tipo }; },
+        // ITALIANO: il posto unico degli avvisi: chi passa una funzione puo' decidere di lasciare quello che c'e'.
+        // ENGLISH: the single notice slot: whoever passes a function can decide to keep what is there.
+        setToast: (u) => { const prima = app.toast || { show: false }; const dopo = typeof u === 'function' ? u(prima) : u; if (dopo !== prima) app.notifiche.push([dopo.message, dopo.type]); app.toast = dopo; },
         soundManager: { chime() { app.suoni++; } },
         setRiparaModello: () => { },
         setIsApiKeyDialogOpen: (v) => { app.finestraChiave = v; },
@@ -166,5 +169,8 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     // ENGLISH: the user saves another key (or the same one) in the key dialog.
     app.chiave = chiave;
     app.cambiaChiave = (k) => { dip.geminiApiKeyRef.current = k; };
+    // ITALIANO: un avviso mostrato da un altro punto dell'app (per esempio l'errore della chiave non salvata).
+    // ENGLISH: a notice shown by another part of the app (for example the key-not-saved error).
+    app.avviso = (m, tipo) => dip.showNotification(m, tipo);
     return app;
 };

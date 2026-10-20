@@ -6209,7 +6209,18 @@ export default function App() {
             // ENGLISH: after a full-width full stop (Chinese, Japanese) no space between the two sentences.
             const summary = base + (nonPulibiliCount > 0
                 ? (/[。！？]$/.test(base) ? '' : ' ') + (nonPulibiliCount === 1 ? t.aiBatchHiddenDataOne : t.aiBatchHiddenData.replace('{n}', String(nonPulibiliCount))) : '');
-            if (!fatalAbort) showNotification(summary, successType);
+            // ITALIANO: fermato da una chiave CAMBIATA: il riepilogo arriva 3 secondi dopo, per lasciar leggere
+            //           "chiave salvata", e non copre un errore ancora a schermo (per esempio "la chiave vale
+            //           solo per questa sessione"), come fa gia' l'avviso delle modifiche via MCP.
+            // ENGLISH: stopped by a CHANGED key: the summary comes 3 seconds later, to let "key saved" be
+            //          read, and does not cover an error still on screen (for example "the key is only valid
+            //          for this session"), as the MCP edit notice already does.
+            if (!fatalAbort && cancelled && chiaveCambiata()) {
+                setTimeout(() => {
+                    if (progetto !== progettoGenRef.current) return;
+                    setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message: summary, type: successType, id: Date.now() }));
+                }, 3000);
+            } else if (!fatalAbort) showNotification(summary, successType);
         } finally {
             aiCancelRequestedRef.current = false;
             setAiCancelRequested(false);
