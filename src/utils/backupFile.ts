@@ -69,8 +69,15 @@ export const archivioConCopiaSuFile = (sorgente: Storage | (() => Storage), api?
             if (chiave === CHIAVE_BACKUP) copia(String(valore));
         },
         removeItem: (chiave: string) => {
+            // ITALIANO: la lapide serve solo se c'era un backup da togliere: senza questo controllo
+            //           ogni riscrittura senza modifiche (una al secondo mentre l'app lavora) faceva
+            //           scrivere e sincronizzare il file al processo principale per niente.
+            // ENGLISH: the tombstone is needed only when there was a backup to remove: without this
+            //          check every rewrite with no edits (one per second while the app works) made the
+            //          main process write and sync the file for nothing.
+            const cera = chiave === CHIAVE_BACKUP && vero().getItem(chiave) !== null;
             vero().removeItem(chiave);
-            if (chiave === CHIAVE_BACKUP) copia(JSON.stringify({ ts: Date.now(), vuoto: true }));
+            if (cera) copia(JSON.stringify({ ts: Date.now(), vuoto: true }));
         },
     } as Storage;
 };

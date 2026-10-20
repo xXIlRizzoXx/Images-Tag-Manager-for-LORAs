@@ -81,6 +81,9 @@ try {
         ls.removeItem('tagBackup');
         const lapide = JSON.parse(scritti[1] || '{}');
         dice('togliere il backup scrive una lapide datata nel file', [null, true, true], [vero.getItem('tagBackup'), lapide.vuoto === true, lapide.ts > 0]);
+        ls.removeItem('tagBackup');
+        ls.removeItem('tagBackup');
+        dice('togliere un backup che non c\'e\' (riscrittura senza modifiche) non riscrive il file', 2, scritti.length);
         dice('getItem, length e key leggono il vero', ['en', 1, 'lingua'], [ls.getItem('lingua'), ls.length, ls.key(0)]);
         const pieno = { ...memoria(), setItem() { throw new Error('QuotaExceededError'); } };
         const scritti2 = [];
