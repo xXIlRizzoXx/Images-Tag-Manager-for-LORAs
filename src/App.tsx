@@ -5124,9 +5124,32 @@ export default function App() {
             //          "Load Folder" (a trash photo linked to the reopened folder, then restored) goes where
             //          that "sister" goes: it used to end at the archive root as soon as two folders were
             //          open, and sd-scripts did not read it.
+            // ITALIANO: riaprendo una cartella l'oggetto e' NUOVO: la foto collegata puo' avere un oggetto
+            //           diverso da quello delle sorelle gia' aperte. Si riconosce con isSameEntry.
+            // ENGLISH: reopening a folder makes a NEW object: the linked photo can have an object different
+            //          from the one of the sisters already open. It is recognised with isSameEntry.
             const sorelle = new Map<any, any>();
             imagesToExport.forEach((img) => { if (img.cartellaImport && img.dirHandle && !sorelle.has(img.dirHandle)) sorelle.set(img.dirHandle, img); });
-            const postoDi = (img: any) => (!img.cartellaImport && img.dirHandle && sorelle.get(img.dirHandle)) || img;
+            const sorellaDi = new Map<any, any>();
+            for (const img of imagesToExport) {
+                if (img.cartellaImport || !img.dirHandle || sorellaDi.has(img.dirHandle)) continue;
+                let trovata = sorelle.get(img.dirHandle) || null;
+                if (!trovata && typeof img.dirHandle.isSameEntry === 'function') {
+                    for (const [cartella, sorella] of sorelle) {
+                        try { if (await img.dirHandle.isSameEntry(cartella)) { trovata = sorella; break; } } catch (_) { /* nel dubbio non la segue / when in doubt it does not follow */ }
+                    }
+                }
+                sorellaDi.set(img.dirHandle, trovata);
+            }
+            const postoDi = (img: any) => (!img.cartellaImport && img.dirHandle && sorellaDi.get(img.dirHandle)) || img;
+            // ITALIANO: una scelta e' una cartella Kohya se il nome e' N_nome E ha foto proprie alla sua radice:
+            //           una cartella madre col nome che comincia con una data o un numero (2024_05_anna,
+            //           01_anna) contiene solo sottocartelle, e le sue 10_anna devono salire al primo livello.
+            // ENGLISH: a pick is a Kohya folder when its name is N_name AND it has photos of its own at its root:
+            //          a parent folder whose name starts with a date or a number (2024_05_anna, 01_anna) holds
+            //          only subfolders, and its 10_anna folders must go up to the first level.
+            const scelteConFotoProprie = new Set<string>();
+            imagesToExport.forEach((img) => { const p = postoDi(img); if (p.cartellaImport && !String(p.cartellaRel || '').split(/[\\/]/).some(x => x && x !== '.' && x !== '..')) scelteConFotoProprie.add(sceltaDi(p)); });
             const nomiScelte = new Map<string, string>();
             const nomiPresi = new Set<string>();
             imagesToExport.forEach((img) => {
@@ -5176,7 +5199,7 @@ export default function App() {
                 //          anna/closeup, 10_anna/2024_05_mare) stays under its pick's name: old/x.txt used to
                 //          come off 10_face, two closeup/ folders got mixed, and a dated subfolder inside
                 //          10_anna went up and sd-scripts read it with 2024 repeats.
-                const sceltaKohya = /^\d+_/.test(String(posto.cartellaImport || ''));
+                const sceltaKohya = /^\d+_/.test(String(posto.cartellaImport || '')) && scelteConFotoProprie.has(sceltaDi(posto));
                 const tieniScelta = piuCartelle && (sceltaKohya || !(pezziRel.length > 0 && /^\d+_/.test(pezziRel[0])));
                 const sotto = [tieniScelta ? String(nomiScelte.get(sceltaDi(posto)) || '') : '', ...pezziRel]
                     .filter(p => p && p !== '.' && p !== '..').map(p => sanitizeFileName(p, '_')).join('/');

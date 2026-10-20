@@ -464,6 +464,16 @@ console.log('\n--- piu\' cartelle aperte: sottocartella con una data dentro una 
     const s2 = creaSonda();
     const madri = await (await creaApp(dueRadici(s2, [['char_anna', '10_anna', 'a.png', 'ta'], ['char_bea', '10_bea', 'b.png', 'tb']]), s2).esporta(false)).archivio() || {};
     dice('cartelle madri normali: le cartelle Kohya dentro salgono ancora al primo livello', ['10_anna/a.txt', '10_bea/b.txt'], Object.keys(madri).sort());
+    // ITALIANO: una cartella MADRE col nome che comincia con una data o un numero (2024_05_anna, 01_anna)
+    //           senza foto proprie non e' una cartella Kohya: le sue 10_anna salgono al primo livello.
+    // ENGLISH: a PARENT folder whose name starts with a date or a number (2024_05_anna, 01_anna) with no
+    //          photos of its own is not a Kohya folder: its 10_anna folders go up to the first level.
+    const s3 = creaSonda();
+    const madriData = await (await creaApp(dueRadici(s3, [['2024_05_anna', '10_anna', 'a.png', 'ta'], ['2024_06_bea', '10_bea', 'b.png', 'tb']]), s3).esporta(false)).archivio() || {};
+    dice('cartelle madri col nome-data: le cartelle Kohya salgono', ['10_anna/a.txt', '10_bea/b.txt'], Object.keys(madriData).sort());
+    const s4 = creaSonda();
+    const mista = await (await creaApp(dueRadici(s4, [['01_anna', '10_anna', 'a.png', 'ta'], ['20_bea', '', 'b.png', 'tb']]), s4).esporta(false)).archivio() || {};
+    dice('madre numerata 01_anna piu\' una cartella Kohya 20_bea', ['10_anna/a.txt', '20_bea/b.txt'], Object.keys(mista).sort());
 }
 
 // ITALIANO: una foto caricata da sola, messa nel cestino e collegata alla cartella 10_face riaperta
@@ -492,6 +502,22 @@ console.log('\n--- foto del cestino collegata alla cartella e ripristinata, con 
     const h = (id, nome, i, cartella, scelta, lotto) => ({ ...f(id, nome, i, cartella, scelta, lotto), file: new FotoFinta(byteDi(30, i), nome, s3) });
     const sciolta = await (await creaApp([h('z', 'z.png', 5, null, '', 'L0'), h('b', 'b.png', 2, faccia, '10_face', 'L1'), h('x', 'x.png', 4, corpo, '20_body', 'L2')], s3).esporta(false)).archivio() || {};
     dice('una foto sciolta senza cartella resta alla radice come prima', ['10_face/b.txt', '20_body/x.txt', 'z.txt'], Object.keys(sciolta).sort());
+    // ITALIANO: la cartella riaperta crea un oggetto NUOVO: la foto collegata ha un oggetto diverso da
+    //           quello delle sorelle gia' aperte, ma isSameEntry dice che e' la stessa cartella.
+    // ENGLISH: the reopened folder creates a NEW object: the linked photo has an object different from
+    //          the one of the sisters already open, but isSameEntry says it is the same folder.
+    const s4 = creaSonda();
+    const maniglia = (nome, chiave) => ({ name: nome, chiave, isSameEntry: async (altra) => !!altra && altra.chiave === chiave });
+    const vecchia = maniglia('10_face', 'E:/ds/10_face');
+    const nuova = maniglia('10_face', 'E:/ds/10_face');
+    const k = (id, nome, i, cartella, scelta, lotto) => ({ ...f(id, nome, i, cartella, scelta, lotto), file: new FotoFinta(byteDi(30, i), nome, s4) });
+    const oggettoDiverso = await (await creaApp([k('a', 'a.png', 1, nuova, '', 'L0'), k('b', 'b.png', 2, vecchia, '10_face', 'L1'), k('x', 'x.png', 4, corpo, '20_body', 'L2')], s4).esporta(false)).archivio() || {};
+    dice('cartella riaperta (oggetto diverso, stessa cartella): a.png va con le sorelle', ['10_face/a.txt', '10_face/b.txt', '20_body/x.txt'], Object.keys(oggettoDiverso).sort());
+    const s5 = creaSonda();
+    const altraCartella = maniglia('10_face', 'F:/altro/10_face');
+    const m = (id, nome, i, cartella, scelta, lotto) => ({ ...f(id, nome, i, cartella, scelta, lotto), file: new FotoFinta(byteDi(30, i), nome, s5) });
+    const diversa = await (await creaApp([m('a', 'a.png', 1, altraCartella, '', 'L0'), m('b', 'b.png', 2, vecchia, '10_face', 'L1'), m('x', 'x.png', 4, corpo, '20_body', 'L2')], s5).esporta(false)).archivio() || {};
+    dice('una cartella con lo stesso nome ma un\'altra (isSameEntry falso): a.png non la segue', true, !Object.keys(diversa).includes('10_face/a.txt'));
 }
 
 console.log('\n--- l\'avviso dei nomi doppi conta i file rinominati ---');
