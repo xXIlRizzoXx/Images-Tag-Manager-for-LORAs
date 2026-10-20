@@ -70,7 +70,9 @@ const muto = { log() { }, warn() { }, error() { } };
 const cartella = (presenti = {}) => {
     const c = { file: new Map(Object.entries(presenti)) };
     c.getFileHandle = async (nome, opz) => {
-        if (!c.file.has(nome) && !(opz && opz.create)) throw new DOMException('not found', 'NotFoundError');
+        // ITALIANO: le foto ci sono (performSave e il visualizzatore lo controllano); mancano solo i .txt non elencati.
+        // ENGLISH: the photos are there (performSave and the viewer check it); only the unlisted .txt files are missing.
+        if (!c.file.has(nome) && !(opz && opz.create) && /\.txt$/i.test(nome)) throw new DOMException('not found', 'NotFoundError');
         return { createWritable: async () => { let testo = ''; return { write: async (s) => { testo += String(s); }, close: async () => { c.file.set(nome, testo); } }; } };
     };
     return c;

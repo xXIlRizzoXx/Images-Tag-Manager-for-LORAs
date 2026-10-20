@@ -124,6 +124,45 @@ console.log('\n--- Salva, ritocchi a mano, poi l\'AI cambia un\'altra foto ---')
     dice('una foto dell\'AI non ancora salvata, ritoccata a mano, resta nel conto: 3', [avvisoDi(3), 'info'], a.ultimo());
 }
 
+// ITALIANO: originalTags cambia oggetto anche SENZA salvare la modifica dell'AI: l'AI cambia una foto
+//           mentre "Salva Modifiche" scrive (a fine scrittura originalTags = istantanea di prima), oppure
+//           l'editor dei file di tag riscrive il .txt (tagDopoEditor tiene i tag non salvati). La foto
+//           resta da salvare con il tag dell'AI ma usciva dal conto ("...di una foto" invece di "...: 2").
+// ENGLISH: originalTags changes object even WITHOUT saving the AI's change: the AI changes a photo while
+//          "Save Changes" writes (at the end originalTags = the earlier snapshot), or the tag file editor
+//          rewrites the .txt (tagDopoEditor keeps the unsaved tags). The photo still needs saving with the
+//          AI's tag but left the count ("...of a photo" instead of "...: 2").
+console.log('\n--- originalTags nuovo senza la modifica dell\'AI (salvataggio in corso, editor dei file di tag) ---');
+{
+    const S = await carica('src/utils/sidecarTags.ts');
+    const a = app(3);
+    const istantanea = a.imagesRef.current.map(f => ({ id: f.id, tags: f.tags }));
+    await a.chiama('set_tags', { id: 'p0', tags: ['red hair'] });
+    a.imagesRef.current = a.imagesRef.current.map(f => ({ ...f, originalTags: [...istantanea.find(s => s.id === f.id).tags] }));
+    await a.chiama('set_tags', { id: 'p1', tags: ['hat'] });
+    dice('AI durante "Salva Modifiche": la foto ancora da salvare resta nel conto: 2', [avvisoDi(2), 'info'], a.ultimo());
+    // ITALIANO: poi un salvataggio vero (originalTags nuovo CON la modifica) la toglie dal conto.
+    // ENGLISH: then a real save (new originalTags WITH the change) takes it out of the count.
+    a.imagesRef.current = a.imagesRef.current.map(f => ({ ...f, originalTags: [...f.tags] }));
+    a.ritocca('p0', ['red hair', 'smile']);
+    await a.chiama('set_tags', { id: 'p2', tags: ['cat'] });
+    dice('...salvata davvero e poi ritoccata a mano non si conta piu\': 1', [avvisoDi(1), 'info'], a.ultimo());
+
+    const b = app(3);
+    await b.chiama('set_tags', { id: 'p0', tags: ['red hair'] });
+    b.imagesRef.current = b.imagesRef.current.map(f => (f.id === 'p0' ? { ...f, ...S.tagDopoEditor(f.tags, f.originalTags, ['outdoor'], [], undefined) } : f));
+    await b.chiama('set_tags', { id: 'p1', tags: ['hat'] });
+    dice('editor dei file di tag dopo l\'AI: la foto con il tag dell\'AI non salvato resta nel conto: 2', [avvisoDi(2), 'info'], b.ultimo());
+    // ITALIANO: se l'editor scrive nel .txt anche il tag dell'AI, la modifica e' salvata: esce.
+    // ENGLISH: if the editor writes the AI's tag into the .txt too, the change is saved: it leaves.
+    const c = app(3);
+    await c.chiama('set_tags', { id: 'p0', tags: ['red hair'] });
+    c.imagesRef.current = c.imagesRef.current.map(f => (f.id === 'p0' ? { ...f, ...S.tagDopoEditor(f.tags, f.originalTags, ['red hair', 'outdoor'], [], undefined) } : f));
+    c.ritocca('p0', ['red hair', 'outdoor', 'smile']);
+    await c.chiama('set_tags', { id: 'p1', tags: ['hat'] });
+    dice('...se il .txt riscritto contiene il tag dell\'AI la foto esce dal conto: 1', [avvisoDi(1), 'info'], c.ultimo());
+}
+
 console.log('\n--- un avviso d\'errore a schermo ---');
 {
     const a = app(3);

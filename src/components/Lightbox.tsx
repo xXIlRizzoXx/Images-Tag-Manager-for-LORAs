@@ -221,6 +221,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 // ENGLISH: next to the photo goes the .txt the import reads back and Kohya uses, with
                 //          the name uncleaned (see sidecarTagFileName); `fileName` stays for the download.
                 const nomeTxt = sidecarTagFileName(image.file.name);
+                // ITALIANO: la foto cancellata o rinominata da Esplora file non riceve un .txt orfano: errore
+                //           (vedi performSave in App.tsx).
+                // ENGLISH: a photo deleted or renamed in File Explorer does not get an orphan .txt: error
+                //          (see performSave in App.tsx).
+                try { await dirHandle.getFileHandle(image.file.name); }
+                catch (e: any) { if (e && e.name === 'NotFoundError') throw e; }
                 let fileHandle: any = null;
                 if (vuoto) {
                     try { fileHandle = await dirHandle.getFileHandle(nomeTxt); }

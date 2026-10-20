@@ -68,7 +68,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
     'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef',
-    'ripristinoInCorsoRef', 'isUndoRedoAction'];
+    'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
 
 /* ITALIANO: l'app finta. `percorsi` = Electron con i percorsi su disco (false = cartella di rete,
@@ -88,7 +88,7 @@ const creaApp = ({ percorsi = true, backup = null } = {}) => {
         B.folderSignature, B.backupDellImport, { getItem: () => backup }, 1024 * 1024, S.parseSidecarText,
         async (f) => { await app.cancelli.get(f.name); return { url: '', width: 1, height: 1 }; }, S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef, { current: false }, { current: false });
+        refs.importAttiviRef, { current: false }, { current: false }, () => { });
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).
@@ -289,8 +289,10 @@ const lungo = Array.from({ length: 2500 }, (_, i) => 'tag' + i).join(', ');
     dice('a.txt condiviso con la foto nuova a.jpg: il .txt oltre 1 MB si segnala ancora',
         [N.avvisoImport(t, { caricate: 1, ripristinate: 0, saltati: 1, accorciati: 0, nomiSaltati: ['a.txt'], giaAperte: 1 }).testo, 'info'], app.ultimo());
     await app.conferma(riepilogo(cartella('E:img', 'img'), ['a.png', 'z.png'], { txt: { 'orfano.txt': enorme } }));
-    dice('un .txt senza foto si legge come prima (anche al primo import)',
-        [N.avvisoImport(t, { caricate: 1, ripristinate: 0, saltati: 1, accorciati: 0, nomiSaltati: ['orfano.txt'], giaAperte: 1 }).testo, 'info'], app.ultimo());
+    // ITALIANO: un .txt senza foto non si legge e non entra nell'avviso (vedi test-import-orphan-txt.mjs).
+    // ENGLISH: a .txt with no photo is not read and stays out of the notice (see test-import-orphan-txt.mjs).
+    dice('un .txt senza foto non entra nell\'avviso',
+        [N.avvisoImport(t, { caricate: 1, ripristinate: 0, saltati: 0, accorciati: 0, nomiSaltati: [], giaAperte: 1 }).testo, 'success'], app.ultimo());
 }
 
 process.exit(esito());

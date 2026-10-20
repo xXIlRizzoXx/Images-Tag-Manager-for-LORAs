@@ -417,6 +417,36 @@ const coppieGiuste = (nomi) => nomi.filter(n => !n.endsWith('.txt')).every(n => 
     const diverse = Object.keys(await (await creaApp(gemelle(s4, [{ name: 'uno' }, { name: 'due' }, { name: 'uno' }]), s4).esporta(false)).archivio() || {}).sort();
     dice('cartelle diverse: la seconda omonima va sotto il nome della sua cartella', true, diverse.some(n => n === 'uno/a.txt' || n === 'due/a.txt'));
 }
+// ITALIANO: una sola cartella 10_face (a.png, b.png) piu' una a.png caricata da sola che viene PRIMA:
+//           la a.png della cartella finiva in 10_face/a.png (estratta in 10_face diventa
+//           10_face/10_face/a.png, che sd-scripts non legge). Nei due ordini ora prende il suffisso.
+// ENGLISH: a single folder 10_face (a.png, b.png) plus an a.png loaded on its own that comes FIRST:
+//          the folder's a.png ended up in 10_face/a.png (extracted into 10_face it becomes
+//          10_face/10_face/a.png, which sd-scripts does not read). In both orders it now gets the suffix.
+{
+    const una = { name: '10_face' };
+    const sonda = creaSonda();
+    const foto = (id, nome, i, cartella) => ({
+        id, file: new FotoFinta(byteDi(30, i), nome, sonda), tags: ['t' + id], isTrashed: false,
+        dirHandle: cartella, cartellaRel: '', cartellaImport: cartella ? '10_face' : '', lottoImport: cartella ? 'L1' : 'L0',
+    });
+    const sciolta = foto('s', 'a.png', 7, null);
+    const dellaCartella = [foto('c1', 'a.png', 1, una), foto('c2', 'b.png', 2, una)];
+    const atteso = ['a (2).png', 'a (2).txt', 'a.png', 'a.txt', 'b.png', 'b.txt'];
+    const prima = Object.keys(await (await creaApp([sciolta, ...dellaCartella], sonda).esporta(true)).archivio() || {}).sort();
+    dice('foto sciolta omonima che viene prima: nessuna cartella col nome della cartella stessa', atteso, prima);
+    const s2 = creaSonda();
+    const dopo = Object.keys(await (await creaApp([...dellaCartella, sciolta], s2).esporta(true)).archivio() || {}).sort();
+    dice('...e nell\'ordine inverso lo stesso', atteso, dopo);
+    // ITALIANO: una foto del cestino ricollegata alla cartella (cartellaImport vuoto, dirHandle della
+    //           cartella) e' alla radice della stessa cartella: nemmeno lei apre 10_face/.
+    // ENGLISH: a trash photo linked to the folder (empty cartellaImport, the folder's dirHandle) sits at
+    //          the root of the same folder: it does not open 10_face/ either.
+    const s3 = creaSonda();
+    const collegata = { ...foto('k', 'a.png', 8, una), cartellaImport: '', lottoImport: 'L0' };
+    const conCollegata = Object.keys(await (await creaApp([sciolta, collegata, ...dellaCartella], s3).esporta(false)).archivio() || {}).sort();
+    dice('foto ricollegata alla stessa cartella: nessuna voce in 10_face/', [], conCollegata.filter(n => n.startsWith('10_face/')));
+}
 
 console.log('\n--- l\'avviso dei nomi doppi conta i file rinominati ---');
 {

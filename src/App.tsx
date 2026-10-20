@@ -1763,7 +1763,13 @@ export default function App() {
     //          an AI tagging 40 photos makes 40 calls, and the notice said the last call's number (1).
     //          For each photo the originalTags of the moment of the change is kept: every save puts a
     //          new one there, so a photo saved and then retouched by hand no longer counts.
-    const mcpCambiateRef = useRef<Map<string, unknown>>(new Map());
+    // ITALIANO: si tengono anche i tag di prima e quelli messi dall'AI: originalTags cambia oggetto pure
+    //           senza salvare la modifica (AI durante "Salva Modifiche", editor dei file di tag), e allora
+    //           la foto resta nel conto solo se la modifica dell'AI non e' ancora in originalTags.
+    // ENGLISH: the tags before and those set by the AI are kept too: originalTags changes object even
+    //          without saving the change (AI during "Save Changes", tag file editor), and then the photo
+    //          stays in the count only if the AI's change is not in originalTags yet.
+    const mcpCambiateRef = useRef<Map<string, { originali: unknown; prima: string[]; ai: string[] }>>(new Map());
     mcpGestoreRef.current = async (r: McpRichiesta) => {
         let risposta: RispostaMcp;
         try {
@@ -1771,9 +1777,17 @@ export default function App() {
                 foto: () => imagesRef.current,
                 trigger: () => globalTriggersRef.current,
                 applica: (nuovi) => {
+                    const tagPrima = new Map(imagesRef.current.map(img => [img.id, img.tags]));
                     imagesRef.current = imagesRef.current.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img));
                     setImages(prev => prev.map(img => (nuovi.has(img.id) ? { ...img, tags: nuovi.get(img.id) } : img)));
-                    imagesRef.current.forEach(img => { if (nuovi.has(img.id)) mcpCambiateRef.current.set(img.id, img.originalTags); });
+                    imagesRef.current.forEach(img => {
+                        if (!nuovi.has(img.id)) return;
+                        // ITALIANO: senza salvataggi in mezzo, "prima" resta quello della prima modifica dell'AI.
+                        // ENGLISH: with no save in between, "before" stays the one of the AI's first change.
+                        const voce = mcpCambiateRef.current.get(img.id);
+                        const prima = voce && voce.originali === img.originalTags ? voce.prima : (tagPrima.get(img.id) || []);
+                        mcpCambiateRef.current.set(img.id, { originali: img.originalTags, prima, ai: nuovi.get(img.id) || [] });
+                    });
                 },
                 // ITALIANO: la foto com'e' adesso sul disco, non l'istantanea dell'import (vedi fileDiAdesso).
                 // ENGLISH: the photo as it is on disk now, not the import snapshot (see fileDiAdesso).
@@ -1795,9 +1809,19 @@ export default function App() {
             //          trashed ones leave), each once. The notice does not cover an error still on screen
             //          (for example the "Save Changes" one): it comes with the next call.
             const vive = new Map(imagesRef.current.map(img => [img.id, img]));
-            const rimaste = [...mcpCambiateRef.current].filter(([id, originali]) => {
+            const ha = (lista: unknown, tag: string) => Array.isArray(lista) && lista.some(x => String(x).toLowerCase() === String(tag).toLowerCase());
+            const rimaste = [...mcpCambiateRef.current].filter(([id, voce]) => {
                 const img = vive.get(id);
-                return !!img && !img.isTrashed && img.originalTags === originali && fotoDaSalvare(img, globalTriggersRef.current);
+                if (!img || img.isTrashed || !fotoDaSalvare(img, globalTriggersRef.current)) return false;
+                if (img.originalTags === voce.originali) return true;
+                // ITALIANO: originalTags e' nuovo: la foto resta solo se un tag aggiunto dall'AI c'e' ancora
+                //           e non e' in originalTags, o uno tolto dall'AI manca ancora ed e' in originalTags.
+                // ENGLISH: originalTags is new: the photo stays only if a tag added by the AI is still there
+                //          and not in originalTags, or one removed by the AI is still missing and in originalTags.
+                const ancora = voce.ai.some(tg => !ha(voce.prima, tg) && ha(img.tags, tg) && !ha(img.originalTags, tg))
+                    || voce.prima.some(tg => !ha(voce.ai, tg) && !ha(img.tags, tg) && ha(img.originalTags, tg));
+                if (ancora) voce.originali = img.originalTags;
+                return ancora;
             });
             mcpCambiateRef.current = new Map(rimaste);
             const ancora = rimaste.map(([id]) => id);
@@ -3347,9 +3371,15 @@ export default function App() {
                     && stessoPercorso(String(aperta.percorso || ''), String(sua.percorso || ''))) daCollegare.set(aperta.id, { cartella: sua.cartella, rel: (d.cartellaRelOf && d.cartellaRelOf.get(f)) || '' });
             });
             if (daCollegare.size > 0) {
+                const collega = (img: any) => (daCollegare.has(img.id) && img.isTrashed && !img.dirHandle
+                    ? { ...img, dirHandle: daCollegare.get(img.id)!.cartella, cartellaRel: daCollegare.get(img.id)!.rel } : img);
                 isUndoRedoAction.current = true;
-                setImages(prev => prev.map(img => (daCollegare.has(img.id) && img.isTrashed && !img.dirHandle
-                    ? { ...img, dirHandle: daCollegare.get(img.id)!.cartella, cartellaRel: daCollegare.get(img.id)!.rel } : img)));
+                setImages(prev => prev.map(collega));
+                // ITALIANO: anche in ogni passo della cronologia (come purgeIdsFromHistory): il passo attuale
+                //           restava senza cartella, e un Ctrl+Z qualsiasi toglieva il collegamento.
+                // ENGLISH: also in every history step (like purgeIdsFromHistory): the current step stayed
+                //          folder-less, and any Ctrl+Z took the link away.
+                setHistory(prev => prev.map(passo => passo.map(collega)));
             }
             const nuove = doppi.size > 0 ? d.imgFiles.filter((f: any) => !doppi.has(f)) : d.imgFiles;
             if (nuove.length === 0) {
@@ -3388,11 +3418,11 @@ export default function App() {
             // ITALIANO: i .txt delle foto gia' aperte non si rileggono: l'avviso di fine import li
             //           contava di nuovo fra i saltati o gli accorciati (un errore al posto di "N foto
             //           caricate"). Resta ogni .txt che serve a una foto nuova (a.png aperta e a.jpg nuova
-            //           con lo stesso a.txt) e ogni .txt senza foto, come prima.
+            //           con lo stesso a.txt); un .txt senza foto lo salta processImportData.
             // ENGLISH: the .txt files of the photos already open are not read again: the end-of-import
             //          notice counted them once more among the skipped or shortened ones (an error in
             //          place of "N photos loaded"). Every .txt a new photo needs stays (a.png open and a.jpg
-            //          new with the same a.txt), and so does every .txt with no photo, as before.
+            //          new with the same a.txt); processImportData skips a .txt with no photo.
             let txtFiles = d.txtFiles;
             if (doppi.size > 0) {
                 const chiaveDi = makeFolderKeyer(d.folderOf);
@@ -3502,7 +3532,18 @@ export default function App() {
             // ENGLISH: the .txt files that exist but could not be read: their photo must not count
             //          as modified, or "Save" would write over them (see tagDiImport).
             const txtNonLetti = new Set<string>();
+            // ITALIANO: un .txt che non e' di nessuna foto (note, sample_prompts.txt) non si legge: lungo
+            //           o in ANSI faceva dire "File di tag accorciati" o "File non letti" senza che nessuna
+            //           foto avesse perso niente. Stessa istanza di folderKeyOf, quindi stesse chiavi.
+            // ENGLISH: a .txt belonging to no photo (notes, sample_prompts.txt) is not read: long or in
+            //          ANSI it made the notice say "Tag files shortened" or "Files not read" although no
+            //          photo had lost anything. Same folderKeyOf instance, so the same keys.
+            const chiaviFoto = new Set(imgFiles.map(folderKeyOf));
             for (let i = 0; i < txtFiles.length; i++) {
+                if (txtFiles[i] && !chiaviFoto.has(folderKeyOf(txtFiles[i]))) {
+                    setImportProgress(Math.round(((i + 1) / (imgFiles.length + txtFiles.length)) * 50));
+                    continue;
+                }
                 try {
                     if (txtFiles[i].size > TXT_MAX_BYTES) {
                         // ITALIANO: Un sidecar legittimo pesa pochi KB: oltre 1 MB è sospetto, lo saltiamo
@@ -4688,6 +4729,16 @@ export default function App() {
                         // ITALIANO: lo stesso .txt che l'import rilegge e Kohya usa (vedi sidecarTagFileName).
                         // ENGLISH: the same .txt the import reads back and Kohya uses (see sidecarTagFileName).
                         const fileName = sidecarTagFileName(img.file.name);
+                        // ITALIANO: la foto dev'essere ancora nella sua cartella: cancellata o rinominata da
+                        //           Esplora file a programma aperto, il suo .txt nasceva orfano (o col nome
+                        //           vecchio) sotto "salvato con successo". Cosi' finisce fra le non salvate.
+                        //           Come il ramo Electron delle foto sciolte, che controlla l'immagine sul disco.
+                        // ENGLISH: the photo must still be in its folder: deleted or renamed in File Explorer
+                        //          with the program open, its .txt was born orphaned (or with the old name)
+                        //          under "saved successfully". This way it lands among the unsaved ones. Like
+                        //          the Electron branch of the loose photos, which checks the image on disk.
+                        try { await img.dirHandle.getFileHandle(img.file.name); }
+                        catch (e: any) { if (e && e.name === 'NotFoundError') throw e; }
                         // ITALIANO: una foto senza tag non riceve un .txt NUOVO e vuoto: Kohya si
                         //           ferma su un .txt vuoto ("caption file is empty"), non su uno che
                         //           manca (come nell'esportazione). Quello che c'era si svuota davvero.
@@ -5051,6 +5102,12 @@ export default function App() {
                 nomiScelte.set(sceltaDi(img), nome);
             });
             const piuCartelle = nomiScelte.size > 1;
+            // ITALIANO: con una sola cartella aperta l'archivio E' quella cartella: un prefisso col suo
+            //           nome creerebbe 10_face/10_face/ una volta estratto.
+            // ENGLISH: with a single folder opened the archive IS that folder: a prefix with its name
+            //          would make 10_face/10_face/ once extracted.
+            const sceltaUnica = piuCartelle ? undefined : imagesToExport.find(i => i.cartellaImport);
+            const nomeSceltaUnica = sceltaUnica ? sanitizeFileName(String(sceltaUnica.cartellaImport)).toLowerCase() : '';
             imagesToExport.forEach((img) => {
                 // ITALIANO: una foto senza tag (solo con "Tag e immagini") entra SENZA .txt: un .txt
                 //           vuoto fa fermare l'addestramento di Kohya ("caption file is empty"), uno
@@ -5118,7 +5175,7 @@ export default function App() {
                     //          ended up in 10_face/a.png, a new folder named after the one that already
                     //          is the archive's root: the suffix remains.
                     const dir = (!sotto && img.dirHandle && typeof img.dirHandle.name === 'string') ? sanitizeFileName(img.dirHandle.name) : '';
-                    if (dir && dir.toLowerCase() !== (cartellaDelNome.get(baseName.toLowerCase()) || '').toLowerCase() && !occupato(`${dir}/${baseName}`)) {
+                    if (dir && dir.toLowerCase() !== (cartellaDelNome.get(baseName.toLowerCase()) || '').toLowerCase() && dir.toLowerCase() !== nomeSceltaUnica && !occupato(`${dir}/${baseName}`)) {
                         name = `${dir}/${baseName}`;
                     } else {
                         const dot = baseName.lastIndexOf('.');
@@ -5327,11 +5384,18 @@ export default function App() {
     //           "Solo i tag" senza nessuna foto con tag non ha niente da mettere: lo si dice.
     // ENGLISH: "Export" in the choice dialog: each road with its own list (see handleExportAll).
     //          "Tags only" with no tagged photo has nothing to put in: say so.
+    // ITALIANO: gli elenchi si rifanno dalle foto di adesso, con le regole di handleExportAll: con la
+    //           finestra aperta "Tagga tutte con AI" o un'AI via MCP continuano a mettere tag, e le foto
+    //           del primo clic uscivano senza .txt (con l'avviso "foto senza tag", ormai falso).
+    // ENGLISH: the lists are rebuilt from the photos of now, with handleExportAll's rules: with the
+    //          dialog open "Tag all with AI" or an AI through MCP keep adding tags, and the first click's
+    //          photos came out without a .txt (under the "untagged photos" notice, false by then).
     const avviaExport = (conImmagini: boolean, rinomina: boolean) => {
         const scelta = exportChoice;
         setExportChoice(null);
         if (!scelta) return undefined;
-        const lista = conImmagini ? scelta.tutte : scelta.imgs;
+        const tutte = applySort(images.filter(img => !img.isTrashed && !txtNonLettoInVigore(img)), sortOrder);
+        const lista = conImmagini ? tutte : tutte.filter(img => img.tags && img.tags.length > 0);
         const fraseNonLette = String(scelta.fraseNonLette || '');
         if (!lista || lista.length === 0) { showNotification(fraseNonLette ? t.errorNoTagsToExport + ' ' + fraseNonLette : t.errorNoTagsToExport, "info"); return undefined; }
         return exportAllAsZip(lista, conImmagini, rinomina, fraseNonLette);
@@ -6035,6 +6099,13 @@ export default function App() {
             //          Tags added: N" summary used to cover "Project closed" at once (a single notice
             //          slot), talking about tags of a project already closed.
             if (progetto !== progettoGenRef.current) return;
+            // ITALIANO: fermato da una chiave tolta o cambiata: nemmeno. Il riepilogo arrivava un decimo di
+            //           secondo dopo l'avviso della chiave ("API key rimossa", o l'errore "verra' caricata
+            //           di nuovo al prossimo avvio") e lo copriva prima che si potesse leggere.
+            // ENGLISH: stopped by a removed or changed key: not either. The summary came a tenth of a second
+            //          after the key notice ("API key removed", or the error "it will be loaded again at the
+            //          next start") and covered it before it could be read.
+            if (cancelled && chiaveCambiata()) return;
             soundManager.chime();
             const successType: 'success' | 'info' | 'error' = cancelled
                 ? 'info'

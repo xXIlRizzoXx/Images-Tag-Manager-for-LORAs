@@ -47,7 +47,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'progettoGenRef', 'importInCorsoRef', 'nuovoIdFoto', 'makeFolderKeyer', 'BACKUP_KEY_SEP',
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
-    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction'];
+    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
 
 /* ITALIANO: l'app finta, con le foto `iniziali` gia' aperte. `percorsi` = Electron con i percorsi
@@ -57,7 +57,9 @@ const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, proc
    disk (getPathForFile gives file.percorso). render(d) = the real functions with summary `d` open;
    `riepilogoAperto` tells whether "Import" closed it. */
 export const creaApp = ({ iniziali = [], percorsi = true } = {}) => {
-    const app = { images: [...iniziali], notifiche: [], riepilogoAperto: true, passiSaltati: 0 };
+    // ITALIANO: cambiStoria = gli aggiornamenti passati a setHistory, da applicare a una cronologia (vedi trash-harness).
+    // ENGLISH: cambiStoria = the updates handed to setHistory, to apply to a history (see trash-harness).
+    const app = { images: [...iniziali], notifiche: [], riepilogoAperto: true, passiSaltati: 0, cambiStoria: [] };
     const refs = { imagesRef: { current: app.images }, importInCorsoRef: { current: [] }, progettoGenRef: { current: 0 }, importAttiviRef: { current: 0 },
         ripristinoInCorsoRef: { current: false }, isUndoRedoAction: { current: false } };
     let id = 0;
@@ -76,7 +78,7 @@ export const creaApp = ({ iniziali = [], percorsi = true } = {}) => {
         B.folderSignature, B.backupDellImport, { getItem: () => null }, 1024 * 1024, S.parseSidecarText,
         async () => ({ url: '', width: 1, height: 1 }), S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction);
+        refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction, (f) => { app.cambiStoria.push(f); });
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).
