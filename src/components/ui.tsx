@@ -148,6 +148,27 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         }
     };
     const occorrenze = new Map<string, number>();
+    // ITALIANO: l'animazione d'ingresso solo per le pillole nate DOPO la comparsa della casella, e solo
+    //           finche' dura. Prima l'avevano tutte le pillole di tutte le card: con fill-mode "both"
+    //           restava in vigore anche finita, Chromium teneva ogni pillola su un livello suo (308 con
+    //           mille foto in Quadrate) e la faceva ripartire a ogni card che rientrava a schermo
+    //           (content-visibility): lo scorrimento scendeva a circa 20 fotogrammi al secondo.
+    // ENGLISH: the entry animation only for pills born AFTER the box appeared, and only while it lasts.
+    //          Every pill of every card used to have it: with fill-mode "both" it stayed in effect even
+    //          when finished, Chromium kept each pill on its own layer (308 with a thousand photos in
+    //          Square) and restarted it whenever a card came back on screen (content-visibility):
+    //          scrolling dropped to about 20 frames per second.
+    const vistiRef = useRef<Set<string> | null>(null);
+    const [, ridisegna] = useState(0);
+    if (vistiRef.current === null) {
+        const iniziali = new Map<string, number>();
+        vistiRef.current = new Set((Array.isArray(tags) ? tags : []).map((tag: string) => {
+            const n = iniziali.get(tag) ?? 0;
+            iniziali.set(tag, n + 1);
+            return n === 0 ? tag : `${tag}\u0000${n}`;
+        }));
+    }
+    const visti = vistiRef.current;
 
     return (
         <div onClick={() => !readOnly && inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-3.5 p-2 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto lightbox-scroll ${readOnly ? 'cursor-default' : 'cursor-text'} ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
@@ -163,8 +184,12 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
             const colorClass = getActiveCategoryColor(category);
             
             const traduzione = translateTag(tag, lang);
+            const chiave = occorrenza === 0 ? tag : `${tag}\u0000${occorrenza}`;
+            const nuova = !visti.has(chiave);
             return (
-                <span key={occorrenza === 0 ? tag : `${tag}\u0000${occorrenza}`} title={traduzione ? `${tag} — ${traduzione}` : tag} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
+                <span key={chiave} title={traduzione ? `${tag} — ${traduzione}` : tag}
+                    onAnimationEnd={nuova ? () => { visti.add(chiave); ridisegna(n => n + 1); } : undefined}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium ${nuova ? 'animate-in zoom-in duration-200 ' : ''}${colorClass}`}>
                     {isNsfw && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm mr-0.5">+18</span>}
                     {tag}
                     {!readOnly && (

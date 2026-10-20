@@ -286,14 +286,18 @@ const GalleryCard = React.memo(function GalleryCard({ img, isDarkMode, viewMode,
                     </div>
                 )}
 
-                <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); onSelectToggle(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm backdrop-blur-sm ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{isSelected && <Check size={14} className="text-white" />}</div></div>
+                <div className="absolute top-2 left-2 z-20" onClick={(e) => { e.stopPropagation(); onSelectToggle(img.id); }}><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'bg-black/30 border-white/70 hover:bg-black/50'}`}>{isSelected && <Check size={14} className="text-white" />}</div></div>
                 <button onClick={(e) => { e.stopPropagation(); onTrash(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-10' : 'right-2'} p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.moveToTrash}><Trash2 size={14} /></button>
                 {/* ITALIANO: chiude la foto (la toglie dalla vista) senza cestinarla ne' toccarla su disco */}
                 {/* ENGLISH: closes the photo (removes it from view) without trashing it or touching the disk */}
                 <button onClick={(e) => { e.stopPropagation(); onClose(img.id); }} className={`absolute top-2 ${lowQuality ? 'right-[4.5rem]' : 'right-10'} p-1.5 bg-black/50 hover:bg-amber-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-20`} title={t.closeImageTitle}><X size={14} /></button>
-                {/* ITALIANO: Contatore tag della singola foto */}
-                {/* ENGLISH: Per-photo tag count */}
-                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md backdrop-blur-sm ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={t.tagCountLabel.replace('{n}', String(img.tags?.length || 0))}>
+                {/* ITALIANO: Contatore tag della singola foto. Ne' lui ne' il cerchio della selezione hanno
+                              lo sfocato dietro (backdrop-blur): ognuno costava un livello composto per card,
+                              154 con mille foto, e su uno sfondo scuro quasi pieno non si vedeva. */}
+                {/* ENGLISH: Per-photo tag count. Neither it nor the selection circle has the backdrop blur:
+                             each cost one composited layer per card, 154 with a thousand photos, and on an
+                             almost solid dark background it was barely visible. */}
+                <div className={`absolute bottom-2 left-2 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold shadow-md ${(img.tags?.length || 0) > 0 ? 'bg-indigo-500/90 text-white' : 'bg-black/50 text-gray-300'}`} title={t.tagCountLabel.replace('{n}', String(img.tags?.length || 0))}>
                     <Tag size={11} />{img.tags?.length || 0}
                 </div>
                 {/* ITALIANO: Copia/incolla TUTTI i tag di questa foto, dalla galleria (al passaggio del mouse) */}
