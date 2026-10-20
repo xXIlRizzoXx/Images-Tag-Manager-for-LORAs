@@ -170,7 +170,15 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     };
 
     const handleAddAll = () => { updateTags(image.id, [...allTags]); soundManager.chime(); };
-    const handleRemoveAll = () => { updateTags(image.id, []); soundManager.pop(); };
+    // ITALIANO: le trigger word che la foto aveva restano, come in "Elimina tutti i tag" di App.tsx.
+    //           Prima se ne andavano anche loro mentre il riquadro delle trigger le mostrava attive,
+    //           e niente le rimetteva: il .txt salvato dopo usciva senza la parola chiave. Una trigger
+    //           si toglie ancora da questa sola foto con un clic sulla sua pillola (toggleTag).
+    // ENGLISH: the trigger words the photo had stay, as in App.tsx's "Delete all tags". They used
+    //          to go too while the trigger box showed them as active, and nothing put them back:
+    //          the .txt saved afterwards came out without the keyword. A trigger can still be
+    //          removed from this photo only with a click on its pill (toggleTag).
+    const handleRemoveAll = () => { updateTags(image.id, currentTags.filter((tag: string) => hasTagIgnoringCase(globalTriggers, tag))); soundManager.pop(); };
 
     // ITALIANO: Copia i tag di QUESTA foto (li conserva App), poi li puoi incollare
     //           su un'altra foto. L'incolla li AGGIUNGE senza creare doppioni.
