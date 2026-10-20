@@ -82,6 +82,24 @@ console.log('\n--- chiave cambiata e un errore a schermo: il riepilogo non lo co
     dice('l\'errore della chiave resta a schermo, il riepilogo non lo copre', [t.apiKeyNotSaved, 'error'], [ultimo[0], ultimo[1]]);
 }
 
+console.log('\n--- chiave cambiata e subito un lotto nuovo: il riepilogo vecchio non lo copre ---');
+{
+    let app = null;
+    app = nuovaApp(fotoQuattro(), (n) => { if (n === 1) app.cambiaChiave(NUOVA); return BUONA; });
+    app.trattieniTimer = true;
+    await app.tutte();
+    dice('premessa: il riepilogo "annullato" aspetta 3 secondi', 1, app.timerTrattenuti.length);
+    // ITALIANO: entro i 3 secondi l'utente fa ripartire "Tagga tutte" con la chiave nuova.
+    // ENGLISH: within the 3 seconds the user restarts "Auto-tag all" with the new key.
+    app.chiaveDelLotto(NUOVA);
+    await app.tutte();
+    const dopoNuovo = app.notifiche[app.notifiche.length - 1] || [];
+    for (const f of app.timerTrattenuti.splice(0)) f();
+    const ultimo = app.notifiche[app.notifiche.length - 1] || [];
+    dice('il riepilogo del lotto nuovo resta l\'ultimo avviso', [dopoNuovo[0], dopoNuovo[1]], [ultimo[0], ultimo[1]]);
+    dice('...e non e\' "annullato"', false, String(ultimo[0]).startsWith(t.aiBatchCancelled.split('{ok}')[0]));
+}
+
 console.log('\n--- chiave tolta a meta\' lotto (il ref torna vuoto) ---');
 {
     let app = null;

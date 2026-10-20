@@ -74,7 +74,7 @@ const NOMI = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomProm
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
     'hasTagsBeyondTriggers', 'useCallback', 'console', 'txtNonLettoInVigore', 'progettoGenRef',
-    'geminiApiKeyRef', 'aiSingolaControllerRef', 'deleteSecret', 'setGeminiApiKey', 'setIsAIBusy', 'provaModelliRef'];
+    'geminiApiKeyRef', 'aiSingolaControllerRef', 'aiLottoRef', 'setToast', 'deleteSecret', 'setGeminiApiKey', 'setIsAIBusy', 'provaModelliRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { handleAITagAll, handleClearApiKey, handleCancelAITagging };');
 
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 0xAE, 0x42, 0x60, 0x82]);
@@ -98,7 +98,7 @@ const prova = async (azione, cancellata = true) => {
         countNewTagsIgnoringCase: C.countNewTagsIgnoringCase, globalTriggersRef: { current: [] },
         hasTagsBeyondTriggers: C.hasTagsBeyondTriggers, useCallback: (f) => f,
         console: { log() { }, warn() { }, error() { } }, txtNonLettoInVigore: S.txtNonLettoInVigore,
-        progettoGenRef: { current: 0 }, geminiApiKeyRef: { current: chiave }, aiSingolaControllerRef: { current: null },
+        progettoGenRef: { current: 0 }, geminiApiKeyRef: { current: chiave }, aiSingolaControllerRef: { current: null }, aiLottoRef: { current: 0 }, setToast: () => { },
         deleteSecret: () => new Promise(ok => setTimeout(() => ok(cancellata), 5)),
         setGeminiApiKey: () => { }, setIsAIBusy: () => { }, provaModelliRef: { current: null },
     };

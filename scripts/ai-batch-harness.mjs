@@ -92,7 +92,7 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
     'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef',
-    'geminiApiKeyRef', 'aiSingolaControllerRef', 'setToast'];
+    'geminiApiKeyRef', 'aiSingolaControllerRef', 'setToast', 'aiLottoRef'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -141,7 +141,9 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         // ITALIANO: orologio finto: ogni attesa fa avanzare il tempo e finisce subito.
         // ENGLISH: fake clock: every wait moves time forward and ends at once.
         Date: { now: () => orologio },
-        setTimeout: (f, ms) => { orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
+        // ITALIANO: con app.trattieniTimer le attese di almeno 3 secondi restano in app.timerTrattenuti (la prova le fa scattare).
+        // ENGLISH: with app.trattieniTimer waits of at least 3 seconds stay in app.timerTrattenuti (the test fires them).
+        setTimeout: (f, ms) => { if (app.trattieniTimer && (ms || 0) >= 3000) { app.timerTrattenuti.push(f); return 0; } orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
         console: { log() { }, warn() { }, error() { } },
         txtNonLettoInVigore: sidecar.txtNonLettoInVigore,
         progettoGenRef: { current: 0 },
@@ -150,6 +152,7 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         geminiApiKeyRef: { current: chiave },
         // ITALIANO: la richiesta AI di una sola foto (nessuna qui). ENGLISH: the single-photo AI request (none here).
         aiSingolaControllerRef: { current: null },
+        aiLottoRef: { current: 0 },
     };
     const pezzi = () => fabbrica(...DIPENDENZE.map(n => dip[n]));
     app.tutte = () => pezzi().handleAITagAll();
@@ -169,6 +172,10 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     // ENGLISH: the user saves another key (or the same one) in the key dialog.
     app.chiave = chiave;
     app.cambiaChiave = (k) => { dip.geminiApiKeyRef.current = k; };
+    app.timerTrattenuti = [];
+    // ITALIANO: la chiave che il lotto prende all'avvio (lo stato geminiApiKey di App).
+    // ENGLISH: the key the batch takes at its start (App's geminiApiKey state).
+    app.chiaveDelLotto = (k) => { dip.geminiApiKey = k; };
     // ITALIANO: un avviso mostrato da un altro punto dell'app (per esempio l'errore della chiave non salvata).
     // ENGLISH: a notice shown by another part of the app (for example the key-not-saved error).
     app.avviso = (m, tipo) => dip.showNotification(m, tipo);

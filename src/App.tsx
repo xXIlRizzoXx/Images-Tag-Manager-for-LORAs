@@ -532,6 +532,11 @@ export default function App() {
     // ITALIANO: AbortController del batch AI in corso — permette di interrompere anche la richiesta HTTP appesa
     // ENGLISH: AbortController of the running AI batch — lets Cancel interrupt even a hung HTTP request
     const aiAbortControllerRef = useRef<AbortController | null>(null);
+    // ITALIANO: il numero dell'ultimo lotto "Tagga tutte con AI" partito: il riepilogo ritardato di un lotto
+    //           vecchio non compare piu' se nel frattempo ne e' partito un altro.
+    // ENGLISH: the number of the last "Auto-tag all with AI" batch started: a late summary of an old batch
+    //          no longer shows up when another batch started in the meantime.
+    const aiLottoRef = useRef(0);
     // ITALIANO: AbortController della richiesta AI di UNA foto ("Genera tag con AI"): l'interruttore
     //           dell'AI e "Togli la chiave" la fermano, come fanno con il lotto.
     // ENGLISH: AbortController of the AI request for ONE photo ("Generate tags with AI"): the AI
@@ -5960,6 +5965,7 @@ export default function App() {
         // ENGLISH: Controller to abort in-flight HTTP requests when the user cancels
         aiAbortControllerRef.current = new AbortController();
         const batchSignal = aiAbortControllerRef.current.signal;
+        const lotto = ++aiLottoRef.current;
         // ITALIANO: si parte dalle sole foto in galleria. Quelle gia' nel cestino dell'app (scartate dal
         //           dataset) contavano nel totale della barra e fra le "Saltate" del riepilogo, anche
         //           con "Salta foto gia' taggate" spento. Una foto messa nel cestino DURANTE il lavoro
@@ -6252,7 +6258,7 @@ export default function App() {
             //          for this session"), as the MCP edit notice already does.
             if (!fatalAbort && cancelled && chiaveCambiata()) {
                 setTimeout(() => {
-                    if (progetto !== progettoGenRef.current) return;
+                    if (progetto !== progettoGenRef.current || lotto !== aiLottoRef.current) return;
                     setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message: summary, type: successType, id: Date.now() }));
                 }, 3000);
             } else if (!fatalAbort) showNotification(summary, successType);
