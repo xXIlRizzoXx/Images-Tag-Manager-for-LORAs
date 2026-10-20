@@ -74,7 +74,7 @@ const apri = (tags, globalTriggers, allTags = []) => {
     let images = [{ id: 'a', tags: [...tags], originalTags: [...tags] }];
     const setImages = (f) => { images = typeof f === 'function' ? f(images) : f; };
     const a = new Function('useCallback', 'globalTriggers', 'setImages', 'uniqueTagsIgnoringCase',
-        codiceApp + '\nreturn { updateImageTags, getOrderedTagString };')((f) => f, globalTriggers, setImages, C.uniqueTagsIgnoringCase);
+        'const imagesRef = { current: [] };\n' + codiceApp + '\nreturn { updateImageTags, getOrderedTagString };')((f) => f, globalTriggers, setImages, C.uniqueTagsIgnoringCase);
     const visore = () => {
         const image = images[0];
         return new Function('updateTags', 'image', 'currentTags', 'allTags', 'globalTriggers', 'soundManager',

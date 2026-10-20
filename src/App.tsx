@@ -5426,6 +5426,13 @@ export default function App() {
             ...uniqueTags.filter(tag => !globalTriggers.includes(tag)).sort((a, b) => a.localeCompare(b))
         ];
         setImages(prev => prev.map(img => img.id === id ? { ...img, tags: orderedTags } : img));
+        // ITALIANO: imagesRef si aggiorna subito, come nel percorso MCP: "Salva e chiudi" lo legge appena
+        //           finita la scrittura dei .txt, prima del render, e un risultato dell'AI arrivato proprio
+        //           allora non si vedeva: il progetto si chiudeva e quei tag si perdevano.
+        // ENGLISH: imagesRef is updated at once, as in the MCP path: "Save and close" reads it as soon as
+        //          the .txt writing ends, before the render, and an AI result arriving right then was not
+        //          seen: the project closed and those tags were lost.
+        imagesRef.current = imagesRef.current.map(img => img.id === id ? { ...img, tags: orderedTags } : img);
     }, [globalTriggers]);
     // ITALIANO: il visualizzatore ha scritto il .txt: come in performSave, non e' un passo della cronologia,
     //           e le gemelle seguono il .txt scritto, con sopra le loro modifiche (vedi gemelliDelTxt).

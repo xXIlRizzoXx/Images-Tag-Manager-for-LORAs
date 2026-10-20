@@ -66,6 +66,14 @@ const NOMI = ['images', 'imagesRef', 'globalTriggers', 'globalTriggersRef', 'set
     'window', 'chiudiFinestraSeRichiesto', 'setIsSaving', 'setImportProgress', 'getOrderedTagString', 'soundManager', 'buildTagFileName',
     'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'gemelliDelTxt'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { handleCloseProject, handleSaveAndCloseProject };');
+// ITALIANO: updateImageTags e' un useCallback: si ritaglia fino a "}, [globalTriggers]);".
+// ENGLISH: updateImageTags is a useCallback: it is cut up to "}, [globalTriggers]);".
+const TC = await carica('src/utils/tagCase.ts');
+const inizioTag = sorgente.indexOf('    const updateImageTags = useCallback(');
+const fineTag = sorgente.indexOf('}, [globalTriggers]);', inizioTag);
+if (inizioTag < 0 || fineTag < 0) { console.log('NO  updateImageTags non trovata in src/App.tsx'); process.exit(1); }
+const codiceTag = (await esbuild.transform(sorgente.slice(inizioTag, fineTag + '}, [globalTriggers]);'.length), { loader: 'ts' })).code;
+const creaUpdateImageTags = new Function('useCallback', 'uniqueTagsIgnoringCase', 'globalTriggers', 'setImages', 'imagesRef', codiceTag + '\nreturn updateImageTags;');
 const muto = { log() { }, warn() { }, error() { } };
 const pausa = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -85,7 +93,7 @@ const creaApp = (immagini) => {
     const cartella = { getFileHandle: async (nome) => ({ createWritable: async () => {
         let testo = '';
         return { write: async (x) => { testo += x; await pausa(20); if (a.durante) { const d = a.durante; a.durante = null; d(); } await pausa(20); },
-            close: async () => { a.disco[nome] = testo; } };
+            close: async () => { a.disco[nome] = testo; if (a.allaFine) { const d = a.allaFine; a.allaFine = null; d(); } } };
     } }) };
     a.foto = (id, tags, originalTags) => ({ id, file: { name: id + '.png' }, tags, originalTags, isTrashed: false, dirHandle: cartella });
     a.render = () => fabbrica(a.stato, imagesRef, [], { current: [] }, a.setImages, t,
@@ -97,6 +105,9 @@ const creaApp = (immagini) => {
         {}, () => { }, () => { }, () => { }, (tags) => (tags.length ? tags.join(', ') + ',' : ''), { chime() { } }, P.buildTagFileName,
         P.sanitizeFileName, P.sidecarTagFileName, { current: false }, async () => () => { });
     a.aiTagga = (id, tags) => a.setImages(p => p.map(i => i.id === id ? { ...i, tags } : i));
+    // ITALIANO: come il lotto AI e "Tagga con AI" di una foto: passa dalla updateImageTags VERA.
+    // ENGLISH: like the AI batch and single-photo "Tag with AI": goes through the REAL updateImageTags.
+    a.aiTaggaVero = (id, tags) => creaUpdateImageTags((f) => f, TC.uniqueTagsIgnoringCase, [], a.setImages, imagesRef)(id, tags);
     return a;
 };
 const ultima = (a) => (a.notifiche[a.notifiche.length - 1] || [''])[0];
@@ -171,6 +182,25 @@ console.log('\n--- casi vicini che non devono cambiare ---');
     a.render().handleCloseProject();
     a.conferma.onConfirm();
     dice('conferma semplice: una modifica solo su una foto nel cestino non ferma la chiusura', 1, a.chiusure);
+}
+
+// ITALIANO: il risultato dell'AI arriva proprio alla fine dell'ultima scrittura, prima del render: il
+//           controllo legge imagesRef subito dopo il salvataggio. updateImageTags deve aggiornarlo
+//           subito (come il percorso MCP), altrimenti il progetto si chiude e quei tag si perdono.
+// ENGLISH: the AI result arrives right at the end of the last write, before the render: the check
+//          reads imagesRef right after the save. updateImageTags must update it at once (like the MCP
+//          path), otherwise the project closes and those tags are lost.
+console.log('\n--- caso A2: il risultato dell\'AI arriva alla fine della scrittura (updateImageTags vera) ---');
+{
+    const a = creaApp([]);
+    a.stato = [a.foto('a', ['cat', 'dog'], ['cat']), a.foto('b', [], [])]; a.imagesRef.current = a.stato;
+    a.render().handleCloseProject();
+    a.allaFine = () => a.aiTaggaVero('b', ['smile', '1girl']);
+    await a.render().handleSaveAndCloseProject();
+    await pausa(5);
+    dice('il progetto NON si chiude: b.png ha tag arrivati alla fine della scrittura', 0, a.chiusure);
+    dice('l\'avviso dice perche\'', t.closeNewChangesMeanwhile, ultima(a));
+    dice('i tag di b.png sono ancora nel programma, in ordine', ['1girl', 'smile'], (a.stato.find(i => i.id === 'b') || {}).tags);
 }
 
 process.exit(esito());
