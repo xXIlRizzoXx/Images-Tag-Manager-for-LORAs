@@ -69,7 +69,7 @@ const codice = (await esbuild.transform(pezzi.join('\n'), { loader: 'ts' })).cod
 // ENGLISH: every ref the pieces read starts at false, like a useRef; the needed ones are set below.
 const nomiRef = [...new Set(pezzi.join('\n').match(/\b\w+Ref\b/g) || [])];
 const NOMI = ['window', 'localStorage', 'dirHandle', 'scriviBackupSubito', 'modificheNonSalvate', 'setTimeout', 'setIsTagEditorOpen',
-    'setSaveCloseDialog', 'showNotification', 't', 'handleSaveChanges', 'closeProjectNow', 'console', ...nomiRef];
+    'setSaveCloseDialog', 'showNotification', 't', 'handleSaveChanges', 'closeProjectNow', 'console', 'images', 'fotoDaSalvare', ...nomiRef];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { effettoChiusura, handleSaveAndCloseProject };');
 
 const foto = (name, tags, originalTags) => ({ id: name, file: { name }, tags, originalTags, backupKey: 'E:\\d\x1f' + name, lottoImport: 'l1', cartellaImport: 'd' });
@@ -91,7 +91,7 @@ const app = ({ immagini, scrittura, electron = true }) => {
     if (a.refs.isSavingRef) a.refs.isSavingRef.current = scrittura;
     const f = fabbrica(win, memoria, null, G.scriviBackupSubito, G.modificheNonSalvate, setTimeout, () => { },
         (d) => { a.finestra = d; a.refs.saveCloseDialogRef.current = d; }, (m, tipo) => a.notifiche.push([m, tipo]), t,
-        async () => { a.salvataggi++; return true; }, () => { }, { error() { } }, ...nomiRef.map(n => a.refs[n]));
+        async () => { a.salvataggi++; return true; }, () => { }, { error() { } }, immagini, G.fotoDaSalvare, ...nomiRef.map(n => a.refs[n]));
     f.effettoChiusura();
     a.salvaEChiudi = f.handleSaveAndCloseProject;
     a.chiudi = () => {

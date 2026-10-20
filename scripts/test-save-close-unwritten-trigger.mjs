@@ -58,7 +58,7 @@ const codice = [
 const NOMI = ['setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
     'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef', 'gemelliDelTxt',
     'images', 'fotoDaSalvare', 'globalTriggers', 'txtNonLettoInVigore',
-    'isSavingRef', 'setSaveCloseDialog', 'closeProjectNow', 'chiusuraFinestraRef', 'permettiChiusuraRef'];
+    'isSavingRef', 'setSaveCloseDialog', 'closeProjectNow', 'chiusuraFinestraRef', 'permettiChiusuraRef', 'imagesRef', 'globalTriggersRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { handleSaveAndCloseProject };');
 const muto = { log() { }, warn() { }, error() { } };
 
@@ -86,7 +86,7 @@ const app = (images, trigger, { dalla = 'progetto' } = {}) => {
         nulla, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, { current: '' }, async () => () => { },
         images, S.fotoDaSalvare, trigger, S.txtNonLettoInVigore,
         { current: false }, (d) => { a.finestra = d; }, () => { a.progettiChiusi++; showNotification(t.closeAllDone, 'success'); },
-        { current: dalla === 'finestra' }, { current: false }).handleSaveAndCloseProject;
+        { current: dalla === 'finestra' }, { current: false }, { current: images }, { current: trigger }).handleSaveAndCloseProject;
     a.ultimo = () => a.notifiche[a.notifiche.length - 1] || null;
     return a;
 };

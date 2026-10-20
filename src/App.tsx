@@ -2303,6 +2303,23 @@ export default function App() {
                 //          them (browser preview) the open folder decides.
                 const suo = percorsiSuDisco(altra).txtPath.toLowerCase();
                 if (mio && suo) { if (suo === mio) return true; continue; }
+                // ITALIANO: la coppia MISTA (vedi stessaFotoMista in alreadyOpen.ts): una foto ha solo il
+                //           percorso (trascinata), l'altra solo la cartella aperta, senza percorso (una
+                //           cartella di rete con "Carica Cartella"). Prima la si saltava, e "Elimina per
+                //           sempre" toglieva il .txt che l'altra usava ancora. Se la cartella aperta ha il
+                //           nome della cartella del percorso, il .txt resta: nel dubbio vince la didascalia.
+                // ENGLISH: the MIXED pair (see stessaFotoMista in alreadyOpen.ts): one photo has only the
+                //          path (dropped), the other only the open folder, with no path (a network folder
+                //          with "Load Folder"). It used to be skipped, and "Delete for good" removed the .txt
+                //          the other one still used. When the open folder has the name of the path's
+                //          folder, the .txt stays: when in doubt the caption wins.
+                const soloPercorso = mio ? img : suo ? altra : null;
+                const soloCartella = mio ? altra : img;
+                if (soloPercorso && !soloPercorso.dirHandle && soloCartella.dirHandle) {
+                    const parti = (mio || suo).replace(/\//g, '\\').split('\\').filter(Boolean);
+                    if (parti.length >= 2 && parti[parti.length - 2] === String(soloCartella.dirHandle.name || '').toLowerCase()) return true;
+                    continue;
+                }
                 if (!img.dirHandle || !altra.dirHandle) continue;
                 if (altra.dirHandle === img.dirHandle) return true;
                 if (typeof img.dirHandle.isSameEntry === 'function' && await img.dirHandle.isSameEntry(altra.dirHandle)) return true;
@@ -2337,7 +2354,22 @@ export default function App() {
                 try {
                     const mio = percorsiSuDisco(img).imgPath.toLowerCase();
                     const suo = percorsiSuDisco(chiusa).imgPath.toLowerCase();
+                    // ITALIANO: la coppia MISTA (vedi txtUsatoDaAltre): una col solo percorso, l'altra con la
+                    //           sola cartella. E' lo stesso file se la cartella aperta ha il nome della
+                    //           cartella del percorso e dimensione e data di modifica coincidono (la regola
+                    //           di stessaFotoMista): qui sbagliare toglierebbe dalle chiuse un altro file.
+                    // ENGLISH: the MIXED pair (see txtUsatoDaAltre): one with only the path, the other with
+                    //          only the folder. It is the same file when the open folder has the name of the
+                    //          path's folder and size and modification date match (the stessaFotoMista rule):
+                    //          a mistake here would take another file off the closed list.
+                    const soloPercorso = mio && !suo ? img : suo && !mio ? chiusa : null;
+                    const soloCartella = soloPercorso === img ? chiusa : img;
+                    const partiMiste = soloPercorso && !soloPercorso.dirHandle && soloCartella.dirHandle
+                        ? (mio || suo).replace(/\//g, '\\').split('\\').filter(Boolean) : null;
                     const stesso = mio && suo ? mio === suo
+                        : partiMiste ? partiMiste.length >= 2 && partiMiste[partiMiste.length - 2] === String(soloCartella.dirHandle.name || '').toLowerCase()
+                            && typeof img.file.size === 'number' && img.file.size === chiusa.file.size
+                            && typeof img.file.lastModified === 'number' && img.file.lastModified === chiusa.file.lastModified
                         : !!(img.dirHandle && chiusa.dirHandle && (img.dirHandle === chiusa.dirHandle
                             || (typeof img.dirHandle.isSameEntry === 'function' && await img.dirHandle.isSameEntry(chiusa.dirHandle))));
                     if (stesso) { trovate.push(id); break; }
@@ -5509,6 +5541,18 @@ export default function App() {
             title: t.closeAllTitle,
             message: t.closeAllMsg,
             onConfirm: () => {
+                // ITALIANO: mentre la conferma era aperta un'AI ("Tagga tutte con AI" o via MCP) puo' aver
+                //           cambiato dei tag: chiudere li buttava senza chiedere di salvarli. Si passa alla
+                //           finestra a tre scelte.
+                // ENGLISH: while the confirmation was open an AI ("AI tag all" or over MCP) may have changed
+                //          some tags: closing threw them away without asking to save them. The
+                //          three-choice dialog takes over.
+                if (imagesRef.current.some(img => !img.isTrashed && fotoDaSalvare(img, globalTriggersRef.current))) {
+                    setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+                    setSaveCloseDialog({ isOpen: true, isSaving: false });
+                    showNotification(t.closeNewChangesMeanwhile, 'info');
+                    return;
+                }
                 closeProjectNow();
                 setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
             },
@@ -5547,6 +5591,27 @@ export default function App() {
         }
         if (!saved) {
             setSaveCloseDialog({ isOpen: true, isSaving: false });
+            return;
+        }
+        // ITALIANO: mentre i .txt si scrivevano un'AI ("Tagga tutte con AI" o via MCP) puo' aver cambiato
+        //           altri tag: Salva ha scritto le foto com'erano al clic (`images`), e chiudere adesso
+        //           buttava i tag arrivati dopo, con "Modifiche salvate con successo!" a schermo. Conta
+        //           solo una foto con tag diversi da quelli del clic: imagesRef si aggiorna dopo il
+        //           render, e le foto appena salvate possono avere li' ancora l'originalTags vecchio.
+        // ENGLISH: while the .txt files were being written an AI ("AI tag all" or over MCP) may have
+        //          changed other tags: Save wrote the photos as they were at the click (`images`), and
+        //          closing now threw away the tags that came later, with "Changes saved successfully!"
+        //          on screen. Only a photo whose tags differ from the click's counts: imagesRef updates
+        //          after the render, and the photos just saved may still carry the old originalTags there.
+        const alClic = new Map(images.map(img => [img.id, img]));
+        const cambiateDopo = imagesRef.current.some(img => {
+            if (img.isTrashed || !fotoDaSalvare(img, globalTriggersRef.current)) return false;
+            const prima = alClic.get(img.id);
+            return !prima || JSON.stringify(prima.tags || []) !== JSON.stringify(img.tags || []);
+        });
+        if (cambiateDopo) {
+            setSaveCloseDialog({ isOpen: true, isSaving: false });
+            showNotification([t.closeNewChangesMeanwhile, avvisoSalvataggioRef.current].filter(Boolean).join(' '), 'info');
             return;
         }
         setSaveCloseDialog({ isOpen: false, isSaving: false });

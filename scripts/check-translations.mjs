@@ -107,6 +107,8 @@ const CITAZIONI = [
     ['mcpClaudeCodeReconnect', 'mcpCopyClaudeCode'],
     ['bulkHiddenWarn', 'deleteSelected'],
     ['dropFolderNoAccess', 'loadFolder'],
+    ['closeNewChangesMeanwhile', 'saveAndClose'],
+    ['closeNewChangesMeanwhile', 'closeWithoutSaving'],
 ];
 
 const rif = 'en';
