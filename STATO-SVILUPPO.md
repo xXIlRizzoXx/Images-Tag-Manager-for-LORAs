@@ -1,7 +1,7 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 20 ottobre 2026
-**Versione attuale:** 2.0.1 costruita, non ancora pubblicata. La 2.0.0 è pubblicata su GitHub dal 16 ottobre 2026.
+**Ultimo aggiornamento:** 21 ottobre 2026
+**Versione attuale:** 2.0.1, pubblicata su GitHub il 21 ottobre 2026 (Latest, portable e installer allegati). Prima della pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
 Novità 2.0.1 (traguardo 115, 20 ottobre 2026, sera): **galleria fluida con mille foto, backup che regge un'uscita brusca, Electron 43.**
 La vista Quadrate scorre a circa 60 fotogrammi al secondo invece di 20: le pillole dei tag non tengono
 più un'animazione sempre accesa, che costringeva a comporre centinaia di livelli a ogni fotogramma. Il
