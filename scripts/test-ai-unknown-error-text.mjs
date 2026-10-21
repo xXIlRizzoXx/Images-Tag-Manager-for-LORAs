@@ -85,10 +85,10 @@ const codiceUna = await prendi('    const handleAITagSingle = useCallback(',
 const codiceChiave = await prendi('    const handleVerifyApiKey = useCallback(', /\r?\n    \}, \[tempApiKey, t\]\);\r?\n/g, 'handleVerifyApiKey');
 const DIP_UNA = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCustomPrompt', 'images', 'imagesRef', 't', 'updateImageTags',
     'getGeminiTags', 'classifyGeminiError', 'showNotification', 'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'setIsAIBusy',
-    'countNewTagsIgnoringCase', 'useCallback', 'console'];
+    'countNewTagsIgnoringCase', 'useCallback', 'console', 'aiEnabledRef', 'geminiApiKeyRef', 'aiSingolaControllerRef'];
 const fabbricaUna = new Function(...DIP_UNA, codiceUna + '\nreturn handleAITagSingle;');
 const fabbricaChiave = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
-    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', 'console', codiceChiave + '\nreturn handleVerifyApiKey;');
+    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', 'console', 'geminiApiKeyRef', 'setSecret', codiceChiave + '\nreturn handleVerifyApiKey;');
 
 class ApiError extends Error {
     constructor(messaggio, stato) { super(messaggio); this.name = 'ApiError'; this.status = stato; }
@@ -115,6 +115,7 @@ const una = async (t, generate, file = new File([PNG_MINIMO], 'f0.png', { type: 
         showNotification: (m, tipo) => notifiche.push([m, tipo]), soundManager: { chime() { } },
         setRiparaModello: () => { r.riparazioni++; }, setIsApiKeyDialogOpen: () => { }, setIsAIBusy: () => { },
         countNewTagsIgnoringCase: C.countNewTagsIgnoringCase, useCallback: (f) => f, console: muto,
+        aiEnabledRef: { current: true }, geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) }, aiSingolaControllerRef: { current: null },
     };
     await fabbricaUna(...DIP_UNA.map(n => dip[n]))('f0');
     return { notifiche, riparazioni: r.riparazioni };
@@ -125,7 +126,7 @@ const verifica = async (t, list) => {
     globalThis.__GOOGLE__ = { chiamate: 0, list, generate: async () => ({ text: '[]' }) };
     const errori = [];
     await fabbricaChiave('AIzaSy' + 'x'.repeat(33), t, S.verifyGeminiApiKey, (m) => errori.push(m), () => { }, () => { },
-        () => { }, { chime() { } }, () => { }, (f) => f, muto)();
+        () => { }, { chime() { } }, () => { }, (f) => f, muto, { current: '' }, async () => true)();
     return errori.filter(Boolean).pop();
 };
 

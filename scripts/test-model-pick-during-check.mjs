@@ -86,7 +86,7 @@ const testoEffetto = app.slice(k0 + '    useEffect('.length, k1 + '    }'.length
 
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, geminiApiKeyRef, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
             elencaModelliRemoti, aggiornaModelloAutomatico, confrontaVersioni, versioneDi, localStorage } = env;
     const aiModel = snap.aiModel;
@@ -133,7 +133,7 @@ const scenario = (iniziale, { elencoAperto = false } = {}) => {
         },
     };
     const env = {
-        t, geminiApiKey: 'AIza' + 'x'.repeat(35),
+        t, geminiApiKey: 'AIza' + 'x'.repeat(35), geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
         controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
         aiModelloFissatoRef: { current: iniziale.aiModelloFissato }, aiEnabledRef: { current: true },
         setControlloModelloInCorso: (v) => { stato.inCorso = v; },
@@ -203,6 +203,35 @@ console.log('\n--- modello bloccato, "Controlla ora" in corso, si sceglie Automa
     dice('Automatico passa davvero al piu\' recente', ['gemini-3.7-flash', false], quadro(s));
     dice('e lo dice col cambio, non con "ce n\'e\' uno piu\' recente"',
         [[t.aiModelSwitched.replace('{da}', 'gemini-3.5-flash').replace('{a}', 'gemini-3.7-flash'), 'info']], s.notifiche);
+}
+
+console.log('\n--- modello bloccato, "Controlla ora" in corso, si sceglie un ALTRO modello preciso ---');
+{
+    // ITALIANO: l'avviso nominava il modello di quando il controllo era partito: bloccato su 3.7 e
+    //           scelto 3.5 durante l'elenco, diceva "sei gia' sul piu' recente: gemini-3.7-flash";
+    //           bloccato su 3.5 e scelto 3.7, "e' disponibile uno piu' recente: gemini-3.7-flash",
+    //           cioe' proprio quello appena scelto. Ora parla del modello in uso.
+    // ENGLISH: the notice named the model the check had started with: locked on 3.7 and 3.5 picked
+    //          during the list, it said "already on the newest: gemini-3.7-flash"; locked on 3.5 and
+    //          3.7 picked, "a newer one is available: gemini-3.7-flash", the very one just picked.
+    //          Now it speaks of the model in use.
+    const s = scenario({ aiModel: 'gemini-3.7-flash', aiModelloFissato: true }, { elencoAperto: true });
+    s.disegna().controllaModello(false, true);
+    await s.provaInCorso;
+    scegli(s, 'gemini-3.5-flash');
+    s.sblocca(); await s.finito();
+    dice('bloccato su 3.7, scelto 3.5: resta 3.5, bloccato', ['gemini-3.5-flash', true], quadro(s));
+    dice('...e l\'avviso dice che ce n\'e\' uno piu\' recente (non "sei gia\' sul piu\' recente")',
+        [[t.aiModelNewerAvailable.replace('{a}', 'gemini-3.7-flash'), 'info']], s.notifiche);
+
+    const r = scenario({ aiModel: 'gemini-3.5-flash', aiModelloFissato: true }, { elencoAperto: true });
+    r.disegna().controllaModello(false, true);
+    await r.provaInCorso;
+    scegli(r, 'gemini-3.7-flash');
+    r.sblocca(); await r.finito();
+    dice('bloccato su 3.5, scelto 3.7: resta 3.7, bloccato', ['gemini-3.7-flash', true], quadro(r));
+    dice('...e l\'avviso dice che e\' gia\' il piu\' recente',
+        [[t.aiModelUpToDate.replace('{a}', 'gemini-3.7-flash'), 'success']], r.notifiche);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

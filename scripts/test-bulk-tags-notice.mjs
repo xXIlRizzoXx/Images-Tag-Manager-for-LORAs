@@ -44,7 +44,7 @@ const f0 = i0 < 0 ? null : fine.exec(sorgente);
 if (!f0) { console.log('NO  applyBulkTags non trovato in src/App.tsx'); process.exit(1); }
 const codice = (await esbuild.transform(sorgente.slice(i0, f0.index + f0[0].length), { loader: 'ts' })).code;
 const fabbrica = new Function('images', 'selectedForBulk', 'stagedBulkTags', 'globalTriggers', 'setImages', 'setStagedBulkTags', 'setSelectedForBulk',
-    'soundManager', 'showNotification', 't', 'uniqueTagsIgnoringCase', 'countNewTagsIgnoringCase', codice + '\nreturn applyBulkTags;');
+    'soundManager', 'showNotification', 't', 'uniqueTagsIgnoringCase', 'countNewTagsIgnoringCase', 'bulkAddInputRef', 'splitTagInput', 'hasTagIgnoringCase', codice + '\nreturn applyBulkTags;');
 
 // ITALIANO: preme Conferma nel pannello in blocco; restituisce foto dopo, messaggi, suoni e quante volte si e' chiamato setImages.
 // ENGLISH: presses Confirm in the bulk panel; returns the photos afterwards, messages, chimes and how many times setImages ran.
@@ -52,7 +52,7 @@ const conferma = (t, foto, selezione, inPreparazione, trigger = []) => {
     const r = { foto, notifiche: [], suoni: 0, setImages: 0, inPreparazione: null, selezione: null };
     fabbrica(foto, selezione, inPreparazione, trigger, (fn) => { r.setImages++; r.foto = fn(r.foto); }, (v) => { r.inPreparazione = v; },
         (v) => { r.selezione = v; }, { chime() { r.suoni++; }, pop() { } }, (m, tipo) => r.notifiche.push([m, tipo]), t,
-        C.uniqueTagsIgnoringCase, C.countNewTagsIgnoringCase)();
+        C.uniqueTagsIgnoringCase, C.countNewTagsIgnoringCase, { current: null }, C.splitTagInput, C.hasTagIgnoringCase)();
     return r;
 };
 const aggiunti = (t, tags, images) => [[t.bulkTagsAdded.replace('{tags}', String(tags)).replace('{images}', String(images)), 'success']];

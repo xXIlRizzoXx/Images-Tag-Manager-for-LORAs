@@ -43,19 +43,26 @@ const testo = (await ritaglia('export const serializeTagFile = (', /\r?\n\};\r?\
     (await ritaglia('    const salva = async (forzaNuovoFile = false): Promise<boolean> => {', /\r?\n    \};\r?\n/g));
 const fabbrica = new Function('tags', 'fileName', 'rileggendo', 'handleRef', 'triggersRef', 'savedTagsRef', 'tagsRef', 'setDirty', 'setFileName',
     'setChiusuraFile', 'azzera', 'soundManager', 'showNotification', 't', 'onFileSaved', 'window', 'document', 'URL', 'Blob',
+    'inAttesa', 'setTags', 'setInputValue', 'uniqueTagsIgnoringCase', 'hasTagIgnoringCase',
     testo + '\nreturn { salva, salvaEChiudiFile };');
 
-const t = { tagEditorSaved: 'File saved', tagEditorSaveError: 'Could not save' };
-const editor = (tags) => {
+const t = { tagEditorSaved: 'File saved', tagEditorSaveError: 'Could not save', tagEditorDownloaded: 'A copy was downloaded ({name}).' };
+// ITALIANO: `attesa` = il testo scritto nella casella e non confermato con Invio; `conSelettore` = il
+//           browser sa aprire la finestra di salvataggio (senza, l'editor ripiega su un download).
+// ENGLISH: `attesa` = the text typed in the box and not confirmed with Enter; `conSelettore` = the
+//          browser can open the save dialog (without it the editor falls back to a download).
+const editor = (tags, { attesa = [], conSelettore = true } = {}) => {
     const r = { scritture: [], notifiche: [], sincronizzati: [], chiuso: false, aperturaSalvataggio: 0 };
     const handle = {
         name: 'img_001.txt',
         async createWritable() { return { async write(c) { r.scritture.push(c); }, async close() { } }; },
     };
-    const finestra = { async showSaveFilePicker() { r.aperturaSalvataggio++; return handle; } };
+    const finestra = conSelettore ? { async showSaveFilePicker() { r.aperturaSalvataggio++; return handle; } } : {};
+    const documento = { createElement: () => ({ click() { r.scaricato = true; } }), body: { appendChild() { }, removeChild() { } } };
     const conHandle = (h) => fabbrica(tags, 'img_001.txt', false, { current: h }, { current: [] }, { current: ['smile'] }, { current: tags },
         () => { }, () => { }, () => { }, () => { r.chiuso = true; }, { chime() { }, pop() { } }, (m, tipo) => r.notifiche.push([m, tipo]), t,
-        (nome, lista) => r.sincronizzati.push([nome, lista]), finestra, {}, URL, Blob);
+        (nome, lista) => r.sincronizzati.push([nome, lista]), finestra, documento, URL, Blob,
+        () => [...attesa], (v) => { r.tagMostrati = v; }, (v) => { r.casella = v; }, (l) => [...new Set(l)], (l, x) => l.includes(x));
     r.fn = conHandle(handle);
     r.fnSenzaFile = conHandle(null);
     return r;
@@ -94,6 +101,29 @@ console.log('\n--- quello che NON deve cambiare ---');
     const s = editor(['1girl']);
     dice('Salva con dei tag restituisce "scritto"', true, await s.fn.salva(false));
     dice('...e scrive', ['1girl,'], s.scritture);
+}
+
+console.log('\n--- il testo scritto e non confermato con Invio ---');
+{
+    const r = editor(['smile'], { attesa: ['blue eyes'] });
+    await r.fn.salvaEChiudiFile();
+    dice('"Salva e chiudi" lo scrive insieme agli altri tag', ['smile, blue eyes,'], r.scritture);
+    dice('...lo mostra fra i tag e svuota la casella', [['smile', 'blue eyes'], ''], [r.tagMostrati, r.casella]);
+    const v = editor([], { attesa: ['1girl'] });
+    dice('con la lista vuota ma del testo in attesa, Salva scrive il file', true, await v.fn.salva(false));
+    dice('...con quel tag', ['1girl,'], v.scritture);
+    const ed = fs.readFileSync(path.join(radice, 'src/components/TagFileEditor.tsx'), 'utf8');
+    dice('chiudere, aprire o "Nuovo" chiedono prima anche per il solo testo in attesa', true,
+        /const modificato = dirty \|\| inAttesa\(\)\.length > 0;[\s\S]{0,80}const guardDiscard = [^\n]*\n\s*if \(!modificato\)/.test(ed));
+}
+
+console.log('\n--- un browser senza finestra di salvataggio: il download non e\' un salvataggio ---');
+{
+    const r = editor(['smile'], { conSelettore: false });
+    const scritto = await r.fnSenzaFile.salva(false);
+    dice('scarica una copia', true, r.scaricato === true);
+    dice('ma non dice "Salvato" e non torna "scritto"', [false, []], [scritto, r.notifiche.filter(([, tipo]) => tipo === 'success')]);
+    dice('dice che e\' una copia scaricata', [['A copy was downloaded (img_001.txt).', 'info']], r.notifiche);
 }
 
 process.exit(esito());

@@ -32,6 +32,12 @@ const { fileDiMac } = await import('data:text/javascript;base64,' + Buffer.from(
     entryPoints: [path.join(radice, 'src/utils/folderScan.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
 })).outputFiles[0].text).toString('base64'));
 
+// ITALIANO: la regola vera di "e' un'immagine?" (src/utils/imageFile.ts), che le strade di import usano.
+// ENGLISH: the real "is it an image?" rule (src/utils/imageFile.ts), which the import roads use.
+const { eFileImmagine } = await import('data:text/javascript;base64,' + Buffer.from((await esbuild.build({
+    entryPoints: [path.join(radice, 'src/utils/imageFile.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+})).outputFiles[0].text).toString('base64'));
+
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
 const inizio = sorgente.indexOf('    const handleDroppedFiles = useCallback(');
 const chiusura = /\r?\n    \}, \[([^\]]*)\]\);\r?\n/g;
@@ -40,12 +46,12 @@ const fine = inizio < 0 ? null : chiusura.exec(sorgente);
 if (!fine) { console.log('NO  handleDroppedFiles non trovato in src/App.tsx'); process.exit(1); }
 const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 
-const trascina = async ({ editor = false, chiave = false } = {}) => {
+const trascina = async ({ editor = false, chiave = false, aiuto = null, chiusura = false } = {}) => {
     const r = { notifiche: [], riepiloghi: 0 };
     const f = new Function('useCallback', 'showNotification', 't', 'loadSidecarTxtFiles', 'calculateImportSummary', 'isTagEditorOpen', 'isApiKeyDialogOpen',
-        'fileDiMac', codice + '\nreturn handleDroppedFiles;')(
+        'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine', codice + '\nreturn handleDroppedFiles;')(
         (fn) => fn, (m, tipo) => r.notifiche.push([m, tipo]), t, async () => ({ txtFiles: [], folderOf: null }),
-        () => { r.riepiloghi++; }, editor, chiave, fileDiMac);
+        () => { r.riepiloghi++; }, editor, chiave, fileDiMac, aiuto, { isOpen: chiusura, isSaving: false }, eFileImmagine);
     await f([{ name: 'a.png', type: 'image/png' }, { name: 'a.txt', type: 'text/plain' }]);
     return r;
 };
@@ -63,6 +69,22 @@ console.log('\n--- foto trascinate con la finestra della API key aperta ---');
     dice('il riepilogo non si apre, e lo si dice', [0, [[t.dropCloseWindowFirst, 'info']]], [r.riepiloghi, r.notifiche]);
 }
 
+// ITALIANO: la spiegazione «?» delle Impostazioni (z 450) e «Salvare prima di chiudere?» (z 500)
+//           stanno anche loro sopra al riepilogo (z 300).
+// ENGLISH: the Settings "?" explanation (z 450) and "Save before closing?" (z 500) also sit above
+//          the summary (z 300).
+console.log('\n--- foto trascinate con la spiegazione «?» delle Impostazioni aperta ---');
+{
+    const r = await trascina({ aiuto: 'mcp' });
+    dice('il riepilogo non si apre, e lo si dice', [0, [[t.dropCloseWindowFirst, 'info']]], [r.riepiloghi, r.notifiche]);
+}
+
+console.log('\n--- foto trascinate con «Salvare prima di chiudere?» aperta ---');
+{
+    const r = await trascina({ chiusura: true });
+    dice('il riepilogo non si apre, e lo si dice', [0, [[t.dropCloseWindowFirst, 'info']]], [r.riepiloghi, r.notifiche]);
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const r = await trascina();
@@ -73,6 +95,7 @@ console.log('\n--- quello che NON deve cambiare ---');
     //          always see the value of the first render.
     const dip = fine[1].split(',').map(s => s.trim());
     dice('handleDroppedFiles dipende da isTagEditorOpen e isApiKeyDialogOpen', [true, true], [dip.includes('isTagEditorOpen'), dip.includes('isApiKeyDialogOpen')]);
+    dice('...e anche da aiuto e saveCloseDialog.isOpen', [true, true], [dip.includes('aiuto'), dip.includes('saveCloseDialog.isOpen')]);
 }
 
 console.log('\n--- la frase nelle nove lingue ---');

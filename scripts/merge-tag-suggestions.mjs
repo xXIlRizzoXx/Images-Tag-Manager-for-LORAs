@@ -33,20 +33,42 @@ const ingressi = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i 
 //   o maiuscole diverse: e' cosi' che si evitano i doppioni veri.
 // ENGLISH: two tags are "the same tag" even when spelled with underscores, extra spaces or
 //   different case: that is what actually prevents duplicates.
-// ITALIANO: un tag fatto solo di parentesi ('(o)_(o)') senza di loro resterebbe vuoto, e il
-//   rapporto lo scarterebbe: in quel caso la chiave tiene le parentesi.
-// ENGLISH: a tag made only of parentheses ('(o)_(o)') would be empty without them, and the report
-//   would drop it: in that case the key keeps the parentheses.
-const chiave = t => {
-    const base = String(t).toLowerCase().replace(/[_\s]+/g, ' ').trim();
-    return base.replace(/\s*\(.*?\)\s*/g, ' ').trim() || base;
+// ITALIANO: il testo tra parentesi resta nella chiave: 'spring (object)' (la molla) e
+//   'aura (sousou no frieren)' (un personaggio) sono tag diversi da 'spring' e 'aura'. Prima la
+//   chiave lo toglieva e il rapporto li dava per "gia' nel dizionario" senza avvisare.
+// ENGLISH: the text in parentheses stays in the key: 'spring (object)' (the coil) and
+//   'aura (sousou no frieren)' (a character) are different tags from 'spring' and 'aura'. The key
+//   used to remove it and the report called them "already in the dictionary" without a word.
+// ITALIANO: i pesi dei prompt: '(masterpiece)', '((best quality))', '(smile:1.2)', '[blue sky]' sono
+//   i tag masterpiece, best quality, smile, blue sky con un peso intorno. Si tolgono prima di tutto,
+//   altrimenti il rapporto li proponeva come tag nuovi. Restano i tag che sono parentesi e basta:
+//   '(x)' (una lettera sola, senza peso) e '(o)_(o)' (parentesi dentro) non sono pesi.
+// ENGLISH: prompt weights: '(masterpiece)', '((best quality))', '(smile:1.2)', '[blue sky]' are the
+//   tags masterpiece, best quality, smile, blue sky with a weight around them. They are removed first,
+//   otherwise the report offered them as new tags. Tags that are just parentheses stay: '(x)' (one
+//   letter, no weight) and '(o)_(o)' (parentheses inside) are not weights.
+const senzaPeso = s => {
+    const m = /^[([]+([^()[\]]*?)(:[\d.]+)?[)\]]+$/.exec(s);
+    return m && (m[2] || /[\p{L}\p{N}].*[\p{L}\p{N}]/u.test(m[1])) ? m[1].trim() : s;
 };
+// ITALIANO: gli spazi attorno alla parentesi di una precisazione non contano: 'miku(vocaloid)' e
+//   'miku ( vocaloid )' diventano 'miku (vocaloid)'. Solo con una lettera o una cifra sia prima
+//   sia dopo la parentesi, cosi' '(o)_(o)', '(x)', ':(' e le emoticon giapponesi come 'o(^-^)o'
+//   o 'ヽ(・∀・)ﾉ' restano come sono.
+// ENGLISH: the spaces around a qualifier's parenthesis do not count: 'miku(vocaloid)' and
+//   'miku ( vocaloid )' become 'miku (vocaloid)'. Only with a letter or a digit both before and
+//   after the parenthesis, so '(o)_(o)', '(x)', ':(' and Japanese emoticons such as 'o(^-^)o' or
+//   'ヽ(・∀・)ﾉ' stay as they are.
+// ITALIANO: lettere latine soltanto: gli occhi di 'ლ(ಠ益ಠლ)' o 'щ(ﾟдﾟщ)' per Unicode sono lettere.
+// ENGLISH: Latin letters only: the eyes of 'ლ(ಠ益ಠლ)' or 'щ(ﾟдﾟщ)' are letters for Unicode.
+const spaziParentesi = s => s.replace(/([\p{Script=Latin}0-9])\s*\(\s*(?=[\p{Script=Latin}0-9])/gu, '$1 (').replace(/([\p{Script=Latin}0-9])\s+\)/gu, '$1)');
+const chiave = t => spaziParentesi(senzaPeso(String(t).toLowerCase().trim()).replace(/[_\s]+/g, ' ').trim());
 
 // ITALIANO: la forma con cui un tag nuovo entra nel dizionario, dove sono tutti in minuscolo con
-//   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (a differenza di chiave),
+//   spazi singoli: 'Blue_Sky' diventa 'blue sky'. Le parentesi restano (come in chiave),
 //   e un'emoticon senza lettere ne' cifre (^_^) tiene i suoi trattini bassi.
 // ENGLISH: the form in which a new tag enters the dictionary, where every tag is lowercase with
-//   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (unlike chiave), and an
+//   single spaces: 'Blue_Sky' becomes 'blue sky'. Parentheses stay (as in chiave), and an
 //   emoticon without letters or digits (^_^) keeps its underscores.
 // ITALIANO: il trattino basso resta anche dove fa parte del tag, perche' i modelli conoscono
 //   solo quella forma: le emoticon di WD14 (o_o, x_x, 0_0: un segno, _, un segno, piu' le poche
@@ -59,9 +81,9 @@ const chiave = t => {
 const EMOTICON_LUNGHE = new Set(['(o)_(o)', '<o>_<o>', '<|>_<|>', '||_||']);
 const tieneTrattino = s => /^[^\s_]_[^\s_]$/u.test(s) || EMOTICON_LUNGHE.has(s) || /^(score|source|rating)_[\p{L}\p{N}_]+$/u.test(s);
 const grafia = t => {
-    const s = String(t).toLowerCase().trim();
+    const s = senzaPeso(String(t).toLowerCase().trim());
     if (tieneTrattino(s)) return s;
-    return (/[\p{L}\p{N}]/u.test(s) ? s.replace(/[_\s]+/g, ' ') : s.replace(/\s+/g, ' ')).trim();
+    return (/[\p{L}\p{N}]/u.test(s) ? spaziParentesi(s.replace(/[_\s]+/g, ' ')) : s.replace(/\s+/g, ' ')).trim();
 };
 
 function leggiDizionario() {
@@ -87,11 +109,52 @@ function leggiDizionario() {
     return { src, categorie, perChiave };
 }
 
+// ITALIANO: il testo di un file di tag dai suoi byte, con la stessa regola di decodificaSidecar
+//   dell'app: BOM FF FE / FE FF -> UTF-16 (Blocco note "Unicode", ">" di Windows PowerShell 5.1),
+//   altrimenti UTF-8 valido senza caratteri NUL (il BOM UTF-8 lo toglie TextDecoder). Il resto
+//   torna null. Prima si leggeva sempre in UTF-8: un file UTF-16 dava tag pieni di NUL, "hat" non
+//   risultava gia' nel dizionario e il piano lo riproponeva.
+// ENGLISH: a tag file's text from its bytes, with the same rule as the app's decodificaSidecar:
+//   BOM FF FE / FE FF -> UTF-16 (Notepad "Unicode", ">" in Windows PowerShell 5.1), otherwise valid
+//   UTF-8 with no NUL characters (TextDecoder drops the UTF-8 BOM). Anything else returns null. It
+//   used to be always read as UTF-8: a UTF-16 file gave NUL-filled tags, "hat" was not found in the
+//   dictionary and the plan offered it again.
+const decodifica = (buf) => {
+    try {
+        if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder('utf-16le', { fatal: true }).decode(buf.subarray(2));
+        if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+            const corpo = Buffer.from(buf.subarray(2));
+            if (corpo.length % 2 !== 0) return null;
+            return new TextDecoder('utf-16le', { fatal: true }).decode(corpo.swap16());
+        }
+        const testo = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+        return testo.includes('\u0000') ? null : testo;
+    } catch (_) {
+        return null;
+    }
+};
+
 function leggiTagDaFile(file) {
-    const testo = fs.readFileSync(file, 'utf8');
+    const testo = decodifica(fs.readFileSync(file));
+    // ITALIANO: un file che non si decodifica ferma tutto, invece di proporre tag storpiati.
+    // ENGLISH: a file that cannot be decoded stops everything, instead of offering mangled tags.
+    if (testo === null) {
+        console.error(`${file}: non e' UTF-8 ne' UTF-16 con BOM, impossibile leggerlo. Risalvalo in UTF-8 e rilancia.`);
+        process.exit(1);
+    }
     let grezzi = [];
     if (file.toLowerCase().endsWith('.json')) {
-        const d = JSON.parse(testo);
+        // ITALIANO: un .json rotto (una virgola in fondo all'elenco) ferma tutto con il nome del file,
+        //   come in --apply: prima usciva un SyntaxError con lo stack trace e non si sapeva quale file.
+        // ENGLISH: a broken .json (a trailing comma in the list) stops everything naming the file, as
+        //   in --apply: it used to throw a SyntaxError with the stack trace and no file name.
+        let d;
+        try {
+            d = JSON.parse(testo);
+        } catch (_) {
+            console.error(`${file}: non e' un JSON valido (controlla virgole, virgolette e parentesi), nessun rapporto scritto.`);
+            process.exit(1);
+        }
         // ITALIANO: il .json salvato dall'editor porta anche nome dell'app, tipo e versione:
         //   se ne prendessi tutte le stringhe finirebbe "Images Tag Manager for LORAs" fra i tag.
         // ENGLISH: the .json written by the editor also carries the app name, type and version:
@@ -119,7 +182,24 @@ function leggiTagDaFile(file) {
 // Passo 2: inserimento vero
 // ---------------------------------------------------------------------------
 if (APPLY) {
-    const piano = JSON.parse(fs.readFileSync(APPLY, 'utf8'));
+    // ITALIANO: il piano corretto a mano passa dalla stessa decodifica dei file di tag: risalvato con
+    //   Windows PowerShell 5.1 o con il Blocco note ha un BOM (o e' UTF-16), e prima JSON.parse si
+    //   fermava con uno stack trace. Un piano illeggibile o con un JSON rotto ferma tutto con un messaggio.
+    // ENGLISH: the hand-corrected plan goes through the same decoding as the tag files: saved again
+    //   with Windows PowerShell 5.1 or Notepad it has a BOM (or is UTF-16), and JSON.parse used to stop
+    //   with a stack trace. An unreadable plan or broken JSON stops everything with a message.
+    const testoPiano = decodifica(fs.readFileSync(APPLY));
+    if (testoPiano === null) {
+        console.error(`${APPLY}: non e' UTF-8 ne' UTF-16 con BOM, impossibile leggerlo. Risalvalo in UTF-8 e rilancia.`);
+        process.exit(1);
+    }
+    let piano;
+    try {
+        piano = JSON.parse(testoPiano);
+    } catch (_) {
+        console.error(`${APPLY}: non e' un JSON valido (controlla virgole, virgolette e parentesi), nessun tag aggiunto.`);
+        process.exit(1);
+    }
     const { src, categorie, perChiave } = leggiDizionario();
     const perCategoria = new Map();
     const saltati = [];

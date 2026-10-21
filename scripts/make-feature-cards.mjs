@@ -47,7 +47,7 @@ const SCHEDE = [
         file: '02-bulk-tagging.png', nome: '03-bulk-tagging',
         occhiello: 'Bulk tagging',
         titolo: 'Tag hundreds of<br>images at once',
-        testo: 'Pick the photos, click a tag: it lands on all of them. Click again and it is gone from all of them.',
+        testo: 'Pick the photos, mark the tags and press Confirm: they land on all of them at once.',
         punti: ['Select all, invert, or click to extend', 'The legend tells you what each pill will do', 'Delete the selected photos in one move'],
     },
     {
@@ -104,7 +104,7 @@ const SCHEDE = [
         occhiello: 'Two views',
         titolo: 'Square crops or<br>the whole frame',
         testo: 'The grid can crop every thumbnail into a square, or show each image at its real proportions.',
-        punti: ['Switch at any moment', 'Zoom from a contact sheet to a few big cards', 'Sort by name or by date added'],
+        punti: ['Switch at any moment', 'Zoom from a contact sheet to a few big cards', 'Sort by name or by file date'],
     },
     {
         file: '07-ai-settings.png', nome: '12-ai',

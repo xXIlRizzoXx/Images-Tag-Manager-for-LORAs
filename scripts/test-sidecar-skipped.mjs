@@ -36,6 +36,7 @@ const { handlers } = caricaMain();
 const { dice, esito } = creaControlli();
 const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'itm-sidecar-skipped-'));
 const leggiVero = fs.readFileSync;
+const leggiVeroP = fs.promises.readFile;
 let codice = 1;
 try {
     console.log('\n--- canale di lettura del processo principale ---');
@@ -46,12 +47,14 @@ try {
     fs.writeFileSync(img('d.txt'), 'sks, hat');
     // ITALIANO: d.txt c'e' ma un altro programma lo tiene bloccato.
     // ENGLISH: d.txt is there but another program keeps it locked.
-    fs.readFileSync = (p, ...resto) => {
+    // ITALIANO: il canale legge con fs.promises (dal 20/10/2026): il blocco si simula li'.
+    // ENGLISH: the channel reads through fs.promises (since 20/10/2026): the lock is simulated there.
+    fs.promises.readFile = async (p, ...resto) => {
         if (p === img('d.txt')) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
-        return leggiVero(p, ...resto);
+        return leggiVeroP(p, ...resto);
     };
-    const letti = handlers.get('images:read-sidecar-tags')(null, ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'].map(img));
-    fs.readFileSync = leggiVero;
+    const letti = await handlers.get('images:read-sidecar-tags')(null, ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'].map(img));
+    fs.promises.readFile = leggiVeroP;
     const riassunto = letti.map((s) => [s.name, s.skipped === true ? 'saltato' : s.content]);
     dice('a.txt (oltre 1 MB) e d.txt (bloccato) segnalati come saltati, b.txt letto, c senza .txt non c\'e\'',
         [['a.txt', 'saltato'], ['b.txt', 'sks, smile'], ['d.txt', 'saltato']], riassunto);
@@ -102,6 +105,7 @@ try {
     codice = esito();
 } finally {
     fs.readFileSync = leggiVero;
+    fs.promises.readFile = leggiVeroP;
     fs.rmSync(cartella, { recursive: true, force: true });
 }
 process.exit(codice);

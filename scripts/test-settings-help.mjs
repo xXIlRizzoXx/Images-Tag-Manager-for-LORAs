@@ -62,7 +62,7 @@ dice('la finestra sta fuori dal pannello (che si anima con transform e la imprig
 console.log('\n--- MCP ---');
 dice('accendendo MCP la prima volta la spiegazione si apre da sola', true,
     /if \(v\) \{ try \{ if \(localStorage\.getItem\('mcpSpiegazioneVista'\) !== '1'\) \{ localStorage\.setItem\('mcpSpiegazioneVista', '1'\); setAiuto\('mcp'\); \} \} catch \(_\) \{ setAiuto\('mcp'\); \} \}/.test(app));
-dice('la spiegazione di MCP dice del cloud (mcpHint) e del download di mcp-remote', true, /mcp: \{ titolo: t\.mcpTitle, testi: \[t\.mcpHint, t\.mcpDesktopNote\] \}/.test(mappa));
+dice('la spiegazione di MCP dice del cloud (mcpHint) e del download di mcp-remote', true, /mcp: \{ titolo: t\.mcpTitle, testi: \[t\.mcpHint, t\.mcpDesktopNote(, [^\]]*)?\] \}/.test(mappa));
 
 const etichette = [...testi.matchAll(/^\s*helpButton: "(.+)",\s*$/gm)].map(m => m[1]);
 dice('l\'etichetta del tasto "?" esiste in 9 lingue', 9, etichette.length);

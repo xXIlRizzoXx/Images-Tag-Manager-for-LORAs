@@ -71,4 +71,32 @@ for (const l of LINGUE) {
 // ENGLISH: the old promise, with no condition, must not come back.
 dice('en: niente piu\' "or asks first when that is not possible"', false, /or asks first when that is not possible/.test(lingue.en.trashInfo));
 
+
+// ITALIANO: dalla 2.0.1 una cartella TRASCINATA sulla finestra si apre come con «Carica Cartella»
+//           (stessa cartella collegata, quindi stessa seconda conferma): le due frasi lo dicono,
+//           altrimenti chi trascina la cartella crederebbe di dover passare dal pulsante.
+// ENGLISH: since 2.0.1 a folder DROPPED on the window opens as with "Load Folder" (same attached
+//          folder, hence the same second confirmation): both sentences say so, otherwise whoever
+//          drops the folder would think the button is required.
+const TRASCINATA = {
+    it: [/o trascinata sulla finestra/, /o trascinala sulla finestra/],
+    en: [/or dropped on the window/, /or drop it on the window/],
+    fr: [/ou déposé sur la fenêtre/, /ou déposez-le sur la fenêtre/],
+    es: [/o arrastrada a la ventana/, /o arrástrala a la ventana/],
+    de: [/oder auf das Fenster gezogen wurde/, /oder ziehen Sie ihn auf das Fenster/],
+    zh: [/或拖到窗口上的文件夹/, /或把该文件夹拖到窗口上/],
+    ja: [/ウィンドウにドラッグしたフォルダー/, /ウィンドウにドラッグして/],
+    pt: [/ou arrastada para a janela/, /ou arraste-a para a janela/],
+    ru: [/или перетащенной в окно/, /или перетащите её в окно/],
+};
+console.log('\n--- la cartella trascinata conta come «Carica Cartella» ---');
+for (const l of LINGUE) {
+    const t = lingue[l];
+    dice(`${l}: trashInfo nomina anche la cartella trascinata`, true, TRASCINATA[l][0].test(String(t.trashInfo || '')));
+    dice(`${l}: deleteNoRecycleBin propone anche di trascinare la cartella, e nomina "${t.loadFolder}"`, [true, true],
+        [TRASCINATA[l][1].test(String(t.deleteNoRecycleBin || '')), String(t.deleteNoRecycleBin || '').includes(t.loadFolder)]);
+}
+const readme = fs.readFileSync(path.join(radice, 'README.md'), 'utf8');
+dice('README: la seconda conferma vale anche per una cartella trascinata', true, /opened with \*\*Load Folder\*\* or dropped on the window/.test(readme));
+
 process.exit(esito());

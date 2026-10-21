@@ -173,12 +173,16 @@ console.log('\n--- src/App.tsx: dove i tag di una foto vengono scritti ---');
     const js = (await esbuild.transform(testo, { loader: 'ts' })).code;
     const fabbrica = new Function('globalTriggers', 'images', 'selectedForBulk', 'stagedBulkTags', 'setImages', 'setGlobalTriggers',
         'setStagedBulkTags', 'setSelectedForBulk', 'soundManager', 'showNotification', 't', 'useCallback', 'uniqueTagsIgnoringCase', 'globalTriggersRef', 'countNewTagsIgnoringCase',
-        js + '\nreturn { updateImageTags, applyBulkTags, handleGlobalTagsChange };');
+        'bulkAddInputRef', 'splitTagInput', 'hasTagIgnoringCase',
+        // ITALIANO: updateImageTags aggiorna anche imagesRef (vedi test-close-during-ai): qui basta uno finto.
+        // ENGLISH: updateImageTags also updates imagesRef (see test-close-during-ai): a fake one is enough here.
+        'const imagesRef = { current: [] };\n' + js +'\nreturn { updateImageTags, applyBulkTags, handleGlobalTagsChange };');
     const app = (immagini, { trigger = [], selezione = [], inPreparazione = [] } = {}) => {
         const s = { immagini, trigger };
         const f = fabbrica(trigger, immagini, selezione, inPreparazione, (fn) => { s.immagini = fn(s.immagini); }, (v) => { s.trigger = v; },
             () => { }, () => { }, { chime() { }, pop() { } }, () => { }, { bulkTagsAdded: '' }, (x) => x,
-            regola ? regola.uniqueTagsIgnoringCase : undefined, { current: trigger }, regola ? regola.countNewTagsIgnoringCase : undefined);
+            regola ? regola.uniqueTagsIgnoringCase : undefined, { current: trigger }, regola ? regola.countNewTagsIgnoringCase : undefined,
+            { current: null }, regola ? regola.splitTagInput : undefined, regola ? regola.hasTagIgnoringCase : undefined);
         return { s, f };
     };
     {

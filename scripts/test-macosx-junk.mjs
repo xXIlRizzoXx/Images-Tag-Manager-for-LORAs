@@ -34,6 +34,9 @@ const carica = async (rel) => {
     return import('data:text/javascript;base64,' + Buffer.from(uscita.outputFiles[0].text).toString('base64'));
 };
 const FS = await carica('src/utils/folderScan.ts');
+// ITALIANO: la regola vera di "e' un'immagine?" (src/utils/imageFile.ts), che le strade di import usano.
+// ENGLISH: the real "is it an image?" rule (src/utils/imageFile.ts), which the import roads use.
+const IF = await carica('src/utils/imageFile.ts');
 const t = (await carica('src/constants.ts')).translations.en;
 const { dice, esito } = creaControlli();
 console.warn = () => {};
@@ -85,7 +88,7 @@ const ritaglia = async (intestazione, chiusura = /\r?\n    \};\r?\n/g) => {
     return (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 };
 const NOMI = ['t', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'imagesInputRef', 'loadSidecarTxtFiles', 'useCallback',
-    'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac'];
+    'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine'];
 const fabbrica = new Function(...NOMI,
     (await ritaglia('    const handleFolderUploadFallback = async (e: any) => {')) + '\n' +
     (await ritaglia('    const handleImagesUpload = async (e: any) => {')) + '\n' +
@@ -95,7 +98,7 @@ const app = () => {
     const r = { importate: null, notifiche: [] };
     r.f = fabbrica(t, (m, tipo) => r.notifiche.push([m, tipo]),
         (img, testi) => { r.importate = [img.map(f => f.name), testi.map(f => f.name)]; },
-        { current: { value: 'x' } }, { current: { value: 'x' } }, async () => ({ txtFiles: [], folderOf: null }), (fn) => fn, false, false, FS.fileDiMac);
+        { current: { value: 'x' } }, { current: { value: 'x' } }, async () => ({ txtFiles: [], folderOf: null }), (fn) => fn, false, false, FS.fileDiMac, null, { isOpen: false }, IF.eFileImmagine);
     return r;
 };
 

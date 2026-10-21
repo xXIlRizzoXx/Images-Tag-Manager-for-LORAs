@@ -13,6 +13,8 @@
 *******************************************************************************
 *******************************************************************************/
 
+import { eFileImmagine } from './imageFile';
+
 // ITALIANO: Ogni immagine ricorda la SOTTOCARTELLA in cui si trova (folderOf), cosi' il suo .txt
 //           viene riscritto li' dentro e non nella cartella principale. I dataset LoRA sono spesso
 //           divisi in sottocartelle (es. "10_soggetto"). Il .txt la ricorda anche lui, cosi' viene
@@ -52,8 +54,22 @@
 //          image/png by its extension): double count, broken thumbnails, binary "tags" from
 //          "._0001.txt", wasted AI requests and .txt files written into __MACOSX. `percorsoRelativo`
 //          = the path inside the picked folder, when known (fallback picker).
-export const fileDiMac = (nome: string, percorsoRelativo = ''): boolean =>
-    String(nome || '').startsWith('._') || String(percorsoRelativo || '').split(/[\\/]/).some(p => p.toLowerCase() === '__macosx');
+// ITALIANO: anche le cartelle di servizio dei NAS e di Windows, per NOME ESATTO: @eaDir di Synology
+//           (in ogni cartella indicizzata, con 3 miniature .jpg per foto, visibile via rete), i cestini
+//           e le istantanee dei NAS, $RECYCLE.BIN e System Volume Information. Niente regola per
+//           prefisso: una cartella dell'utente "#train" o "@anna" deve restare. Nel percorso del
+//           selettore di riserva il primo pezzo e' la cartella scelta, che non si filtra.
+// ENGLISH: also the NAS and Windows service folders, by EXACT NAME: Synology's @eaDir (in every
+//          indexed folder, with 3 .jpg thumbnails per photo, visible over the network), the NAS
+//          recycle bins and snapshots, $RECYCLE.BIN and System Volume Information. No prefix rule: a
+//          user folder "#train" or "@anna" must stay. In the fallback picker's path the first part is
+//          the picked folder, which is not filtered.
+const CARTELLE_DI_SERVIZIO = new Set(['@eadir', '@recycle', '#recycle', '#snapshot', '.@__thumb', '$recycle.bin', 'system volume information']);
+export const fileDiMac = (nome: string, percorsoRelativo = ''): boolean => {
+    if (String(nome || '').startsWith('._')) return true;
+    const pezzi = String(percorsoRelativo || '').split(/[\\/]/).map(p => p.toLowerCase());
+    return pezzi.includes('__macosx') || pezzi.slice(pezzi.length > 1 ? 1 : 0).some(p => CARTELLE_DI_SERVIZIO.has(p));
+};
 
 export const scanDirectoryHandle = async (handle: any, maxDepth = 8): Promise<{ imgFiles: any[]; txtFiles: any[]; folderOf: Map<any, any>; relPathOf: Map<any, string>; skipped: number }> => {
     const imgFiles: any[] = [];
@@ -70,7 +86,9 @@ export const scanDirectoryHandle = async (handle: any, maxDepth = 8): Promise<{ 
                 if (entry.kind === 'file' ? fileDiMac(entry.name) : fileDiMac('', entry.name)) continue;
                 if (entry.kind === 'file') {
                     const file = await entry.getFile();
-                    if (file.type.startsWith('image/')) {
+                    // ITALIANO: anche le HEIC dell'iPhone, che arrivano con il tipo vuoto (vedi imageFile.ts).
+                    // ENGLISH: iPhone HEIC photos too, which arrive with an empty type (see imageFile.ts).
+                    if (eFileImmagine(file)) {
                         imgFiles.push(file);
                         folderOf.set(file, dir);
                         relPathOf.set(file, prefix);

@@ -95,7 +95,7 @@ console.log('\n--- cambiare ---');
     const prima = stato.applicati.length;
     const r4 = await B.eseguiStrumentoMcp('add_tags', { ids: ['c'], tags: ['portrait'] }, ctx);
     dice('niente da cambiare: nessuna modifica (nessun passo vuoto nella cronologia)', [0, prima], [r4.cambiate, stato.applicati.length]);
-    dice('set_tags con un tag lungo: tagliato a 200 caratteri', 200, B.pulisciTag(['x'.repeat(300)])[0].length);
+    dice('set_tags con un tag lungo: tagliato a 4000 caratteri, come i .txt', [300, 4000], [B.pulisciTag(['x'.repeat(300)])[0].length, B.pulisciTag(['x'.repeat(5000)])[0].length]);
     dice('tag vuoti o di soli spazi: scartati', ['a'], B.pulisciTag(['  ', '', ' a ', null]));
     dice('add_tags senza tag: errore', true, /No tag/.test((await B.eseguiStrumentoMcp('add_tags', { ids: ['a'], tags: [] }, ctx)).errore || ''));
 }
@@ -103,9 +103,10 @@ console.log('\n--- cambiare ---');
 console.log('\n--- in App.tsx ---');
 {
     const app = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-    dice('le modifiche aggiornano SUBITO la memoria letta dalle domande seguenti', true, /applica: \(nuovi\) => \{\s*imagesRef\.current = imagesRef\.current\.map/.test(app));
-    dice('...e passano da setImages (cronologia e "da salvare")', true, /applica: \(nuovi\) => \{[\s\S]{0,300}setImages\(prev => prev\.map/.test(app));
-    dice('dopo una modifica arriva l\'avviso "non ancora salvati"', true, /if \(risposta\.cambiate\) showNotification\(t\.mcpEditedNotice/.test(app));
+    dice('le modifiche aggiornano SUBITO la memoria letta dalle domande seguenti', true, /applica: \(nuovi\) => \{\s*(const tagPrima = [^;\n]*;\s*)?imagesRef\.current = imagesRef\.current\.map/.test(app));
+    dice('...e passano da setImages (cronologia e "da salvare")', true, /applica: \(nuovi\) => \{[\s\S]{0,400}setImages\(prev => prev\.map/.test(app));
+    // ITALIANO: il numero e l'errore a schermo li prova test-mcp-notice-total.mjs. ENGLISH: the count and the on-screen error are tested by test-mcp-notice-total.mjs.
+    dice('dopo una modifica arriva l\'avviso "non ancora salvati"', true, /if \(risposta\.cambiate\) \{[\s\S]{0,3000}t\.mcpEditedNotice\.replace/.test(app));
     dice('la risposta torna sempre al server, anche se qualcosa va storto', true, /catch \(e\) \{[\s\S]{0,200}risposta = \{ errore:[\s\S]{0,100}\}\s*window\.electronAPI\?\.mcp\?\.respond\(r\.id, risposta\)/.test(app));
     const ponte = fs.readFileSync(path.join(radice, 'src/utils/mcpBridge.ts'), 'utf8');
     dice('la foto per l\'AI si ridisegna (niente metadati, niente file originale)', true, /drawImage\(bitmap/.test(ponte) && /toBlob\(fatto, 'image\/jpeg'/.test(ponte));

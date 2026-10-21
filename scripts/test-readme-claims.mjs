@@ -9,6 +9,8 @@
      rete (che il Cestino non ce l'hanno) la seconda conferma cancella per sempre.
    - "scegli un modello e resta fisso", ma se Google lo ritira o lo toglie dal piano gratuito il
      programma lo sostituisce e torna su Automatico.
+   - "con l'AI spenta nessuna foto o tag esce dal computer", ma il server MCP si accende anche con
+     l'AI spenta e un assistente nel cloud riceve nomi, tag e foto.
    La regola: finche' il codice fa una di queste cose, la frase vecchia non deve tornare e quella
    nuova deve nominare l'eccezione. Si legge il codice VERO, non una copia.
    Uso:  node scripts/test-readme-claims.mjs      (esce con codice 1 se qualcosa non torna)
@@ -24,6 +26,8 @@
      folders (which have no Recycle Bin) the second confirmation deletes for good.
    - "choose a model and it stays fixed", but if Google retires it or takes it off the free tier
      the app replaces it and goes back to Automatic.
+   - "with the AI off none of your images or tags leave your computer", but the MCP server can be
+     switched on with the AI off and a cloud assistant receives names, tags and photos.
    The rule: while the code does one of these things, the old sentence must not come back and the
    new one must name the exception. The REAL code is read, not a copy.
    Usage:  node scripts/test-readme-claims.mjs      (exits with code 1 if anything is off) */
@@ -128,6 +132,24 @@ if (spostaNelCestino && !/trashFiles|deleteImageFiles/.test(spostaNelCestino) &&
         dice(`premessa: etichetta inglese ${k} trovata`, true, testo.length > 0);
         if (testo) dice(`la sezione Privacy nomina "${testo}"`, true, privacy.includes(testo));
     }
+}
+
+// ITALIANO: "con l'AI spenta nessuna foto o tag esce dal computer": ma il server MCP si accende da
+//           solo, anche con l'AI (Gemini) spenta, e un assistente nel cloud riceve nomi, tag e foto.
+//           Finche' il server c'e' e il suo interruttore non dipende da aiEnabled, ogni paragrafo del
+//           README che dice cosa "esce dal computer" deve nominare MCP, e la frase vecchia non torna.
+// ENGLISH: "with the AI off none of your images or tags leave your computer": but the MCP server is
+//          switched on by itself, even with the AI (Gemini) off, and a cloud assistant receives
+//          names, tags and photos. While the server exists and its switch does not depend on
+//          aiEnabled, every README paragraph that says what "leaves your computer" must name MCP,
+//          and the old sentence does not come back.
+const interruttoreMcp = corpo('cambiaMcp');
+if (fs.existsSync(path.join(radice, 'electron/mcp-server.src.mjs')) && /setEnabled/.test(interruttoreMcp) && !/aiEnabled/.test(interruttoreMcp)) {
+    console.log('Il server MCP si accende anche con l\'AI spenta.');
+    dice('niente piu\' "none of your images or tags ever leave your computer"', false, readme.includes('none of your images or tags ever leave your computer'));
+    const paragrafi = readme.split(/\r?\n[ \t]*\r?\n/).filter(p => /leave your computer/i.test(p));
+    dice('premessa: il README dice ancora cosa esce dal computer', true, paragrafi.length > 0);
+    for (const p of paragrafi) dice(`il paragrafo "${p.slice(0, 60)}..." nomina il server MCP`, true, /\bMCP\b/.test(p));
 }
 
 process.exit(esito());

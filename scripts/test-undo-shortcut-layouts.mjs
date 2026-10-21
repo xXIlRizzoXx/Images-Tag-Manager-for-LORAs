@@ -51,7 +51,7 @@ const js = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].
 
 const chiuse = {
     isTagEditorOpen: false, confirmDialog: { isOpen: false }, saveCloseDialog: { isOpen: false }, importSummary: { isOpen: false },
-    isApiKeyDialogOpen: false, isStatsOpen: false, exportChoice: null, updateAskOpen: false, updateFound: null,
+    isApiKeyDialogOpen: false, isStatsOpen: false, exportChoice: null, updateAskOpen: false, updateFound: null, aiuto: null,
 };
 const NOMI = Object.keys(chiuse);
 const REGOLE = Object.keys(R);

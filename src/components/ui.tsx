@@ -30,6 +30,7 @@ export const AppleToggle = ({ checked, onChange, iconOn, iconOff, colorClass = "
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../utils/tagCategorization';
 import { translateTag } from '../utils/tagTranslation';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase } from '../utils/tagCase';
+import type { Strings } from '../constants';
 
 // ITALIANO: `lang` serve a mostrare la traduzione del tag al passaggio del mouse: prima
 //           accadeva solo nel visualizzatore a foto singola, non sulle miniature.
@@ -66,26 +67,133 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
         }
     };
 
-    const removeTag = (idx: number) => { 
+    // ITALIANO: uscendo dalla casella il testo scritto senza Invio diventa un tag, come con Invio.
+    //           Prima restava nella casella e sembrava applicato: una trigger scritta e non
+    //           confermata non finiva in nessun .txt, e Salva dava lo stesso il messaggio verde.
+    //           Un tag gia' presente non si ripete, ma la casella si svuota. Se e' la finestra a
+    //           perdere il fuoco (Alt+Tab) la parola, forse scritta a meta', resta com'e'.
+    // ENGLISH: leaving the box turns the text typed without Enter into a tag, as Enter does. It
+    //          used to stay in the box and look applied: a trigger typed and not confirmed reached
+    //          no .txt, and Save still gave the green message. A tag already there is not repeated,
+    //          but the box is emptied. If the whole window loses focus (Alt+Tab) the word, perhaps
+    //          half typed, stays as it is.
+    const handleBlur = () => {
         if (readOnly) return;
-        setTags(tags.filter((_: any, i: number) => i !== idx)); 
-        soundManager.click(); 
+        if (saltaBlurRef.current) { saltaBlurRef.current = false; return; }
+        if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+        const newTag = inputValue.trim().replace(/,$/, '');
+        if (!newTag) return;
+        if (!hasTagIgnoringCase(tags, newTag)) { setTags([...tags, newTag]); soundManager.pop(); }
+        setInputValue('');
     };
-    
+
+    // ITALIANO: la X toglie il SUO tag, non una posizione. Il clic sulla X fa perdere il fuoco alla
+    //           casella: il testo scritto senza Invio entra (handleBlur) e la card si riordina in
+    //           alfabetico prima che il clic arrivi. Con la posizione, il pulsante sotto il mouse era
+    //           ormai di un altro tag e si toglieva quello. `occorrenza` distingue due tag identici.
+    // ENGLISH: the X removes ITS tag, not a position. Clicking the X takes the focus from the box:
+    //          the text typed without Enter goes in (handleBlur) and the card reorders alphabetically
+    //          before the click arrives. With the position, the button under the mouse belonged to
+    //          another tag by then, and that one was removed. `occorrenza` tells two identical tags apart.
+    // ITALIANO: in piu' la pressione sulla X non toglie il fuoco alla casella (vedi onMouseDown):
+    //           senza, il riordino spostava la pillola, al rilascio sotto il puntatore c'era un'altra
+    //           pillola, il browser mandava il clic al contenitore e il primo clic andava a vuoto.
+    //           Il clic fa quindi anche il lavoro del blur, nello stesso aggiornamento: il testo
+    //           scritto senza Invio entra (lasciato nella casella si perdeva se la card spariva, per
+    //           esempio con la ricerca per tag attiva). Poi la casella viene lasciata, cosi' Ctrl+Z
+    //           annulla la X invece di restare al campo di testo; quel blur si salta, perche' il suo
+    //           gestore vedrebbe ancora i tag e il testo di prima.
+    // ENGLISH: also, pressing the X does not take the focus from the box (see onMouseDown): without
+    //          it the reorder moved the pill, on release another pill was under the pointer, the
+    //          browser sent the click to the container and the first click was lost. So the click
+    //          also does the blur's job, in the same update: the text typed without Enter goes in
+    //          (left in the box it was lost when the card disappeared, for example with the tag
+    //          search active). Then the box is left, so Ctrl+Z undoes the X instead of staying with
+    //          the text field; that blur is skipped, because its handler would still see the old
+    //          tags and text.
+    const saltaBlurRef = useRef(false);
+    const removeTag = (tag: string, occorrenza: number) => {
+        if (readOnly) return;
+        let visti = -1;
+        let nuovi = tags.filter((x: string) => x !== tag || ++visti !== occorrenza);
+        const scritto = inputValue.trim().replace(/,$/, '');
+        if (scritto) {
+            if (!hasTagIgnoringCase(tags, scritto)) nuovi = [...nuovi, scritto];
+            setInputValue('');
+        }
+        setTags(nuovi);
+        soundManager.click();
+        // ITALIANO: si lascia la casella che ha il fuoco, anche se e' di un'altra card o del riquadro
+        //           delle trigger: il suo testo entra con le sue regole (il suo handleBlur), come
+        //           prima che la X trattenesse il fuoco. Solo il blur di questa casella si salta.
+        // ENGLISH: the box that has the focus is left, even when it belongs to another card or to the
+        //          trigger box: its text goes in by its own rules (its handleBlur), as before the X
+        //          held the focus. Only this box's blur is skipped.
+        // ITALIANO: la casella di un altro TagInput si lascia dopo il ridisegno: il suo handleBlur,
+        //           chiamato qui, vedrebbe i tag di prima del clic e la sua lista sovrascriverebbe
+        //           questa modifica (la X su una trigger la rimetteva sulla card con del testo scritto).
+        // ENGLISH: another TagInput's box is left after the re-render: its handleBlur, called here,
+        //          would see the tags from before the click and its list would overwrite this change
+        //          (the X on a trigger put it back on the card with typed text).
+        const attivo: any = typeof document !== 'undefined' ? document.activeElement : null;
+        if (attivo && attivo !== document.body && typeof attivo.blur === 'function') {
+            if (attivo === inputRef.current) {
+                saltaBlurRef.current = true;
+                attivo.blur();
+            } else {
+                setTimeout(() => {
+                    try { if (document.activeElement === attivo) attivo.blur(); } catch (_) { }
+                }, 0);
+            }
+        }
+    };
+    const occorrenze = new Map<string, number>();
+    // ITALIANO: l'animazione d'ingresso solo per le pillole nate DOPO la comparsa della casella, e solo
+    //           finche' dura. Prima l'avevano tutte le pillole di tutte le card: con fill-mode "both"
+    //           restava in vigore anche finita, Chromium teneva ogni pillola su un livello suo (308 con
+    //           mille foto in Quadrate) e la faceva ripartire a ogni card che rientrava a schermo
+    //           (content-visibility): lo scorrimento scendeva a circa 20 fotogrammi al secondo.
+    // ENGLISH: the entry animation only for pills born AFTER the box appeared, and only while it lasts.
+    //          Every pill of every card used to have it: with fill-mode "both" it stayed in effect even
+    //          when finished, Chromium kept each pill on its own layer (308 with a thousand photos in
+    //          Square) and restarted it whenever a card came back on screen (content-visibility):
+    //          scrolling dropped to about 20 frames per second.
+    const vistiRef = useRef<Set<string> | null>(null);
+    const [, ridisegna] = useState(0);
+    if (vistiRef.current === null) {
+        const iniziali = new Map<string, number>();
+        vistiRef.current = new Set((Array.isArray(tags) ? tags : []).map((tag: string) => {
+            const n = iniziali.get(tag) ?? 0;
+            iniziali.set(tag, n + 1);
+            return n === 0 ? tag : `${tag}\u0000${n}`;
+        }));
+    }
+    const visti = vistiRef.current;
+
     return (
         <div onClick={() => !readOnly && inputRef.current?.focus()} className={`flex flex-wrap items-center content-start gap-3.5 p-2 border rounded-xl transition-all w-full min-h-[46px] overflow-y-auto lightbox-scroll ${readOnly ? 'cursor-default' : 'cursor-text'} ${maxHeight} ${isGlobal ? 'justify-center bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 focus-within:ring-2 focus-within:ring-indigo-500/50' : 'bg-white dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500'}`}>
-        {tags.map((tag: string, index: number) => {
+        {tags.map((tag: string) => {
+            // ITALIANO: key legata al tag (e a quante volte e' gia' comparso), cosi' React tiene ogni
+            //           pillola, e la sua X, attaccata al suo tag anche dopo un riordino.
+            // ENGLISH: key tied to the tag (and to how many times it has already appeared), so React
+            //          keeps each pill, and its X, attached to its tag even after a reorder.
+            const occorrenza = occorrenze.get(tag) ?? 0;
+            occorrenze.set(tag, occorrenza + 1);
             const category = getTagCategory(tag);
             const isNsfw = category === 'nsfw';
             const colorClass = getActiveCategoryColor(category);
             
             const traduzione = translateTag(tag, lang);
+            const chiave = occorrenza === 0 ? tag : `${tag}\u0000${occorrenza}`;
+            const nuova = !visti.has(chiave);
             return (
-                <span key={index} title={traduzione ? `${tag} — ${traduzione}` : tag} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium animate-in zoom-in duration-200 ${colorClass}`}>
+                <span key={chiave} title={traduzione ? `${tag} — ${traduzione}` : tag}
+                    onAnimationEnd={nuova ? () => { visti.add(chiave); ridisegna(n => n + 1); } : undefined}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] leading-tight font-medium ${nuova ? 'animate-in zoom-in duration-200 ' : ''}${colorClass}`}>
                     {isNsfw && <span className="font-bold text-[9px] bg-white text-red-500 px-1 rounded-sm mr-0.5">+18</span>}
                     {tag}
                     {!readOnly && (
-                        <button onClick={(e) => { e.stopPropagation(); removeTag(index); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
+                        <button onMouseDown={(e) => e.preventDefault()} onClick={(e) => { e.stopPropagation(); removeTag(tag, occorrenza); }} className="hover:bg-black/10 dark:hover:bg-black/20 rounded-full p-0.5 transition-colors focus:outline-none"><X size={10} /></button>
                     )}
                 </span>
             );
@@ -98,6 +206,7 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
                 onChange={(e) => setInputValue(e.target.value)} 
                 onKeyDown={handleKeyDown} 
                 onPaste={handlePaste}
+                onBlur={handleBlur}
                 placeholder={placeholder}
                 className={`w-full bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-700 dark:placeholder-gray-400 text-sm py-1 px-1 ${isGlobal ? 'text-center' : ''}`} 
             />
@@ -183,7 +292,7 @@ export const Toast = ({ message, type, onClose, id }: any) => {
  *   weigh wildly differently: a few KB against several GB. Each option shows its file count and
  *   size, so nobody ends up with a 12 GB archive from a button they thought was light.
  */
-export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm, onCancel }: any) => {
+export const ExportChoiceDialog = ({ isOpen, riepilogo, t, isDarkMode, onConfirm, onCancel }: { t: Strings; [chiave: string]: any }) => {
     const [conImmagini, setConImmagini] = React.useState(false);
     const [rinomina, setRinomina] = React.useState(false);
     React.useEffect(() => { if (isOpen) { setConImmagini(false); setRinomina(false); } }, [isOpen]);
@@ -279,7 +388,7 @@ export const UpdateDialog = ({ isOpen, title, message, confirmLabel, cancelLabel
     );
 };
 
-export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: any) => {
+export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
@@ -314,7 +423,7 @@ export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCance
  *     - Cancel                (orange) does nothing
  *   The green button is disabled while saving, so it cannot be pressed twice.
  */
-export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: any) => {
+export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave, onDiscard, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
     if (!isOpen) return null;
     // ITALIANO: z-[500], sopra l'editor dei file di tag (320/340), la finestra della API key (400) e
     //           le altre finestre: la X della finestra puo' arrivare con una di loro aperta, e la
@@ -364,8 +473,19 @@ export const SaveBeforeCloseDialog = ({ isOpen, title, message, isSaving, onSave
 
 // ITALIANO: Finestra che mostra cosa è stato trovato durante l'importazione
 // ENGLISH: Window showing what was found during import
-export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode }: any) => {
+export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, isDarkMode, lang = 'it' }: { t: Strings; [chiave: string]: any }) => {
+    // ITALIANO: la casella del recupero dal backup anti-crash: spuntata di serie a ogni apertura.
+    // ENGLISH: the crash-backup recovery checkbox: ticked by default at every opening.
+    const [recupera, setRecupera] = useState(true);
+    // ITALIANO: anche quando un riepilogo nuovo prende il posto di quello aperto (un altro trascinamento).
+    // ENGLISH: also when a new summary takes the place of the open one (another drop).
+    useEffect(() => { if (isOpen) setRecupera(true); }, [isOpen, summary]);
     if (!isOpen) return null;
+    const recupero = summary && summary.recupero;
+    let dataRecupero = '';
+    if (recupero && typeof recupero.ts === 'number') {
+        try { dataRecupero = new Date(recupero.ts).toLocaleString(lang); } catch (_) { dataRecupero = new Date(recupero.ts).toLocaleString(); }
+    }
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
@@ -394,10 +514,21 @@ export const ImportSummaryDialog = ({ isOpen, summary, onConfirm, onCancel, t, i
                             <span className={`text-sm font-bold ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{summary.imagesWithoutText}</span>
                         </div>
                     </div>
+                    {recupero && (
+                        <label className={`mt-4 flex items-start gap-3 p-3 rounded-xl border cursor-pointer ${isDarkMode ? 'border-amber-500/40 bg-amber-500/10' : 'border-amber-300 bg-amber-50'}`}>
+                            <input type="checkbox" checked={recupera} onChange={(e) => setRecupera(e.target.checked)} className="mt-1 h-4 w-4 accent-amber-500" />
+                            <span className="text-sm">
+                                <span className={`block font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.importRecoverBackup}</span>
+                                <span className={`block ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.importRecoverBackupPhotos.replace('{n}', String(recupero.n))}</span>
+                                {dataRecupero && <span className={`block ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t.importRecoverBackupDate.replace('{data}', dataRecupero)}</span>}
+                                {!recupera && <span className={`block mt-1 ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>{t.importRecoverBackupWarn}</span>}
+                            </span>
+                        </label>
+                    )}
                 </div>
                 <div className={`${isDarkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-gray-50 border-gray-100'} px-6 py-4 flex justify-end gap-3 border-t`}>
                     <button onClick={onCancel} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-200'}`}>{t.cancel}</button>
-                    <button onClick={onConfirm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.importButton}</button>
+                    <button onClick={() => onConfirm(recupero ? recupera : true)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 transition-all active:scale-95">{t.importButton}</button>
                 </div>
             </div>
         </div>

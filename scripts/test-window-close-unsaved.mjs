@@ -69,7 +69,8 @@ const G = await import('data:text/javascript;base64,' + Buffer.from(u.outputFile
 const NOMI = ['window', 'localStorage', 'imagesRef', 'fotoChiuseRef', 'dirHandle', 'permettiChiusuraRef', 'chiusuraFinestraRef',
     'saveCloseDialogRef', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'handleSaveChanges', 'showNotification', 't',
     'images', 'scriviBackupSubito', 'modificheNonSalvate', 'console', 'setTimeout', 'tagEditorDirtyRef', 'globalTriggersRef', 'setIsTagEditorOpen', 'fotoDaSalvare', 'globalTriggers',
-    'backupConFotoRef', 'isSavingRef', 'ripristinoInCorsoRef', 'chiusuraInRipristinoRef', 'avvisoSalvataggioRef', 'lottiSessioneRef'];
+    'backupConFotoRef', 'isSavingRef', 'ripristinoInCorsoRef', 'chiusuraInRipristinoRef', 'avvisoSalvataggioRef', 'lottiSessioneRef',
+    'svuotamentoInCorsoRef', 'chiusuraInSvuotamentoRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { effettoChiusura, chiudiFinestraSeRichiesto, handleSaveAndCloseProject, handleDiscardAndClose, handleCancelClose, handleCloseProject };');
 
 const foto = (name, tags, originalTags, isTrashed = false) => ({
@@ -96,7 +97,8 @@ const app = ({ immagini, electron = true, salvataggio = true }) => {
     a.f = fabbrica(a.window, a.localStorage, { current: immagini }, { current: new Map() }, null, a.refs.permetti, a.refs.chiusura,
         saveCloseDialogRef, setSaveCloseDialog, () => {}, () => { a.progettoChiuso++; a.localStorage.removeItem('tagBackup'); },
         async () => salvataggio, () => {}, {}, immagini, G.scriviBackupSubito, G.modificheNonSalvate, { error() {} }, setTimeout,
-        { current: false }, { current: [] }, () => {}, G.fotoDaSalvare, [], { current: false }, { current: false }, { current: false }, { current: false }, { current: '' }, { current: new Set() });
+        { current: false }, { current: [] }, () => {}, G.fotoDaSalvare, [], { current: false }, { current: false }, { current: false }, { current: false }, { current: '' }, { current: new Set() },
+        { current: false }, { current: false });
     a.smonta = a.f.effettoChiusura();
     // ITALIANO: la finestra prova a chiudersi: true = chiusura fermata.
     // ENGLISH: the window tries to close: true = close stopped.

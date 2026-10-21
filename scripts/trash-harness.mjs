@@ -44,6 +44,11 @@ const carica = async (rel) => {
 export const lingue = (await carica('src/constants.ts')).translations;
 export const t = lingue.en;
 const P = await carica('src/utils/pathUtils.ts');
+// ITALIANO: le regole dei .txt: Annulla lo svuotamento rilegge il .txt condiviso (parseSidecarText,
+//           tagDopoEditor); il codice di prima non le usava.
+// ENGLISH: the .txt rules: Undo the emptying re-reads the shared .txt (parseSidecarText,
+//          tagDopoEditor); the previous code did not use them.
+const S = await carica('src/utils/sidecarTags.ts');
 // ITALIANO: il modulo della cronologia puo' non esserci ancora (codice di prima): allora resta vuoto.
 // ENGLISH: the history module may not exist yet (previous code): then it stays empty.
 let H = {};
@@ -71,7 +76,7 @@ const FUNZIONI = ['handleRestore', 'percorsiSuDisco', 'deleteImageFiles', 'delet
     'closeProjectNow', 'handleResetProject'];
 // ITALIANO: funzioni che il codice di prima non aveva: se mancano si va avanti senza.
 // ENGLISH: functions the previous code did not have: when missing, carry on without them.
-const FACOLTATIVE = ['fraseCestinoWindows', 'txtUsatoDaAltre'];
+const FACOLTATIVE = ['fraseCestinoWindows', 'txtUsatoDaAltre', 'copieChiuseDelloStessoFile'];
 const testi = [];
 for (const nome of [...FUNZIONI, ...FACOLTATIVE]) {
     const testo = ritaglia(`    const ${nome} = `);
@@ -113,7 +118,16 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'isEmptyingTrash',
     // ITALIANO: Annulla lo svuotamento rimette le foto tornate in ogni passo (il codice di prima non l'aveva).
     // ENGLISH: Undo the emptying puts the returned photos back in every step (the previous code did not have it).
-    'addPhotosToHistory'];
+    'addPhotosToHistory',
+    // ITALIANO: Annulla lo svuotamento allinea una foto al .txt condiviso cambiato nel frattempo.
+    // ENGLISH: Undo the emptying syncs a photo to the shared .txt changed meanwhile.
+    'parseSidecarText', 'tagDopoEditor',
+    // ITALIANO: Chiudi progetto e Reset svuotano le caselle di ricerca.
+    // ENGLISH: Close project and Reset empty the search boxes.
+    'setTagSearch', 'setBulkSearch',
+    // ITALIANO: Annulla lo svuotamento tiene a parte le foto il cui .txt non si era letto all'import.
+    // ENGLISH: Undo the emptying keeps apart the photos whose .txt could not be read at import.
+    'txtNonLettoInVigore'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -150,7 +164,7 @@ export const cartellaFinta = (bloccati = []) => {
    'rifiutato'); `prima(path)` runs BEFORE the answer, while the file "is being moved": the moment
    the user can do something else. Every call waits one tick, like a real call to the main process,
    so the state updates meanwhile. */
-export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null } = {}) => {
+export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null, txtSulDisco = null } = {}) => {
     const a = { chiamate: [], ripristini: [] };
     a.getPathForFile = (file) => file.percorso;
     a.trashFiles = async (percorsi) => {
@@ -161,6 +175,18 @@ export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null
         const trashed = results.filter(x => x === 'ok').length;
         return { ok: trashed === percorsi.length, trashed, failed: percorsi.length - trashed, results };
     };
+    // ITALIANO: `txtSulDisco(percorsoTxt)` = c'e' il .txt accanto alla foto? Senza, il canale manca (codice di prima).
+    //           Se risponde con un testo, e' il contenuto del .txt (come il canale vero); 'saltato' = il
+    //           .txt c'e' ma non si legge ({ skipped: true }, senza contenuto).
+    // ENGLISH: `txtSulDisco(txtPath)` = is the .txt beside the photo there? Without it the channel is absent (previous code).
+    //          If it answers with a text, that is the .txt's content (as the real channel); 'saltato' = the
+    //          .txt is there but cannot be read ({ skipped: true }, with no content).
+    if (typeof txtSulDisco === 'function') {
+        a.readSidecarTags = async (percorsi) => percorsi.map(p => p.replace(/\.[^.\\]+$/, '.txt'))
+            .map(p => [p, txtSulDisco(p)]).filter(([, v]) => v || v === '')
+            .map(([p, v]) => ({ name: p.slice(p.lastIndexOf('\\') + 1), dir: p.slice(0, p.lastIndexOf('\\')), tags: [],
+                ...(v === 'saltato' ? { skipped: true } : typeof v === 'string' ? { content: v } : {}) }));
+    }
     a.restoreTrashed = async (percorsi) => {
         a.ripristini.push([...percorsi]);
         await new Promise(ok => setTimeout(ok, 0));
@@ -221,7 +247,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
         refs.progettoGenRef, refs.aiCancelRequestedRef, nulla, refs.aiAbortControllerRef, memoria, nulla,
         nulla, nulla, nulla, nulla, nulla,
         (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla, stato.isEmptyingTrash,
-        H.addPhotosToHistory || ((h) => h));
+        H.addPhotosToHistory || ((h) => h),
+        S.parseSidecarText, S.tagDopoEditor, nulla, nulla, S.txtNonLettoInVigore || (() => false));
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();

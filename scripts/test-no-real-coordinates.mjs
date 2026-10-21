@@ -22,15 +22,23 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const radice = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// ITALIANO: la cartella da controllare: quella del progetto, o quella data come primo argomento (la
+//           usa scripts/test-no-real-coordinates-untracked.mjs su un repository finto).
+// ENGLISH: the folder to check: the project's, or the one given as first argument (used by
+//          scripts/test-no-real-coordinates-untracked.mjs on a fake repository).
+const radice = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TESTO = /\.(mjs|cjs|js|ts|tsx|json|md|html|css|nsh|txt|yml|yaml)$/i;
 const FINTE = new Set(['12.3456N 65.4321E', '0.0000N 0.0000E']);
 const COPPIA = /(\d{1,2}\.\d{2,})\s*°?\s*([NS])[\s,;]+(\d{1,3}\.\d{2,})\s*°?\s*([EW])/g;
 
-// ITALIANO: i file seguiti da git; senza git (copia esportata) la cartella, senza le parti ignorate.
-// ENGLISH: the files git tracks; without git (an exported copy) the folder, minus the ignored parts.
+// ITALIANO: i file seguiti da git E quelli nuovi non ancora aggiunti (--others), senza gli ignorati:
+//           un test nuovo e' proprio in quello stato quando le prove girano prima del commit.
+//           Senza git (copia esportata) la cartella, senza le parti ignorate.
+// ENGLISH: the files git tracks AND the new ones not added yet (--others), minus the ignored ones: a
+//          new test is in exactly that state when the suite runs before the commit. Without git (an
+//          exported copy) the folder, minus the ignored parts.
 const elenco = () => {
-    const g = spawnSync('git', ['ls-files', '-z'], { cwd: radice, encoding: 'utf8' });
+    const g = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: radice, encoding: 'utf8' });
     if (g.status === 0 && g.stdout) return g.stdout.split('\0').filter(Boolean);
     const fuori = new Set(['node_modules', 'dist', 'Release', 'release', 'Civitai', 'NOTES.md']);
     const out = [];

@@ -1,7 +1,7 @@
 {
   "name": "images-tag-manager",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Privacy-focused desktop tool to manage, edit and auto-generate tags for image datasets used in LoRA / Stable Diffusion training.",
   "license": "MIT",
   "author": {
@@ -103,10 +103,10 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
-    "electron": "^40.6.0",
-    "electron-builder": "^26.8.1",
+    "electron": "^43.7.11",
+    "electron-builder": "26.17.0",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "wait-on": "^9.0.4",

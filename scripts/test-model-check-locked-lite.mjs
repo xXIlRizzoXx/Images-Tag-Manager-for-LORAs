@@ -64,7 +64,7 @@ const f0 = i0 < 0 ? null : fineControlla.exec(app);
 if (!f0) { console.log('NO  non trovato in src/App.tsx: controllaModello'); process.exit(1); }
 const modulo = `
 export const render = (env: any, snap: { aiModel: string; aiModelloFissato: boolean }) => {
-    const { t, geminiApiKey, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
+    const { t, geminiApiKey, geminiApiKeyRef, controlloModelloRef, sceltaManualeRef, ultimaSceltaRef, aiModelloFissatoRef, aiEnabledRef, setControlloModelloInCorso,
             setModelloControllatoIl, setModelliDisponibili, showNotification, setAiModel, setAiModelloFissato,
             elencaModelliRemoti, aggiornaModelloAutomatico, classifyGeminiError, confrontaVersioni, versioneDi, localStorage } = env;
     const aiModel = snap.aiModel;
@@ -85,7 +85,7 @@ const controllaOra = async (bloccato, elenco) => {
     const stato = { aiModel: bloccato, aiModelloFissato: true };
     const notifiche = [];
     const env = {
-        t, geminiApiKey: 'AIza' + 'x'.repeat(35),
+        t, geminiApiKey: 'AIza' + 'x'.repeat(35), geminiApiKeyRef: { current: 'AIza' + 'x'.repeat(35) },
         controlloModelloRef: { current: false }, sceltaManualeRef: { current: 0 }, ultimaSceltaRef: { current: '' },
         aiModelloFissatoRef: { current: true }, aiEnabledRef: { current: true },
         setControlloModelloInCorso: () => { }, setModelloControllatoIl: () => { }, setModelliDisponibili: () => { },
@@ -121,6 +121,30 @@ console.log('\n--- quello che NON deve cambiare ---');
 {
     const r = await controllaOra('gemini-3.7-flash', ['gemini-3.6-flash', 'gemini-3.7-flash']);
     dice('bloccato proprio sul piu\' recente: "aggiornato"', aggiornato('gemini-3.7-flash'), r.notifiche);
+}
+
+/* ITALIANO: un modello bloccato FUORI dalla linea flash confrontata (un pro scelto dopo "Prova i
+   modelli recenti"): l'elenco ha solo i flash, e a parita' di versione si diceva "sei gia' sul
+   modello piu' recente della linea gratuita: gemini-3.7-pro", falso. Ora una frase che lo dice
+   fuori dal confronto; se il flash e' di versione piu' alta resta "c'e' un modello piu' recente".
+   ENGLISH: a model locked OUTSIDE the compared flash line (a pro picked after "Test recent
+   models"): the list holds only flash models, and at equal version it said "you are already on
+   the newest model of the free line: gemini-3.7-pro", false. Now a sentence saying it is outside
+   the comparison; if the flash has a higher version "a newer model is available" stays. */
+const fuori = (m) => [[String(t.aiModelOutsideFreeLine || '(manca aiModelOutsideFreeLine)').replace('{a}', m), 'info']];
+console.log('\n--- modello bloccato fuori dalla linea flash (pro) ---');
+{
+    const r = await controllaOra('gemini-3.7-pro', ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash']);
+    dice('3.7-pro bloccato, elenco guidato da 3.7-flash: NON "piu\' recente della linea gratuita: gemini-3.7-pro"', fuori('gemini-3.7-pro'), r.notifiche);
+    dice('...e il modello resta bloccato sul suo', ['gemini-3.7-pro', true], [r.stato.aiModel, r.stato.aiModelloFissato]);
+}
+{
+    const r = await controllaOra('gemini-3.8-pro', ['gemini-3.7-flash']);
+    dice('3.8-pro bloccato, elenco 3.7-flash: la stessa frase', fuori('gemini-3.8-pro'), r.notifiche);
+}
+{
+    const r = await controllaOra('gemini-3.6-pro', ['gemini-3.7-flash', 'gemini-3.6-flash']);
+    dice('3.6-pro bloccato, elenco guidato da 3.7-flash: "piu\' recente: gemini-3.7-flash" come prima', nuovo('gemini-3.7-flash'), r.notifiche);
 }
 
 process.exit(esito());

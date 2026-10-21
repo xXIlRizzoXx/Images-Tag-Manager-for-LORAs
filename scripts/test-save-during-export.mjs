@@ -55,10 +55,10 @@ console.log('\n--- "Esporta" premuto mentre un\'altra scrittura e\' in corso ---
     const codice = (await ritaglia('    const formatoPeso = (byte: number): string => {')) + '\n' + (await ritaglia('    const handleExportAll = () => {'));
     const prova = (isSaving) => {
         const r = { scelta: null, notifiche: [] };
-        const f = new Function('images', 'applySort', 'sortOrder', 'showNotification', 't', 'getOrderedTagString', 'setExportChoice', 'isSaving', 'txtNonLettoInVigore',
+        const f = new Function('images', 'applySort', 'sortOrder', 'showNotification', 't', 'getOrderedTagString', 'setExportChoice', 'isSaving', 'txtNonLettoInVigore', 'lang',
             codice + '\nreturn handleExportAll;')(
             [{ id: '1', file: { name: 'a.png', size: 10 }, tags: ['x'], isTrashed: false }], applySort, 'name-asc',
-            (m, tipo) => r.notifiche.push([m, tipo]), t, (tags) => tags.join(', ') + ',', (v) => { r.scelta = v; }, isSaving, () => false);
+            (m, tipo) => r.notifiche.push([m, tipo]), t, (tags) => tags.join(', ') + ',', (v) => { r.scelta = v; }, isSaving, () => false, 'en');
         f();
         return r;
     };

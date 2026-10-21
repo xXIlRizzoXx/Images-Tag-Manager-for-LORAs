@@ -26,7 +26,11 @@ import { z } from 'zod';
 
 const CORPO_MAX = 1024 * 1024;
 export const PERCORSO_MCP = '/images-tag-manager';
-const TAG = z.string().min(1).max(200);
+// ITALIANO: un tag puo' essere una didascalia in frase (Flux/SDXL): stesso tetto dei .txt, cioe'
+//           TXT_TAG_MAX_CHARS di src/utils/sidecarTags.ts (4000). Gli input enormi li ferma CORPO_MAX.
+// ENGLISH: a tag may be a sentence caption (Flux/SDXL): same cap as the .txt files, i.e.
+//          TXT_TAG_MAX_CHARS in src/utils/sidecarTags.ts (4000). Huge inputs are stopped by CORPO_MAX.
+const TAG = z.string().min(1).max(4000);
 
 // ITALIANO: il confronto del codice non dipende da quante lettere sono giuste (niente indizi dai tempi).
 // ENGLISH: the token comparison does not depend on how many characters match (no timing hints).
@@ -78,11 +82,11 @@ export const creaServerMcp = (chiedi, versione) => {
 
     server.registerTool('list_photos', {
         title: 'List photos',
-        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. Optional filters: tags that must all be present, or only photos without tags.',
+        description: 'Lists the photos open in Images Tag Manager (trashed ones excluded) with their id, file name, folder, current tags and whether they have unsaved changes. A photo marked txt_unreadable has a .txt that could not be read when it was opened: "Save Changes" does not write it. Optional filters: tags that must all be present, or only photos without tags. With tags or untagged_only the list is computed again at every call from the current tags: a photo whose tags you change leaves it only if it no longer matches the filter, so changing tags while you page through it makes you skip or repeat photos. To work through a long list, first read all its pages without changing anything (advance offset by the number of photos returned, and stop when a page comes back empty or offset reaches total), note the ids, and only then change the tags of those ids.',
         inputSchema: {
             tags: z.array(TAG).max(20).optional().describe('Only photos that have ALL these tags (case-insensitive).'),
-            untagged_only: z.boolean().optional().describe('Only photos with no tags.'),
-            offset: z.number().int().min(0).optional(),
+            untagged_only: z.boolean().optional().describe('Only photos with no tags. Photos you tag leave this list, photos you leave untagged stay in it: read all its pages and note the ids before you start tagging.'),
+            offset: z.number().int().min(0).optional().describe('Skip this many photos of the list. To read the next page, advance it by the number of photos returned; stop when a page comes back empty. With tags or untagged_only read all the pages before you change any tags, because the list is computed again at every call.'),
             limit: z.number().int().min(1).max(500).optional().describe('Default 100.'),
         },
         annotations: { readOnlyHint: true },

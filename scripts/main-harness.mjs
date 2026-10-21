@@ -69,7 +69,7 @@ const sostituisciCestino = (script) => {
    Returns the handlers, the list of paths handed to shell.trashItem, the paths the fake Recycle
    Bin must refuse (rifiutaCestino), the spawn calls, and impostaCestino(entries) to decide what
    the fake bin holds on the next call. */
-export const caricaMain = () => {
+export const caricaMain = ({ userData = null } = {}) => {
     const handlers = new Map();
     const cestinati = [];
     const rifiutaCestino = new Set();
@@ -82,9 +82,11 @@ export const caricaMain = () => {
             isPackaged: true,
             getLocale: () => 'en-US',
             getVersion: () => '0.0.0',
-            // ITALIANO: una cartella che non esiste: nessuna prova deve leggere o scrivere userData.
-            // ENGLISH: a folder that does not exist: no test may read or write userData.
-            getPath: () => path.join(os.tmpdir(), 'itm-test-userdata-missing'),
+            // ITALIANO: una cartella che non esiste: nessuna prova deve leggere o scrivere userData, tranne
+            //           quella che passa la SUA cartella temporanea (userData).
+            // ENGLISH: a folder that does not exist: no test may read or write userData, except the one
+            //          that passes ITS own temporary folder (userData).
+            getPath: () => userData || path.join(os.tmpdir(), 'itm-test-userdata-missing'),
             requestSingleInstanceLock: () => true,
             quit() {},
             on() {},

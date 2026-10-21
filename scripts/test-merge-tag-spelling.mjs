@@ -121,6 +121,58 @@ try {
     const sbagliati = tagScritti().filter((t) => !TENUTI.has(t) && (/[A-Z_]/.test(t) || / {2}/.test(t)));
     dice('nessun altro tag del dizionario ha maiuscole, trattini bassi o doppi spazi', [], sbagliati);
 
+    // ITALIANO: i tag scritti con il peso dei prompt sono i tag di sempre: masterpiece e best quality
+    //           ci sono gia', smile no (entra senza peso), e (x) resta un tag a se'.
+    // ENGLISH: tags written with a prompt weight are the usual tags: masterpiece and best quality are
+    //          already there, smile is not (it goes in without the weight), and (x) stays a tag of its own.
+    fs.writeFileSync(path.join(prova, 'pesi.txt'), '(masterpiece), ((Best_Quality)), (smile:1.2), [blue sky], (x)\n');
+    const rapportoPesi = lancia('pesi.txt', '--out', 'piano-pesi.json');
+    const pianoPesi = JSON.parse(fs.readFileSync(path.join(prova, 'piano-pesi.json'), 'utf8'));
+    dice('i tag con il peso noti non sono proposti come nuovi; smile entra senza peso', ['smile'], Object.keys(pianoPesi).sort());
+    dice('il rapporto conta 4 tag gia\' nel dizionario: masterpiece, best quality, blue sky e (x)', true, /gia' nel dizionario\s*: 4\b/.test(rapportoPesi));
+
+    // ITALIANO: una precisazione tra parentesi fa un tag diverso: 'spring (object)' (la molla) non e'
+    //           'spring' (la stagione), che c'e' gia'. La chiave toglieva tutto il testo tra parentesi
+    //           e il rapporto li dava per "gia' nel dizionario"; con --apply finivano fra i saltati.
+    // ENGLISH: a parenthesised qualifier makes a different tag: 'spring (object)' (the coil) is not
+    //          'spring' (the season), which is already there. The key removed all text in parentheses
+    //          and the report called them "already in the dictionary"; with --apply they were skipped.
+    const conBase = tagScritti();
+    dice('premessa: il dizionario ha spring, aura, fire e hood', [true, true, true, true], ['spring', 'aura', 'fire', 'hood'].map((t) => conBase.includes(t)));
+    fs.writeFileSync(path.join(prova, 'precisazioni.txt'), 'spring (object), Aura_(Sousou_no_Frieren), Fire_(Element), hood (clothing), spring, Hood, zzqx\n');
+    const rapportoPrec = lancia('precisazioni.txt', '--out', 'piano-prec.json');
+    const pianoPrec = JSON.parse(fs.readFileSync(path.join(prova, 'piano-prec.json'), 'utf8'));
+    dice('il piano propone i tag con la precisazione, non spring e hood', ['aura (sousou no frieren)', 'fire (element)', 'hood (clothing)', 'spring (object)', 'zzqx'], Object.keys(pianoPrec).sort());
+    dice('il rapporto conta 2 tag gia\' nel dizionario: spring e hood', true, /gia' nel dizionario\s*: 2\b/.test(rapportoPrec));
+    fs.writeFileSync(path.join(prova, 'prec.json'), JSON.stringify({ 'Spring_(Object)': { categoria: 'seasons', it: 'molla' } }));
+    const rapportoApplyPrec = lancia('--apply', 'prec.json');
+    dice('--apply inserisce { tag: \'spring (object)\', ... } e non lo salta', [true, false], [fs.readFileSync(dizionario, 'utf8').includes("{ tag: 'spring (object)', translations: { it: 'molla', en: 'spring (object)' } },"), /gia' presente/.test(rapportoApplyPrec)]);
+    dice('spring_(object) e spring (object) sono lo stesso tag: un secondo --apply non lo reinserisce', tagScritti().length, (() => {
+        fs.writeFileSync(path.join(prova, 'prec2.json'), JSON.stringify({ 'spring_(object)': { categoria: 'seasons', it: 'molla' } }));
+        lancia('--apply', 'prec2.json');
+        return tagScritti().length;
+    })());
+    // ITALIANO: gli spazi attorno alla parentesi non fanno un tag nuovo: 'spring(object)' e
+    //           'spring ( object )' sono 'spring (object)', gia' inserito sopra. Le emoticon restano.
+    // ENGLISH: the spaces around the parenthesis do not make a new tag: 'spring(object)' and
+    //          'spring ( object )' are 'spring (object)', inserted above. Emoticons stay as they are.
+    fs.writeFileSync(path.join(prova, 'spazi.txt'), 'spring(object), spring ( object ), Spring_(Object)\n');
+    const rapportoSpazi = lancia('spazi.txt', '--out', 'piano-spazi.json');
+    dice('spring(object) e spring ( object ) non sono proposti come nuovi', [], Object.keys(JSON.parse(fs.readFileSync(path.join(prova, 'piano-spazi.json'), 'utf8'))));
+    dice('il rapporto vede un tag solo, gia\' nel dizionario', [true, true], [/tag distinti nei file\s*: 1\b/.test(rapportoSpazi), /gia' nel dizionario\s*: 1\b/.test(rapportoSpazi)]);
+    dice('--apply di spring(object) non lo reinserisce', tagScritti().length, (() => {
+        fs.writeFileSync(path.join(prova, 'spazi.json'), JSON.stringify({ 'spring(object)': { categoria: 'seasons', it: 'molla' } }));
+        lancia('--apply', 'spazi.json');
+        return tagScritti().length;
+    })());
+    const KAOMOJI = ['ヽ(・∀・)ﾉ', 'o(^-^)o', 'ლ(╹◡╹ლ)', 'ε(´∀｀)з', 'ლ(ಠ益ಠლ)', 'щ(ﾟдﾟщ)', 'ヽ(ﾟдﾟ)ﾉ'];
+    fs.writeFileSync(path.join(prova, 'emoticon.txt'), ['(o)_(o)', '(x)', ...KAOMOJI, 'zzq(1)'].join(', ') + '\n');
+    lancia('emoticon.txt', '--out', 'piano-emo.json');
+    const pianoEmo = Object.keys(JSON.parse(fs.readFileSync(path.join(prova, 'piano-emo.json'), 'utf8')));
+    dice('le emoticon (o)_(o) e (x) non cambiano forma', true, pianoEmo.filter((t) => !t.startsWith('zzq') && !KAOMOJI.includes(t)).every((t) => t === '(o)_(o)' || t === '(x)'));
+    dice('le emoticon giapponesi entrano senza spazi aggiunti', KAOMOJI.slice().sort(), pianoEmo.filter((t) => KAOMOJI.includes(t)).sort());
+    dice('un nome attaccato alla parentesi entra con lo spazio, come nel dizionario', ['zzq (1)'], pianoEmo.filter((t) => t.startsWith('zzq')));
+
     // ITALIANO: rifare lo stesso inserimento non aggiunge niente (niente doppioni).
     // ENGLISH: repeating the same insertion adds nothing (no duplicates).
     const quanti = tagScritti().length;

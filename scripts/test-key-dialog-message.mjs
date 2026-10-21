@@ -73,7 +73,7 @@ const fine = inizio < 0 ? null : chiusura.exec(sorgente);
 if (!fine) { console.log('NO  handleVerifyApiKey non trovato in src/App.tsx'); process.exit(1); }
 const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 const fabbrica = new Function('tempApiKey', 't', 'verifyGeminiApiKey', 'setApiKeyError', 'setIsVerifyingApiKey', 'setGeminiApiKey',
-    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', codice + '\nreturn handleVerifyApiKey;');
+    'setIsApiKeyDialogOpen', 'soundManager', 'showNotification', 'useCallback', 'geminiApiKeyRef', 'setSecret', codice +'\nreturn handleVerifyApiKey;');
 
 // ITALIANO: l'errore come lo costruisce DAVVERO la libreria di Google per una chiave sbagliata:
 //           il messaggio e' tutto il corpo JSON della risposta.
@@ -88,12 +88,16 @@ const chiaveSbagliata = () => new ApiError(JSON.stringify({ error: {
 
 // ITALIANO: preme "Verifica e salva" (o Invio) con questa chiave; restituisce cosa mostra la finestra.
 // ENGLISH: presses "Verify and save" (or Enter) with this key; returns what the dialog shows.
-const verifica = async (t, chiave, list) => {
+// ITALIANO: `inMemoria` = la chiave che il programma ha gia' (geminiApiKeyRef); `salva` = il setSecret finto.
+// ENGLISH: `inMemoria` = the key the app already holds (geminiApiKeyRef); `salva` = the fake setSecret.
+const verifica = async (t, chiave, list, { inMemoria = '', salva = async () => true } = {}) => {
     globalThis.__GOOGLE__ = { chiamate: 0, list };
-    const r = { errori: [], salvata: null };
+    const r = { errori: [], salvata: null, notifiche: [], scritture: 0 };
     await fabbrica(chiave, t, S.verifyGeminiApiKey, (m) => r.errori.push(m), () => { }, (k) => { r.salvata = k; },
-        () => { }, { chime() { } }, () => { }, (f) => f)();
-    return { mostrato: r.errori.filter(Boolean).pop(), salvata: r.salvata, chiamate: globalThis.__GOOGLE__.chiamate };
+        () => { }, { chime() { } }, (m, tipo) => r.notifiche.push([m, tipo]), (f) => f,
+        { current: inMemoria }, async (nome, valore) => { r.scritture++; return salva(nome, valore); })();
+    return { mostrato: r.errori.filter(Boolean).pop(), salvata: r.salvata, chiamate: globalThis.__GOOGLE__.chiamate,
+        notifiche: r.notifiche, scritture: r.scritture };
 };
 
 const LUNGA = 'AIzaSy' + 'x'.repeat(33);
@@ -112,6 +116,32 @@ console.log('\n--- quello che NON deve cambiare ---');
     dice('errore sconosciuto (rete): una frase tradotta, non il testo grezzo', t.aiRequestFailed, rete.mostrato);
     const buona = await verifica(t, LUNGA, async () => ({ async *[Symbol.asyncIterator]() { } }));
     dice('chiave buona: si salva, nessun errore', [LUNGA, undefined], [buona.salvata, buona.mostrato]);
+    dice('chiave nuova: la salva l\'effetto (nessuna scrittura qui), "verificata e salvata"',
+        [0, [[t.aiKeySaved, 'success']]], [buona.scritture, buona.notifiche]);
+}
+
+console.log('\n--- la stessa chiave riconfermata dopo "chiave NON salvata" ---');
+{
+    // ITALIANO: il salvataggio cifrato e' fallito una volta (file bloccato, disco pieno): la chiave
+    //           resta in memoria e la finestra la ripropone. Riconfermata uguale, lo stato non
+    //           cambia e l'effetto che salva non riparte: prima usciva il verde senza nessun salvataggio.
+    // ENGLISH: the encrypted save failed once (file locked, disk full): the key stays in memory and
+    //          the dialog offers it again. Confirmed unchanged, the state does not change and the
+    //          saving effect does not run again: the green message used to show with no save at all.
+    const t = lingue.it;
+    const ok = async () => ({ async *[Symbol.asyncIterator]() { } });
+    const fallisce = await verifica(t, LUNGA, ok, { inMemoria: LUNGA, salva: async () => false });
+    dice('stessa chiave, salvataggio di nuovo fallito: si prova davvero a salvare', 1, fallisce.scritture);
+    dice('...e si dice "NON salvata", non "verificata e salvata"', [[t.apiKeyNotSaved, 'error']], fallisce.notifiche);
+    const riesce = await verifica(t, LUNGA, ok, { inMemoria: LUNGA, salva: async () => true });
+    dice('stessa chiave, salvataggio riuscito: "verificata e salvata"', [1, [[t.aiKeySaved, 'success']]], [riesce.scritture, riesce.notifiche]);
+    const errore = console.error;
+    console.error = () => { };
+    const lancia = await verifica(t, LUNGA, ok, { inMemoria: LUNGA, salva: async () => { throw new Error('IPC chiuso'); } });
+    console.error = errore;
+    dice('stessa chiave, salvataggio che lancia un errore: "NON salvata"', [[t.apiKeyNotSaved, 'error']], lancia.notifiche);
+    const diversa = await verifica(t, LUNGA, ok, { inMemoria: 'AIzaSy' + 'y'.repeat(33), salva: async () => false });
+    dice('chiave diversa da quella in memoria: come prima (la salva l\'effetto)', [LUNGA, 0], [diversa.salvata, diversa.scritture]);
 }
 
 process.exit(esito());

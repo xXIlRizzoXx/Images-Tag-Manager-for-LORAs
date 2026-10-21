@@ -7,7 +7,9 @@ Ao instalar e usar este programa, você aceita as condições abaixo.
 1. USO DO PROGRAMA
 
 O programa é gratuito e você pode usá-lo livremente, inclusive no trabalho.
-Você não pode revendê-lo nem distribuí-lo como se fosse seu.
+É de código aberto, publicado sob a licença MIT: você pode usá-lo,
+copiá-lo, modificá-lo e redistribuí-lo, mantendo o aviso de copyright e
+a licença.
 
 
 2. SEM GARANTIA
@@ -24,6 +26,10 @@ segurança das imagens e dos arquivos .txt das tags.
 
 O programa não coleta estatísticas, não rastreia o seu uso e não envia
 nada pela rede por conta própria.
+
+O servidor MCP vem desligado. Se você ligá-lo e conectar um app de IA,
+as fotos e as tags que esse app lê passam para ele; um app que funciona
+na nuvem as envia para os servidores dele.
 
 Configurações, acervo e cópias de emergência ficam na pasta
 %APPDATA%\images-tag-manager do seu PC.

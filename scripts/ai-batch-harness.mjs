@@ -91,7 +91,8 @@ const DIPENDENZE = ['aiEnabled', 'geminiApiKey', 'aiModel', 'aiMaxTags', 'aiCust
     'imagesRef', 'isGlobalAITagging', 't', 'updateImageTags', 'getGeminiTags', 'classifyGeminiError', 'showNotification',
     'soundManager', 'setRiparaModello', 'setIsApiKeyDialogOpen', 'aiCancelRequestedRef', 'setAiCancelRequested',
     'aiAbortControllerRef', 'setIsGlobalAITagging', 'setGlobalAIProgress', 'countNewTagsIgnoringCase', 'globalTriggersRef',
-    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore'];
+    'hasTagsBeyondTriggers', 'setAiEnabled', 'useCallback', 'Date', 'setTimeout', 'console', 'txtNonLettoInVigore', 'progettoGenRef',
+    'geminiApiKeyRef', 'aiSingolaControllerRef', 'setToast', 'aiLottoRef'];
 const fabbrica = new Function(...DIPENDENZE, codice + '\nreturn { handleAITagAll, handleCancelAITagging, interruttoreAI };');
 
 export const BUONA = { text: '["cat", "sofa"]' };
@@ -113,19 +114,25 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     const foto = fotoIniziali.map(({ id, tags = [] }) => ({
         id, isTrashed: false, tags: [...tags], file: new File([PNG_MINIMO], `${id}.png`, { type: 'image/png' }),
     }));
-    const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto };
+    // ITALIANO: `progressi` raccoglie ogni stato della barra (setGlobalAIProgress), in ordine.
+    // ENGLISH: `progressi` collects every state of the progress bar (setGlobalAIProgress), in order.
+    const app = { notifiche: [], aiAttiva: true, finestraChiave: false, foto, progressi: [], suoni: 0 };
     let orologio = 1_000_000;
+    const chiave = 'AIza' + 'x'.repeat(35);
     const dip = {
-        aiEnabled: true, geminiApiKey: 'AIza' + 'x'.repeat(35), aiModel: 'gemini-3.8-flash', aiMaxTags: 30, aiCustomPrompt: '',
+        aiEnabled: true, geminiApiKey: chiave, aiModel: 'gemini-3.8-flash', aiMaxTags: 30, aiCustomPrompt: '',
         aiRpm: 14, aiSkipTagged: skip, images: foto, imagesRef: { current: foto }, isGlobalAITagging: false, t,
         updateImageTags: (id, tags) => { const f = foto.find(x => x.id === id); if (f) f.tags = tags; },
         getGeminiTags: S.getGeminiTags, classifyGeminiError: S.classifyGeminiError,
-        showNotification: (m, tipo) => app.notifiche.push([m, tipo]),
-        soundManager: { chime() { } },
+        showNotification: (m, tipo) => { app.notifiche.push([m, tipo]); app.toast = { show: true, message: m, type: tipo }; },
+        // ITALIANO: il posto unico degli avvisi: chi passa una funzione puo' decidere di lasciare quello che c'e'.
+        // ENGLISH: the single notice slot: whoever passes a function can decide to keep what is there.
+        setToast: (u) => { const prima = app.toast || { show: false }; const dopo = typeof u === 'function' ? u(prima) : u; if (dopo !== prima) app.notifiche.push([dopo.message, dopo.type]); app.toast = dopo; },
+        soundManager: { chime() { app.suoni++; } },
         setRiparaModello: () => { },
         setIsApiKeyDialogOpen: (v) => { app.finestraChiave = v; },
         aiCancelRequestedRef: { current: false }, setAiCancelRequested: () => { },
-        aiAbortControllerRef: { current: null }, setIsGlobalAITagging: () => { }, setGlobalAIProgress: () => { },
+        aiAbortControllerRef: { current: null }, setIsGlobalAITagging: () => { }, setGlobalAIProgress: (p) => { app.progressi.push(p); },
         countNewTagsIgnoringCase: tagCase.countNewTagsIgnoringCase,
         globalTriggersRef: { current: trigger },
         hasTagsBeyondTriggers: tagCase.hasTagsBeyondTriggers,
@@ -134,9 +141,18 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
         // ITALIANO: orologio finto: ogni attesa fa avanzare il tempo e finisce subito.
         // ENGLISH: fake clock: every wait moves time forward and ends at once.
         Date: { now: () => orologio },
-        setTimeout: (f, ms) => { orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
+        // ITALIANO: con app.trattieniTimer le attese di almeno 3 secondi restano in app.timerTrattenuti (la prova le fa scattare).
+        // ENGLISH: with app.trattieniTimer waits of at least 3 seconds stay in app.timerTrattenuti (the test fires them).
+        setTimeout: (f, ms) => { if (app.trattieniTimer && (ms || 0) >= 3000) { app.timerTrattenuti.push(f); return 0; } orologio += Math.max(0, ms || 0); queueMicrotask(f); return 0; },
         console: { log() { }, warn() { }, error() { } },
         txtNonLettoInVigore: sidecar.txtNonLettoInVigore,
+        progettoGenRef: { current: 0 },
+        // ITALIANO: la chiave com'e' adesso (geminiApiKeyRef in App.tsx): all'inizio quella del lotto.
+        // ENGLISH: the key as it is now (geminiApiKeyRef in App.tsx): at first the batch's one.
+        geminiApiKeyRef: { current: chiave },
+        // ITALIANO: la richiesta AI di una sola foto (nessuna qui). ENGLISH: the single-photo AI request (none here).
+        aiSingolaControllerRef: { current: null },
+        aiLottoRef: { current: 0 },
     };
     const pezzi = () => fabbrica(...DIPENDENZE.map(n => dip[n]));
     app.tutte = () => pezzi().handleAITagAll();
@@ -144,8 +160,24 @@ export const nuovaApp = (fotoIniziali, generate, { skip = false, trigger = [] } 
     app.interruttore = (v) => pezzi().interruttoreAI(v);
     app.chiamate = () => globalThis.__GOOGLE__.chiamate;
     app.annullamentoChiesto = () => dip.aiCancelRequestedRef.current;
+    // ITALIANO: Chiudi progetto e Reset fermano il lotto cosi' (closeProjectNow, handleResetProject): un
+    //           progetto nuovo, la richiesta di annullamento e l'abort della richiesta in volo.
+    // ENGLISH: Close project and Reset stop the batch this way (closeProjectNow, handleResetProject): a
+    //          new project, the cancel request and the abort of the request in flight.
+    app.chiudiProgetto = () => { dip.progettoGenRef.current++; dip.aiCancelRequestedRef.current = true; dip.aiAbortControllerRef.current?.abort(); };
     // ITALIANO: l'elenco vivo delle foto (imagesRef): una prova puo' togliere una foto a meta' richiesta.
     // ENGLISH: the live photo list (imagesRef): a test can remove a photo halfway through a request.
     app.imagesRef = dip.imagesRef;
+    // ITALIANO: l'utente salva un'altra chiave (o la stessa) nella finestra della chiave.
+    // ENGLISH: the user saves another key (or the same one) in the key dialog.
+    app.chiave = chiave;
+    app.cambiaChiave = (k) => { dip.geminiApiKeyRef.current = k; };
+    app.timerTrattenuti = [];
+    // ITALIANO: la chiave che il lotto prende all'avvio (lo stato geminiApiKey di App).
+    // ENGLISH: the key the batch takes at its start (App's geminiApiKey state).
+    app.chiaveDelLotto = (k) => { dip.geminiApiKey = k; };
+    // ITALIANO: un avviso mostrato da un altro punto dell'app (per esempio l'errore della chiave non salvata).
+    // ENGLISH: a notice shown by another part of the app (for example the key-not-saved error).
+    app.avviso = (m, tipo) => dip.showNotification(m, tipo);
     return app;
 };

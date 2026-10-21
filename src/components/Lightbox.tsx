@@ -22,10 +22,11 @@ import { getTagCategory, getCategoryColor, getActiveCategoryColor } from '../uti
 import { translateTag } from '../utils/tagTranslation';
 import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
-import { hasTagIgnoringCase, splitTagInput } from '../utils/tagCase';
+import { hasTagIgnoringCase, splitTagInput, countNewTagsIgnoringCase } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
+import type { Strings } from '../constants';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags }: any) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: { t: Strings; [chiave: string]: any }) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -53,11 +54,18 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
 
     const handleKeyDown = useCallback((e: any) => {
         if (!imageRef.current) return;
+        // ITALIANO: con una finestra aperta SOPRA il visualizzatore (chiave API, riepilogo
+        //           dell'importazione...) Esc chiudeva il visualizzatore sotto e lasciava la finestra,
+        //           e le frecce cambiavano foto dietro di lei. App.tsx passa le stesse finestre di Ctrl+Z.
+        // ENGLISH: with a dialog open OVER the viewer (API key, import summary...) Esc closed the
+        //          viewer underneath and left the dialog, and the arrows changed photo behind it.
+        //          App.tsx passes the same dialogs as Ctrl+Z.
+        if (tastiBloccati) return;
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
         if (e.key === 'ArrowRight' && hasNext) onNext();
         else if (e.key === 'ArrowLeft' && hasPrev) onPrev();
         else if (e.key === 'Escape') onClose();
-    }, [hasNext, hasPrev, onNext, onPrev, onClose]);
+    }, [hasNext, hasPrev, onNext, onPrev, onClose, tastiBloccati]);
 
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [handleKeyDown]);
 
@@ -163,7 +171,15 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     };
 
     const handleAddAll = () => { updateTags(image.id, [...allTags]); soundManager.chime(); };
-    const handleRemoveAll = () => { updateTags(image.id, []); soundManager.pop(); };
+    // ITALIANO: le trigger word che la foto aveva restano, come in "Elimina tutti i tag" di App.tsx.
+    //           Prima se ne andavano anche loro mentre il riquadro delle trigger le mostrava attive,
+    //           e niente le rimetteva: il .txt salvato dopo usciva senza la parola chiave. Una trigger
+    //           si toglie ancora da questa sola foto con un clic sulla sua pillola (toggleTag).
+    // ENGLISH: the trigger words the photo had stay, as in App.tsx's "Delete all tags". They used
+    //          to go too while the trigger box showed them as active, and nothing put them back:
+    //          the .txt saved afterwards came out without the keyword. A trigger can still be
+    //          removed from this photo only with a click on its pill (toggleTag).
+    const handleRemoveAll = () => { updateTags(image.id, currentTags.filter((tag: string) => hasTagIgnoringCase(globalTriggers, tag))); soundManager.pop(); };
 
     // ITALIANO: Copia i tag di QUESTA foto (li conserva App), poi li puoi incollare
     //           su un'altra foto. L'incolla li AGGIUNGE senza creare doppioni.
@@ -176,6 +192,9 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     };
     const handlePasteTags = () => {
         if (!copiedTags || !copiedTags.length) return;
+        // ITALIANO: la foto ha gia' tutti i tag copiati (a parte le maiuscole): non si dice "incollati".
+        // ENGLISH: the photo already has every copied tag (apart from case): do not say "pasted".
+        if (countNewTagsIgnoringCase(currentTags, copiedTags) === 0) { if (showNotification) showNotification(t.tagsPasteNothingNew, 'info'); return; }
         updateTags(image.id, [...new Set([...currentTags, ...copiedTags])]);
         if (showNotification) showNotification(t.tagsPastedNotif, 'success');
         soundManager.pop();
@@ -192,10 +211,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         //          is empty"), not on a missing one: a NEW empty .txt is not created, one that was
         //          there is emptied (as asked) and the message says so.
         const vuoto = tagString === '';
-        const salvato = (svuotato: boolean) => {
+        // ITALIANO: senza tag e senza un .txt sul disco non si scrive niente: il messaggio lo dice
+        //           invece di "salvato con successo", che faceva credere a una didascalia inesistente.
+        // ENGLISH: with no tags and no .txt on disk nothing is written: the message says so instead
+        //          of "saved successfully", which made the user believe in a caption that is not there.
+        const salvato = (svuotato: boolean, nessunFile = false) => {
             updateOriginalTags(image.id, currentTags);
             soundManager.chime();
-            if (showNotification) showNotification(svuotato ? t.successSaveSingle + ' ' + t.saveEmptyCaptionOne : t.successSaveSingle, svuotato ? "info" : "success");
+            if (!showNotification) return;
+            if (nessunFile) showNotification(t.saveNoTagsNoFile, "info");
+            else showNotification(svuotato ? t.successSaveSingle + ' ' + t.saveEmptyCaptionOne : t.successSaveSingle, svuotato ? "info" : "success");
         };
 
         try {
@@ -205,6 +230,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 // ENGLISH: next to the photo goes the .txt the import reads back and Kohya uses, with
                 //          the name uncleaned (see sidecarTagFileName); `fileName` stays for the download.
                 const nomeTxt = sidecarTagFileName(image.file.name);
+                // ITALIANO: la foto cancellata o rinominata da Esplora file non riceve un .txt orfano: errore
+                //           (vedi performSave in App.tsx).
+                // ENGLISH: a photo deleted or renamed in File Explorer does not get an orphan .txt: error
+                //          (see performSave in App.tsx).
+                try { await dirHandle.getFileHandle(image.file.name); }
+                catch (e: any) { if (e && e.name === 'NotFoundError') throw e; }
                 let fileHandle: any = null;
                 if (vuoto) {
                     try { fileHandle = await dirHandle.getFileHandle(nomeTxt); }
@@ -217,7 +248,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     await writable.write(tagString);
                     await writable.close();
                 }
-                salvato(vuoto && !!fileHandle);
+                salvato(vuoto && !!fileHandle, vuoto && !fileHandle);
                 return;
             }
             // ITALIANO: foto senza cartella (caricata con "Carica immagini"): in Electron scrivo il
@@ -235,11 +266,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                 const imagePath = api.getPathForFile(image.file) || '';
                 const res = await api.writeSidecarTags([{ imagePath, content: tagString }]);
                 if (res && Array.isArray(res.results) && res.results[0]) {
-                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo: si e' svuotato
-                    //           solo se sul disco la foto aveva dei tag.
-                    // ENGLISH: the main process does not create a new empty .txt: it was emptied
-                    //          only if the photo had tags on disk.
-                    salvato(vuoto && (image.originalTags || []).length > 0);
+                    // ITALIANO: il processo principale non crea un .txt vuoto nuovo, ma svuota quello che
+                    //           c'e' (anche gia' vuoto): decide `written`, cioe' quello che e' successo sul
+                    //           disco, non i tag letti all'import. Senza `written` (risposta vecchia) vale
+                    //           la regola di prima.
+                    // ENGLISH: the main process does not create a new empty .txt, but empties the one that
+                    //          is there (even one already empty): `written` decides, i.e. what happened on
+                    //          disk, not the tags read at import. Without `written` (old answer) the earlier
+                    //          rule applies.
+                    const scritto = typeof res.written === 'number' ? res.written > 0 : (image.originalTags || []).length > 0;
+                    salvato(vuoto && scritto, vuoto && !scritto);
                 } else if (showNotification) {
                     showNotification(t.errorSaveGen || t.dirError, 'error');
                 }

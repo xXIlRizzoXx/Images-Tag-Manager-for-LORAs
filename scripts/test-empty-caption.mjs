@@ -70,7 +70,9 @@ const muto = { log() { }, warn() { }, error() { } };
 const cartella = (presenti = {}) => {
     const c = { file: new Map(Object.entries(presenti)) };
     c.getFileHandle = async (nome, opz) => {
-        if (!c.file.has(nome) && !(opz && opz.create)) throw new DOMException('not found', 'NotFoundError');
+        // ITALIANO: le foto ci sono (performSave e il visualizzatore lo controllano); mancano solo i .txt non elencati.
+        // ENGLISH: the photos are there (performSave and the viewer check it); only the unlisted .txt files are missing.
+        if (!c.file.has(nome) && !(opz && opz.create) && /\.txt$/i.test(nome)) throw new DOMException('not found', 'NotFoundError');
         return { createWritable: async () => { let testo = ''; return { write: async (s) => { testo += String(s); }, close: async () => { c.file.set(nome, testo); } }; } };
     };
     return c;
@@ -78,10 +80,10 @@ const cartella = (presenti = {}) => {
 const salva = async (foto) => {
     const r = { notifiche: [], salvate: [] };
     const f = new Function('setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
-        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef',
+        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef', 'gemelliDelTxt',
         jsSalva + '\nreturn performSave;')(() => { }, () => { }, (m, tipo) => r.notifiche.push([m, tipo]), t, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
         {}, (fn) => { r.salvate = fn(foto).filter((img, i) => img !== foto[i]).map(i => i.id); }, { chime() { } }, muto,
-        P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, { current: '' });
+        P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, { current: '' }, async () => () => { });
     r.ok = await f(foto);
     r.ultimo = r.notifiche[r.notifiche.length - 1] || null;
     return r;
@@ -145,10 +147,10 @@ console.log('\n--- "Carica immagini" in Electron: il canale del processo princip
         fs.writeFileSync(a, 'png');
         fs.writeFileSync(b, 'png');
         fs.writeFileSync(path.join(tmp, 'b.txt'), 'smile,');
-        const r = scrivi(null, [{ imagePath: a, content: '' }, { imagePath: b, content: '' }]);
+        const r = await scrivi(null, [{ imagePath: a, content: '' }, { imagePath: b, content: '' }]);
         dice('a.png senza .txt e senza tag: risulta salvata, nessun a.txt creato', [true, false], [r.results[0], fs.existsSync(path.join(tmp, 'a.txt'))]);
         dice('b.txt c\'era: si svuota', [true, ''], [r.results[1], fs.readFileSync(path.join(tmp, 'b.txt'), 'utf8')]);
-        const r2 = scrivi(null, [{ imagePath: a, content: 'red hair,' }]);
+        const r2 = await scrivi(null, [{ imagePath: a, content: 'red hair,' }]);
         dice('con dei tag il .txt si crea come prima', [true, 'red hair,'], [r2.results[0], fs.readFileSync(path.join(tmp, 'a.txt'), 'utf8')]);
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });

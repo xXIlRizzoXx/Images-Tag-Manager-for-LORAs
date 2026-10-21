@@ -132,11 +132,11 @@ const heic = (o = {}) => {
     const cima = semplice ? B() : togli('uuid', 'abcdefghijklmnop', '<x:xmpmeta>', GPS);
     const infe = (id, tipo, extra = '') => full('infe', infeV, infeV === 3 ? be32(id) : be16(id), [0, 0], tipo, '\0', extra);
     const offN = off8 ? be64 : be32;
-    const voce = (id, metodo, base, off, len) => B(ilocV === 2 ? be32(id) : be16(id), be16(metodo), be16(0), be32(base), be16(1), offN(off), be32(len));
+    const voce = (id, metodo, base, off, len, rif = 0) => B(ilocV === 2 ? be32(id) : be16(id), be16(metodo), be16(rif), be32(base), be16(1), offN(off), be32(len));
     const meta = (mb) => {
         const voci = semplice ? [voce(1, 0, 0, mb, IMG.length)] : [
             voce(1, 0, 0, mb, IMG.length),
-            voce(2, rompi === 'metodo2' ? 2 : 0, 0, rompi === 'fuori' ? mb + 100000 : mb + IMG.length, rompi === 'zero' ? 0 : EXIF.length),
+            voce(2, rompi === 'metodo2' ? 2 : 0, 0, rompi === 'fuori' ? mb + 100000 : mb + IMG.length, rompi === 'zero' ? 0 : EXIF.length, rompi === 'dref' ? 1 : 0),
             voce(3, 0, mb, IMG.length + EXIF.length, XMP.length),
             voce(5, 1, 0, 0, TESTO.length),
         ];
@@ -150,9 +150,12 @@ const heic = (o = {}) => {
             iinf,
             box('iprp',
                 box('ipco', box('hvcC', [1, 2, 3, 4]), full('ispe', 0, be32(4), be32(3)), box('irot', [1]),
-                    ...(semplice ? [] : [togli('uuid', 'segreto-uuid-123', AUTORE)])),
+                    ...(semplice ? [] : [togli('uuid', 'segreto-uuid-123', AUTORE), togli('udes', [0, 0, 0, 0], 'it\0', 'caption\0', SERIALE, '\0')])),
                 full('ipma', 0, be32(1), be16(1), [3, 0x81, 0x02, 0x03])),
-            ...(semplice ? [] : [togli('xml ', [0, 0, 0, 0], '<x:xmpmeta>', SERIALE), box('idat', pulita ? zeri(TESTO.length) : TESTO)]));
+            ...(semplice ? [] : [togli('xml ', [0, 0, 0, 0], '<x:xmpmeta>', SERIALE), box('idat', pulita ? zeri(TESTO.length) : TESTO)]),
+            // ITALIANO: la tabella dref con una sola voce "in questo stesso file" (url con flag 1).
+            // ENGLISH: the dref table with a single "in this same file" entry (url with flag 1).
+            ...(rompi === 'dref' ? [box('dinf', full('dref', 0, be32(1), box('url ', [0, 0, 0, 1])))] : []));
     };
     const mdat = semplice ? IMG : B(IMG, pulita ? zeri(EXIF.length) : EXIF, pulita ? zeri(XMP.length) : XMP);
     const mb = ftyp.length + meta(0).length + cima.length + 8;
@@ -193,6 +196,17 @@ for (const [nome, opz] of [
     dice('una HEIC senza dati nascosti parte identica', !!r.dati && r.dati.equals(file) && r.mime === 'image/heic', String(r.errore || r.mime));
 }
 {
+    // ITALIANO: su molti PC Windows una .HEIC arriva con il tipo VUOTO (Chromium non la conosce): veniva
+    //           rifiutata con "Unsupported file type" prima ancora di guardare i byte.
+    // ENGLISH: on many Windows PCs a .HEIC arrives with an EMPTY type (Chromium does not know it): it was
+    //          refused with "Unsupported file type" before even looking at the bytes.
+    const r = await invia(heic(), 'IMG_0003.HEIC', '');
+    dice('una HEIC con il tipo vuoto parte come image/heic, pulita',
+        r.chiamate === 1 && !!r.dati && contieneSegreto(r.dati).length === 0 && r.mime === 'image/heic', String(r.errore || r.mime));
+    const n = await invia(heic(), 'nota.txt', '');
+    dice('un file non immagine con il tipo vuoto resta rifiutato', !!n.errore && n.chiamate === 0, String(n.errore));
+}
+{
     const r = await invia(heic(), 'finta.jpg', 'image/jpeg');
     dice('una HEIC chiamata .jpg si pulisce come HEIC e parte come image/heic',
         !!r.dati && contieneSegreto(r.dati).length === 0 && r.mime === 'image/heic', String(r.errore || r.mime));
@@ -207,10 +221,20 @@ for (const [cosa, file] of [
     ['la foto principale e\' l\'Exif', heic({ rompi: 'primaria' })],
     ['nessuna scatola meta', B(box('ftyp', 'heic', be32(0), 'mif1', 'heic'), box('mdat', 'hevc-pixel-data'))],
     ['scatola tagliata a meta\'', heic().subarray(0, 60)],
+    ['l\'Exif nello stesso file ma indicato con la tabella dref (indice 1)', heic({ rompi: 'dref' })],
 ]) {
     const r = await invia(file, 'rotta.heic', 'image/heic');
     dice(`${cosa}: errore, nessuna richiesta, segnata come problema della foto`,
         !!r.errore && r.chiamate === 0 && r.errore.geminiKind === 'photo', `chiamate ${r.chiamate}, errore ${r.errore}, tipo ${r.errore?.geminiKind}`);
+}
+
+{
+    // ITALIANO: il caso dref ha un motivo suo: l'app spiega che sono i dati nascosti, non il formato.
+    // ENGLISH: the dref case has its own reason: the app explains it is the hidden data, not the format.
+    const r = await invia(heic({ rompi: 'dref' }), 'IMG_0002.HEIC', 'image/heic');
+    dice('dref: segnata come "dati nascosti non pulibili" (motivoFoto = metadati)', r.errore?.motivoFoto === 'metadati', `motivo ${r.errore?.motivoFoto}`);
+    const rotta = await invia(heic({ rompi: 'fuori' }), 'rotta.heic', 'image/heic');
+    dice('una HEIC rovinata resta "formato illeggibile" (nessun motivo metadati)', rotta.errore?.motivoFoto === undefined, `motivo ${rotta.errore?.motivoFoto}`);
 }
 
 // =============================================================================

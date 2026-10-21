@@ -52,7 +52,9 @@ const muto = { log() { }, warn() { }, error() { } };
 const cartella = (presenti = {}) => {
     const c = { file: new Map(Object.entries(presenti)) };
     c.getFileHandle = async (nome, opz) => {
-        if (!c.file.has(nome) && !(opz && opz.create)) throw new DOMException('not found', 'NotFoundError');
+        // ITALIANO: le foto ci sono (performSave e il visualizzatore lo controllano); mancano solo i .txt non elencati.
+        // ENGLISH: the photos are there (performSave and the viewer check it); only the unlisted .txt files are missing.
+        if (!c.file.has(nome) && !(opz && opz.create) && /\.txt$/i.test(nome)) throw new DOMException('not found', 'NotFoundError');
         return { createWritable: async () => { let testo = ''; return { write: async (s) => { testo += String(s); }, close: async () => { c.file.set(nome, testo); } }; } };
     };
     return c;
@@ -67,15 +69,15 @@ const app = ({ dalla = 'progetto' } = {}) => {
     const avvisoSalvataggioRef = { current: '' };
     const showNotification = (m, tipo) => a.notifiche.push([m, tipo]);
     a.performSave = new Function('setIsSaving', 'setImportProgress', 'showNotification', 't', 'getOrderedTagString', 'window', 'setImages', 'soundManager', 'console',
-        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef',
+        'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef', 'gemelliDelTxt',
         jsSalva + '\nreturn performSave;')(() => { }, () => { }, showNotification, t, (tags) => (tags.length ? tags.join(', ') + ',' : ''),
-        {}, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, avvisoSalvataggioRef);
+        {}, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, avvisoSalvataggioRef, async () => () => { });
     a.salva = async () => true;
     const f = new Function('isSavingRef', 'showNotification', 't', 'setSaveCloseDialog', 'handleSaveChanges', 'closeProjectNow', 'console',
-        'chiusuraFinestraRef', 'permettiChiusuraRef', 'window', 'avvisoSalvataggioRef', jsChiudi + '\nreturn handleSaveAndCloseProject;')(
+        'chiusuraFinestraRef', 'permettiChiusuraRef', 'window', 'avvisoSalvataggioRef', 'images', 'imagesRef', 'globalTriggersRef', 'fotoDaSalvare', jsChiudi + '\nreturn handleSaveAndCloseProject;')(
         { current: false }, showNotification, t, (d) => { a.finestra = d; }, () => a.salva(),
         () => { a.progettiChiusi++; showNotification(t.closeAllDone, 'success'); }, muto,
-        { current: dalla === 'finestra' }, { current: false }, { close: () => { a.chiusi++; } }, avvisoSalvataggioRef);
+        { current: dalla === 'finestra' }, { current: false }, { close: () => { a.chiusi++; } }, avvisoSalvataggioRef, [], { current: [] }, { current: [] }, () => false);
     a.salvaEChiudi = f;
     a.ultimo = () => a.notifiche[a.notifiche.length - 1] || null;
     return a;

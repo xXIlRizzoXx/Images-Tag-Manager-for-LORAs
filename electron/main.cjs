@@ -74,6 +74,48 @@ ipcMain.handle('app:persist-lang', (_event, lang) => {
     }
 });
 
+// ITALIANO: COPIA SU FILE DEL BACKUP ANTI-CRASH (vedi src/utils/backupFile.ts). Chromium scrive il
+//           localStorage sul disco qualche secondo dopo: un'uscita brusca perdeva l'ultima modifica.
+//           Il renderer manda qui ogni scrittura del backup; si scrive SUBITO in un file temporaneo,
+//           con fsync, poi lo si rinomina sul file vero: un'interruzione lascia il file vecchio intero,
+//           mai uno a meta'. Un solo file fisso in userData, solo testo, al massimo 16 MB.
+// ENGLISH: FILE COPY OF THE CRASH BACKUP (see src/utils/backupFile.ts). Chromium writes localStorage
+//          to disk a few seconds later: a sudden exit lost the last edit. The renderer sends every
+//          backup write here; it is written AT ONCE to a temporary file, with fsync, then renamed over
+//          the real file: an interruption leaves the old file whole, never a half one. One fixed file
+//          in userData, text only, at most 16 MB.
+const BACKUP_FILE_MAX = 16 * 1024 * 1024;
+const getCrashBackupPath = () => path.join(app.getPath('userData'), 'crash-backup.json');
+ipcMain.handle('backup:read', () => {
+    try {
+        const p = getCrashBackupPath();
+        if (fs.statSync(p).size > BACKUP_FILE_MAX) return null;
+        return fs.readFileSync(p, 'utf8');
+    } catch (_) {
+        return null;
+    }
+});
+ipcMain.handle('backup:write', (_event, valore) => {
+    if (typeof valore !== 'string' || valore.length === 0 || valore.length > BACKUP_FILE_MAX) return false;
+    const p = getCrashBackupPath();
+    const temp = p + '.tmp';
+    let fd = null;
+    try {
+        fd = fs.openSync(temp, 'w');
+        fs.writeSync(fd, valore, null, 'utf8');
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+        fd = null;
+        fs.renameSync(temp, p);
+        return true;
+    } catch (e) {
+        if (fd !== null) { try { fs.closeSync(fd); } catch (_) { /* ignore */ } }
+        try { fs.unlinkSync(temp); } catch (_) { /* ignore */ }
+        console.error('Failed to write the crash backup copy', e && e.code);
+        return false;
+    }
+});
+
 // ITALIANO: Lettura della versione una sola volta all'avvio
 // ENGLISH: Read the version once at startup
 let appVersion = '0.0.0';
@@ -258,9 +300,58 @@ const SIDECAR_MAX_BYTES = 1024 * 1024;
 //          them image/... and the page loads them, so their .txt must be read, saved and trashed
 //          like the other photos'.
 const SIDECAR_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pjp', '.png', '.webp', '.gif', '.bmp', '.avif', '.tif', '.tiff',
-    '.apng', '.ico', '.svg', '.svgz', '.xbm']);
+    '.apng', '.ico', '.svg', '.svgz', '.xbm', '.heic', '.heif']);
 
-ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
+// ITALIANO: il testo di un .txt dai suoi byte, con la STESSA regola di decodificaSidecar in
+//           src/utils/sidecarTags.ts (copiata qui perche' questo file e' CommonJS): BOM FF FE / FE FF
+//           -> UTF-16 (Windows PowerShell 5.1, Blocco note "Unicode"), altrimenti UTF-8 valido senza
+//           caratteri NUL. Il resto (ANSI con lettere accentate, UTF-16 senza BOM) torna null: la
+//           codifica non si indovina e il .txt torna come saltato, protetto da Salva. Prima si leggeva
+//           sempre in UTF-8 e la spazzatura finiva nei tag, e poi sopra il file vero.
+//           UTF-16 BE si scambia a mano in LE: non dipende dai dati ICU.
+// ENGLISH: a .txt's text from its bytes, with the SAME rule as decodificaSidecar in
+//          src/utils/sidecarTags.ts (copied here because this file is CommonJS): BOM FF FE / FE FF
+//          -> UTF-16 (Windows PowerShell 5.1, Notepad "Unicode"), otherwise valid UTF-8 with no NUL
+//          characters. Anything else (ANSI with accented letters, UTF-16 with no BOM) returns null:
+//          the encoding is not guessed and the .txt comes back as skipped, protected from Save. It
+//          used to be always read as UTF-8, and the garbage went into the tags, then over the real
+//          file. UTF-16 BE is swapped to LE by hand: no dependence on ICU data.
+const decodificaSidecar = (buf) => {
+    try {
+        if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder('utf-16le', { fatal: true }).decode(buf.subarray(2));
+        if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+            const corpo = Buffer.from(buf.subarray(2));
+            if (corpo.length % 2 !== 0) return null;
+            return new TextDecoder('utf-16le', { fatal: true }).decode(corpo.swap16());
+        }
+        const testo = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+        return testo.includes('\u0000') ? null : testo;
+    } catch (_) {
+        return null;
+    }
+};
+
+// ITALIANO: lettura e scrittura dei .txt con fs.promises: prima erano sincrone, e con migliaia di foto o
+//           una cartella di rete lenta il processo principale restava fermo e la finestra sembrava
+//           bloccata. Le chiamate restano una dopo l'altra, nello stesso ordine e con gli stessi esiti.
+// ENGLISH: .txt reading and writing with fs.promises: they used to be synchronous, and with thousands of
+//          photos or a slow network folder the main process stood still and the window looked frozen.
+//          The calls stay one after the other, in the same order and with the same outcomes.
+const fsp = fs.promises;
+// ITALIANO: una coda unica per i due canali: le richieste si servono nell'ordine di arrivo, come quando
+//           erano sincrone. Senza, un "Salva .txt" del visualizzatore premuto durante un "Salva" lungo
+//           veniva poi riscritto dal lotto con i tag vecchi. Un errore non blocca la coda.
+// ENGLISH: a single queue for both channels: requests are served in arrival order, as when they were
+//          synchronous. Without it, a viewer "Save .txt" pressed during a long "Save" was then written
+//          over by the batch with the old tags. An error does not block the queue.
+let codaSidecar = Promise.resolve();
+const inCodaSidecar = (lavoro) => {
+    const risultato = codaSidecar.then(lavoro, lavoro);
+    codaSidecar = risultato.then(() => undefined, () => undefined);
+    return risultato;
+};
+ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => inCodaSidecar(() => leggiSidecar(imagePaths)));
+const leggiSidecar = async (imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
     const out = [];
     const seen = new Set();
@@ -270,7 +361,7 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
             // ITALIANO: dev'essere un'immagine VERA presente su disco
             // ENGLISH: it must be a REAL image present on disk
             if (!SIDECAR_IMAGE_EXT.has(path.extname(raw).toLowerCase())) continue;
-            const imgStat = fs.statSync(raw);
+            const imgStat = await fsp.stat(raw);
             if (!imgStat.isFile()) continue;
 
             const base = path.basename(raw, path.extname(raw));
@@ -294,11 +385,13 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
             const saltato = { name: base + '.txt', dir: path.dirname(txtPath), skipped: true };
             const nonCe = (e) => Boolean(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'));
             let txtStat;
-            try { txtStat = fs.statSync(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            try { txtStat = await fsp.stat(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
             if (!txtStat.isFile()) continue;
             if (txtStat.size > SIDECAR_MAX_BYTES) { out.push(saltato); continue; }
-            let content;
-            try { content = fs.readFileSync(txtPath, 'utf8'); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            let byte;
+            try { byte = await fsp.readFile(txtPath); } catch (e) { if (!nonCe(e)) out.push(saltato); continue; }
+            const content = decodificaSidecar(byte);
+            if (content === null) { out.push(saltato); continue; }
             // ITALIANO: torno anche la cartella del .txt: cosi' il rinnovo lato app puo' abbinare
             //           ogni testo alla SUA immagine anche se due foto scelte hanno lo stesso nome
             //           ma stanno in cartelle diverse.
@@ -311,7 +404,7 @@ ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => {
         }
     }
     return out;
-});
+};
 
 /* ITALIANO: SCRITTURA DEL .txt "GEMELLO" (per le foto caricate con "Carica immagini")
    Le foto scelte come file singoli non hanno un handle di cartella scrivibile: prima il loro
@@ -335,7 +428,44 @@ const WRITE_MAX_BYTES = 1024 * 1024;
 // ENGLISH: as for reading, no cap on the number of photos: from the 5001st on nothing used to be
 //          written, and the answer, shorter than the request, still said ok:true.
 
-ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
+/* ITALIANO: il .txt non si riscrive piu' sul posto: aprirlo in scrittura lo svuota subito, e se poi
+   la scrittura falliva (rete che cade, chiavetta staccata, disco pieno) restava vuoto mentre la
+   pagina diceva "non salvato". Il testo va prima in un temporaneo nella stessa cartella, creato in
+   modo esclusivo con un'estensione che nessun canale legge, e poi prende il posto del .txt. Se la
+   scrittura del temporaneo fallisce si toglie solo quello e il .txt resta com'era. Si scrive sul
+   posto, come prima, solo dove il temporaneo non aiuta: .txt che e' un collegamento (la
+   sostituzione lo romperebbe), temporaneo che non si puo' creare, sostituzione rifiutata (un
+   antivirus o un'anteprima che tiene aperto il .txt).
+   ENGLISH: the .txt is no longer rewritten in place: opening it for writing empties it at once, and
+   if the write then failed (network dropping, USB stick pulled, full disk) it was left empty while
+   the page said "not saved". The text goes first to a temporary file in the same folder, created
+   exclusively with an extension no channel reads, which then takes the .txt's place. If writing the
+   temporary file fails only that file is removed and the .txt stays as it was. It is written in
+   place, as before, only where the temporary file does not help: a .txt that is a link (replacing
+   it would break the link), a temporary file that cannot be created, a refused replacement (an
+   antivirus or a preview holding the .txt open). */
+const scriviTxtSostituendo = async (txtPath, content) => {
+    const sulPosto = () => fsp.writeFile(txtPath, content, 'utf8');
+    let st = null;
+    try { st = await fsp.lstat(txtPath); } catch (e) { if (!(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'))) return sulPosto(); }
+    if (st && (st.isSymbolicLink() || st.nlink > 1)) return sulPosto();
+    const tmp = txtPath + '.' + require('crypto').randomBytes(4).toString('hex') + '.itm-tmp';
+    let fh;
+    try { fh = await fsp.open(tmp, 'wx'); } catch (_) { return sulPosto(); }
+    try {
+        try { await fh.writeFile(content, 'utf8'); } finally { await fh.close(); }
+    } catch (e) {
+        try { await fsp.unlink(tmp); } catch (_) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
+        throw e;
+    }
+    try { await fsp.rename(tmp, txtPath); } catch (_) {
+        try { await fsp.unlink(tmp); } catch (__) { /* ITALIANO: gia' andato / ENGLISH: already gone */ }
+        await sulPosto();
+    }
+};
+
+ipcMain.handle('images:write-sidecar-tags', (_event, items) => inCodaSidecar(() => scriviSidecar(items)));
+const scriviSidecar = async (items) => {
     if (!Array.isArray(items)) return { ok: false, written: 0, failed: 0, results: [] };
     let written = 0;
     let failed = 0;
@@ -348,7 +478,7 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
             // ENGLISH: it must be a REAL image present on disk (same contract as reading)
             if (!isSafeSidecarPath(imagePath) || !SIDECAR_IMAGE_EXT.has(path.extname(imagePath).toLowerCase())) { failed++; results.push(false); continue; }
             if (Buffer.byteLength(content, 'utf8') > WRITE_MAX_BYTES) { failed++; results.push(false); continue; }
-            const imgStat = fs.statSync(imagePath);
+            const imgStat = await fsp.stat(imagePath);
             if (!imgStat.isFile()) { failed++; results.push(false); continue; }
             const base = path.basename(imagePath, path.extname(imagePath));
             const txtPath = path.join(path.dirname(imagePath), base + '.txt');
@@ -359,8 +489,8 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
             // ENGLISH: a photo with no tags and no .txt stays without one: a NEW empty .txt would
             //          stop Kohya ("caption file is empty"), a missing one does not. The photo counts
             //          as saved (the disk already matches it). A .txt that was there is really emptied.
-            if (content === '' && !fs.existsSync(txtPath)) { results.push(true); continue; }
-            fs.writeFileSync(txtPath, content, 'utf8');
+            if (content === '' && !(await fsp.access(txtPath).then(() => true, () => false))) { results.push(true); continue; }
+            await scriviTxtSostituendo(txtPath, content);
             written++;
             results.push(true);
         } catch (e) {
@@ -370,7 +500,7 @@ ipcMain.handle('images:write-sidecar-tags', (_event, items) => {
         }
     }
     return { ok: failed === 0, written, failed, results };
-});
+};
 
 /* ITALIANO: CESTINO DI SISTEMA
    Sposta i file nel Cestino di Windows invece di cancellarli per sempre, cosi' un
@@ -1009,9 +1139,13 @@ const avviaMcp = async () => {
         mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion });
     } catch (e) {
         mcpServer = null;
-        // ITALIANO: 'porta' = un altro programma usa gia' la porta; 'avvio' = qualunque altro guasto.
-        // ENGLISH: 'porta' = another program already uses the port; 'avvio' = any other fault.
-        mcpErrore = e && e.code === 'EADDRINUSE' ? 'porta' : 'avvio';
+        // ITALIANO: 'porta' = un altro programma usa gia' la porta (EADDRINUSE) oppure Windows l'ha riservata
+        //           (EACCES: blocchi di Hyper-V, WSL2, Docker), e riaprire il programma non serve; 'avvio' =
+        //           qualunque altro guasto.
+        // ENGLISH: 'porta' = another program already uses the port (EADDRINUSE) or Windows reserved it
+        //          (EACCES: Hyper-V, WSL2, Docker blocks), and reopening the program does not help; 'avvio' =
+        //          any other fault.
+        mcpErrore = e && (e.code === 'EADDRINUSE' || e.code === 'EACCES') ? 'porta' : 'avvio';
         console.error('[MCP] start failed', e);
     }
 };
@@ -1061,7 +1195,8 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
    arrivano i "controlli", che portano lo stesso percorso. Per questo si ascoltano entrambi.
    SICUREZZA: il percorso non arriva mai dalla pagina — e' il processo principale l'unica
    fonte. La finestra di registrazione resta aperta solo fra `begin-pick` e `take-picked-dir`,
-   e il valore passa comunque per isSafeLocalPath e per un controllo che sia una cartella.
+   e il valore restituito passa comunque per isSafeLocalPath e per un controllo che sia una
+   cartella (una cartella di rete conta nel confronto ma non viene mai restituita).
    ENGLISH: PATH OF THE FOLDER PICKED WITH "LOAD FOLDER"
    The page opens the folder with the browser's picker, which deliberately does NOT tell it
    where that folder lives on disk: the files it yields carry no path, and with no path there
@@ -1072,29 +1207,56 @@ ipcMain.handle('shell:open-external', async (_event, url) => {
    folder raises no request (the grant is cached) but does raise "checks", which carry the same
    path. That is why both are listened to.
    SECURITY: the path never comes from the page - the main process is the only source. The
-   recording window is open only between `begin-pick` and `take-picked-dir`, and the value still
-   goes through isSafeLocalPath plus a check that it really is a directory. */
+   recording window is open only between `begin-pick` and `take-picked-dir`, and the returned
+   value still goes through isSafeLocalPath plus a check that it really is a directory (a network
+   folder counts in the comparison but is never returned). */
 let pickPending = false;
 let pickedDirCandidates = [];
 const PICK_MAX_CANDIDATES = 32;
 
+// ITALIANO: una cartella di rete scritta per esteso, \\server\condivisione o piu' in basso (anche la
+//           sola radice della condivisione, che isSafeSidecarPath non accetta perche' vuole un file).
+//           Restano fuori \\?\, \\.\, la forma //host e ogni "..", come negli altri canali.
+// ENGLISH: a network folder spelled out, \\server\share or deeper (the bare share root too, which
+//          isSafeSidecarPath refuses because it wants a file). \\?\, \\.\, the //host form and any
+//          ".." stay out, as in the other channels.
+const isNetworkFolderPath = (p) => {
+    if (typeof p !== 'string' || isSafeLocalPath(p)) return false;
+    if (!/^\\\\[^\\/?.][^\\/]*\\[^\\/]+/.test(p)) return false;
+    if (p.split(/[\\/]+/).includes('..')) return false;
+    return path.isAbsolute(p);
+};
+
 const rememberPickedDir = (p) => {
     if (!pickPending) return;
     if (typeof p !== 'string' || !p) return;
-    // ITALIANO: le cartelle di RETE non passano di qui, ed e' voluto: Windows non ha un Cestino
-    //           per le condivisioni di rete, quindi un percorso del genere non servirebbe a
-    //           niente. Restando vuoto, la pagina ricade sulla strada gia' esistente, cioe' la
-    //           seconda conferma con la cancellazione definitiva, che li' e' l'unica verita'.
+    // ITALIANO: una cartella di RETE (\\server\condivisione\...) non viene mai restituita alla
+    //           pagina, ed e' voluto: Windows non ha un Cestino per le condivisioni di rete, quindi
+    //           quel percorso non servirebbe a niente. Restando vuoto, la pagina ricade sulla strada
+    //           gia' esistente, cioe' la seconda conferma con la cancellazione definitiva, che li'
+    //           e' l'unica verita'. Pero' entra fra i candidati: deve CONTARE nel confronto di
+    //           `take-picked-dir`. Prima veniva scartata qui, e se nella finestra arrivava anche una
+    //           copia LOCALE gia' aperta con gli stessi file, vinceva quella da sola e le foto di rete
+    //           ricevevano i percorsi della copia. Niente statSync qui: la rete si tocca solo se
+    //           serve davvero al confronto (vedi sotto), mai nel controllo dei permessi.
     //           Una cartella su una LETTERA collegata alla rete (Z:\) invece passa: per quella e'
     //           il canale del Cestino a rispondere 'rifiutato', che porta alla stessa strada.
-    // ENGLISH: NETWORK folders do not get through here, deliberately: Windows has no Recycle Bin
-    //          for network shares, so such a path would buy nothing. Left empty, the page falls
-    //          back to the road that already exists - the second confirmation with the permanent
-    //          delete - which over there is the only truthful answer.
+    // ENGLISH: a NETWORK folder (\\server\share\...) is never returned to the page, deliberately:
+    //          Windows has no Recycle Bin for network shares, so that path would buy nothing. Left
+    //          empty, the page falls back to the road that already exists - the second confirmation
+    //          with the permanent delete - which over there is the only truthful answer. It does
+    //          join the candidates though: it must COUNT in `take-picked-dir`'s comparison. It used
+    //          to be dropped here, and when an already open LOCAL copy with the same files arrived
+    //          in the window too, that copy won alone and the network photos got the copy's paths.
+    //          No statSync here: the network is touched only when the comparison really needs it
+    //          (see below), never inside the permission check.
     //          A folder on a network-MAPPED drive letter (Z:\) does get through: for that one the
     //          Recycle Bin channel answers 'rifiutato', which leads to the same road.
-    if (!isSafeLocalPath(p)) return;
-    try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
+    const inRete = isNetworkFolderPath(p);
+    if (!isSafeLocalPath(p) && !inRete) return;
+    if (!inRete) {
+        try { if (!fs.statSync(p).isDirectory()) return; } catch (_) { return; }
+    }
     // ITALIANO: si RACCOLGONO tutti i candidati, non si tiene solo l'ultimo. In quella finestra
     //           arrivano anche cartelle che non c'entrano: basta che la pagina rilegga una foto di
     //           una cartella aperta prima (succede al rientro del fuoco, quando il selettore si
@@ -1144,7 +1306,7 @@ ipcMain.handle('folder:take-picked-dir', (_event, proofs) => {
         if (pr.name.includes('/') || pr.name.includes('\\')) return false;
         if (rel.split(/[\\/]+/).includes('..')) return false;
         const full = path.join(dir, rel, pr.name);
-        if (!isSafeLocalPath(full)) return false;
+        if (!(isSafeLocalPath(dir) ? isSafeLocalPath(full) : isSafeSidecarPath(full))) return false;
         if (path.relative(dir, full).startsWith('..')) return false;
         try {
             const st = fs.statSync(full);
@@ -1156,8 +1318,18 @@ ipcMain.handle('folder:take-picked-dir', (_event, proofs) => {
         }
     });
 
-    const winners = candidates.filter(holdsAll);
-    return winners.length === 1 ? winners[0] : '';
+    // ITALIANO: torna solo una cartella LOCALE, e solo se e' l'unica che combacia. Le cartelle di
+    //           rete contano nel confronto (una che combacia fa tornare '', seconda conferma) ma non
+    //           vengono mai restituite; si leggono solo se c'e' un vincitore locale da mettere in
+    //           dubbio, cosi' una scelta di rete normale non tocca la rete qui.
+    // ENGLISH: only a LOCAL folder is returned, and only when it is the only one that matches.
+    //          Network folders count in the comparison (one that matches makes it '', second
+    //          confirmation) but are never returned; they are read only when there is a local
+    //          winner to question, so a plain network pick does not touch the network here.
+    const winners = candidates.filter((dir) => isSafeLocalPath(dir) && holdsAll(dir));
+    if (winners.length !== 1) return '';
+    if (candidates.some((dir) => !isSafeLocalPath(dir) && holdsAll(dir))) return '';
+    return winners[0];
 });
 
 // ITALIANO: Header Content-Security-Policy applicato in produzione
@@ -1189,6 +1361,10 @@ const applyContentSecurityPolicy = (sess) => {
         });
     });
 };
+
+// ITALIANO: i soli permessi che la pagina chiede (vedi setPermissionRequestHandler).
+// ENGLISH: the only permissions the page asks for (see setPermissionRequestHandler).
+const PERMESSI_USATI = new Set(['fileSystem', 'clipboard-sanitized-write']);
 
 function resolveIconPath() {
     const ico = path.join(__dirname, '../public/icon.ico');
@@ -1453,21 +1629,25 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
     applyContentSecurityPolicy(session.defaultSession);
 
-    // ITALIANO: qui passa il percorso della cartella scelta (vedi rememberPickedDir). Concedere
-    //           sempre il permesso riproduce ESATTAMENTE il comportamento di prima: senza handler
-    //           registrato Electron concede da solo. Questo non e' il posto per stringere i
-    //           permessi — sarebbe un cambiamento a se', da provare a parte.
-    // ENGLISH: this is where the picked folder's path arrives (see rememberPickedDir). Always
-    //          granting reproduces EXACTLY the previous behaviour: with no handler registered
-    //          Electron grants by itself. This is not the place to tighten permissions - that
-    //          would be a separate change, to be tested on its own.
+    // ITALIANO: qui passa il percorso della cartella scelta (vedi rememberPickedDir). Si concedono
+    //           SOLO i permessi che la pagina usa: le finestre di file e cartelle (fileSystem) e la
+    //           copia negli appunti (clipboard-sanitized-write, i tasti "Copia" di MCP). Prima si
+    //           concedeva tutto (fotocamera, microfono, posizione, notifiche...): una pagina
+    //           compromessa li avrebbe avuti senza chiedere. Un permesso negato si annota.
+    // ENGLISH: this is where the picked folder's path arrives (see rememberPickedDir). ONLY the
+    //          permissions the page uses are granted: the file and folder dialogs (fileSystem) and
+    //          copying to the clipboard (clipboard-sanitized-write, MCP's "Copy" buttons). Everything
+    //          used to be granted (camera, microphone, location, notifications...): a compromised page
+    //          would have had them without asking. A denied permission is logged.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
         if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
-        callback(true);
+        const concesso = PERMESSI_USATI.has(permission);
+        if (!concesso) console.warn('[Permessi] negato:', permission);
+        callback(concesso);
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
         if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
-        return true;
+        return PERMESSI_USATI.has(permission);
     });
     // ITALIANO: Nessuna barra dei menù di default in produzione
     // ENGLISH: No default menu bar in production
@@ -1495,8 +1675,19 @@ app.on('window-all-closed', () => {
 
 // ITALIANO: Difesa in profondità — vietiamo qualunque tentativo di creare webview
 // ENGLISH: Defense in depth — forbid any attempt to create webview tags
+// ITALIANO: e per OGNI finestra (anche la schermata di avvio e quelle che un giorno si aggiungeranno)
+//           niente navigazioni e niente finestre nuove: la principale ha regole sue (ricarica di se'
+//           stessa, link esterni nel browser) e le imposta lei; qui resta la regola per tutte le altre.
+// ENGLISH: and for EVERY window (the splash screen too, and any added one day) no navigation and no
+//          new windows: the main one has its own rules (reloading itself, external links in the
+//          browser) and sets them itself; the rule for all the others stays here.
 app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (event) => {
+        event.preventDefault();
+    });
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.on('will-navigate', (event) => {
+        if (mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents) return;
         event.preventDefault();
     });
 });

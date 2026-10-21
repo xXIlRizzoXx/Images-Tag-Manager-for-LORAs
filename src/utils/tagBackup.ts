@@ -60,7 +60,11 @@ export const improntaTag = (tags: string[]): string => {
 //           disco, quindi conta ancora nell'impronta della sua cartella.
 // ENGLISH: a photo CLOSED with the "x" on its card: out of view, but the file is still on disk, so
 //          it still counts in its folder's fingerprint.
-export type FotoChiusa = { id: string; name: string; lotto: string; cartella: string };
+// ITALIANO: `foto` = la foto com'era alla chiusura: serve a txtUsatoDaAltre (un .txt condiviso con una
+//   foto chiusa, che Ctrl+Z puo' riportare, non va via). Il backup legge solo gli altri campi.
+// ENGLISH: `foto` = the photo as it was when closed: used by txtUsatoDaAltre (a .txt shared with a
+//   closed photo, which Ctrl+Z can bring back, does not leave). The backup reads only the other fields.
+export type FotoChiusa = { id: string; name: string; lotto: string; cartella: string; foto?: unknown };
 
 type VoceBackup = { tags: string[]; base: string };
 
@@ -176,8 +180,10 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         return l;
     };
     const presenti = new Set<string>();
+    const chiaviPresenti = new Set<string>();
     for (const img of images) {
         presenti.add(img.id);
+        chiaviPresenti.add(String(img.lottoImport || '') + BACKUP_KEY_SEP + (img.backupKey || (BACKUP_KEY_SEP + img.file.name)));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
         l.vivi++;
@@ -201,8 +207,31 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     }
     // ITALIANO: una foto chiusa e poi riportata con Ctrl+Z e' di nuovo in `images`: si conta una volta.
     // ENGLISH: a photo closed and then brought back with Ctrl+Z is in `images` again: counted once.
+    // ITALIANO: lo stesso per una foto chiusa e poi ripresa riaprendo la sua cartella: la copia
+    //           riaperta ha un id nuovo ma la stessa chiave (cartella + nome) nello stesso lotto, che
+    //           l'import riusa. Prima contava due volte: l'impronta diventava "img|4|..." per una
+    //           cartella di 3 foto, e dopo un crash nessuna modifica non salvata di quella cartella
+    //           tornava.
+    // ENGLISH: the same for a photo closed and then taken back by reopening its folder: the reopened
+    //          copy has a new id but the same key (folder + name) in the same batch, which the import
+    //          reuses. It used to count twice: the fingerprint became "img|4|..." for a folder of 3
+    //          photos, and after a crash no unsaved edit of that folder came back.
     for (const c of chiuse) {
-        if (!presenti.has(c.id)) lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
+        if (presenti.has(c.id)) continue;
+        const fotoChiusa: any = c.foto;
+        const chiaveChiusa = (fotoChiusa && typeof fotoChiusa.backupKey === 'string' && fotoChiusa.backupKey) || (BACKUP_KEY_SEP + c.name);
+        const chiaveCompleta = String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa;
+        if (chiaviPresenti.has(chiaveCompleta)) continue;
+        lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
+        // ITALIANO: una foto chiusa, ripresa riaprendo la cartella e chiusa di nuovo lascia fra le
+        //           chiuse due voci (id vecchio e id nuovo) con lo stesso lotto e la stessa chiave: e'
+        //           lo stesso file e si conta una volta. Solo per le chiavi con la cartella: senza
+        //           (nel browser) due foto omonime di sottocartelle diverse avrebbero la stessa chiave.
+        // ENGLISH: a photo closed, taken back by reopening the folder and closed again leaves two
+        //          closed entries (old id and new id) with the same batch and key: it is the same file
+        //          and counts once. Only for keys with the folder: without it (in the browser) two
+        //          same-named photos of different subfolders would share the key.
+        if (!chiaveChiusa.startsWith(BACKUP_KEY_SEP)) chiaviPresenti.add(chiaveCompleta);
     }
     const firme = new Map<string, number>();
     const aperte = new Set<string>();
@@ -287,7 +316,7 @@ const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiA
 //   safe side. An import with no folder ("Load images", drag and drop) has an empty name in its
 //   fingerprint: it only matches another folder-less import of the same photos, never a picked
 //   folder, and the other way round.
-export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string): { voci: Record<string, any>; ts: number | null } | null => {
+export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string): { voci: Record<string, any>; ts: number | null; visto?: number } | null => {
     if (!grezzo) return null;
     let parsed: any = null;
     try { parsed = JSON.parse(grezzo); } catch (_) { return null; }
@@ -309,13 +338,34 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
         for (const [chiave, v] of Object.entries(uguali[0].data as Record<string, any>)) {
             if (!chiave.startsWith(BACKUP_KEY_SEP)) voci[chiave] = v;
         }
-        return { voci, ts };
+        return { voci, ts, ...(typeof uguali[0].visto === 'number' ? { visto: uguali[0].visto } : {}) };
     }
     // ITALIANO: il formato precedente vale solo per una cartella scelta, come allora.
     // ENGLISH: the previous format only applies to a picked folder, as back then.
     const firma = typeof parsed.signature === 'string' ? parsed.signature : '';
     if (importFolder !== '' && firma !== '' && firma === importSignature && parsed.data && typeof parsed.data === 'object') return { voci: parsed.data, ts };
     return null;
+};
+
+// ITALIANO: cosa c'e' da recuperare per l'import che sta per partire (quante foto e di quando), o null.
+//   Lo usa il riepilogo dell'importazione per chiedere prima di applicare il backup: stessa impronta
+//   di processImportData (nome della cartella scelta + nomi delle immagini).
+// ENGLISH: what there is to recover for the import about to start (how many photos and from when), or
+//   null. The import summary uses it to ask before applying the backup: same fingerprint as
+//   processImportData (picked folder's name + image names).
+export const recuperoDellImport = (grezzo: string | null, cartellaScelta: { name?: string } | null, immagini: Array<{ name: string }>): { n: number; ts: number | null } | null => {
+    try {
+        const nome = cartellaScelta && cartellaScelta.name ? String(cartellaScelta.name) : '';
+        const b = backupDellImport(grezzo, nome, folderSignature(nome, immagini.map(f => f.name)));
+        const n = b ? Object.keys(b.voci).length : 0;
+        // ITALIANO: la data della SORGENTE di questa cartella (visto), non quella generale del backup, che
+        //           ogni scrittura rinnova (aprire un'altra cartella la faceva diventare "adesso").
+        // ENGLISH: the date of THIS folder's SOURCE (visto), not the backup's overall one, which every
+        //          write renews (opening another folder made it "now").
+        return b && n > 0 ? { n, ts: typeof b.visto === 'number' ? b.visto : b.ts } : null;
+    } catch (_) {
+        return null;
+    }
 };
 
 // ITALIANO: I tag da rimettere su una foto appena importata, o null = restano quelli del .txt.

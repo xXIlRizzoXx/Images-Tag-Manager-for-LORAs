@@ -169,6 +169,28 @@ console.log('\n--- JPEG del telefono: parte solo l\'immagine ---');
         String(r.errore || r.dati?.toString('hex')));
 }
 {
+    // ITALIANO: APP0 diversi da JFIF: CIFF delle vecchie compatte Canon (nome del proprietario e numero
+    //           di serie) e JFXX (una miniatura, magari della foto prima del ritaglio). Non partono;
+    //           il JFIF resta. Senza JFIF ma con un CIFF la foto parte lo stesso, pulita.
+    // ENGLISH: APP0 other than JFIF: CIFF of old Canon compacts (owner name and serial number) and
+    //          JFXX (a thumbnail, maybe of the photo before cropping). Not sent; JFIF stays. Without
+    //          JFIF but with a CIFF the photo is still sent, clean.
+    const CIFF = seg(0xE0, B('II\x1a\0\0\0HEAPJPGM', 'OwnerName=', AUTORE, ';SerialNumber=', SERIALE));
+    const JFXX = seg(0xE0, B('JFXX\0', [0x10], 'THUMB-OF-UNCROPPED-ORIGINAL'));
+    const file = B([0xFF, 0xD8], JFIF, CIFF, JFXX, DQT, SOF, DHT, SOS, DATI, EOI);
+    const r = await invia(file, 'canon.jpg', 'image/jpeg');
+    dice('APP0 CIFF e JFXX: la richiesta parte', r.chiamate === 1 && !r.errore, String(r.errore));
+    if (r.dati) {
+        const testo = r.dati.toString('latin1');
+        const restati = [AUTORE, SERIALE, 'HEAPJPGM', 'JFXX', 'THUMB-OF-UNCROPPED-ORIGINAL'].filter(s => testo.includes(s));
+        dice('APP0 CIFF e JFXX: nome, numero di serie e miniatura non partono', restati.length === 0, 'trovati: ' + restati.join(', '));
+        dice('APP0 CIFF e JFXX: resta solo il JFIF, il resto identico', r.dati.equals(B([0xFF, 0xD8], JFIF, DQT, SOF, DHT, SOS, DATI, EOI)), r.dati.toString('hex'));
+    }
+    const r2 = await invia(B([0xFF, 0xD8], CIFF, DQT, SOF, DHT, SOS, DATI, EOI), 'canon-senza-jfif.jpg', 'image/jpeg');
+    dice('solo APP0 CIFF, senza JFIF: parte senza il CIFF', !!r2.dati && r2.dati.equals(B([0xFF, 0xD8], DQT, SOF, DHT, SOS, DATI, EOI)),
+        String(r2.errore || r2.dati?.toString('hex')));
+}
+{
     const file = B([0xFF, 0xD8], [0xFF, 0xE1, 0x40, 0x00], 'Exif\0\0', GPS);
     const r = await invia(file, 'rotta.jpg', 'image/jpeg');
     dice('JPEG rovinato prima dell\'immagine: errore, e a Google non parte niente', !!r.errore && r.chiamate === 0);

@@ -59,12 +59,15 @@ const testi = [
     ritaglia('    const handleDroppedFiles = useCallback(', /\r?\n    \}, \[[^\]\r\n]*\]\);\r?\n/g),
 ];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
-const NOMI = ['BACKUP_KEY_SEP', 'window', 'cartellaImmagine', 'cartellaTesto', 'fileDaSidecar', 'useCallback', 'showNotification', 't', 'calculateImportSummary', 'console', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac'];
+const NOMI = ['BACKUP_KEY_SEP', 'window', 'cartellaImmagine', 'cartellaTesto', 'fileDaSidecar', 'useCallback', 'showNotification', 't', 'calculateImportSummary', 'console', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine'];
 const fabbricaVera = new Function(...NOMI, codice + '\nreturn { makeBackupKeyer, handleDroppedFiles };');
 const { fileDiMac } = await carica('src/utils/folderScan.ts');
-// ITALIANO: gli ultimi tre: nessuna finestra aperta sopra, e la regola vera dei file nascosti del Mac.
-// ENGLISH: the last three: no window open on top, and the real rule for the Mac hidden files.
-const fabbrica = (...a) => fabbricaVera(...a.slice(0, 10), false, false, fileDiMac);
+// ITALIANO: la regola vera di "e' un'immagine?" (src/utils/imageFile.ts), che le strade di import usano.
+// ENGLISH: the real "is it an image?" rule (src/utils/imageFile.ts), which the import roads use.
+const { eFileImmagine } = await carica('src/utils/imageFile.ts');
+// ITALIANO: gli ultimi: nessuna finestra aperta sopra, e la regola vera dei file nascosti del Mac.
+// ENGLISH: the last ones: no window open on top, and the real rule for the Mac hidden files.
+const fabbrica = (...a) => fabbricaVera(...a.slice(0, 10), false, false, fileDiMac, null, { isOpen: false }, eFileImmagine);
 
 const SEP = B.BACKUP_KEY_SEP;
 const NOMI_FOTO = Array.from({ length: 10 }, (_, i) => `IMG_${String(i + 1).padStart(4, '0')}.JPG`);

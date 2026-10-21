@@ -7,7 +7,9 @@ Al instalar y usar este programa aceptas las condiciones indicadas abajo.
 1. USO DEL PROGRAMA
 
 El programa es gratuito y puedes usarlo libremente, también para trabajar.
-No puedes revenderlo ni distribuirlo como si fuera tuyo.
+Es de código abierto, publicado con licencia MIT: puedes usarlo,
+copiarlo, modificarlo y redistribuirlo, conservando el aviso de copyright
+y la licencia.
 
 
 2. SIN GARANTÍA
@@ -24,6 +26,11 @@ seguridad de las imágenes y de los archivos .txt de las etiquetas.
 
 El programa no recoge estadísticas, no rastrea tu uso y no envía nada a
 la red por iniciativa propia.
+
+El servidor MCP está desactivado por defecto. Si lo activas y conectas
+una aplicación de IA, las fotos y las etiquetas que esa aplicación lee
+pasan a ella; una aplicación que funciona en la nube las envía a sus
+servidores.
 
 Los ajustes, el archivo de datos y las copias de emergencia están en la
 carpeta %APPDATA%\images-tag-manager de tu PC.
@@ -52,8 +59,8 @@ del respeto de los derechos de terceros y de las leyes aplicables.
 
 6. MARCAS
 
-Este programa no está afiliado ni aprobado por Google, Stability AI ni
-otros titulares de las marcas citadas.
+Este programa no está afiliado a Google, Stability AI ni otros titulares
+de las marcas citadas, ni cuenta con su aprobación.
 
 
 Si no aceptas estas condiciones, cierra el programa de instalación.

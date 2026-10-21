@@ -44,7 +44,9 @@ const testo = (chiave, n) => typeof t[chiave] === 'string' ? t[chiave].replace('
 // ITALIANO: il gestore vero, ritagliato dal sorgente fra il suo inizio e quello successivo.
 // ENGLISH: the real handler, cut out of the source between its start and the next one.
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-const inizio = sorgente.indexOf('    const handleLoadFolderClick = async () => {');
+// ITALIANO: dalla funzione condivisa importaCartellaScelta, che sta subito prima e che il gestore chiama.
+// ENGLISH: from the shared importaCartellaScelta, which sits right before and which the handler calls.
+const inizio = sorgente.indexOf('    const importaCartellaScelta = async (');
 const fine = sorgente.indexOf('    const handleFolderUploadFallback');
 if (inizio < 0 || fine < inizio) {
     console.log('NO  handleLoadFolderClick non trovato in src/App.tsx');
@@ -52,7 +54,7 @@ if (inizio < 0 || fine < inizio) {
 }
 const js = (await esbuild.transform(sorgente.slice(inizio, fine), { loader: 'ts' })).code;
 const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
-    js + '\nreturn handleLoadFolderClick;');
+    'aperturaCartellaRef', js + '\nreturn handleLoadFolderClick;');
 
 // ITALIANO: gli avvisi in console della scansione sono ATTESI: si mettono da parte.
 // ENGLISH: the scan's console warnings are EXPECTED: set them aside.
@@ -88,7 +90,7 @@ const prova = async (selettore) => {
     };
     const fn = fabbrica(window, t, (m, tipo) => r.notifiche.push([m, tipo]),
         (img, txt) => { r.importate = { img: img.map(f => f.name), txt: txt.map(f => f.name) }; },
-        { current: { click: () => { r.clic++; } } }, scanDirectoryHandle);
+        { current: { click: () => { r.clic++; } } }, scanDirectoryHandle, { current: false });
     await fn();
     return r;
 };

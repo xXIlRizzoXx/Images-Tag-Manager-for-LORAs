@@ -54,7 +54,7 @@ const REGOLE = Object.keys(R);
 // ENGLISH: every dialog state the handler may read, all closed.
 const chiuse = () => ({
     isTagEditorOpen: false, confirmDialog: { isOpen: false }, saveCloseDialog: { isOpen: false }, importSummary: { isOpen: false },
-    isApiKeyDialogOpen: false, isStatsOpen: false, exportChoice: null, updateAskOpen: false, updateFound: null,
+    isApiKeyDialogOpen: false, isStatsOpen: false, exportChoice: null, updateAskOpen: false, updateFound: null, aiuto: null,
     selectedImageId: null, isTrashOpen: false, isGlobalTagManagerOpen: false, isTagSuggestionsOpen: false,
 });
 const NOMI = Object.keys(chiuse());
@@ -82,6 +82,8 @@ for (const [nome, cambi, fuoco] of [
     ['scelta dell\'esportazione', { exportChoice: { riepilogo: {} } }, 'BUTTON'],
     ['domanda sul controllo degli aggiornamenti', { updateAskOpen: true }, 'BUTTON'],
     ['versione nuova trovata', { updateFound: { versione: '9.9.9', pagina: '' } }, 'BUTTON'],
+    ['finestra di aiuto "?" delle Impostazioni (fuoco sul tasto Chiudi)', { aiuto: 'ai' }, 'BUTTON'],
+    ['finestra di aiuto del server MCP, aperta da sola', { aiuto: 'mcp' }, 'BUTTON'],
 ]) {
     dice(`${nome}: Ctrl+Z e Ctrl+Shift+Z non fanno niente`, [[], []], [premi(con(cambi), { fuoco }), premi(con(cambi), { fuoco, maiuscolo: true })]);
 }

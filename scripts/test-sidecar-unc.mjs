@@ -37,8 +37,17 @@ const { dice, esito } = creaControlli();
 const B = String.fromCharCode(92);
 const PREFISSO = B + B + 'nas' + B + 'dataset' + B;
 const cartella = fs.mkdtempSync(path.join(os.tmpdir(), 'itm-unc-'));
-const veri = { statSync: fs.statSync, readFileSync: fs.readFileSync, writeFileSync: fs.writeFileSync, existsSync: fs.existsSync };
+// ITALIANO: anche lstatSync, openSync, unlinkSync e renameSync (entrambi i percorsi): il .txt si scrive
+//           in un temporaneo accanto che poi lo sostituisce.
+// ENGLISH: lstatSync, openSync, unlinkSync and renameSync (both paths) too: the .txt is written to a
+//          temporary file beside it which then replaces it.
+const veri = { statSync: fs.statSync, readFileSync: fs.readFileSync, writeFileSync: fs.writeFileSync, existsSync: fs.existsSync,
+    lstatSync: fs.lstatSync, openSync: fs.openSync, unlinkSync: fs.unlinkSync, renameSync: fs.renameSync };
 const realpathVero = fs.realpathSync.native;
+// ITALIANO: i canali dei .txt usano fs.promises (dal 20/10/2026): anche li' i percorsi \\nas\... si traducono.
+// ENGLISH: the .txt channels use fs.promises (since 20/10/2026): the \\nas\... paths are translated there too.
+const veriP = { stat: fs.promises.stat, readFile: fs.promises.readFile, writeFile: fs.promises.writeFile, access: fs.promises.access,
+    lstat: fs.promises.lstat, open: fs.promises.open, unlink: fs.promises.unlink, rename: fs.promises.rename };
 // ITALIANO: ogni accesso a un percorso \\... fuori dal prefisso finto finisce qui (e la prova fallisce).
 // ENGLISH: every access to a \\... path outside the fake prefix lands here (and fails the test).
 const fuoriPrefisso = [];
@@ -53,17 +62,20 @@ try {
     fs.writeFileSync(path.join(cartella, '0001.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
     fs.writeFileSync(path.join(cartella, '0001.txt'), 'sks, red hair');
     for (const nome of Object.keys(veri)) fs[nome] = (p, ...resto) => veri[nome](traduci(p), ...resto);
+    fs.renameSync = (da, a, ...resto) => veri.renameSync(traduci(da), traduci(a), ...resto);
+    for (const nome of Object.keys(veriP)) fs.promises[nome] = (p, ...resto) => veriP[nome](traduci(p), ...resto);
+    fs.promises.rename = (da, a, ...resto) => veriP.rename(traduci(da), traduci(a), ...resto);
     fs.realpathSync.native = (p, ...resto) => realpathVero(traduci(p), ...resto);
 
     const foto = PREFISSO + '0001.jpg';
     console.log('\n--- foto aperta da \\\\nas\\dataset ---');
-    const letti = handlers.get('images:read-sidecar-tags')(null, [foto]);
+    const letti = await handlers.get('images:read-sidecar-tags')(null, [foto]);
     // ITALIANO: alla radice di una condivisione path.dirname tiene il separatore finale, come per
     //           E:\ (la pagina lo toglie da entrambe le parti, vedi cartellaTesto).
     // ENGLISH: at the root of a share path.dirname keeps the trailing separator, as for E:\ (the
     //          page strips it on both sides, see cartellaTesto).
     dice('il .txt accanto si legge', [{ name: '0001.txt', content: 'sks, red hair', dir: PREFISSO }], letti);
-    const scritti = handlers.get('images:write-sidecar-tags')(null, [{ imagePath: foto, content: 'sks, red hair, smile' }]);
+    const scritti = await handlers.get('images:write-sidecar-tags')(null, [{ imagePath: foto, content: 'sks, red hair, smile' }]);
     dice('"Salva" scrive il .txt sulla condivisione', { ok: true, written: 1, failed: 0, results: [true] }, scritti);
     dice('...e il .txt contiene davvero il testo nuovo', 'sks, red hair, smile', veri.readFileSync(path.join(cartella, '0001.txt'), 'utf8'));
 
@@ -89,8 +101,8 @@ try {
     ];
     for (const v of vietati) {
         const prima = fuoriPrefisso.length;
-        const l = handlers.get('images:read-sidecar-tags')(null, [v]);
-        const s = handlers.get('images:write-sidecar-tags')(null, [{ imagePath: v, content: 'x' }]);
+        const l = await handlers.get('images:read-sidecar-tags')(null, [v]);
+        const s = await handlers.get('images:write-sidecar-tags')(null, [{ imagePath: v, content: 'x' }]);
         dice('rifiutato: ' + v, [[], [false], 0], [l, s.results, fuoriPrefisso.length - prima]);
     }
     dice('il .txt sulla condivisione non e\' stato toccato dai percorsi rifiutati', 'sks, red hair, smile', veri.readFileSync(path.join(cartella, '0001.txt'), 'utf8'));
@@ -104,6 +116,7 @@ try {
     codice = esito();
 } finally {
     for (const nome of Object.keys(veri)) fs[nome] = veri[nome];
+    for (const nome of Object.keys(veriP)) fs.promises[nome] = veriP[nome];
     fs.realpathSync.native = realpathVero;
     fs.rmSync(cartella, { recursive: true, force: true });
 }

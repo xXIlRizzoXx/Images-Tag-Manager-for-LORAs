@@ -14,12 +14,13 @@
 *******************************************************************************
 *******************************************************************************/
 import { GoogleGenAI, Type } from '@google/genai';
-import { stripImageMetadata } from '../utils/imageMetadata';
+import { stripImageMetadata, METADATI_NON_PULIBILI } from '../utils/imageMetadata';
+import { fileDiAdesso, type FotoConCartella } from '../utils/freshFile';
+import { eFileImmagine } from '../utils/imageFile';
 
 const CUSTOM_PROMPT_MAX_LENGTH = 500;
 const TAG_MAX_LENGTH = 60;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
-const ALLOWED_MIME_PREFIX = 'image/';
 const REQUEST_TIMEOUT_MS = 90_000;
 const VERIFY_TIMEOUT_MS = 30_000;
 
@@ -52,9 +53,15 @@ const sanitizeCustomPrompt = (input?: string): string => {
 //          that cannot be read). The `geminiKind = 'photo'` mark does not change the error kind (it
 //          stays 'unknown'), but lets the app say it is the photo and not the network, and lets bulk
 //          tagging not count it as "Google unreachable".
-const fotoNonUsabile = (motivo: string): Error => {
+// ITALIANO: `perche` dice all'app QUALE problema della foto, per un messaggio giusto: 'illeggibile'
+//           (non si legge piu' dal disco) e 'metadati' (dati nascosti che non si sanno togliere).
+// ENGLISH: `perche` tells the app WHICH photo problem, for the right message: 'illeggibile' (can no
+//          longer be read from disk) and 'metadati' (hidden data that cannot be removed).
+export type MotivoFoto = 'illeggibile' | 'metadati';
+const fotoNonUsabile = (motivo: string, perche?: MotivoFoto): Error => {
     const e = new Error(motivo);
-    (e as Error & { geminiKind?: string }).geminiKind = 'photo';
+    (e as Error & { geminiKind?: string; motivoFoto?: MotivoFoto }).geminiKind = 'photo';
+    if (perche) (e as Error & { motivoFoto?: MotivoFoto }).motivoFoto = perche;
     return e;
 };
 
@@ -114,7 +121,11 @@ const redrawAsPng = async (file: File): Promise<Blob> => {
 const imageForGemini = async (file: File): Promise<{ data: string; mimeType: string }> => {
     if (!file || file.size === 0) throw fotoNonUsabile('Invalid or empty file');
     if (file.size > MAX_FILE_SIZE_BYTES) throw fotoNonUsabile('Image too large (> 20 MB)');
-    if (!file.type || !file.type.startsWith(ALLOWED_MIME_PREFIX)) throw fotoNonUsabile('Unsupported file type');
+    // ITALIANO: una HEIC dell'iPhone arriva spesso con il tipo vuoto: decide l'estensione (imageFile.ts);
+    //           il tipo mandato a Google viene comunque dai byte, qui sotto.
+    // ENGLISH: an iPhone HEIC often arrives with an empty type: the extension decides (imageFile.ts);
+    //          the type sent to Google comes from the bytes anyway, below.
+    if (!eFileImmagine(file)) throw fotoNonUsabile('Unsupported file type');
     // ITALIANO: una foto cancellata, spostata, risalvata da un altro programma o su una chiavetta
     //           staccata non si legge piu' (NotReadableError, NotFoundError): e' un problema della
     //           foto, Google non e' stato nemmeno chiamato. Senza il segno l'app diceva "Google non
@@ -124,11 +135,14 @@ const imageForGemini = async (file: File): Promise<{ data: string; mimeType: str
     //          was not even called. Without the mark the app said "Google could not be reached",
     //          and three in a row stopped bulk tagging as if the network were down.
     let bytes: Uint8Array;
-    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch { throw fotoNonUsabile('File can no longer be read'); }
+    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch { throw fotoNonUsabile('File can no longer be read', 'illeggibile'); }
     // ITALIANO: una foto rovinata che non si riesce a pulire e' un problema della foto, non della rete.
     // ENGLISH: a damaged photo that cannot be cleaned is a problem of the photo, not of the network.
     let pulita: ReturnType<typeof stripImageMetadata>;
-    try { pulita = stripImageMetadata(bytes); } catch { throw fotoNonUsabile('Unsupported file type'); }
+    try { pulita = stripImageMetadata(bytes); } catch (e) {
+        if ((e as { code?: string })?.code === METADATI_NON_PULIBILI) throw fotoNonUsabile('Hidden data cannot be removed', 'metadati');
+        throw fotoNonUsabile('Unsupported file type');
+    }
     const blob = pulita
         ? new Blob([pulita.bytes as Uint8Array<ArrayBuffer>], { type: pulita.mimeType })
         : await redrawAsPng(file);
@@ -198,11 +212,16 @@ export type GeminiTagOptions = GeminiOptions & {
     maxTags: number;
 };
 
-export const getGeminiTags = async (file: File, opts: GeminiTagOptions): Promise<string[]> => {
+// ITALIANO: accetta un File o una foto dell'app: una foto aperta con una cartella si rilegge da li', cosi'
+//           una foto ritoccata in un altro programma dopo l'importazione si tagga lo stesso.
+// ENGLISH: takes a File or an app photo: a photo opened with a folder is re-read from there, so a photo
+//          retouched in another program after the import can still be tagged.
+export const getGeminiTags = async (foto: File | FotoConCartella, opts: GeminiTagOptions): Promise<string[]> => {
     if (!opts.apiKey || typeof opts.apiKey !== 'string') {
         throw new Error('Missing API key');
     }
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
+    const file = foto instanceof File ? foto : await fileDiAdesso(foto);
     const immagine = await imageForGemini(file);
 
     const response = await ai.models.generateContent({
@@ -704,10 +723,17 @@ export type EsitoModello = {
 //           in quel caso si cerca comunque, anche se e' gia' in cima all'elenco.
 // ENGLISH: the whole round. `rotto` = the current model has just answered "I do not exist":
 //          in that case we look anyway, even if it is already at the top of the list.
+// ITALIANO: `continua` (facoltativo) si chiede prima di ogni prova: se dice di no (l'AI e' stata
+//           spenta mentre Google rispondeva) non parte nessun'altra chiamata e non cambia niente.
+//           Chi lo passa scarta poi il risultato.
+// ENGLISH: `continua` (optional) is asked before every probe: if it says no (the AI was switched
+//          off while Google answered) no further call starts and nothing changes. Whoever
+//          passes it then discards the result.
 export const aggiornaModelloAutomatico = async (
     apiKey: string,
     attuale: string,
     rotto: boolean = false,
+    continua?: () => boolean,
 ): Promise<EsitoModello> => {
     const fermo = (esito: EsitoModello['esito'], disponibili: ModelloTrovato[] = []): EsitoModello =>
         ({ modello: attuale, precedente: attuale, cambiato: false, esito, disponibili });
@@ -737,6 +763,7 @@ export const aggiornaModelloAutomatico = async (
 
     let sovraccarico = false;
     for (const c of candidati.slice(0, PROVE_MAX)) {
+        if (continua && !continua()) return { ...fermo('invariato', candidati), disponibili: candidati };
         const esito = await provaModello(apiKey, c.id);
         // ITALIANO: non si sa niente del modello: ci si ferma dove si e', dicendo il perche'.
         // ENGLISH: nothing is known about the model: stay put, and say why.

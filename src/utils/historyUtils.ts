@@ -49,13 +49,23 @@ export const purgeIdsFromHistory = <T extends { id: string }>(history: T[][], id
 //   "Restore all", a Ctrl+Z emptied the gallery while their files were back in the folder. The first
 //   step (the empty gallery before the import) stays empty, and a Ctrl+Z back to it takes the photos
 //   out as undoing the import always does.
-export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[], indiceAttuale = -1): T[][] =>
-    history.map((passo, indice) => {
-        if (passo.length === 0 && !(indice > 0 && indice <= indiceAttuale)) return passo;
+// ITALIANO: se lo svuotamento ha tolto TUTTE le foto del progetto, ogni passo e' vuoto: anche il
+//   primo riceve le foto tornate. Altrimenti i passi con le foto erano tutti uguali, Ctrl+Z li
+//   saltava e arrivava alla galleria vuota: un solo Ctrl+Z subito dopo "Annulla lo svuotamento"
+//   toglieva dall'app tutte le foto appena tornate (e i tag che c'erano solo in memoria).
+// ENGLISH: if the emptying took out EVERY photo of the project, every step is empty: the first one
+//   receives the returned photos too. Otherwise the steps with the photos were all equal, Ctrl+Z
+//   skipped them and reached the empty gallery: a single Ctrl+Z right after "Undo the emptying"
+//   took every photo just returned out of the app (and the tags that existed only in memory).
+export const addPhotosToHistory = <T extends { id: string }>(history: T[][], photos: T[], indiceAttuale = -1): T[][] => {
+    const tuttiVuoti = history.every(passo => passo.length === 0);
+    return history.map((passo, indice) => {
+        if (passo.length === 0 && !tuttiVuoti && !(indice > 0 && indice <= indiceAttuale)) return passo;
         const presenti = new Set(passo.map(foto => foto.id));
         const mancanti = photos.filter(foto => !presenti.has(foto.id));
         return mancanti.length > 0 ? [...passo, ...mancanti] : passo;
     });
+};
 
 // ITALIANO: Il passo dove porta Ctrl+Z (verso -1) o Ctrl+Shift+Z (verso +1): il piu' vicino che sia
 //   DIVERSO da quello attuale, -1 se non ce n'e'. Due passi sono uguali quando hanno le stesse foto,
@@ -88,11 +98,25 @@ const stessaFotoASchermo = (a: any, b: any): boolean => {
         || (k === 'tags' && Array.isArray(a[k]) && Array.isArray(b[k]) && a[k].length === b[k].length
             && a[k].every((tg: unknown, i: number) => tg === b[k][i]))));
 };
-export const nearestDifferentStep = <T>(history: T[][], index: number, direction: 1 | -1): number => {
+// ITALIANO: `trigger` = il riquadro delle trigger di ogni passo e quello a schermo adesso. Ctrl+Z
+//   rimette anche il riquadro del passo (se il passo ha foto), quindi un passo con le stesse foto ma
+//   un riquadro diverso NON e' uguale: scrivere una trigger che le foto hanno gia' (dataset
+//   riaperto) cambia solo il riquadro, e quel passo veniva saltato insieme alla modifica di prima.
+// ENGLISH: `trigger` = each step's trigger box and the one on screen now. Ctrl+Z also puts the step's
+//   box back (if the step has photos), so a step with the same photos but a different box is NOT
+//   equal: typing a trigger the photos already have (reopened dataset) changes only the box, and that
+//   step was skipped together with the edit before it.
+const stesseTrigger = (a: string[], b: string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+export const nearestDifferentStep = <T>(history: T[][], index: number, direction: 1 | -1,
+    trigger?: { passi: (string[] | undefined)[]; attuali: string[] }): number => {
     const attuale = history[index] || [];
-    const uguale = (passo: T[]) => passo.length === attuale.length && passo.every((foto, k) => stessaFotoASchermo(foto, attuale[k]));
+    const uguale = (passo: T[], j: number) => {
+        if (passo.length !== attuale.length || !passo.every((foto, k) => stessaFotoASchermo(foto, attuale[k]))) return false;
+        const delPasso = trigger?.passi[j];
+        return !delPasso || passo.length === 0 || stesseTrigger(delPasso, trigger!.attuali);
+    };
     for (let j = index + direction; j >= 0 && j < history.length; j += direction) {
-        if (!uguale(history[j])) return j;
+        if (!uguale(history[j], j)) return j;
     }
     return -1;
 };

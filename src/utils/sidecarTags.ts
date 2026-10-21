@@ -114,9 +114,50 @@ export const fileDaSidecar = (s: { name: string; content?: string; skipped?: boo
     if (s.skipped) {
         const saltato = new File([], s.name, { type: 'text/plain' });
         Object.defineProperty(saltato, 'text', { value: () => Promise.reject(new Error('sidecar .txt not read: ' + s.name)) });
+        // ITALIANO: anche dai byte (vedi leggiTestoSidecar): altrimenti diventerebbe un .txt vuoto.
+        // ENGLISH: from the bytes too (see leggiTestoSidecar): otherwise it would become an empty .txt.
+        Object.defineProperty(saltato, 'arrayBuffer', { value: () => Promise.reject(new Error('sidecar .txt not read: ' + s.name)) });
         return saltato;
     }
     return new File([typeof s.content === 'string' ? s.content : ''], s.name, { type: 'text/plain' });
+};
+
+// ITALIANO: Il testo di un .txt dai suoi BYTE. Windows PowerShell 5.1 ('...' > a.txt) e il Blocco
+//   note in "Unicode" scrivono UTF-16 col BOM: letto come UTF-8 diventava "��w o m a n",
+//   e un .txt ANSI con "café" diventava "caf�"; con una trigger attiva Salva riscriveva la
+//   spazzatura sopra il file vero. Ora: BOM FF FE / FE FF -> UTF-16; altrimenti UTF-8 (il BOM
+//   UTF-8 si toglie). Un testo che non e' UTF-8 valido, o con caratteri NUL (UTF-16 senza BOM),
+//   torna null: la codifica NON si indovina, il file conta come .txt non letto (protetto da Salva e
+//   nominato nell'avviso). La stessa regola e' copiata in electron/main.cjs (decodificaSidecar).
+// ENGLISH: A .txt's text from its BYTES. Windows PowerShell 5.1 and Notepad's "Unicode" write
+//   UTF-16 with a BOM: read as UTF-8 it became garbage, and an ANSI .txt with "café" became
+//   "caf�"; with an active trigger Save wrote the garbage over the real file. Now: BOM FF FE /
+//   FE FF -> UTF-16; otherwise UTF-8 (the UTF-8 BOM is removed). A text that is not valid UTF-8, or
+//   holds NUL characters (UTF-16 with no BOM), returns null: the encoding is NOT guessed, the file
+//   counts as an unread .txt (protected from Save and named in the notice). The same rule is
+//   copied in electron/main.cjs (decodificaSidecar).
+export const decodificaSidecar = (bytes: Uint8Array): string | null => {
+    try {
+        if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le', { fatal: true }).decode(bytes);
+        if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be', { fatal: true }).decode(bytes);
+        const testo = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        return testo.includes('\u0000') ? null : testo;
+    } catch (_) {
+        return null;
+    }
+};
+
+// ITALIANO: Legge un .txt (un File) con decodificaSidecar. Se il testo non si decodifica lancia,
+//   come un file illeggibile: chi legge lo conta fra i .txt saltati. Un oggetto senza
+//   arrayBuffer (le prove) si legge con text(), come prima.
+// ENGLISH: Reads a .txt (a File) with decodificaSidecar. When the text does not decode it throws,
+//   like an unreadable file: the reader counts it among the skipped .txt files. An object with no
+//   arrayBuffer (the tests) is read with text(), as before.
+export const leggiTestoSidecar = async (file: any): Promise<string> => {
+    if (!file || typeof file.arrayBuffer !== 'function') return file.text();
+    const testo = decodificaSidecar(new Uint8Array(await file.arrayBuffer()));
+    if (testo === null) throw new Error('sidecar .txt neither UTF-8 nor UTF-16: ' + String(file.name || ''));
+    return testo;
 };
 
 // ITALIANO: Limiti sui .txt letti all'import (un dataset scaricato e' input non fidato). Il limite

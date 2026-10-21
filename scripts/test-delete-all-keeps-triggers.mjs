@@ -97,7 +97,7 @@ console.log('\n--- la conferma lo dice, in tutte e nove le lingue ---');
     dice('la conferma usa confirmDeleteAllTagsMsg', lingue.en.confirmDeleteAllTagsMsg, r.messaggio);
     // ITALIANO: il nome delle trigger word come lo scrive ogni lingua nel riquadro (segnaposto).
     // ENGLISH: the trigger words' name as each language writes it in the box (placeholder).
-    const nomi = { it: 'trigger word', en: 'trigger words', fr: 'mots déclencheurs', es: 'palabras desencadenantes', de: 'Trigger-Wörter',
+    const nomi = { it: 'trigger word', en: 'trigger words', fr: 'trigger words', es: 'trigger words', de: 'Trigger-Wörter',
         zh: '触发词', ja: 'トリガーワード', pt: 'palavras-gatilho', ru: 'триггеры' };
     for (const [codice, nome] of Object.entries(nomi)) {
         const testo = String((lingue[codice] || {}).confirmDeleteAllTagsMsg || '');
