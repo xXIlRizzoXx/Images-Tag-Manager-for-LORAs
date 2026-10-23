@@ -41,14 +41,19 @@ const G = await carica('src/utils/closeGuard.ts');
 const t = (await carica('src/constants.ts')).translations.en;
 
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-const inizio = sorgente.indexOf('    mcpGestoreRef.current = async (r: McpRichiesta) => {');
-const chiusura = /\r?\n    \};\r?\n/g;
-chiusura.lastIndex = Math.max(inizio, 0);
-const fine = inizio < 0 ? null : chiusura.exec(sorgente);
-if (!fine) { console.log('NO  gestore MCP non trovato in src/App.tsx'); process.exit(1); }
-const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
+// ITALIANO: due pezzi veri: l'avviso (mcpAvvisoRef, chiamato anche a fine lavoro) e il gestore.
+// ENGLISH: two real pieces: the notice (mcpAvvisoRef, also called at the end of the work) and the handler.
+const pezzo = (testa) => {
+    const inizio = sorgente.indexOf(testa);
+    const chiusura = /\r?\n    \};\r?\n/g;
+    chiusura.lastIndex = Math.max(inizio, 0);
+    const fine = inizio < 0 ? null : chiusura.exec(sorgente);
+    if (!fine) { console.log(`NO  "${testa.trim()}" non trovato in src/App.tsx`); process.exit(1); }
+    return sorgente.slice(inizio, fine.index + fine[0].length);
+};
+const codice = (await esbuild.transform(pezzo('    mcpAvvisoRef.current = () => {') + pezzo('    mcpGestoreRef.current = async (r: McpRichiesta) => {'), { loader: 'ts' })).code;
 const NOMI = ['mcpGestoreRef', 'eseguiStrumentoMcp', 'imagesRef', 'globalTriggersRef', 'setImages', 'fotoPerMcp', 'fileDiAdesso', 'console',
-    'window', 'showNotification', 't', 'setToast', 'fotoDaSalvare', 'mcpCambiateRef'];
+    'window', 'showNotification', 't', 'setToast', 'fotoDaSalvare', 'mcpCambiateRef', 'mcpFineRef', 'mcpAvvisoRef'];
 const muto = { log() { }, warn() { }, error() { } };
 const avvisoDi = (n) => (n === 1 ? t.mcpEditedNoticeOne : t.mcpEditedNotice.replace('{n}', String(n)));
 
@@ -67,7 +72,11 @@ const app = (quante) => {
         window: { electronAPI: { mcp: { respond: (id, r) => a.risposte.push([id, r]) } } },
         showNotification: (message, type = 'info') => setToast({ show: true, message, type, id: Date.now() }),
         t, setToast, fotoDaSalvare: G.fotoDaSalvare, mcpCambiateRef: { current: new Map() },
+        mcpFineRef: { current: { inizio: () => { }, fine: (c) => a.fine.push(c), ferma: () => { } } },
+        mcpAvvisoRef: { current: null },
     };
+    a.fine = [];
+    a.fineLavoro = () => dip.mcpAvvisoRef.current();
     new Function(...NOMI, codice)(...NOMI.map(n => dip[n]));
     let n = 0;
     a.chiama = (strumento, argomenti) => rif.current({ id: 'r' + (++n), strumento, argomenti });
@@ -173,6 +182,30 @@ console.log('\n--- un avviso d\'errore a schermo ---');
     a.toast = { ...a.toast, show: false };
     await a.chiama('set_tags', { id: 'p1', tags: ['hat'] });
     dice('chiuso l\'errore, l\'avviso dell\'AI conta anche la foto di prima: 2', [avvisoDi(2), 'info'], a.ultimo());
+}
+
+// ITALIANO: a fine lavoro (suono) l'avviso torna con il conto di ADESSO, per chi non guardava.
+// ENGLISH: at the end of the work (sound) the notice comes back with the count of NOW, for whoever was not looking.
+console.log('\n--- a fine lavoro l\'avviso torna ---');
+{
+    const a = app(4);
+    await a.chiama('add_tags', { ids: ['p0', 'p1', 'p2'], tags: ['smile'] });
+    a.toast = { ...a.toast, show: false };
+    a.fineLavoro();
+    dice('l\'avviso sparito ricompare con il conto giusto: 3', [avvisoDi(3), 'info'], a.ultimo());
+    a.toast = { ...a.toast, show: false };
+    a.chiudi('p2');
+    a.fineLavoro();
+    dice('...contando solo le foto ancora aperte: 2', [avvisoDi(2), 'info'], a.ultimo());
+    a.toast = { ...a.toast, show: false };
+    a.salva();
+    a.fineLavoro();
+    dice('dopo "Salva Modifiche" non ricompare niente', null, a.ultimo());
+    const b = app(2);
+    await b.chiama('set_tags', { id: 'p0', tags: ['hat'] });
+    b.toast = { show: true, message: 'Save failed: 1 file not written.', type: 'error', id: 1 };
+    b.fineLavoro();
+    dice('non copre un errore ancora a schermo', ['Save failed: 1 file not written.', 'error'], b.ultimo());
 }
 
 console.log('\n--- quello che NON deve cambiare ---');

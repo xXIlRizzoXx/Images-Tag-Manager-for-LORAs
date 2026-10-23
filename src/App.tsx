@@ -15,6 +15,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredVa
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2, Plug, Eye, EyeOff } from 'lucide-react';
 import { eseguiStrumentoMcp, fotoPerMcp } from './utils/mcpBridge';
 import type { RispostaMcp } from './utils/mcpBridge';
+import { creaFineLavoroMcp } from './utils/mcpFineLavoro';
 import type { McpStatus, McpRichiesta } from './electron';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli, ultimeGenerazioni } from './services/geminiService';
@@ -582,7 +583,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('2.0.1');
+    const [appVersion, setAppVersion] = useState<string>('2.0.2');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -1774,6 +1775,9 @@ export default function App() {
     //          several calls together, and the second must see the tags already changed by the first.
     const [mcpStato, setMcpStato] = useState<McpStatus | null>(null);
     const [mcpCodiceVisibile, setMcpCodiceVisibile] = useState(false);
+    // ITALIANO: un'AI esterna sta lavorando adesso (per il semaforo in alto, vedi mcpFineLavoro.ts).
+    // ENGLISH: an external AI is working right now (for the light at the top, see mcpFineLavoro.ts).
+    const [mcpAlLavoro, setMcpAlLavoro] = useState(false);
     const mcpGestoreRef = useRef<(r: McpRichiesta) => void>(() => { });
     // ITALIANO: le foto cambiate dall'AI esterna, per l'avviso: set_tags accetta un solo id, quindi
     //           un'AI che tagga 40 foto fa 40 chiamate, e l'avviso diceva il numero dell'ultima (1).
@@ -1790,7 +1794,53 @@ export default function App() {
     //          without saving the change (AI during "Save Changes", tag file editor), and then the photo
     //          stays in the count only if the AI's change is not in originalTags yet.
     const mcpCambiateRef = useRef<Map<string, { originali: unknown; prima: string[]; ai: string[] }>>(new Map());
+    // ITALIANO: l'avviso "foto cambiate dall'AI, non ancora salvate", dopo ogni modifica e di nuovo a
+    //           fine lavoro. Si contano le foto cambiate dall'AI ancora da salvare (salvate, chiuse o
+    //           nel cestino escono), ognuna una volta. L'avviso non copre un errore ancora a schermo
+    //           (per esempio quello di "Salva Modifiche"): arriva alla chiamata dopo.
+    // ENGLISH: the "photos changed by the AI, not saved yet" notice, after every change and again at
+    //          the end of the work. The photos changed by the AI that still need saving are counted
+    //          (saved, closed or trashed ones leave), each once. The notice does not cover an error
+    //          still on screen (for example the "Save Changes" one): it comes with the next call.
+    const mcpAvvisoRef = useRef<() => void>(() => { });
+    mcpAvvisoRef.current = () => {
+        const vive = new Map(imagesRef.current.map(img => [img.id, img]));
+        const ha = (lista: unknown, tag: string) => Array.isArray(lista) && lista.some(x => String(x).toLowerCase() === String(tag).toLowerCase());
+        const rimaste = [...mcpCambiateRef.current].filter(([id, voce]) => {
+            const img = vive.get(id);
+            if (!img || img.isTrashed || !fotoDaSalvare(img, globalTriggersRef.current)) return false;
+            if (img.originalTags === voce.originali) return true;
+            // ITALIANO: originalTags e' nuovo: la foto resta solo se un tag aggiunto dall'AI c'e' ancora
+            //           e non e' in originalTags, o uno tolto dall'AI manca ancora ed e' in originalTags.
+            // ENGLISH: originalTags is new: the photo stays only if a tag added by the AI is still there
+            //          and not in originalTags, or one removed by the AI is still missing and in originalTags.
+            const ancora = voce.ai.some(tg => !ha(voce.prima, tg) && ha(img.tags, tg) && !ha(img.originalTags, tg))
+                || voce.prima.some(tg => !ha(voce.ai, tg) && !ha(img.tags, tg) && ha(img.originalTags, tg));
+            if (ancora) voce.originali = img.originalTags;
+            return ancora;
+        });
+        mcpCambiateRef.current = new Map(rimaste);
+        const ancora = rimaste.map(([id]) => id);
+        if (ancora.length > 0) {
+            const message = ancora.length === 1 ? t.mcpEditedNoticeOne : t.mcpEditedNotice.replace('{n}', String(ancora.length));
+            setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message, type: 'info', id: Date.now() }));
+        }
+    };
+    // ITALIANO: a fine lavoro dell'AI esterna (dopo aver cambiato dei tag resta in silenzio, vedi
+    //           src/utils/mcpFineLavoro.ts) suona e ripete l'avviso, per chi non guardava. Il suono
+    //           rispetta "Suoni UI" come gli altri; l'avviso esce solo se resta qualcosa da salvare.
+    // ENGLISH: at the end of the external AI's work (after changing tags it goes silent, see
+    //          src/utils/mcpFineLavoro.ts) it sounds and repeats the notice, for whoever was not
+    //          looking. The sound follows "UI Sounds" like the others; the notice shows only if
+    //          something is still to save.
+    // ITALIANO: con il server spento non suona: una risposta partita dopo lo spegnimento fa ripartire l'attesa.
+    // ENGLISH: with the server off it does not sound: an answer sent after switching off restarts the wait.
+    const mcpAccesoRef = useRef(false);
+    mcpAccesoRef.current = !!mcpStato?.acceso;
+    const mcpFineRef = useRef<ReturnType<typeof creaFineLavoroMcp> | null>(null);
+    if (!mcpFineRef.current) mcpFineRef.current = creaFineLavoroMcp(() => { if (!mcpAccesoRef.current) return; soundManager.chime(); mcpAvvisoRef.current(); }, { attivita: setMcpAlLavoro });
     mcpGestoreRef.current = async (r: McpRichiesta) => {
+        const giroMcp = mcpFineRef.current?.inizio() ?? 0;
         let risposta: RispostaMcp;
         try {
             risposta = await eseguiStrumentoMcp(String(r.strumento), r.argomenti || {}, {
@@ -1820,42 +1870,17 @@ export default function App() {
             console.warn('[MCP] request failed', e);
             risposta = { errore: 'Images Tag Manager could not answer this request.' };
         }
-        window.electronAPI?.mcp?.respond(r.id, risposta);
-        if (risposta.cambiate) {
-            // ITALIANO: si contano le foto cambiate dall'AI ancora da salvare (salvate, chiuse o nel
-            //           cestino escono), ognuna una volta. L'avviso non copre un errore ancora a schermo
-            //           (per esempio quello di "Salva Modifiche"): arriva alla chiamata dopo.
-            // ENGLISH: the photos changed by the AI that still need saving are counted (saved, closed or
-            //          trashed ones leave), each once. The notice does not cover an error still on screen
-            //          (for example the "Save Changes" one): it comes with the next call.
-            const vive = new Map(imagesRef.current.map(img => [img.id, img]));
-            const ha = (lista: unknown, tag: string) => Array.isArray(lista) && lista.some(x => String(x).toLowerCase() === String(tag).toLowerCase());
-            const rimaste = [...mcpCambiateRef.current].filter(([id, voce]) => {
-                const img = vive.get(id);
-                if (!img || img.isTrashed || !fotoDaSalvare(img, globalTriggersRef.current)) return false;
-                if (img.originalTags === voce.originali) return true;
-                // ITALIANO: originalTags e' nuovo: la foto resta solo se un tag aggiunto dall'AI c'e' ancora
-                //           e non e' in originalTags, o uno tolto dall'AI manca ancora ed e' in originalTags.
-                // ENGLISH: originalTags is new: the photo stays only if a tag added by the AI is still there
-                //          and not in originalTags, or one removed by the AI is still missing and in originalTags.
-                const ancora = voce.ai.some(tg => !ha(voce.prima, tg) && ha(img.tags, tg) && !ha(img.originalTags, tg))
-                    || voce.prima.some(tg => !ha(voce.ai, tg) && !ha(img.tags, tg) && ha(img.originalTags, tg));
-                if (ancora) voce.originali = img.originalTags;
-                return ancora;
-            });
-            mcpCambiateRef.current = new Map(rimaste);
-            const ancora = rimaste.map(([id]) => id);
-            if (ancora.length > 0) {
-                const message = ancora.length === 1 ? t.mcpEditedNoticeOne : t.mcpEditedNotice.replace('{n}', String(ancora.length));
-                setToast(prev => (prev.show && prev.type === 'error' ? prev : { show: true, message, type: 'info', id: Date.now() }));
-            }
-        }
+        // ITALIANO: la fine si conta anche se l'invio della risposta fallisse, o il semaforo resterebbe giallo.
+        // ENGLISH: the end is counted even if sending the answer failed, or the light would stay yellow.
+        try { window.electronAPI?.mcp?.respond(r.id, risposta); } finally { mcpFineRef.current?.fine(!!risposta.cambiate, giroMcp); }
+        if (risposta.cambiate) mcpAvvisoRef.current();
     };
     useEffect(() => {
         const api = window.electronAPI?.mcp;
         if (!api) return undefined;
         api.getStatus().then(setMcpStato).catch(() => { });
-        return api.onRequest((r) => { mcpGestoreRef.current(r); });
+        const smetti = api.onRequest((r) => { mcpGestoreRef.current(r); });
+        return () => { smetti(); mcpFineRef.current?.ferma(); };
     }, []);
     const cambiaMcp = async (acceso: boolean) => {
         const api = window.electronAPI?.mcp;
@@ -1889,6 +1914,71 @@ export default function App() {
             env: { AUTH_HEADER: `Bearer ${codice}` } } } }, null, 2);
         return JSON.stringify({ mcpServers: { 'images-tag-manager': { url: indirizzoMcp, headers: { Authorization: `Bearer ${codice}` } } } }, null, 2);
     };
+    // ITALIANO: stato del server, indirizzo, codice e configurazioni da copiare: gli stessi nelle
+    //           Impostazioni e nella finestrella del semaforo MCP in alto.
+    // ENGLISH: server state, address, token and configurations to copy: the same in Settings and in
+    //          the small window of the MCP light at the top.
+    const datiMcp = () => (
+        <>
+            {!window.electronAPI?.mcp && <p className="leading-relaxed">{t.mcpOnlyDesktop}</p>}
+            {mcpStato?.errore === 'porta' && <p className="text-red-500 leading-snug">{t.mcpErrPort.replace('{porta}', String(mcpStato.porta))}</p>}
+            {mcpStato?.errore === 'avvio' && <p className="text-red-500 leading-snug">{t.mcpErrStart}</p>}
+            {mcpStato?.errore === 'salvataggio' && <p className="text-red-500 leading-snug">{t.mcpErrSave}</p>}
+            {mcpStato?.acceso && mcpStato.attivo && (
+                <>
+                    <p className={`font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{t.mcpListening.replace('{url}', indirizzoMcp)}</p>
+                    <div className="flex flex-col gap-1">
+                        <label className="font-medium text-[11px]">{t.mcpToken}</label>
+                        <div className="flex items-center gap-1">
+                            <code className={`flex-1 min-w-0 truncate rounded-lg border px-2.5 py-1.5 font-mono ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
+                                {mcpCodiceVisibile ? mcpStato.codice : '•'.repeat(16)}
+                            </code>
+                            <button onClick={() => setMcpCodiceVisibile(v => !v)} title={mcpCodiceVisibile ? t.mcpHide : t.mcpShow} aria-label={mcpCodiceVisibile ? t.mcpHide : t.mcpShow}
+                                className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                {mcpCodiceVisibile ? <EyeOff size={12}/> : <Eye size={12}/>}
+                            </button>
+                            <button onClick={() => copiaMcp(mcpStato.codice)} title={t.mcpCopyToken} aria-label={t.mcpCopyToken}
+                                className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                <Copy size={12}/>
+                            </button>
+                            <button onClick={nuovoCodiceMcp} title={t.mcpNewToken} aria-label={t.mcpNewToken}
+                                className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
+                                <RefreshCw size={12}/>
+                            </button>
+                        </div>
+                    </div>
+                    {(['claudeCode', 'desktop', 'cursor'] as const).map(tipo => (
+                        <button key={tipo} onClick={() => copiaMcp(configMcp(tipo))}
+                            className={`${pulsanteSchedaAi} !justify-start text-left`}>
+                            <Copy size={11} className="shrink-0"/>
+                            {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
+                        </button>
+                    ))}
+                </>
+            )}
+        </>
+    );
+    // ITALIANO: la finestrella del semaforo MCP: si chiude cliccando fuori o spegnendo il server.
+    // ENGLISH: the small window of the MCP light: it closes on an outside click or when the server goes off.
+    const mcpFinestraRef = useRef<HTMLDivElement>(null);
+    const [mcpFinestraAperta, setMcpFinestraAperta] = useState(false);
+    // ITALIANO: server spento (dopo che lo e' davvero): finestrella chiusa, niente piu' giallo ne' suono in attesa.
+    // ENGLISH: server off (once it really is): small window closed, no more yellow nor pending sound.
+    useEffect(() => {
+        if (mcpStato?.acceso) return;
+        setMcpFinestraAperta(false);
+        mcpFineRef.current?.ferma();
+    }, [mcpStato?.acceso]);
+    // ITALIANO: il server parte in modo asincrono: se lo stato letto dice "acceso ma non ancora attivo"
+    //           senza errori, si rilegge fra poco, altrimenti il semaforo resterebbe rosso per sempre.
+    // ENGLISH: the server starts asynchronously: if the state read says "on but not active yet" with no
+    //          error, it is read again shortly, otherwise the light would stay red forever.
+    useEffect(() => {
+        const api = window.electronAPI?.mcp;
+        if (!api || !mcpStato?.acceso || mcpStato.attivo || mcpStato.errore) return undefined;
+        const id = setTimeout(() => { api.getStatus().then(setMcpStato).catch(() => { }); }, 1500);
+        return () => clearTimeout(id);
+    }, [mcpStato]);
 
     // ITALIANO: con l'AI spenta una prova in corso si ferma subito, anche fra una chiamata e l'altra.
     // ENGLISH: with the AI switched off a running test stops at once, even between two calls.
@@ -6508,6 +6598,7 @@ export default function App() {
         function handleClickOutside(event: any) {
             if (aiutoRef.current && aiutoRef.current.contains(event.target)) return;
             if (settingsRef.current && !settingsRef.current.contains(event.target)) setIsSettingsOpen(false);
+            if (mcpFinestraRef.current && !mcpFinestraRef.current.contains(event.target)) setMcpFinestraAperta(false);
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -7085,6 +7176,58 @@ export default function App() {
                             <h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1>
                         </div>
                         <div className="flex-1 flex justify-end w-full md:w-auto gap-2">
+                            {/* ITALIANO: semaforo del server MCP, solo con il server acceso nelle Impostazioni: verde in
+                                          ascolto, giallo con un'AI al lavoro, rosso se acceso ma non partito. Il clic apre
+                                          una finestrella con lo stato e i dati da dare alle AI esterne.
+                                ENGLISH: MCP server light, only with the server switched on in Settings: green listening,
+                                         yellow with an AI at work, red if on but not started. A click opens a small window
+                                         with the state and the details to give to external AIs. */}
+                            {window.electronAPI?.mcp && mcpStato?.acceso && (() => {
+                                // ITALIANO: rosso solo se il server non gira; un salvataggio fallito con il server attivo
+                                //           resta verde (l'errore lo dice la finestrella).
+                                // ENGLISH: red only if the server is not running; a failed save with the server active
+                                //          stays green (the small window tells the error).
+                                // ITALIANO: acceso ma non ancora attivo, senza errori, vuol dire che sta partendo: grigio.
+                                // ENGLISH: on but not active yet, with no error, means it is starting: grey.
+                                const stato = mcpStato.errore === 'porta' || mcpStato.errore === 'avvio' ? 'errore' : !mcpStato.attivo ? 'partenza' : mcpAlLavoro ? 'lavoro' : 'ascolto';
+                                const testo = { errore: t.mcpLightError, partenza: t.mcpTitle, lavoro: t.mcpLightBusy, ascolto: t.mcpLightOn }[stato];
+                                const luce = { errore: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]', partenza: 'bg-gray-400', lavoro: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse', ascolto: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' }[stato];
+                                return (
+                                    <div className="relative" ref={mcpFinestraRef}>
+                                        <button
+                                            data-mcp-luce={stato}
+                                            title={testo}
+                                            aria-label={testo}
+                                            aria-expanded={mcpFinestraAperta}
+                                            onClick={() => {
+                                                // ITALIANO: aprendo si rilegge lo stato del server. ENGLISH: opening reads the server state again.
+                                                if (!mcpFinestraAperta) window.electronAPI?.mcp?.getStatus().then(setMcpStato).catch(() => { });
+                                                setMcpFinestraAperta(v => !v);
+                                            }}
+                                            className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}
+                                        >
+                                            <span className={`w-3 h-3 rounded-full shrink-0 ${luce}`} />
+                                            <span className="font-semibold text-sm hidden sm:inline-block">MCP</span>
+                                        </button>
+                                        {mcpFinestraAperta && (
+                                            <div data-mcp-finestra className={`absolute right-0 mt-2 w-80 max-h-[calc(100vh-8.5rem)] overflow-y-auto overscroll-contain ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border p-4 z-50 animate-in fade-in slide-in-from-top-2`}>
+                                                <div className={`flex items-center gap-2 text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                    <Plug size={16} className="text-emerald-500"/>
+                                                    {t.mcpTitle}
+                                                </div>
+                                                {/* ITALIANO: "in ascolto" e gli errori precisi li scrive gia' datiMcp; qui solo l'AI al lavoro.
+                                                    ENGLISH: "listening" and the precise errors are already written by datiMcp; here only the AI at work. */}
+                                                {stato === 'lavoro' && (
+                                                    <p className={`text-[11px] leading-snug ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>{t.mcpLightBusy}</p>
+                                                )}
+                                                <div className={`flex flex-col gap-2 mt-2 text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                                    {datiMcp()}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             <button onClick={() => setIsTrashOpen(true)} className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}>
                                 <span className="font-semibold text-sm hidden sm:inline-block">{t.trash}</span>
                                 <div className="relative">
@@ -7435,42 +7578,7 @@ export default function App() {
                                             </div>
                                             {(!window.electronAPI?.mcp || !!mcpStato?.errore || !!(mcpStato?.acceso && mcpStato.attivo)) && (
                                             <div className={`flex flex-col gap-2 p-2.5 rounded-xl text-[10px] border ${isDarkMode ? 'bg-gray-800/50 border-gray-700/70 text-gray-400' : 'bg-white border-emerald-100 shadow-sm text-gray-600'}`}>
-                                                {!window.electronAPI?.mcp && <p className="leading-relaxed">{t.mcpOnlyDesktop}</p>}
-                                                {mcpStato?.errore === 'porta' && <p className="text-red-500 leading-snug">{t.mcpErrPort.replace('{porta}', String(mcpStato.porta))}</p>}
-                                                {mcpStato?.errore === 'avvio' && <p className="text-red-500 leading-snug">{t.mcpErrStart}</p>}
-                                                {mcpStato?.errore === 'salvataggio' && <p className="text-red-500 leading-snug">{t.mcpErrSave}</p>}
-                                                {mcpStato?.acceso && mcpStato.attivo && (
-                                                    <>
-                                                        <p className={`font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{t.mcpListening.replace('{url}', indirizzoMcp)}</p>
-                                                        <div className="flex flex-col gap-1">
-                                                            <label className="font-medium text-[11px]">{t.mcpToken}</label>
-                                                            <div className="flex items-center gap-1">
-                                                                <code className={`flex-1 min-w-0 truncate rounded-lg border px-2.5 py-1.5 font-mono ${isDarkMode ? 'bg-gray-900/70 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
-                                                                    {mcpCodiceVisibile ? mcpStato.codice : '•'.repeat(16)}
-                                                                </code>
-                                                                <button onClick={() => setMcpCodiceVisibile(v => !v)} title={mcpCodiceVisibile ? t.mcpHide : t.mcpShow} aria-label={mcpCodiceVisibile ? t.mcpHide : t.mcpShow}
-                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
-                                                                    {mcpCodiceVisibile ? <EyeOff size={12}/> : <Eye size={12}/>}
-                                                                </button>
-                                                                <button onClick={() => copiaMcp(mcpStato.codice)} title={t.mcpCopyToken} aria-label={t.mcpCopyToken}
-                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
-                                                                    <Copy size={12}/>
-                                                                </button>
-                                                                <button onClick={nuovoCodiceMcp} title={t.mcpNewToken} aria-label={t.mcpNewToken}
-                                                                    className={`p-1 rounded-md border shrink-0 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-100'}`}>
-                                                                    <RefreshCw size={12}/>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        {(['claudeCode', 'desktop', 'cursor'] as const).map(tipo => (
-                                                            <button key={tipo} onClick={() => copiaMcp(configMcp(tipo))}
-                                                                className={`${pulsanteSchedaAi} !justify-start text-left`}>
-                                                                <Copy size={11} className="shrink-0"/>
-                                                                {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
-                                                            </button>
-                                                        ))}
-                                                    </>
-                                                )}
+                                                {datiMcp()}
                                             </div>
                                             )}
                                         </div>

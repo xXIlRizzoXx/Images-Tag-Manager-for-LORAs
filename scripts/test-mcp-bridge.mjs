@@ -106,8 +106,9 @@ console.log('\n--- in App.tsx ---');
     dice('le modifiche aggiornano SUBITO la memoria letta dalle domande seguenti', true, /applica: \(nuovi\) => \{\s*(const tagPrima = [^;\n]*;\s*)?imagesRef\.current = imagesRef\.current\.map/.test(app));
     dice('...e passano da setImages (cronologia e "da salvare")', true, /applica: \(nuovi\) => \{[\s\S]{0,400}setImages\(prev => prev\.map/.test(app));
     // ITALIANO: il numero e l'errore a schermo li prova test-mcp-notice-total.mjs. ENGLISH: the count and the on-screen error are tested by test-mcp-notice-total.mjs.
-    dice('dopo una modifica arriva l\'avviso "non ancora salvati"', true, /if \(risposta\.cambiate\) \{[\s\S]{0,3000}t\.mcpEditedNotice\.replace/.test(app));
-    dice('la risposta torna sempre al server, anche se qualcosa va storto', true, /catch \(e\) \{[\s\S]{0,200}risposta = \{ errore:[\s\S]{0,100}\}\s*window\.electronAPI\?\.mcp\?\.respond\(r\.id, risposta\)/.test(app));
+    dice('dopo una modifica arriva l\'avviso "non ancora salvati"', true,
+        /if \(risposta\.cambiate\) mcpAvvisoRef\.current\(\);/.test(app) && /mcpAvvisoRef\.current = \(\) => \{[\s\S]{0,3000}t\.mcpEditedNotice\.replace/.test(app));
+    dice('la risposta torna sempre al server, anche se qualcosa va storto', true, /catch \(e\) \{[\s\S]{0,200}risposta = \{ errore:[\s\S]{0,100}\}\s*(\/\/[^\n]*\n\s*)*(try \{ )?window\.electronAPI\?\.mcp\?\.respond\(r\.id, risposta\)/.test(app));
     const ponte = fs.readFileSync(path.join(radice, 'src/utils/mcpBridge.ts'), 'utf8');
     dice('la foto per l\'AI si ridisegna (niente metadati, niente file originale)', true, /drawImage\(bitmap/.test(ponte) && /toBlob\(fatto, 'image\/jpeg'/.test(ponte));
 }

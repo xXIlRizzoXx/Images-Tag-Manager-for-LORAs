@@ -79,6 +79,13 @@ export const creaServerMcp = (chiedi, versione) => {
         }
     };
     const NOTA = ' Changes stay in the program only: nothing is written to disk until the user presses "Save Changes".';
+    // ITALIANO: nel .txt la virgola separa i tag, quindi il programma divide un tag a ogni virgola
+    //           (src/utils/mcpBridge.ts): un'AI che scriveva una didascalia in frase credeva di aver
+    //           aggiunto un tag e se ne ritrovava nove. Ora la descrizione lo dice prima.
+    // ENGLISH: in the .txt the comma separates tags, so the program splits a tag at every comma
+    //          (src/utils/mcpBridge.ts): an AI writing a sentence caption thought it had added one
+    //          tag and ended up with nine. Now the description says so beforehand.
+    const VIRGOLA = ' A comma inside a tag splits it into separate tags (in the .txt files the comma separates tags), so write a sentence caption without commas.';
 
     server.registerTool('list_photos', {
         title: 'List photos',
@@ -108,21 +115,21 @@ export const creaServerMcp = (chiedi, versione) => {
 
     server.registerTool('set_tags', {
         title: 'Set tags',
-        description: 'Replaces all the tags of one photo. Trigger words are kept and put first automatically; duplicates differing only in case are merged.' + NOTA,
+        description: 'Replaces all the tags of one photo. Trigger words are kept and put first automatically; duplicates differing only in case are merged.' + VIRGOLA + NOTA,
         inputSchema: { id: z.string().min(1).max(500), tags: z.array(TAG).max(300) },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     }, passa('set_tags'));
 
     server.registerTool('add_tags', {
         title: 'Add tags',
-        description: 'Adds tags to one or more photos, keeping the tags they already have.' + NOTA,
+        description: 'Adds tags to one or more photos, keeping the tags they already have.' + VIRGOLA + NOTA,
         inputSchema: { ids: z.array(z.string().min(1).max(500)).min(1).max(5000), tags: z.array(TAG).min(1).max(100) },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     }, passa('add_tags'));
 
     server.registerTool('remove_tags', {
         title: 'Remove tags',
-        description: 'Removes tags (case-insensitive) from one or more photos. Trigger words cannot be removed this way.' + NOTA,
+        description: 'Removes tags (case-insensitive) from one or more photos. Trigger words cannot be removed this way. A comma inside a tag splits it here too: each piece is removed on its own.' + NOTA,
         inputSchema: { ids: z.array(z.string().min(1).max(500)).min(1).max(5000), tags: z.array(TAG).min(1).max(100) },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     }, passa('remove_tags'));
