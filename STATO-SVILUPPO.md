@@ -1,7 +1,16 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 23 ottobre 2026
-**Versione attuale:** 2.0.2, costruita il 23 ottobre 2026, non ancora pubblicata. L'ultima pubblicata su GitHub e' la 2.0.1 (21 ottobre 2026, Latest, portable e installer allegati). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 26 ottobre 2026
+**Versione attuale:** 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità 2.0.2 (traguardo 117, 26 ottobre 2026): **una portable in .zip per chi ha l'antivirus che blocca
+l'installer.** Avast ha fermato l'installer 2.0.2, nuovo e non firmato, per il suo comportamento (estrae
+file, chiude il programma aperto) e pochi secondi dopo lo ha dichiarato pulito. Accanto a installer e
+portable .exe la build fa ora anche «Images Tag Manager for LORAs 2.0.2 portable.zip»: si scompatta e si
+apre, senza nulla che estrae o chiude altro. Il README elenca i tre file e consiglia lo .zip a chi ha
+l'antivirus che blocca gli altri due. Nuova scheda del README «MCP light» (semaforino giallo, finestrella e
+avviso, con le foto di esempio), schede MCP rifatte sulla 2.0.2, indirizzo del server sfocato in ogni
+scatto. Prova dal vivo sulla 2.0.2 installata: semaforino giallo mentre l'AI lavora, suono e avviso dopo
+30 secondi, poi verde, disco intatto. 275 file di prove automatiche verdi.
 Novità 2.0.2 (traguardo 116, 23 ottobre 2026): **il server MCP si fa vedere e sentire.** Con il server
 acceso, in alto a sinistra del Cestino c'e' un semaforino: verde in ascolto, giallo mentre un'AI esterna
 lavora, rosso se il server non e' partito; il clic apre una finestrella con indirizzo, codice e
