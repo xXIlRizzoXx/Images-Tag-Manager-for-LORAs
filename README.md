@@ -68,11 +68,15 @@ Plus: NSFW `+18` badges, ZIP / JSON / TXT export, copy & paste tags between phot
 
 ## 📥 Download
 
-Grab the latest **portable** or **installer** build from the [Releases](../../releases) page. No Node.js, no setup — the portable one just runs.
+Grab the latest build from the [Releases](../../releases) page. No Node.js needed. There are three files, pick one:
+
+*   **`Images Tag Manager for LORAs Setup <version>.exe`** — the installer: asks for a language, creates the shortcuts and installs for your user only (no administrator rights).
+*   **`Images Tag Manager for LORAs <version>.exe`** — the portable one: double-click it and it runs, nothing is installed.
+*   **`Images Tag Manager for LORAs <version> portable.zip`** — the same portable app as a plain folder: unzip it anywhere and open `Images Tag Manager for LORAs.exe`. Pick this one if your antivirus stops the other two.
 
 > The build is **not code-signed** (a certificate costs hundreds of euros a year), so Windows SmartScreen may say *"unknown publisher"*. That is expected: click **More info → Run anyway**. The installer explains this on its welcome page.
 >
-> Some antivirus programs (Avast, for example) may stop an unknown program the first time it runs, and Windows then says *"Windows cannot access the specified device, path, or file"*. Add the downloaded file to the antivirus exceptions (or restore it from its quarantine) and run it again.
+> Some antivirus programs (Avast, for example) may stop an unknown program the first time it runs: the installer can be reported as a threat for what installers normally do (unpacking files, closing the running app), and Windows may then say *"Windows cannot access the specified device, path, or file"*. Use the `.zip`, or add the downloaded file to the antivirus exceptions (or restore it from its quarantine) and run it again.
 
 ### Where your data lives
 
