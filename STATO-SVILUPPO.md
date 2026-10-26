@@ -1,7 +1,29 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 21 ottobre 2026
-**Versione attuale:** 2.0.1, pubblicata su GitHub il 21 ottobre 2026 (Latest, portable e installer allegati). Prima della pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 26 ottobre 2026
+**Versione attuale:** 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità 2.0.2 (traguardo 117, 26 ottobre 2026): **una portable in .zip per chi ha l'antivirus che blocca
+l'installer.** Avast ha fermato l'installer 2.0.2, nuovo e non firmato, per il suo comportamento (estrae
+file, chiude il programma aperto) e pochi secondi dopo lo ha dichiarato pulito. Accanto a installer e
+portable .exe la build fa ora anche «Images Tag Manager for LORAs 2.0.2 portable.zip»: si scompatta e si
+apre, senza nulla che estrae o chiude altro. Il README elenca i tre file e consiglia lo .zip a chi ha
+l'antivirus che blocca gli altri due. Nuova scheda del README «MCP light» (semaforino giallo, finestrella e
+avviso, con le foto di esempio), schede MCP rifatte sulla 2.0.2, indirizzo del server sfocato in ogni
+scatto. Prova dal vivo sulla 2.0.2 installata: semaforino giallo mentre l'AI lavora, suono e avviso dopo
+30 secondi, poi verde, disco intatto. 275 file di prove automatiche verdi.
+Novità 2.0.2 (traguardo 116, 23 ottobre 2026): **il server MCP si fa vedere e sentire.** Con il server
+acceso, in alto a sinistra del Cestino c'e' un semaforino: verde in ascolto, giallo mentre un'AI esterna
+lavora, rosso se il server non e' partito; il clic apre una finestrella con indirizzo, codice e
+configurazioni da copiare (le stesse delle Impostazioni). Quando l'AI ha cambiato dei tag e poi resta in
+silenzio per 30 secondi, suona e ripete quante foto aspettano «Salva Modifiche». Le spiegazioni che l'AI
+legge dicono che una virgola divide un tag. Nel repository c'e' una skill pubblica di tagging per
+Claude Code (skills/lora-dataset-tagging). Prima, una prova dal vivo del server MCP sulla 2.0.1
+installata (14 foto): letture a pagine, foto ridotte senza metadati, modifiche solo in memoria, disco
+intatto fino a Salva, .txt identici ai tag in memoria dopo Salva. Due revisioni di un agente, nessun
+difetto grave: 6 minori nella prima (silenzio troppo corto, chiamate lente, rosso falso, stato letto
+troppo presto, suono a server spento, foto non mostrabili nella skill) e 5 nella seconda, sulle
+riparazioni (risposta vecchia dopo uno spegnimento, invio fallito, rosso durante la partenza, una
+prova troppo larga, tedesco senza «Sie»), tutti corretti. 274 file di prove automatiche verdi.
 Novità 2.0.1 (traguardo 115, 20 ottobre 2026, sera): **galleria fluida con mille foto, backup che regge un'uscita brusca, Electron 43.**
 La vista Quadrate scorre a circa 60 fotogrammi al secondo invece di 20: le pillole dei tag non tengono
 più un'animazione sempre accesa, che costringeva a comporre centinaia di livelli a ogni fotogramma. Il

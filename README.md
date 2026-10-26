@@ -54,6 +54,8 @@ It runs entirely on your machine and sends **no telemetry**. AI tagging is **opt
 
 <img src="docs/img/features/17-mcp.jpg" alt="MCP server: Claude Code, Claude Desktop, Cursor or any MCP client can see the open photos and change their tags, without ever saving" width="100%" />
 
+<img src="docs/img/features/19-mcp-light.jpg" alt="MCP light: next to Trash, green while the server listens, yellow while an external AI works, red if it did not start; a click shows the connection details, and a chime tells you when the AI has finished changing tags" width="100%" />
+
 <img src="docs/img/features/18-help.jpg" alt="Help where you need it: a question-mark button next to every Settings section opens its explanation" width="100%" />
 
 <img src="docs/img/features/13-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />
@@ -68,11 +70,15 @@ Plus: NSFW `+18` badges, ZIP / JSON / TXT export, copy & paste tags between phot
 
 ## 📥 Download
 
-Grab the latest **portable** or **installer** build from the [Releases](../../releases) page. No Node.js, no setup — the portable one just runs.
+Grab the latest build from the [Releases](../../releases) page. No Node.js needed. There are three files, pick one:
+
+*   **`Images Tag Manager for LORAs Setup <version>.exe`** — the installer: asks for a language, creates the shortcuts and installs for your user only (no administrator rights).
+*   **`Images Tag Manager for LORAs <version>.exe`** — the portable one: double-click it and it runs, nothing is installed.
+*   **`Images Tag Manager for LORAs <version> portable.zip`** — the same portable app as a plain folder: unzip it anywhere and open `Images Tag Manager for LORAs.exe`. Pick this one if your antivirus stops the other two.
 
 > The build is **not code-signed** (a certificate costs hundreds of euros a year), so Windows SmartScreen may say *"unknown publisher"*. That is expected: click **More info → Run anyway**. The installer explains this on its welcome page.
 >
-> Some antivirus programs (Avast, for example) may stop an unknown program the first time it runs, and Windows then says *"Windows cannot access the specified device, path, or file"*. Add the downloaded file to the antivirus exceptions (or restore it from its quarantine) and run it again.
+> Some antivirus programs (Avast, for example) may stop an unknown program the first time it runs: the installer can be reported as a threat for what installers normally do (unpacking files, closing the running app), and Windows may then say *"Windows cannot access the specified device, path, or file"*. Use the `.zip`, or add the downloaded file to the antivirus exceptions (or restore it from its quarantine) and run it again.
 
 ### Where your data lives
 
@@ -101,6 +107,8 @@ Settings has a built-in **MCP server**, **off by default**. Switch it on and an 
 *   It listens **only on your own computer** (`127.0.0.1`), never on the network, and asks for a **secret token**; **Create a new token** locks out every AI connected with the old one. Claude Code then refuses to add the server a second time under the same name: first run `claude mcp remove images-tag-manager`, then paste the new command.
 *   The AI sees only the photos open in the app. Each photo it looks at is a copy at most 1024 px on its longest side, redrawn so that the hidden details of the file (GPS position, camera serial number, author) do not go with it. What it sees then goes wherever that AI goes: an assistant that runs in the cloud sends it to its own servers.
 *   **It never saves.** Tags changed by the AI show up in the app as unsaved changes: review them, and the `.txt` files are written only when you press **Save Changes**.
+*   With the server on, a small **MCP light** next to **Trash** shows its state: green listening, yellow while an AI is working, red if it could not start. Click it for the address, the token and the ready-made configurations. When the AI has changed some tags and then goes quiet for 30 seconds, the app plays a sound and tells you how many photos are waiting to be saved.
+*   For Claude Code and other clients that read skills, [`skills/lora-dataset-tagging`](skills/lora-dataset-tagging/SKILL.md) teaches the AI a careful tagging method for LoRA datasets: it looks at every photo, asks what the subject is, reuses your project's tags and leaves saving to you. Copy the folder into `~/.claude/skills/` to use it.
 *   Settings gives you the ready-made command or configuration to copy for Claude Code, Claude Desktop and the others. Claude Desktop connects through the small `mcp-remote` program, so the computer needs [Node.js](https://nodejs.org) (free; it brings the `npx` command); after that Claude Desktop downloads `mcp-remote` from the internet by itself the first time. Claude Code and Cursor don't need Node.js.
 
 ---

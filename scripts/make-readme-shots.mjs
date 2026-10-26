@@ -455,9 +455,31 @@ async function main() {
     };
     const run = js => wc.executeJavaScript(js, true);
 
+    // ITALIANO: l'indirizzo del server MCP ("Listening on http://127.0.0.1:...") non deve leggersi
+    //   in nessuna immagine pubblica: prima di ogni scatto la sua riga viene sfocata (nelle
+    //   Impostazioni e nella finestrella del semaforo). Restituisce quante righe ha sfocato.
+    // ENGLISH: the MCP server address ("Listening on http://127.0.0.1:...") must not be readable in
+    //   any public image: before every shot its line is blurred (in Settings and in the small
+    //   window of the light). Returns how many lines it blurred.
+    const censuraIndirizzo = () => wc.executeJavaScript(`(() => {
+        const righe = Array.from(document.querySelectorAll('p, span, div, code, label')).filter(el =>
+            el.childElementCount === 0 && /(127\\.0\\.0\\.1|localhost):\\d+|\\/images-tag-manager/.test(el.textContent || ''));
+        righe.forEach(el => { el.style.filter = 'blur(6px)'; el.style.userSelect = 'none'; });
+        return righe.length;
+    })()`, true);
+
     const shot = async (name) => {
         if (ONLY.length && !ONLY.some(o => name.startsWith(o))) return;
         await sleep(400);
+        const sfocate = await censuraIndirizzo();
+        if (sfocate) console.log('   indirizzo MCP sfocato in', sfocate, 'righe');
+        // la finestra nascosta puo' dare un fotogramma vecchio (senza la sfocatura): ridisegno,
+        // primo scatto scartato / the hidden window may give a stale frame (without the blur):
+        // redraw, first capture thrown away
+        wc.invalidate();
+        await sleep(300);
+        await wc.capturePage();
+        await sleep(300);
         const img = await wc.capturePage();
         const file = path.join(OUT_DIR, name + '.png');
         fs.writeFileSync(file, img.toPNG());
@@ -632,9 +654,9 @@ async function main() {
     await shot('15-trigger-words');
     }
 
-    // --- dal 7 al 18: Impostazioni AI e MCP, col ponte finto ---------------
-    // --- 7 to 18: AI and MCP Settings, with the fake bridge -----------------
-    if (vuole('07', '16', '17', '18')) {
+    // --- 7, 16-19: Impostazioni AI e MCP e semaforo MCP, col ponte finto ---
+    // --- 7, 16-19: AI and MCP Settings and the MCP light, with the fake bridge
+    if (vuole('07', '16', '17', '18', '19')) {
         await apriFinestra(true);
         // porta in vista una sezione del pannello Impostazioni (il pannello scorre)
         // brings a section of the Settings panel into view (the panel scrolls)
@@ -646,6 +668,7 @@ async function main() {
             return true;
         })()`);
 
+        if (vuole('07', '16', '17', '18')) {
         // 7. chiave e modello, come si vedono aprendo le Impostazioni
         //    key and model, as they look when Settings is opened
         await daCapo({ ai: true });
@@ -681,9 +704,77 @@ async function main() {
         })()`));
         await sleep(1400);
         await shot('18-help');
+        }
+
+        // 19. semaforo MCP giallo con la sua finestrella aperta e l'avviso delle foto cambiate.
+        //     Lo script fa la parte dell'AI esterna attraverso il ponte finto: legge le foto e
+        //     aggiunge "3d" (vero per tutto il dataset Sisu, che e' un film in 3D) alle prime sei.
+        //     La richiesta la esegue il codice vero del programma. Prima si apre la finestrella
+        //     (clic vero sul semaforo), poi l'AI lavora: cosi' l'avviso e' appena uscito e il
+        //     semaforo, giallo per 30 secondi dopo l'ultima chiamata, lo e' di sicuro.
+        //     the yellow MCP light with its small window open and the changed photos notice.
+        //     The script plays the external AI through the fake bridge: it reads the photos and
+        //     adds "3d" (true for the whole Sisu dataset, a 3D film) to the first six. The request
+        //     is run by the program's real code. The small window is opened first (a real click
+        //     on the light), then the AI works: so the notice has just come out and the light,
+        //     yellow for 30 seconds after the last call, surely is.
+        if (vuole('19')) {
+            await daCapo();
+            const aperta = () => run(`!!document.querySelector('[data-mcp-finestra]')`);
+            for (let tentativo = 1; tentativo <= 3 && !(await aperta()); tentativo++) {
+                await clickReale('[data-mcp-luce]', 0);
+                await sleep(1200);
+            }
+            console.log('   finestrella aperta:', await aperta());
+            const elencoMcp = await run(`window.__demoMcp.invia('list_photos', { limit: 50 })`);
+            const ids = ((elencoMcp && elencoMcp.risultato && elencoMcp.risultato.photos) || []).slice(0, 6).map(f => f.id);
+            const tagMcp = elenco ? '3d' : 'soft lighting';
+            const esito = await run(`window.__demoMcp.invia('add_tags', ${JSON.stringify({ ids, tags: [tagMcp] })})`);
+            console.log('   AI finta: foto', ids.length, 'cambiate', esito && esito.cambiate);
+            await sleep(1600);
+            console.log('   semaforo:', await run(`(document.querySelector('[data-mcp-luce]') || {}).dataset?.mcpLuce || 'assente'`),
+                '- finestrella ancora aperta:', await aperta());
+            // la luce gialla pulsa: si scatta quando e' accesa del tutto, non a meta' dissolvenza
+            // the yellow light pulses: shoot when it is fully lit, not halfway through the fade
+            console.log('   luce piena:', await run(`new Promise(fatto => {
+                const luce = document.querySelector('[data-mcp-luce] span');
+                const t0 = Date.now();
+                const guarda = () => {
+                    const o = luce ? Number(getComputedStyle(luce).opacity) : 1;
+                    if (o > 0.97 || Date.now() - t0 > 4000) {
+                        // ferma la pulsazione nel suo momento piu' acceso: la finestra nascosta non
+                        // ridisegna a ogni fotogramma, e lo scatto arriva qualche istante dopo
+                        // freeze the pulse at its brightest moment: the hidden window does not redraw
+                        // every frame, and the capture comes a moment later
+                        if (luce) luce.style.animationPlayState = 'paused';
+                        fatto(o);
+                    } else requestAnimationFrame(guarda);
+                };
+                guarda();
+            })`));
+            // ITALIANO: la finestra nascosta puo' restituire un fotogramma vecchio: si chiede un
+            //   ridisegno, si scarta il primo scatto e si tiene il secondo.
+            // ENGLISH: the hidden window may return a stale frame: ask for a redraw, throw the first
+            //   capture away and keep the second.
+            console.log('   indirizzo MCP sfocato in', await censuraIndirizzo(), 'righe');
+            wc.invalidate();
+            await sleep(600);
+            await wc.capturePage();
+            await sleep(600);
+            const img19 = await wc.capturePage();
+            fs.writeFileSync(path.join(OUT_DIR, '19-mcp-light.png'), img19.toPNG());
+            console.log('  ->', path.relative(ROOT, path.join(OUT_DIR, '19-mcp-light.png')), img19.getSize().width + 'x' + img19.getSize().height);
+        }
     }
 
     console.log('fine');
+    // ITALIANO: lo scatto 19 lascia tag non salvati, e la pagina con modifiche in sospeso blocca la
+    //   chiusura normale (beforeunload): la finestra nascosta resterebbe aperta per sempre.
+    //   destroy() la chiude senza chiedere.
+    // ENGLISH: shot 19 leaves unsaved tags, and the page with pending changes blocks a normal
+    //   close (beforeunload): the hidden window would stay open forever. destroy() closes it
+    //   without asking.
+    if (win && !win.isDestroyed()) win.destroy();
     app.quit();
 }
 

@@ -8,7 +8,7 @@
  *   like the cover (violet background, title, bullet list) with the app screenshot tilted
  *   in perspective, alternating right and left. Run it AFTER make-readme-shots.mjs.
  *
- *   npx electron scripts/make-feature-cards.mjs
+ *   npx electron scripts/make-feature-cards.mjs [--only 19,18]
  */
 import { app, BrowserWindow } from 'electron';
 import fs from 'fs';
@@ -22,6 +22,13 @@ const W = 1600;
 const H = 720;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// ITALIANO: --only 19,18 rifa solo le schede il cui nome comincia cosi'; il lato (destra o sinistra)
+//   resta quello della posizione nell'elenco, quindi una scheda nuova in mezzo sposta quelle dopo.
+// ENGLISH: --only 19,18 redoes only the cards whose name starts like that; the side (right or left)
+//   stays the one of the position in the list, so a new card in the middle shifts the ones after it.
+const argv = process.argv.slice(2);
+const iOnly = argv.indexOf('--only');
+const ONLY = iOnly >= 0 && argv[iOnly + 1] ? argv[iOnly + 1].split(',').map(s => s.trim()).filter(Boolean) : [];
 const dataUrl = file => 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
 
 // ---------------------------------------------------------------------------
@@ -126,6 +133,13 @@ const SCHEDE = [
         titolo: 'Tag with the AI<br>you already use', badge: 'BETA',
         testo: 'Claude Code, Claude Desktop, Cursor or any MCP client can look at the open photos and change their tags.',
         punti: ['Off by default, reachable only from this computer', 'Secret token, replaced with one click', 'It never saves: you press Save Changes'],
+    },
+    {
+        file: '19-mcp-light.png', nome: '19-mcp-light',
+        occhiello: 'MCP light',
+        titolo: 'See the AI work,<br>hear when it is done', badge: 'BETA',
+        testo: 'With the MCP server on, a light next to Trash shows what it is doing, and a chime tells you when the AI has finished changing tags.',
+        punti: ['Green listening, yellow working, red if it did not start', 'Click it for the address, token and setups to copy', 'Changed tags, then 30 s of quiet: chime and notice'],
     },
     {
         file: '18-help.png', nome: '18-help',
@@ -236,6 +250,7 @@ app.whenReady().then(async () => {
     const tmp = path.join(app.getPath('temp'), 'itm-feature.html');
     for (let i = 0; i < SCHEDE.length; i++) {
         const s = SCHEDE[i];
+        if (ONLY.length && !ONLY.some(o => s.nome.startsWith(o))) continue;
         if (!fs.existsSync(path.join(IMG_DIR, s.file))) { console.log('  manca', s.file); continue; }
         fs.writeFileSync(tmp, html(s, i % 2 === 0), 'utf8');
         await win.loadFile(tmp);
