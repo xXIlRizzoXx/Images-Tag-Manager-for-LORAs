@@ -54,6 +54,8 @@ It runs entirely on your machine and sends **no telemetry**. AI tagging is **opt
 
 <img src="docs/img/features/17-mcp.jpg" alt="MCP server: Claude Code, Claude Desktop, Cursor or any MCP client can see the open photos and change their tags, without ever saving" width="100%" />
 
+<img src="docs/img/features/19-mcp-light.jpg" alt="MCP light: next to Trash, green while the server listens, yellow while an external AI works, red if it did not start; a click shows the connection details, and a chime tells you when the AI has finished changing tags" width="100%" />
+
 <img src="docs/img/features/18-help.jpg" alt="Help where you need it: a question-mark button next to every Settings section opens its explanation" width="100%" />
 
 <img src="docs/img/features/13-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />

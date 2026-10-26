@@ -71,6 +71,6 @@ const rigaPonte = righe.find(r => r.includes('mcp-remote')) || '';
 dice('README: la riga di mcp-remote si trova', true, rigaPonte.length > 0);
 dice('README: la riga di mcp-remote dice che serve Node.js', true, rigaPonte.includes('Node.js'));
 dice('README: la riga di mcp-remote dice che Claude Code e Cursor non ne hanno bisogno', true, rigaPonte.includes('Claude Code') && /Cursor/.test(rigaPonte.slice(rigaPonte.indexOf('Node.js'))));
-dice('README: l\'app resta "No Node.js, no setup"', true, righe.some(r => r.includes('No Node.js, no setup')));
+dice('README: l\'app resta "No Node.js needed"', true, righe.some(r => r.includes('No Node.js needed')));
 
 process.exit(esito());
