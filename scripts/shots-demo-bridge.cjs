@@ -24,11 +24,15 @@ const { contextBridge } = require('electron');
 
 const CHIAVE_DEMO = 'AIzaDEMO-only-for-the-readme-screenshots';
 let mcpAcceso = true;
-const stato = () => ({ acceso: mcpAcceso, attivo: mcpAcceso, porta: 37620, codice: 'demo-token-for-screenshots', errore: '' });
+// ITALIANO: come in main.cjs, l'ora dell'ultima chiamata dell'AI: senza, il semaforo resta rosso.
+// ENGLISH: as in main.cjs, the time of the AI's last call: without it the light stays red.
+let ultimoContatto = 0;
+const stato = () => ({ acceso: mcpAcceso, attivo: mcpAcceso, porta: 37620, codice: 'demo-token-for-screenshots', errore: '', ultimoContatto });
 
 // ITALIANO: chi ascolta le richieste (la pagina) e le risposte ancora attese, per numero.
 // ENGLISH: who listens to the requests (the page) and the answers still awaited, by number.
 const ascoltatori = new Set();
+const ascoltatoriStato = new Set();
 const inAttesa = new Map();
 let prossimoId = 1;
 
@@ -47,6 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ascoltatori.add(cb);
             return () => { ascoltatori.delete(cb); };
         },
+        onStatus: (cb) => {
+            ascoltatoriStato.add(cb);
+            return () => { ascoltatoriStato.delete(cb); };
+        },
         respond: (id, risposta) => {
             const fine = inAttesa.get(id);
             if (!fine) return;
@@ -61,6 +69,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 contextBridge.exposeInMainWorld('__demoMcp', {
     invia: (strumento, argomenti) => new Promise((risolvi) => {
         if (ascoltatori.size === 0) { risolvi({ errore: 'nobody is listening' }); return; }
+        ultimoContatto = Date.now();
+        for (const cb of ascoltatoriStato) cb(stato());
         const id = prossimoId++;
         inAttesa.set(id, risolvi);
         for (const cb of ascoltatori) cb({ id, strumento: String(strumento), argomenti: argomenti || {} });
