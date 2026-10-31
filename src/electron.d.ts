@@ -86,6 +86,9 @@ export interface McpStatus {
     porta: number;
     codice: string;
     errore: '' | 'porta' | 'avvio' | 'salvataggio';
+    /** ITALIANO: ultimo contatto di un'AI col codice giusto, in ms (0 = nessuno da quando il server e' partito).
+     *  ENGLISH: last contact from an AI with the right token, in ms (0 = none since the server started). */
+    ultimoContatto?: number;
 }
 export interface McpRichiesta {
     id: number;
@@ -99,6 +102,8 @@ export interface ElectronMcp {
     /** ITALIANO: restituisce la funzione che smette di ascoltare. ENGLISH: returns the unsubscribe function. */
     onRequest: (cb: (richiesta: McpRichiesta) => void) => () => void;
     respond: (id: number, risposta: unknown) => void;
+    /** ITALIANO: restituisce la funzione che smette di ascoltare. ENGLISH: returns the unsubscribe function. */
+    onStatus: (cb: (stato: McpStatus) => void) => () => void;
 }
 
 declare global {

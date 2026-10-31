@@ -185,12 +185,14 @@ console.log('\n--- il semaforo in App.tsx ---');
     const blocco = inizio < 0 ? '' : pulito.slice(inizio, pulito.indexOf('})()}', inizio));
     dice('il semaforo esiste ed e\' prima del tasto Cestino', true, blocco !== '' && inizio < pulito.indexOf('<button onClick={() => setIsTrashOpen(true)}'));
     dice('si vede solo nel programma installato e con il server MCP acceso', true, blocco.startsWith('{window.electronAPI?.mcp && mcpStato?.acceso && '));
-    dice('rosso con porta o avvio falliti, grigio mentre parte, giallo al lavoro, verde in ascolto; un salvataggio fallito resta verde', true,
-        /const stato = mcpStato\.errore === 'porta' \|\| mcpStato\.errore === 'avvio' \? 'errore' : !mcpStato\.attivo \? 'partenza' : mcpAlLavoro \? 'lavoro' : 'ascolto';/.test(blocco)
+    // ITALIANO: dalla 2.0.3 il rosso pieno e' "nessuna AI collegata" e il guasto e' il triangolo (test-mcp-light-no-ai.mjs).
+    // ENGLISH: since 2.0.3 plain red is "no AI connected" and the fault is the triangle (test-mcp-light-no-ai.mjs).
+    dice('triangolo con porta o avvio falliti, grigio mentre parte, giallo al lavoro, rosso senza AI, verde dopo; un salvataggio fallito non cambia la luce', true,
+        /const stato = mcpStato\.errore === 'porta' \|\| mcpStato\.errore === 'avvio' \? 'errore' : !mcpStato\.attivo \? 'partenza' : mcpAlLavoro \? 'lavoro' : !mcpStato\.ultimoContatto \? 'attesa' : 'ascolto';/.test(blocco)
         && /partenza: 'bg-gray-400'/.test(blocco) && /partenza: t\.mcpTitle/.test(blocco) && !/mcpErrStart/.test(blocco)
-        && /errore: 'bg-red-500/.test(blocco) && /lavoro: 'bg-amber-400/.test(blocco) && /ascolto: 'bg-emerald-500/.test(blocco));
+        && /stato === 'errore'\s*\?\s*<AlertTriangle[^>]*text-red-500/.test(blocco) && /attesa: 'bg-red-500/.test(blocco) && /lavoro: 'bg-amber-400/.test(blocco) && /ascolto: 'bg-emerald-500/.test(blocco));
     dice('ogni stato ha la sua spiegazione tradotta (title e aria-label)', true,
-        /errore: t\.mcpLightError, partenza: t\.mcpTitle, lavoro: t\.mcpLightBusy, ascolto: t\.mcpLightOn/.test(blocco)
+        /errore: t\.mcpLightError, partenza: t\.mcpTitle, lavoro: t\.mcpLightBusy, attesa: t\.mcpLightWaiting, ascolto: t\.mcpLightOn/.test(blocco)
         && /title=\{testo\}/.test(blocco) && /aria-label=\{testo\}/.test(blocco));
     dice('il clic apre e chiude la finestrella (rileggendo lo stato), non le Impostazioni', true,
         /if \(!mcpFinestraAperta\) window\.electronAPI\?\.mcp\?\.getStatus\(\)\.then\(setMcpStato\)/.test(blocco)
@@ -252,7 +254,7 @@ console.log('\n--- il gestore MCP vero di src/App.tsx ---');
         /mcpFineRef\.current = creaFineLavoroMcp\(\(\) => \{ if \(!mcpAccesoRef\.current\) return; soundManager\.chime\(\); mcpAvvisoRef\.current\(\); \}, \{ attivita: setMcpAlLavoro \}\)/.test(pulito)
         && /mcpAccesoRef\.current = !!mcpStato\?\.acceso;/.test(pulito));
     dice('allo smontaggio l\'attesa si ferma', true,
-        /const smetti = api\.onRequest\([^\n]*\n\s*return \(\) => \{ smetti\(\); mcpFineRef\.current\?\.ferma\(\); \};/.test(pulito));
+        /const smetti = api\.onRequest\([^\n]*\n[^\n]*onStatus[^\n]*\n\s*return \(\) => \{ smetti\(\); smettiStato\(\); mcpFineRef\.current\?\.ferma\(\); \};/.test(pulito));
 }
 
 process.exit(esito());

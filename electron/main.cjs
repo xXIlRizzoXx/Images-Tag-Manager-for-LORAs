@@ -1088,6 +1088,32 @@ let mcpServer = null;
 let mcpErrore = '';
 let mcpProssimoId = 1;
 const mcpInAttesa = new Map();
+// ITALIANO: ultimo contatto di un'AI col codice giusto (0 = nessuno da quando il server e' partito).
+//           Il server e' "senza sessione": nessuna linea resta aperta, quindi questo e' tutto quello
+//           che si puo' sapere. Il giro scarta i contatti di un server gia' fermato (codice vecchio).
+// ENGLISH: last contact from an AI with the right token (0 = none since the server started). The
+//          server is stateless: no line stays open, so this is all that can be known. The round
+//          drops contacts from a server already stopped (old token).
+let mcpUltimoContatto = 0;
+let mcpUltimoAvviso = 0;
+let mcpGiro = 0;
+const MCP_AVVISO_CONTATTO_MS = 30000;
+const segnaContattoMcp = (giro) => {
+    if (giro !== mcpGiro) return;
+    const ora = Date.now();
+    mcpUltimoContatto = ora;
+    // ITALIANO: la finestra si avvisa al primo contatto e poi al massimo ogni 30 s: con centinaia di
+    //           chiamate di fila non si ridisegna tutto a ogni chiamata. Il conto parte dall'ultimo
+    //           AVVISO, non dall'ultimo contatto: con un'AI che chiama di continuo l'ora mostrata
+    //           si aggiorna lo stesso ogni 30 s.
+    // ENGLISH: the window is told at the first contact and then at most every 30 s: with hundreds of
+    //          calls in a row everything is not redrawn at every call. The count starts from the last
+    //          NOTICE, not the last contact: with an AI calling non-stop the time shown still moves on
+    //          every 30 s.
+    if (mcpUltimoAvviso && ora - mcpUltimoAvviso < MCP_AVVISO_CONTATTO_MS) return;
+    mcpUltimoAvviso = ora;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mcp:status', statoMcp());
+};
 
 const chiediAllaFinestra = (strumento, argomenti) => new Promise((risolvi) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -1114,11 +1140,14 @@ ipcMain.on('mcp:response', (event, messaggio) => {
 });
 const statoMcp = () => {
     const c = leggiMcp();
-    return { acceso: c.acceso, attivo: mcpServer !== null, porta: MCP_PORTA, codice: c.codice, errore: mcpErrore };
+    return { acceso: c.acceso, attivo: mcpServer !== null, porta: MCP_PORTA, codice: c.codice, errore: mcpErrore, ultimoContatto: mcpUltimoContatto };
 };
 const fermaMcp = async () => {
     const s = mcpServer;
     mcpServer = null;
+    mcpGiro++;
+    mcpUltimoContatto = 0;
+    mcpUltimoAvviso = 0;
     if (s) { try { await s.chiudi(); } catch (_) { } }
     for (const voce of mcpInAttesa.values()) {
         clearTimeout(voce.timer);
@@ -1136,7 +1165,8 @@ const avviaMcp = async () => {
     }
     try {
         const { avviaServerMcp } = require('./mcp-server.cjs');
-        mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion });
+        const giro = mcpGiro;
+        mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion, contatto: () => segnaContattoMcp(giro) });
     } catch (e) {
         mcpServer = null;
         // ITALIANO: 'porta' = un altro programma usa gia' la porta (EADDRINUSE) oppure Windows l'ha riservata

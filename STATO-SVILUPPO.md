@@ -1,7 +1,15 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 26 ottobre 2026
-**Versione attuale:** 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 31 ottobre 2026
+**Versione attuale:** 2.0.3 in sviluppo (31 ottobre 2026, non ancora costruita). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità 2.0.3 (traguardo 118, 31 ottobre 2026): **il semaforino MCP dice se un'AI si è collegata davvero.**
+Prima era verde appena il server ascoltava, anche senza nessuna AI: chi aveva dato il comando sbagliato
+all'AI vedeva verde e credeva di essere collegato. Ora è rosso finché un'AI col codice giusto non si fa
+viva, verde dopo (la finestrella e le Impostazioni dicono l'ora dell'ultimo contatto), giallo mentre lavora;
+il server che non parte ha il triangolo rosso. Il server non tiene linee aperte, quindi «collegata» vuol
+dire «ha parlato col codice giusto»: spegnendo il server o creando un codice nuovo si riparte dal rosso.
+Due revisioni di un agente: 3 minori nella prima (ora ferma con un'AI sempre al lavoro, due testi non
+veri), 2 testi nella seconda, tutti corretti. 276 file di prove automatiche verdi.
 Novità 2.0.2 (traguardo 117, 26 ottobre 2026): **una portable in .zip per chi ha l'antivirus che blocca
 l'installer.** Avast ha fermato l'installer 2.0.2, nuovo e non firmato, per il suo comportamento (estrae
 file, chiude il programma aperto) e pochi secondi dopo lo ha dichiarato pulito. Accanto a installer e

@@ -583,7 +583,7 @@ export default function App() {
     //           usa il valore di riserva qui sotto.
     // ENGLISH: Version shown in settings — read from package.json via Electron, so the built app
     //          is ALWAYS current without a manual edit. In browser/dev it uses the fallback below.
-    const [appVersion, setAppVersion] = useState<string>('2.0.2');
+    const [appVersion, setAppVersion] = useState<string>('2.0.3');
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (api && typeof api.getAppVersion === 'function') {
@@ -1880,7 +1880,8 @@ export default function App() {
         if (!api) return undefined;
         api.getStatus().then(setMcpStato).catch(() => { });
         const smetti = api.onRequest((r) => { mcpGestoreRef.current(r); });
-        return () => { smetti(); mcpFineRef.current?.ferma(); };
+        const smettiStato = api.onStatus?.((s) => setMcpStato(s)) ?? (() => { });
+        return () => { smetti(); smettiStato(); mcpFineRef.current?.ferma(); };
     }, []);
     const cambiaMcp = async (acceso: boolean) => {
         const api = window.electronAPI?.mcp;
@@ -1927,6 +1928,11 @@ export default function App() {
             {mcpStato?.acceso && mcpStato.attivo && (
                 <>
                     <p className={`font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{t.mcpListening.replace('{url}', indirizzoMcp)}</p>
+                    {/* ITALIANO: il server non tiene linee aperte: si sa solo quando un'AI si e' fatta viva l'ultima volta.
+                        ENGLISH: the server keeps no line open: only when an AI last showed up can be known. */}
+                    {mcpStato.ultimoContatto
+                        ? <p data-mcp-contatto className="leading-snug">{t.mcpLastContact.replace('{ora}', new Date(mcpStato.ultimoContatto).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }))}</p>
+                        : <p data-mcp-contatto="nessuno" className={`leading-snug ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{t.mcpNoAiYet}</p>}
                     <div className="flex flex-col gap-1">
                         <label className="font-medium text-[11px]">{t.mcpToken}</label>
                         <div className="flex items-center gap-1">
@@ -7176,22 +7182,28 @@ export default function App() {
                             <h1 className={`text-lg md:text-xl font-bold bg-clip-text text-transparent ${isDarkMode ? 'bg-gradient-to-r from-white to-gray-300' : 'bg-gradient-to-r from-gray-900 to-gray-600'} whitespace-nowrap`}>{t.appTitle}</h1>
                         </div>
                         <div className="flex-1 flex justify-end w-full md:w-auto gap-2">
-                            {/* ITALIANO: semaforo del server MCP, solo con il server acceso nelle Impostazioni: verde in
-                                          ascolto, giallo con un'AI al lavoro, rosso se acceso ma non partito. Il clic apre
+                            {/* ITALIANO: semaforo del server MCP, solo con il server acceso nelle Impostazioni: verde se
+                                          un'AI si e' gia' collegata, giallo con un'AI al lavoro, rosso se nessuna AI si e' ancora
+                                          collegata, triangolo rosso se acceso ma non partito. Il clic apre
                                           una finestrella con lo stato e i dati da dare alle AI esterne.
-                                ENGLISH: MCP server light, only with the server switched on in Settings: green listening,
-                                         yellow with an AI at work, red if on but not started. A click opens a small window
+                                ENGLISH: MCP server light, only with the server switched on in Settings: green once an AI
+                                         has connected, yellow with an AI at work, red while no AI has connected yet, red triangle
+                                         if on but not started. A click opens a small window
                                          with the state and the details to give to external AIs. */}
                             {window.electronAPI?.mcp && mcpStato?.acceso && (() => {
-                                // ITALIANO: rosso solo se il server non gira; un salvataggio fallito con il server attivo
-                                //           resta verde (l'errore lo dice la finestrella).
-                                // ENGLISH: red only if the server is not running; a failed save with the server active
-                                //          stays green (the small window tells the error).
+                                // ITALIANO: il triangolo solo se il server non gira; un salvataggio fallito con il server attivo
+                                //           non cambia la luce (l'errore lo dice la finestrella).
+                                // ENGLISH: the triangle only if the server is not running; a failed save with the server
+                                //          active does not change the light (the small window tells the error).
                                 // ITALIANO: acceso ma non ancora attivo, senza errori, vuol dire che sta partendo: grigio.
                                 // ENGLISH: on but not active yet, with no error, means it is starting: grey.
-                                const stato = mcpStato.errore === 'porta' || mcpStato.errore === 'avvio' ? 'errore' : !mcpStato.attivo ? 'partenza' : mcpAlLavoro ? 'lavoro' : 'ascolto';
-                                const testo = { errore: t.mcpLightError, partenza: t.mcpTitle, lavoro: t.mcpLightBusy, ascolto: t.mcpLightOn }[stato];
-                                const luce = { errore: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]', partenza: 'bg-gray-400', lavoro: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse', ascolto: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' }[stato];
+                                // ITALIANO: attivo ma nessuna AI col codice giusto si e' ancora fatta viva: rosso ("attesa").
+                                //           Il guasto vero si distingue col triangolo al posto del pallino.
+                                // ENGLISH: active but no AI with the right token has shown up yet: red ("attesa"). The
+                                //          real fault is told apart by the triangle in place of the dot.
+                                const stato = mcpStato.errore === 'porta' || mcpStato.errore === 'avvio' ? 'errore' : !mcpStato.attivo ? 'partenza' : mcpAlLavoro ? 'lavoro' : !mcpStato.ultimoContatto ? 'attesa' : 'ascolto';
+                                const testo = { errore: t.mcpLightError, partenza: t.mcpTitle, lavoro: t.mcpLightBusy, attesa: t.mcpLightWaiting, ascolto: t.mcpLightOn }[stato];
+                                const luce = { errore: '', partenza: 'bg-gray-400', lavoro: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse', attesa: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]', ascolto: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' }[stato];
                                 return (
                                     <div className="relative" ref={mcpFinestraRef}>
                                         <button
@@ -7206,7 +7218,9 @@ export default function App() {
                                             }}
                                             className={`flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-xl ${isDarkMode ? 'bg-gray-800/50 hover:bg-gray-700 border-gray-700/50 text-gray-300' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-600'} border shadow-sm transition-colors focus:outline-none`}
                                         >
-                                            <span className={`w-3 h-3 rounded-full shrink-0 ${luce}`} />
+                                            {stato === 'errore'
+                                                ? <AlertTriangle size={14} strokeWidth={2.5} className="shrink-0 text-red-500" />
+                                                : <span className={`w-3 h-3 rounded-full shrink-0 ${luce}`} />}
                                             <span className="font-semibold text-sm hidden sm:inline-block">MCP</span>
                                         </button>
                                         {mcpFinestraAperta && (

@@ -139,7 +139,7 @@ const SCHEDE = [
         occhiello: 'MCP light',
         titolo: 'See the AI work,<br>hear when it is done', badge: 'BETA',
         testo: 'With the MCP server on, a light next to Trash shows what it is doing, and a chime tells you when the AI has finished changing tags.',
-        punti: ['Green listening, yellow working, red if it did not start', 'Click it for the address, token and setups to copy', 'Changed tags, then 30 s of quiet: chime and notice'],
+        punti: ['Red until an AI connects, green after, yellow while it works', 'Click it for the address, token and setups to copy', 'Changed tags, then 30 s of quiet: chime and notice'],
     },
     {
         file: '18-help.png', nome: '18-help',

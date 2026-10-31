@@ -372,7 +372,13 @@ export const translations = {
         mcpCopyFailed: "Non è stato possibile copiare negli appunti.",
         mcpEditedNotice: "Foto con i tag cambiati da un'AI esterna: {n}. Non sono ancora salvati: controllali e premi «Salva Modifiche».",
         mcpEditedNoticeOne: "Un'AI esterna ha cambiato i tag di una foto. Non sono ancora salvati: controllala e premi «Salva Modifiche».",
-        mcpLightOn: "Server MCP acceso e in ascolto: adesso nessuna AI sta lavorando. Clicca per i dati da dare alle AI esterne.",
+        mcpLightOn: "Server MCP acceso: un'AI si è già collegata, ma adesso non sta lavorando. Clicca per l'ultimo contatto e i dati di collegamento.",
+
+        mcpLightWaiting: "Server MCP acceso e in ascolto, ma nessuna AI si è ancora collegata. Clicca per i dati da dare alle AI esterne.",
+
+        mcpNoAiYet: "Nessuna AI si è ancora collegata. Copia il comando o la configurazione qui sotto e dalla alla tua AI: la spia diventa verde al primo contatto.",
+
+        mcpLastContact: "Ultimo contatto con un'AI: {ora}",
         mcpLightBusy: "Server MCP: un'AI esterna sta lavorando sulle foto.",
         mcpLightError: "Server MCP acceso ma non partito. Clicca per vedere il motivo.",
         aiCardTagging: "Come tagga",
@@ -786,7 +792,13 @@ export const translations = {
         mcpCopyFailed: "Could not copy to the clipboard.",
         mcpEditedNotice: "Photos whose tags were changed by an external AI: {n}. They are not saved yet: review them and press \"Save Changes\".",
         mcpEditedNoticeOne: "An external AI changed the tags of a photo. They are not saved yet: review the photo and press \"Save Changes\".",
-        mcpLightOn: "MCP server on and listening: no AI is working right now. Click for the details to give to external AIs.",
+        mcpLightOn: "MCP server on: an AI has connected, but none is working right now. Click for the last contact and the connection details.",
+
+        mcpLightWaiting: "MCP server on and listening, but no AI has connected yet. Click for the details to give to external AIs.",
+
+        mcpNoAiYet: "No AI has connected yet. Copy the command or configuration below and give it to your AI: the light turns green at the first contact.",
+
+        mcpLastContact: "Last contact with an AI: {ora}",
         mcpLightBusy: "MCP server: an external AI is working on the photos.",
         mcpLightError: "MCP server on but not started. Click to see why.",
         aiCardTagging: "How it tags",
@@ -1200,7 +1212,13 @@ export const translations = {
         mcpCopyFailed: "Impossible de copier dans le presse-papiers.",
         mcpEditedNotice: "Photos dont les tags ont été modifiés par une IA externe : {n}. Ils ne sont pas encore enregistrés : vérifiez-les et appuyez sur « Enregistrer les modifications ».",
         mcpEditedNoticeOne: "Une IA externe a modifié les tags d'une photo. Ils ne sont pas encore enregistrés : vérifiez-la et appuyez sur « Enregistrer les modifications ».",
-        mcpLightOn: "Serveur MCP activé et à l'écoute : aucune IA ne travaille pour le moment. Cliquez pour les informations à donner aux IA externes.",
+        mcpLightOn: "Serveur MCP activé : une IA s'est déjà connectée, mais aucune ne travaille pour le moment. Cliquez pour le dernier contact et les informations de connexion.",
+
+        mcpLightWaiting: "Serveur MCP activé et à l'écoute, mais aucune IA ne s'est encore connectée. Cliquez pour les informations à donner aux IA externes.",
+
+        mcpNoAiYet: "Aucune IA ne s'est encore connectée. Copiez la commande ou la configuration ci-dessous et donnez-la à votre IA : le voyant passe au vert au premier contact.",
+
+        mcpLastContact: "Dernier contact avec une IA : {ora}",
         mcpLightBusy: "Serveur MCP : une IA externe travaille sur les photos.",
         mcpLightError: "Serveur MCP activé mais non démarré. Cliquez pour voir pourquoi.",
         aiCardTagging: "Comment il tague",
@@ -1614,7 +1632,13 @@ export const translations = {
         mcpCopyFailed: "No se ha podido copiar al portapapeles.",
         mcpEditedNotice: "Fotos con etiquetas cambiadas por una IA externa: {n}. Aún no están guardadas: revísalas y pulsa «Guardar cambios».",
         mcpEditedNoticeOne: "Una IA externa ha cambiado las etiquetas de una foto. Aún no están guardadas: revísala y pulsa «Guardar cambios».",
-        mcpLightOn: "Servidor MCP encendido y a la escucha: ahora ninguna IA está trabajando. Haz clic para ver los datos que hay que dar a las IA externas.",
+        mcpLightOn: "Servidor MCP encendido: una IA ya se ha conectado, pero ahora ninguna está trabajando. Haz clic para ver el último contacto y los datos de conexión.",
+
+        mcpLightWaiting: "Servidor MCP encendido y a la escucha, pero todavía no se ha conectado ninguna IA. Haz clic para ver los datos que hay que dar a las IA externas.",
+
+        mcpNoAiYet: "Todavía no se ha conectado ninguna IA. Copia el comando o la configuración de abajo y dáselo a tu IA: el indicador se pone verde con el primer contacto.",
+
+        mcpLastContact: "Último contacto con una IA: {ora}",
         mcpLightBusy: "Servidor MCP: una IA externa está trabajando en las fotos.",
         mcpLightError: "Servidor MCP encendido pero no iniciado. Haz clic para ver el motivo.",
         aiCardTagging: "Cómo etiqueta",
@@ -2028,7 +2052,13 @@ export const translations = {
         mcpCopyFailed: "Kopieren in die Zwischenablage nicht möglich.",
         mcpEditedNotice: "Fotos, deren Tags eine externe KI geändert hat: {n}. Sie sind noch nicht gespeichert: Prüfen Sie sie und drücken Sie „Änderungen speichern“.",
         mcpEditedNoticeOne: "Eine externe KI hat die Tags eines Fotos geändert. Sie sind noch nicht gespeichert: Prüfen Sie das Foto und drücken Sie „Änderungen speichern“.",
-        mcpLightOn: "MCP-Server ist an und lauscht: Gerade arbeitet keine KI. Klicken Sie hier für die Angaben, die externe KIs brauchen.",
+        mcpLightOn: "MCP-Server an: Eine KI hat sich bereits verbunden, arbeitet aber gerade nicht. Klicken Sie für den letzten Kontakt und die Verbindungsdaten.",
+
+        mcpLightWaiting: "MCP-Server an und empfangsbereit, aber noch keine KI hat sich verbunden. Klicken Sie für die Daten, die Sie externen KIs geben.",
+
+        mcpNoAiYet: "Noch keine KI hat sich verbunden. Kopieren Sie den Befehl oder die Konfiguration unten und geben Sie sie Ihrer KI: Beim ersten Kontakt wird die Anzeige grün.",
+
+        mcpLastContact: "Letzter Kontakt mit einer KI: {ora}",
         mcpLightBusy: "MCP-Server: Eine externe KI arbeitet an den Fotos.",
         mcpLightError: "MCP-Server ist an, aber nicht gestartet. Klicken Sie hier, um den Grund zu sehen.",
         aiCardTagging: "So wird getaggt",
@@ -2442,7 +2472,13 @@ export const translations = {
         mcpCopyFailed: "无法复制到剪贴板。",
         mcpEditedNotice: "被外部 AI 修改了标签的照片：{n}。尚未保存：请检查后点击“保存更改”。",
         mcpEditedNoticeOne: "外部 AI 修改了一张照片的标签。尚未保存：请检查后点击“保存更改”。",
-        mcpLightOn: "MCP 服务器已开启并在监听：目前没有 AI 在工作。点击查看要提供给外部 AI 的连接信息。",
+        mcpLightOn: "MCP 服务器已开启：已有 AI 连接过，但现在没有 AI 在工作。点击查看最后一次联系时间和连接信息。",
+
+        mcpLightWaiting: "MCP 服务器已开启并在监听，但还没有 AI 连接。点击查看要提供给外部 AI 的信息。",
+
+        mcpNoAiYet: "还没有 AI 连接。请复制下面的命令或配置交给你的 AI：第一次联系后指示灯会变绿。",
+
+        mcpLastContact: "与 AI 的最后一次联系：{ora}",
         mcpLightBusy: "MCP 服务器：外部 AI 正在处理照片。",
         mcpLightError: "MCP 服务器已开启但未能启动。点击查看原因。",
         aiCardTagging: "打标签方式",
@@ -2856,7 +2892,13 @@ export const translations = {
         mcpCopyFailed: "クリップボードにコピーできませんでした。",
         mcpEditedNotice: "外部 AI がタグを変更した写真: {n}。まだ保存されていません。確認して「変更を保存」を押してください。",
         mcpEditedNoticeOne: "外部 AI が写真 1 枚のタグを変更しました。まだ保存されていません。確認して「変更を保存」を押してください。",
-        mcpLightOn: "MCP サーバーはオンで待ち受け中です。現在作業中の AI はありません。クリックすると外部 AI に渡す接続情報を表示します。",
+        mcpLightOn: "MCP サーバーはオン：AI がすでに接続しましたが、今は作業していません。クリックすると最後の接続時刻と接続情報を表示します。",
+
+        mcpLightWaiting: "MCP サーバーはオンで待ち受け中ですが、まだ AI が接続していません。クリックすると外部 AI に渡す情報を表示します。",
+
+        mcpNoAiYet: "まだ AI が接続していません。下のコマンドまたは設定をコピーして AI に渡してください。最初の接続でランプが緑になります。",
+
+        mcpLastContact: "AI との最後の接続：{ora}",
         mcpLightBusy: "MCP サーバー：外部 AI が写真を処理しています。",
         mcpLightError: "MCP サーバーはオンですが起動していません。クリックすると原因を表示します。",
         aiCardTagging: "タグ付けの方法",
@@ -3270,7 +3312,13 @@ export const translations = {
         mcpCopyFailed: "Não foi possível copiar para a área de transferência.",
         mcpEditedNotice: "Fotos com tags mudadas por uma IA externa: {n}. Ainda não foram salvas: confira e aperte \"Salvar Alterações\".",
         mcpEditedNoticeOne: "Uma IA externa mudou as tags de uma foto. Ainda não foram salvas: confira e aperte \"Salvar Alterações\".",
-        mcpLightOn: "Servidor MCP ligado e escutando: nenhuma IA está trabalhando agora. Clique para ver os dados que você passa às IAs externas.",
+        mcpLightOn: "Servidor MCP ligado: uma IA já se conectou, mas nenhuma está trabalhando agora. Clique para ver o último contato e os dados de conexão.",
+
+        mcpLightWaiting: "Servidor MCP ligado e escutando, mas nenhuma IA se conectou ainda. Clique para ver os dados a passar para as IAs externas.",
+
+        mcpNoAiYet: "Nenhuma IA se conectou ainda. Copie o comando ou a configuração abaixo e passe para a sua IA: a luz fica verde no primeiro contato.",
+
+        mcpLastContact: "Último contato com uma IA: {ora}",
         mcpLightBusy: "Servidor MCP: uma IA externa está trabalhando nas fotos.",
         mcpLightError: "Servidor MCP ligado, mas não iniciado. Clique para ver o motivo.",
         aiCardTagging: "Como gera as tags",
@@ -3684,7 +3732,13 @@ export const translations = {
         mcpCopyFailed: "Не удалось скопировать в буфер обмена.",
         mcpEditedNotice: "Фото, теги которых изменил внешний ИИ: {n}. Они ещё не сохранены: проверьте их и нажмите «Сохранить изменения».",
         mcpEditedNoticeOne: "Внешний ИИ изменил теги одного фото. Они ещё не сохранены: проверьте его и нажмите «Сохранить изменения».",
-        mcpLightOn: "MCP-сервер включён и ждёт подключений: сейчас ни один ИИ не работает. Нажмите, чтобы увидеть данные для подключения внешних ИИ.",
+        mcpLightOn: "Сервер MCP включён: ИИ уже подключался, но сейчас никто не работает. Нажмите, чтобы увидеть время последнего обращения и данные для подключения.",
+
+        mcpLightWaiting: "Сервер MCP включён и слушает, но ни один ИИ ещё не подключился. Нажмите, чтобы увидеть данные для внешних ИИ.",
+
+        mcpNoAiYet: "Ни один ИИ ещё не подключился. Скопируйте команду или конфигурацию ниже и передайте её своему ИИ: при первом обращении индикатор станет зелёным.",
+
+        mcpLastContact: "Последнее обращение ИИ: {ora}",
         mcpLightBusy: "MCP-сервер: внешний ИИ работает с фото.",
         mcpLightError: "MCP-сервер включён, но не запущен. Нажмите, чтобы узнать причину.",
         aiCardTagging: "Как ставит теги",

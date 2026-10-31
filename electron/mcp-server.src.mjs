@@ -164,10 +164,14 @@ const rispondi = (res, codice, messaggio) => {
 };
 
 // ITALIANO: avvia il server. Risponde con { porta, chiudi } oppure rifiuta (es. porta occupata).
-//           Modalita' "senza sessione": ogni richiesta ha il suo server e il suo trasporto.
+//           Modalita' "senza sessione": ogni richiesta ha il suo server e il suo trasporto, quindi
+//           nessuna linea resta aperta e "un'AI e' collegata" si puo' sapere solo dalle richieste:
+//           `contatto` (facoltativo) si chiama a ogni richiesta col codice giusto.
 // ENGLISH: starts the server. Resolves with { porta, chiudi } or rejects (e.g. port in use).
-//          "Stateless" mode: every request gets its own server and transport.
-export const avviaServerMcp = ({ porta, codice, chiedi, versione }) => new Promise((risolvi, rifiuta) => {
+//          "Stateless" mode: every request gets its own server and transport, so no line stays
+//          open and "an AI is connected" can only be told from the requests: `contatto`
+//          (optional) is called on every request with the right token.
+export const avviaServerMcp = ({ porta, codice, chiedi, versione, contatto }) => new Promise((risolvi, rifiuta) => {
     const httpServer = http.createServer(async (req, res) => {
         try {
             const percorso = String(req.url || '').split('?')[0];
@@ -186,6 +190,7 @@ export const avviaServerMcp = ({ porta, codice, chiedi, versione }) => new Promi
                 return rispondi(res, 401, 'Unauthorized');
             }
             if (req.method !== 'POST') return rispondi(res, 405, 'Method not allowed');
+            if (typeof contatto === 'function') { try { contatto(); } catch (_) { } }
             const corpo = await leggiCorpo(req);
             // ITALIANO: il trasporto "web standard" della libreria, con la risposta scritta qui. Il
             //           convertitore Node incluso nella libreria, una volta impacchettato, dichiarava

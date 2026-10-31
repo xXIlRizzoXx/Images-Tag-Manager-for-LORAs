@@ -41,8 +41,8 @@ const esposti = [];
 const canaliChiamati = [];
 const argomentiChiamati = [];
 const risposta = (canale) => ({ rispostaDi: canale });
-// ITALIANO: send/on/removeListener servono solo al server MCP, e solo sui suoi due canali.
-// ENGLISH: send/on/removeListener are only for the MCP server, and only on its two channels.
+// ITALIANO: send/on/removeListener servono solo al server MCP, e solo sui suoi tre canali.
+// ENGLISH: send/on/removeListener are only for the MCP server, and only on its three channels.
 const inviati = [];
 const ascolti = [];
 const tolti = [];
@@ -53,7 +53,7 @@ const ipcRenderer = {
         inviati.push({ canale, argomenti });
     },
     on: (canale, fn) => {
-        if (canale !== 'mcp:request') throw new Error('test-preload-bridge: ipcRenderer.on is only expected on mcp:request');
+        if (canale !== 'mcp:request' && canale !== 'mcp:status') throw new Error('test-preload-bridge: ipcRenderer.on is only expected on mcp:request and mcp:status');
         ascolti.push({ canale, fn });
     },
     removeListener: (canale, fn) => { tolti.push({ canale, fn }); },
@@ -115,9 +115,9 @@ dice('ogni canale registrato in main.cjs e\' raggiungibile dal preload', [], reg
 //           undefined); getPathForFile e' l'unico che non passa da un canale.
 // ENGLISH: a method that uses a channel returns its answer (otherwise the page would get
 //          undefined); getPathForFile is the only one that does not go through a channel.
-const SENZA_INVOKE = ['getPathForFile', 'mcp.onRequest', 'mcp.respond'];
+const SENZA_INVOKE = ['getPathForFile', 'mcp.onRequest', 'mcp.respond', 'mcp.onStatus'];
 for (const [chiave, { canali, avuto }] of esitoDi) {
-    if (chiave === 'mcp.onRequest' || chiave === 'mcp.respond') continue;
+    if (chiave === 'mcp.onRequest' || chiave === 'mcp.respond' || chiave === 'mcp.onStatus') continue;
     if (chiave === 'getPathForFile') {
         dice('getPathForFile usa webUtils e nessun canale', [[], 'C:\\finto\\foto.png'], [canali, avuto]);
         continue;
@@ -195,6 +195,18 @@ dice('mcp ha esattamente le chiavi di ElectronMcp', membri('ElectronMcp'), Objec
     dice('...che toglie lo stesso ascolto', true, tolti.length === 1 && tolti[0].canale === 'mcp:request' && tolti[0].fn === (ascolti[0] && ascolti[0].fn));
     api.mcp.respond(7, { risultato: 1 });
     dice('mcp.respond manda id e risposta su mcp:response', [{ canale: 'mcp:response', argomenti: [{ id: 7, risposta: { risultato: 1 } }] }], inviati);
+}
+// ITALIANO: dalla 2.0.3 main.cjs avvisa la pagina quando un'AI si fa viva: arriva solo lo stato.
+// ENGLISH: since 2.0.3 main.cjs tells the page when an AI shows up: only the state arrives.
+{
+    const stati = [];
+    ascolti.length = 0; tolti.length = 0;
+    const smetti = api.mcp.onStatus((s) => stati.push(s));
+    dice('mcp.onStatus ascolta il canale mcp:status', ['mcp:status'], ascolti.map((a) => a.canale));
+    ascolti[0] && ascolti[0].fn({ sender: 'evento' }, { acceso: true, ultimoContatto: 5 });
+    dice('...e alla pagina arriva lo stato, non l\'evento', [{ acceso: true, ultimoContatto: 5 }], stati);
+    smetti();
+    dice('...e la funzione restituita toglie lo stesso ascolto', true, tolti.length === 1 && tolti[0].canale === 'mcp:status' && tolti[0].fn === (ascolti[0] && ascolti[0].fn));
 }
 
 // ITALIANO: la pagina non deve ricevere ipcRenderer (o i suoi metodi) per intero.

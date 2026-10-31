@@ -86,5 +86,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return () => ipcRenderer.removeListener('mcp:request', ascolta);
         },
         respond: (id, risposta) => ipcRenderer.send('mcp:response', { id, risposta }),
+        // ITALIANO: lo stato nuovo, quando un'AI si fa viva. ENGLISH: the new state, when an AI shows up.
+        onStatus: (cb) => {
+            const ascolta = (_event, stato) => { if (typeof cb === 'function') cb(stato); };
+            ipcRenderer.on('mcp:status', ascolta);
+            return () => ipcRenderer.removeListener('mcp:status', ascolta);
+        },
     },
 });
