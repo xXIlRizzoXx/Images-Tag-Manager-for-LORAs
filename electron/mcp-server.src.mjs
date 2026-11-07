@@ -190,7 +190,9 @@ export const avviaServerMcp = ({ porta, codice, chiedi, versione, contatto }) =>
                 return rispondi(res, 401, 'Unauthorized');
             }
             if (req.method !== 'POST') return rispondi(res, 405, 'Method not allowed');
-            if (typeof contatto === 'function') { try { contatto(); } catch (_) { } }
+            // ITALIANO: il controllo del ponte dell'estensione per Claude non e' un'AI che si fa viva.
+            // ENGLISH: the Claude extension bridge's check is not an AI showing up.
+            if (typeof contatto === 'function' && req.headers['x-itm-check'] !== '1') { try { contatto(); } catch (_) { } }
             const corpo = await leggiCorpo(req);
             // ITALIANO: il trasporto "web standard" della libreria, con la risposta scritta qui. Il
             //           convertitore Node incluso nella libreria, una volta impacchettato, dichiarava

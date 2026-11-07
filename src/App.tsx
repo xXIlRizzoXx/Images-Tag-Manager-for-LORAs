@@ -16,6 +16,7 @@ import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, 
 import { eseguiStrumentoMcp, fotoPerMcp } from './utils/mcpBridge';
 import type { RispostaMcp } from './utils/mcpBridge';
 import { creaFineLavoroMcp } from './utils/mcpFineLavoro';
+import { creaEstensioneClaude, NOME_FILE_ESTENSIONE } from './utils/claudeExtension';
 import type { McpStatus, McpRichiesta } from './electron';
 import { getTagCategory, getCategoryColor, getActiveCategoryColor } from './utils/tagCategorization';
 import { getGeminiTags, verifyGeminiApiKey, GEMINI_MODELS, normalizeModelId, getModelTier, classifyGeminiError, aggiornaModelloAutomatico, elencaModelliRemoti, confrontaVersioni, versioneDi, provaTuttiIModelli, ultimeGenerazioni } from './services/geminiService';
@@ -94,7 +95,7 @@ const LANG_CODES = APP_LANGUAGES.map(l => l.code);
 //          shown but not selectable.
 // ITALIANO: le sezioni delle Impostazioni che hanno un tasto "?" con la spiegazione.
 // ENGLISH: the Settings sections that have a "?" button with the explanation.
-type AiutoImpostazioni = 'aggiornamenti' | 'ai' | 'modello' | 'tagga' | 'mcp';
+type AiutoImpostazioni = 'aggiornamenti' | 'ai' | 'modello' | 'tagga' | 'mcp' | 'claudeDesktop';
 
 const GRUPPI_MODELLI: ReadonlyArray<{
     stato: StatoModello | 'daProvare';
@@ -1484,6 +1485,7 @@ export default function App() {
         modello: { titolo: t.aiModelLabel, testi: [t.aiModelAutoHint, t.aiProbeHint, t.aiModelLegend] },
         tagga: { titolo: t.aiCardTagging, testi: [t.aiRpmHint, t.aiSkipTaggedHint] },
         mcp: { titolo: t.mcpTitle, testi: [t.mcpHint, t.mcpDesktopNote, t.mcpClaudeCodeReconnect] },
+        claudeDesktop: { titolo: t.mcpClaudeGuide, testi: [] },
     };
 
     // ITALIANO: IL MODELLO SCELTO A MANO RESTA FISSO. E' cio' che la spiegazione promette
@@ -1915,6 +1917,64 @@ export default function App() {
             env: { AUTH_HEADER: `Bearer ${codice}` } } } }, null, 2);
         return JSON.stringify({ mcpServers: { 'images-tag-manager': { url: indirizzoMcp, headers: { Authorization: `Bearer ${codice}` } } } }, null, 2);
     };
+    // ITALIANO: la sola voce del server, da incollare in un file di Claude che ha gia' altro dentro:
+    //           la configurazione intera, incollata li', cancellerebbe le impostazioni di Claude.
+    // ENGLISH: the server's entry alone, to paste in a Claude file that already holds other things:
+    //          the whole configuration, pasted there, would wipe Claude's settings.
+    const voceMcpDesktop = () => {
+        const voce = JSON.parse(configMcp('desktop')).mcpServers['images-tag-manager'];
+        return `"images-tag-manager": ${JSON.stringify(voce, null, 2)}`;
+    };
+    const salvaEstensioneClaude = async () => {
+        try {
+            const contenuto = await creaEstensioneClaude(appVersion, indirizzoMcp);
+            if ('showSaveFilePicker' in window) {
+                const handle = await (window as any).showSaveFilePicker({
+                    id: 'itm-claude-extension',
+                    suggestedName: NOME_FILE_ESTENSIONE,
+                    types: [{ description: 'Claude', accept: { 'application/zip': ['.mcpb'] } }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(contenuto);
+                await writable.close();
+            } else {
+                const url = URL.createObjectURL(new Blob([contenuto as BlobPart], { type: 'application/zip' }));
+                const collegamento = document.createElement('a');
+                collegamento.href = url;
+                collegamento.download = NOME_FILE_ESTENSIONE;
+                collegamento.click();
+                URL.revokeObjectURL(url);
+            }
+            showNotification(t.mcpClaudeSaved, 'success');
+        } catch (err: any) {
+            if (err && err.name !== 'AbortError') { console.error(err); showNotification(t.tagEditorSaveError, 'error'); }
+        }
+    };
+    // ITALIANO: i due modi di collegare Claude Desktop, nella finestra di spiegazione.
+    // ENGLISH: the two ways of connecting Claude Desktop, in the explanation window.
+    const guidaClaude = () => (
+        <>
+            <h4 className="font-bold">{t.mcpClaudeExtTitle}</h4>
+            <p>{t.mcpClaudeExt1}</p>
+            <button data-mcp-salva-estensione onClick={salvaEstensioneClaude} className={`${pulsanteSchedaAi} self-start`}>
+                <Download size={11} className="shrink-0"/>{t.mcpClaudeExtSave}
+            </button>
+            <p>{t.mcpClaudeExt2}</p>
+            <p>{t.mcpClaudeExt3}</p>
+            <button onClick={() => copiaMcp(mcpStato?.codice || '')} className={`${pulsanteSchedaAi} self-start`}>
+                <Copy size={11} className="shrink-0"/>{t.mcpCopyToken}
+            </button>
+            <p>{t.mcpClaudeExt4}</p>
+            <h4 className="font-bold mt-2">{t.mcpClaudeManTitle}</h4>
+            <p>{t.mcpClaudeMan1}</p>
+            <p>{t.mcpClaudeMan2}</p>
+            <button data-mcp-copia-voce onClick={() => copiaMcp(voceMcpDesktop())} className={`${pulsanteSchedaAi} self-start`}>
+                <Copy size={11} className="shrink-0"/>{t.mcpClaudeManCopy}
+            </button>
+            <p>{t.mcpClaudeMan3}</p>
+            <p className={`text-[12px] ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{t.mcpClaudeConnectorNote}</p>
+        </>
+    );
     // ITALIANO: stato del server, indirizzo, codice e configurazioni da copiare: gli stessi nelle
     //           Impostazioni e nella finestrella del semaforo MCP in alto.
     // ENGLISH: server state, address, token and configurations to copy: the same in Settings and in
@@ -1960,6 +2020,9 @@ export default function App() {
                             {tipo === 'claudeCode' ? t.mcpCopyClaudeCode : tipo === 'desktop' ? t.mcpCopyDesktop : t.mcpCopyCursor}
                         </button>
                     ))}
+                    <button data-mcp-guida-claude onClick={() => setAiuto('claudeDesktop')} className={`${pulsanteSchedaAi} !justify-start text-left`}>
+                        <BookOpen size={11} className="shrink-0"/>{t.mcpClaudeGuide}
+                    </button>
                 </>
             )}
         </>
@@ -6950,6 +7013,7 @@ export default function App() {
                         </div>
                         <div className="flex flex-col gap-3 px-5 py-4 overflow-y-auto text-[13px] leading-relaxed">
                             {testiAiuto[aiuto].testi.filter(Boolean).map((testo, i) => <p key={i}>{testo}</p>)}
+                            {aiuto === 'claudeDesktop' && guidaClaude()}
                         </div>
                         <div className={`flex justify-end px-5 py-3 border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
                             <button onClick={() => setAiuto(null)} autoFocus

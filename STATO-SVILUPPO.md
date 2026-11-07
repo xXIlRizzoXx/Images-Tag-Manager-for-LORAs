@@ -1,7 +1,20 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 31 ottobre 2026
+**Ultimo aggiornamento:** 7 novembre 2026
 **Versione attuale:** 2.0.3 in sviluppo (31 ottobre 2026, non ancora costruita). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità 2.0.3 (traguardo 119, 7 novembre 2026): **Claude Desktop si collega trascinando un file.**
+Nella parte MCP delle Impostazioni (e nella finestrella del semaforino) c'è «Collega Claude Desktop»: una
+finestra con due strade. La prima salva un'estensione `images-tag-manager.mcpb` da trascinare in Claude,
+Impostazioni, Estensioni: Claude chiede il codice segreto e lo tiene lui, nel file non c'è; non serve
+Node.js perché Claude usa il suo. Dentro c'è un ponte (electron/claude-bridge.cjs) che gira i messaggi al
+server: a programma chiuso o con il codice sbagliato non esce, come faceva mcp-remote, ma offre uno
+strumento che spiega all'AI cosa dire, e avvisa Claude appena il programma si riapre; il suo controllo
+periodico non accende il semaforino. La seconda strada è la configurazione a mano, con i nomi dei menu
+come li scrive Claude in ogni lingua e il pulsante che copia la sola voce del server (incollare il file
+intero cancellava le impostazioni di Claude). Avvisa anche che «Aggiungi connettore personalizzato» non
+può funzionare: parte dal cloud di Anthropic. File controllato con lo strumento ufficiale `mcpb validate`.
+Due revisioni di un agente: 5 minori nella prima, 3 nella seconda, tutti corretti. 277 file di prove verdi.
+
 Novità 2.0.3 (traguardo 118, 31 ottobre 2026): **il semaforino MCP dice se un'AI si è collegata davvero.**
 Prima era verde appena il server ascoltava, anche senza nessuna AI: chi aveva dato il comando sbagliato
 all'AI vedeva verde e credeva di essere collegato. Ora è rosso finché un'AI col codice giusto non si fa

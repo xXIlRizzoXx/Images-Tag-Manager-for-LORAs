@@ -34,7 +34,7 @@ const app = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8').replace(/\
 const testi = fs.readFileSync(path.join(radice, 'src/constants.ts'), 'utf8');
 
 const SEZIONI = ['aggiornamenti', 'ai', 'modello', 'tagga', 'mcp'];
-dice('le sezioni con il tasto "?" sono cinque', true, /type AiutoImpostazioni = 'aggiornamenti' \| 'ai' \| 'modello' \| 'tagga' \| 'mcp';/.test(app));
+dice('le sezioni con il tasto "?" sono cinque, oltre alla guida di Claude Desktop', true, /type AiutoImpostazioni = 'aggiornamenti' \| 'ai' \| 'modello' \| 'tagga' \| 'mcp' \| 'claudeDesktop';/.test(app));
 for (const s of SEZIONI) dice(`la sezione "${s}" ha il suo tasto "?"`, true, app.includes(`{tastoAiuto('${s}')}`));
 
 // ITALIANO: ogni testo spostato deve stare nella finestra e NON piu' nel pannello.
