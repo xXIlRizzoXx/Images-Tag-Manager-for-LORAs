@@ -5,7 +5,7 @@
 Novità 2.0.3 (traguardo 119, 7 novembre 2026): **Claude Desktop si collega trascinando un file.**
 Nella parte MCP delle Impostazioni (e nella finestrella del semaforino) c'è «Collega Claude Desktop»: una
 finestra con due strade. La prima salva un'estensione `images-tag-manager.mcpb` da trascinare in Claude,
-Impostazioni, Estensioni: Claude chiede il codice segreto e lo tiene lui, nel file non c'è; non serve
+Impostazioni, Estensioni: Claude chiede il codice segreto e lo tiene lui, nel file non c'è (poi va acceso il suo interruttore: Claude la installa spenta, visto nella prova dal vivo del 7/11, PASSATA); non serve
 Node.js perché Claude usa il suo. Dentro c'è un ponte (electron/claude-bridge.cjs) che gira i messaggi al
 server: a programma chiuso o con il codice sbagliato non esce, come faceva mcp-remote, ma offre uno
 strumento che spiega all'AI cosa dire, e avvisa Claude appena il programma si riapre; il suo controllo

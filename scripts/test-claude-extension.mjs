@@ -262,6 +262,9 @@ try {
         dice(`[${l}] nessun segno di formattazione nei testi`, [], CHIAVI.filter((k) => /\*\*|`|\]\(/.test(tr[k] || '')));
         const tutto = CHIAVI.map((k) => tr[k]).join(' ');
         dice(`[${l}] i menu di Claude con i loro nomi veri`, [], menu.filter((m) => !tutto.includes(m)));
+        // ITALIANO: Claude installa l'estensione spenta (visto dal vivo il 07/11/2026): il passo 2 dice di accenderla.
+        // ENGLISH: Claude installs the extension switched off (seen live on 07/11/2026): step 2 says to turn it on.
+        dice(`[${l}] il passo 2 dice di accendere l'interruttore dell'estensione`, true, (tr.mcpClaudeExt2 || '').includes({"it":"interruttore","en":"switch","fr":"interrupteur","es":"interruptor","de":"Schalter","zh":"开关","ja":"スイッチ","pt":"interruptor","ru":"переключатель"}[l]));
         if (l === 'zh' || l === 'ja') dice(`[${l}] nessuno spazio dopo il punto fermo`, [], CHIAVI.concat('mcpDesktopNote').filter((k) => /。 /.test(tr[k] || '')));
         dice(`[${l}] la nota su Node.js dice che l'estensione non ne ha bisogno`, true, /Node\.js/.test(tr.mcpClaudeExt4 || '') && (tr.mcpDesktopNote || '').split('Node.js').length > 2);
     }
