@@ -127,7 +127,10 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'setTagSearch', 'setBulkSearch',
     // ITALIANO: Annulla lo svuotamento tiene a parte le foto il cui .txt non si era letto all'import.
     // ENGLISH: Undo the emptying keeps apart the photos whose .txt could not be read at import.
-    'txtNonLettoInVigore'];
+    'txtNonLettoInVigore',
+    // ITALIANO: la spia di lavoro del cestino sempre aggiornata (la X su una foto e Svuota cestino la guardano).
+    // ENGLISH: the always-current trash work flag (the X on a photo and Empty trash look at it).
+    'svuotamentoInCorsoRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -214,7 +217,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
     const r = { stato, notifiche: [], revocati: [], avvisi: [] };
     const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false }, discoNotoRef: { current: new Map() },
         globalTriggersRef: { current: [] }, triggerHistoryRef: { current: [] }, progettoGenRef: { current: 0 },
-        aiCancelRequestedRef: { current: false }, aiAbortControllerRef: { current: null } };
+        aiCancelRequestedRef: { current: false }, aiAbortControllerRef: { current: null }, svuotamentoInCorsoRef: { current: false } };
     const nulla = () => { };
     const memoria = { getItem: () => null, setItem: nulla, removeItem: nulla };
     const coda = [];
@@ -227,6 +230,9 @@ export const creaApp = (immagini, { api = null } = {}) => {
         while (coda.length) {
             const prima = stato.images;
             for (const [k, v] of coda.splice(0)) stato[k] = typeof v === 'function' ? v(stato[k]) : v;
+            // ITALIANO: come App.tsx a ogni disegno: il ref segue isEmptyingTrash.
+            // ENGLISH: as App.tsx on every render: the ref follows isEmptyingTrash.
+            refs.svuotamentoInCorsoRef.current = stato.isEmptyingTrash;
             if (stato.images !== prima) {
                 // ITALIANO: gli effetti su [images], nell'ordine di App.tsx: cronologia, poi imagesRef.
                 // ENGLISH: the effects on [images], in App.tsx order: history, then imagesRef.
@@ -252,7 +258,7 @@ export const creaApp = (immagini, { api = null } = {}) => {
         nulla, nulla, nulla, nulla, nulla,
         (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla, stato.isEmptyingTrash,
         H.addPhotosToHistory || ((h) => h),
-        S.parseSidecarText, S.tagDopoEditor, nulla, nulla, S.txtNonLettoInVigore || (() => false));
+        S.parseSidecarText, S.tagDopoEditor, nulla, nulla, S.txtNonLettoInVigore || (() => false), refs.svuotamentoInCorsoRef);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();

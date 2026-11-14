@@ -114,7 +114,7 @@ dice('niente text.split( scritto a mano nell\'import', false, /\btext\.split\(/.
 
 // ITALIANO: 4) il ripristino dal backup: backupDellImport e tagDaRipristinare decidono.
 // ENGLISH: 4) restoring from the backup: backupDellImport and tagDaRipristinare decide.
-dice('l\'import legge il backup con backupDellImport', true, /backup = backupDellImport\(localStorage\.getItem\('tagBackup'\), importFolder, importSignature\)/.test(importa));
+dice('l\'import legge il backup con backupDellImport', true, /backup = backupDellImport\(localStorage\.getItem\('tagBackup'\), importFolder, importSignature[,)]/.test(importa));
 dice('l\'import ripristina con tagDaRipristinare', true, /const ripristinati = tagDaRipristinare\(entry, orderedTags, originalTags, /.test(importa));
 
 // ITALIANO: 5) l'effetto del backup anti-crash scrive tramite scriviBackupSubito, che usa

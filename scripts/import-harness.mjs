@@ -48,7 +48,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
     'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport'];
-const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
+const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData, makeBackupKeyer };');
 
 /* ITALIANO: l'app finta, con le foto `iniziali` gia' aperte. `percorsi` = Electron con i percorsi
    su disco (getPathForFile da' file.percorso). render(d) = le funzioni vere con il riepilogo `d`
@@ -88,7 +88,12 @@ export const creaApp = ({ iniziali = [], percorsi = true, backup = null } = {}) 
         const prima = refs.importAttiviRef.current;
         // ITALIANO: il riepilogo come lo calcola il programma (calculateImportSummary): con la casella se c'e' un backup.
         // ENGLISH: the summary as the program computes it (calculateImportSummary): with the checkbox when there is a backup.
-        await app.render(d, { recupero: B.recuperoDellImport(backup, d.handle, d.imgFiles) }).confermaImport(...recupera);
+        // ITALIANO: con le chiavi di backup delle foto, come calculateImportSummary.
+        // ENGLISH: with the photos' backup keys, as calculateImportSummary.
+        const chiave = app.render(d).makeBackupKeyer;
+        const chiaveDi = chiave(d.folderOf, d.relPathOf), fogliaDi = chiave(d.folderOf, null);
+        const chiavi = d.imgFiles.flatMap(f => [chiaveDi(f), fogliaDi(f)]);
+        await app.render(d, { recupero: B.recuperoDellImport(backup, d.handle, d.imgFiles, chiavi) }).confermaImport(...recupera);
         for (let i = 0; i < 500 && refs.importAttiviRef.current > prima; i++) await new Promise(ok => setTimeout(ok, 10));
     };
     app.nomi = () => app.images.map(i => i.file.name);

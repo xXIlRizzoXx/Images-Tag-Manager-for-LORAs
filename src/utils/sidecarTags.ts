@@ -207,10 +207,15 @@ export const PROJECT_TAGS_MAX = 5000;
 //   PROJECT_TAGS_MAX in all. Each tag used to be cut at 100 characters: a sentence caption
 //   exported whole came back cut, mid-word, with no notice. `truncated` says whether anything was
 //   shortened or left out, so it can be said.
+// ITALIANO: ogni voce si divide su virgole e a capo come un .txt: una voce JSON "red hair, blue eyes"
+//   diventava una sola pillola, e nel .txt salvato tornava come due tag (con doppioni).
+// ENGLISH: each entry is split on commas and newlines like a .txt: a JSON entry "red hair, blue eyes"
+//   became a single pill, and in the saved .txt it came back as two tags (with duplicates).
 export const pulisciTagProgetto = (voci: unknown[]): { tags: string[]; truncated: boolean } => {
     let truncated = false;
     const tags = [...new Set(voci
-        .map((s: unknown) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim())
+        .flatMap((s: unknown) => String(s).split(/[\r\n,]+/))
+        .map((s: string) => s.replace(/[\x00-\x1F\x7F]/g, ' ').trim())
         .filter((tag: string) => tag.length > 0)
         .map((tag: string) => {
             if (tag.length <= TXT_TAG_MAX_CHARS) return tag;

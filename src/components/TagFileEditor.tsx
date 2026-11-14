@@ -66,6 +66,11 @@ export const parseTagFile = (text: string, fileName: string): string[] => {
         if (raw.some(x => x !== null && typeof x === 'object')) {
             throw new Error('JSON senza elenco di tag');
         }
+        // ITALIANO: una voce con una virgola dentro ("red hair, blue eyes") si divide come nel TXT:
+        //           nel .txt salvato tornava come due tag, con doppioni.
+        // ENGLISH: an entry with a comma inside ("red hair, blue eyes") is split as in the TXT: in the
+        //          saved .txt it came back as two tags, with duplicates.
+        raw = raw.flatMap(x => String(x).split(/[,\n\r]+/));
     } else {
         raw = text.split(/[,\n\r]+/);
     }
@@ -84,15 +89,38 @@ export const parseTagTriggers = (text: string, fileName: string): string[] => {
     try {
         const parsed = JSON.parse(text);
         if (parsed && Array.isArray(parsed.globalTriggers)) {
-            const puliti = (parsed.globalTriggers as unknown[]).map(x => String(x).trim()).filter(Boolean);
+            const puliti = (parsed.globalTriggers as unknown[]).flatMap(x => String(x).split(/[,\n\r]+/)).map(x => x.trim()).filter(Boolean);
             return [...new Set(puliti)];
         }
     } catch (_) { /* ITALIANO: gestito da parseTagFile — ENGLISH: handled by parseTagFile */ }
     return [];
 };
 
-export const serializeTagFile = (tags: string[], fileName: string, triggers: string[] = []): string => {
+// ITALIANO: la forma di un .json letto: 'elenco' per ["a","b"], l'oggetto intero se ha "tags".
+//           Serve a risalvare lo stesso file nella sua forma: prima ogni .json diventava l'oggetto
+//           del programma, l'elenco smetteva di esserlo e i campi di un altro programma sparivano.
+// ENGLISH: the shape of a .json that was read: 'elenco' for ["a","b"], the whole object when it has
+//          "tags". Used to save the same file back in its own shape: every .json used to become the
+//          program's object, the list stopped being one and another program's fields vanished.
+export type FormaJson = 'elenco' | Record<string, unknown>;
+export const parseTagShape = (text: string, fileName: string): FormaJson | null => {
+    if (!fileName.toLowerCase().endsWith('.json')) return null;
+    try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return 'elenco';
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.tags)) return parsed;
+    } catch (_) { /* ITALIANO: gestito da parseTagFile — ENGLISH: handled by parseTagFile */ }
+    return null;
+};
+
+// ITALIANO: `letto` = nome e forma del file aperto: la forma vale solo se si scrive lo STESSO nome
+//           (Salva, o Salva come con lo stesso nome); Nuovo e un altro nome usano la forma del programma.
+// ENGLISH: `letto` = name and shape of the opened file: the shape applies only when writing the SAME
+//          name (Save, or Save as with the same name); New and another name use the program's shape.
+export const serializeTagFile = (tags: string[], fileName: string, triggers: string[] = [], letto: { nome: string; forma: FormaJson } | null = null): string => {
     if (fileName.toLowerCase().endsWith('.json')) {
+        const forma = letto && letto.nome.toLowerCase() === fileName.toLowerCase() ? letto.forma : null;
+        if (forma === 'elenco') return JSON.stringify(tags, null, 2);
         // ITALIANO: conservo la distinzione trigger/tag: le trigger ancora presenti nell'elenco
         //           restano in globalTriggers, il resto va in tags. Prima globalTriggers era sempre
         //           vuoto, quindi ri-salvare un file di progetto ne cancellava le trigger word.
@@ -101,6 +129,11 @@ export const serializeTagFile = (tags: string[], fileName: string, triggers: str
         //          re-saving a project file wiped its trigger words.
         const trig = triggers.filter(x => tags.includes(x));
         const rest = tags.filter(x => !trig.includes(x));
+        if (forma) {
+            const fuori: Record<string, unknown> = { ...forma, tags: rest };
+            if ('globalTriggers' in forma || trig.length > 0) fuori.globalTriggers = trig;
+            return JSON.stringify(fuori, null, 2);
+        }
         return JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: trig, tags: rest }, null, 2);
     }
     return tags.length > 0 ? tags.join(', ') + ',' : '';
@@ -139,6 +172,9 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const dirtyRef = useRef<boolean>(false);
     dirtyRef.current = dirty;
     const triggersRef = useRef<string[]>([]);
+    // ITALIANO: nome e forma del .json aperto, per risalvarlo nella sua forma (vedi parseTagShape).
+    // ENGLISH: name and shape of the opened .json, to save it back in its own shape (see parseTagShape).
+    const formaJsonRef = useRef<{ nome: string; forma: FormaJson } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const fallbackInputRef = useRef<HTMLInputElement>(null);
 
@@ -198,6 +234,8 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 if (annullato || handleRef.current !== handle) return;
                 const nuoviTag = parseTagFile(testo, file.name);
                 triggersRef.current = parseTagTriggers(testo, file.name);
+                const formaLetta = parseTagShape(testo, file.name);
+                formaJsonRef.current = formaLetta ? { nome: file.name, forma: formaLetta } : null;
                 savedTagsRef.current = [...nuoviTag];
                 setFileName(file.name);
                 // ITALIANO: se nel frattempo l'utente ha gia' aggiunto qualcosa (tipicamente col tasto
@@ -241,7 +279,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     //          flag and above all the target file handle.
     const azzera = () => {
         setTags([]); setFileName(''); setInputValue(''); setDirty(false);
-        handleRef.current = null; triggersRef.current = []; savedTagsRef.current = [];
+        handleRef.current = null; triggersRef.current = []; formaJsonRef.current = null; savedTagsRef.current = [];
     };
 
     const nuovo = () => guardDiscard(() => {
@@ -280,6 +318,8 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const caricaTesto = (testo: string, nome: string) => {
         const nuoviTag = parseTagFile(testo, nome);       // ITALIANO: puo' lanciare — ENGLISH: may throw
         triggersRef.current = parseTagTriggers(testo, nome);
+        const formaLetta = parseTagShape(testo, nome);
+        formaJsonRef.current = formaLetta ? { nome, forma: formaLetta } : null;
         savedTagsRef.current = [...nuoviTag];
         setTags(nuoviTag);
         setFileName(nome);
@@ -391,7 +431,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         //          close" too): the latter used to write an empty .txt over the photo's one, with the
         //          green notice, and Kohya stops on an empty .txt.
         if (istantanea.length === 0) return false;
-        const contenuto =serializeTagFile(istantanea, nome, triggersRef.current);
+        const contenuto =serializeTagFile(istantanea, nome, triggersRef.current, formaJsonRef.current);
         // ITALIANO: "modificato" si spegne solo se nel frattempo nulla e' cambiato.
         // ENGLISH: the "modified" flag clears only if nothing changed meanwhile.
         const concludiSalvataggio = () => {
@@ -452,7 +492,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 // ITALIANO: il formato lo decide l'estensione scelta nella finestra di salvataggio
                 // ENGLISH: the format follows the extension chosen in the save dialog
                 const writable = await handle.createWritable();
-                await writable.write(serializeTagFile(istantanea, handle.name, triggersRef.current));
+                await writable.write(serializeTagFile(istantanea, handle.name, triggersRef.current, formaJsonRef.current));
                 await writable.close();
                 handleRef.current = handle;
                 setFileName(handle.name);

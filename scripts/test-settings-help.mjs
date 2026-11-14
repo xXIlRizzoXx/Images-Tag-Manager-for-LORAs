@@ -52,7 +52,7 @@ const finestra = /\{aiuto && \(\n\s*<div ref=\{aiutoRef\}[\s\S]*?\n            \
 dice('la finestra si trova ed e\' un dialogo', true, finestra.includes('role="dialog"') && finestra.includes('aria-modal="true"'));
 dice('...ha il titolo della sezione e i suoi testi', true, finestra.includes('{testiAiuto[aiuto].titolo}') && finestra.includes('testiAiuto[aiuto].testi'));
 dice('...si chiude con Chiudi', true, (finestra.match(/onClick=\{\(\) => setAiuto\(null\)\}/g) || []).length >= 2 && finestra.includes('{t.close}'));
-dice('...si chiude con un clic fuori dal riquadro', true, /onMouseDown=\{\(e\) => \{ if \(e\.target === e\.currentTarget\) setAiuto\(null\); \}\}/.test(finestra));
+dice('...si chiude con un clic fuori dal riquadro', true, /onMouseDown=\{\(e\) => \{ if \(e\.target === e\.currentTarget\) \{ e\.stopPropagation\(\); setAiuto\(null\); \} \}\}/.test(finestra));
 dice('...si chiude con Esc', true, /if \(e\.key === 'Escape'\) \{ e\.stopPropagation\(\); setAiuto\(null\); \}/.test(app));
 dice('un clic dentro la finestra non chiude il pannello delle Impostazioni', true,
     /if \(aiutoRef\.current && aiutoRef\.current\.contains\(event\.target\)\) return;\n\s*if \(settingsRef\.current && !settingsRef\.current\.contains\(event\.target\)\) setIsSettingsOpen\(false\);/.test(app));

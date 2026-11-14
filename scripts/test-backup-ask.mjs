@@ -52,11 +52,18 @@ const inizio = sorgente.indexOf('    const calculateImportSummary = (');
 const fine = /\r?\n    \};\r?\n/g; fine.lastIndex = inizio;
 const corpo = fine.exec(sorgente);
 if (inizio < 0 || !corpo) { console.log('NO  calculateImportSummary non trovata'); process.exit(1); }
-const codice = (await esbuild.transform(sorgente.slice(inizio, corpo.index + corpo[0].length), { loader: 'ts' })).code;
+// ITALIANO: con la chiave di backup vera (makeBackupKeyer di App.tsx): il riepilogo conta solo le voci di queste foto.
+// ENGLISH: with the real backup key (App.tsx's makeBackupKeyer): the summary counts only these photos' entries.
+const iChiave = sorgente.indexOf('const makeBackupKeyer = ');
+const fineChiave = /\r?\n\};\r?\n/g; fineChiave.lastIndex = Math.max(iChiave, 0);
+const corpoChiave = iChiave < 0 ? null : fineChiave.exec(sorgente);
+if (!corpoChiave) { console.log('NO  makeBackupKeyer non trovata'); process.exit(1); }
+const codice = (await esbuild.transform(sorgente.slice(iChiave, corpoChiave.index + corpoChiave[0].length) + '\n' +
+    sorgente.slice(inizio, corpo.index + corpo[0].length), { loader: 'ts' })).code;
 const riepilogoCon = (salvato, d) => {
     let stato = null;
-    new Function('makeFolderKeyer', 'setImportSummary', 'recuperoDellImport', 'localStorage', codice + '\nreturn calculateImportSummary;')(
-        S.makeFolderKeyer, (v) => { stato = v; }, B.recuperoDellImport, { getItem: (k) => (k === 'tagBackup' ? salvato : null) },
+    new Function('makeFolderKeyer', 'setImportSummary', 'recuperoDellImport', 'localStorage', 'BACKUP_KEY_SEP', codice + '\nreturn calculateImportSummary;')(
+        S.makeFolderKeyer, (v) => { stato = v; }, B.recuperoDellImport, { getItem: (k) => (k === 'tagBackup' ? salvato : null) }, B.BACKUP_KEY_SEP,
     )(d.imgFiles, d.txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf);
     return stato && stato.summary;
 };

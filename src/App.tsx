@@ -2763,80 +2763,96 @@ export default function App() {
         //          back to the gallery meanwhile (Ctrl+Z), it is left alone.
         const img = imagesRef.current.find(i => i.id === id);
         if (!img || !img.isTrashed) return;
-        // ITALIANO: il progetto in cui la X e' stata premuta: se intanto lo si chiude (il Cestino
-        //           di Windows su un'unita' lenta risponde dopo secondi), alla fine non si dice e
-        //           non si tocca niente del progetto nuovo (come in handleEmptyTrash).
-        // ENGLISH: the project the X was pressed in: if it is closed meanwhile (the Windows Recycle
-        //          Bin on a slow drive answers after seconds), at the end nothing of the new project
-        //          is said or touched (as in handleEmptyTrash).
-        const progetto = progettoGenRef.current;
-
-        let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
-        const spostati: { img?: boolean; txt?: boolean; condiviso?: boolean } = {};
+        // ITALIANO: la X accende la stessa spia dello svuotamento: su un disco lento lo spostamento dura
+        //           secondi, e senza spia la scheda restava uguale con X, "Ripristina" e "Svuota cestino"
+        //           attivi. Una seconda X dava un avviso rosso falso, "Svuota cestino" un "Non rimosse" a
+        //           cestino vuoto. Il ref (sempre aggiornato) ferma anche un clic che arriva lo stesso.
+        // ENGLISH: the X turns on the same flag as the emptying: on a slow drive the move takes seconds,
+        //          and without a flag the card stayed the same with the X, "Restore" and "Empty trash"
+        //          live. A second X gave a false red notice, "Empty trash" a "Not removed" with the trash
+        //          empty. The (always current) ref also stops a click that gets through anyway.
+        if (svuotamentoInCorsoRef.current) return;
+        svuotamentoInCorsoRef.current = true;
+        setIsEmptyingTrash(true);
         try {
-            esito = await deleteImageFiles(img, spostati);
-        } catch (error) {
-            console.error(error);
-        }
-        if (progetto !== progettoGenRef.current) {
-            console.warn('[Cestino] X su una foto finita dopo la chiusura del progetto: progetto attuale non toccato. Esito:', esito);
-            return;
-        }
-        // ITALIANO: niente Cestino di Windows e niente cartella aperta: si dice perche' e cosa fare.
-        // ENGLISH: no Windows Recycle Bin and no open folder: say why and what to do.
-        if (esito === 'norecycle') {
-            showNotification(t.deleteNoRecycleBin, 'error');
-            return;
-        }
-        // ITALIANO: il Cestino di Windows non e' raggiungibile per questa foto: si puo' solo
-        //           cancellarla per sempre, e non lo si fa senza chiederlo.
-        // ENGLISH: the Windows Recycle Bin is out of reach for this photo: the only option is a
-        //          permanent delete, and that is not done without asking.
-        if (esito === 'nopath') {
-            chiediEliminazioneDefinitiva([img]);
-            return;
-        }
-        // ITALIANO: se il file non e' finito nel Cestino di Windows, la foto RESTA nel cestino
-        //           dell'app: cosi' si puo' riprovare. Prima veniva tolta comunque dal progetto e
-        //           spariva dalla vista pur essendo ancora sul disco.
-        // ENGLISH: if the file did not reach the Windows Recycle Bin, the photo STAYS in the app's
-        //          trash so it can be retried. It used to be dropped from the project anyway,
-        //          vanishing from view while still sitting on disk.
-        if (esito !== 'trashed') {
-            showNotification(t.deleteError, 'error');
-            return;
-        }
+            // ITALIANO: il progetto in cui la X e' stata premuta: se intanto lo si chiude (il Cestino
+            //           di Windows su un'unita' lenta risponde dopo secondi), alla fine non si dice e
+            //           non si tocca niente del progetto nuovo (come in handleEmptyTrash).
+            // ENGLISH: the project the X was pressed in: if it is closed meanwhile (the Windows Recycle
+            //          Bin on a slow drive answers after seconds), at the end nothing of the new project
+            //          is said or touched (as in handleEmptyTrash).
+            const progetto = progettoGenRef.current;
 
-        // ITALIANO: il file ha lasciato il disco: non conta piu' nell'impronta del backup, anche se
-        //           era stato chiuso e riportato con Ctrl+Z.
-        // ENGLISH: the file has left the disk: it no longer counts in the backup's fingerprint, even
-        //          if it had been closed and brought back with Ctrl+Z.
-        // ITALIANO: con lei le sue copie chiuse (vedi copieChiuseDelloStessoFile).
-        // ENGLISH: and its closed copies with it (see copieChiuseDelloStessoFile).
-        const copieChiuse = await copieChiuseDelloStessoFile([img]);
-        if (progetto !== progettoGenRef.current) return;
-        fotoChiuseRef.current.delete(id);
-        copieChiuse.forEach(c => fotoChiuseRef.current.delete(c));
-        // ITALIANO: e non conta piu' nemmeno nella cronologia: un Ctrl+Z la rimetteva nel cestino
-        //           dell'app mentre il file era nel Cestino di Windows (vedi purgeIdsFromHistory).
-        //           L'uscita della foto non e' un passo da annullare: il file non c'e' piu'.
-        // ENGLISH: nor in the history any more: one Ctrl+Z put it back in the app's trash while the
-        //          file sat in the Windows Recycle Bin (see purgeIdsFromHistory). The photo leaving
-        //          is not a step to undo: the file is gone.
-        isUndoRedoAction.current = true;
-        setImages(prev => prev.filter(i => i.id !== id));
-        setHistory(prev => purgeIdsFromHistory(prev, new Set([id, ...copieChiuse])));
-        // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
-        //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
-        // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
-        //          would keep counting it and acting on an id that is gone.
-        setSelectedForBulk(prev => prev.filter(x => x !== id));
-        // ITALIANO: il file non c'era piu' sul disco (cancellato da Esplora file, come consiglia
-        //           deleteNoRecycleBin): la foto esce, ma nel Cestino di Windows non e' andato niente.
-        // ENGLISH: the file was no longer on disk (deleted in File Explorer, as deleteNoRecycleBin
-        //          suggests): the photo leaves, but nothing went to the Windows Recycle Bin.
-        showNotification(spostati.img === false ? t.deleteAlreadyGoneOne : t.deleteSuccess, 'success');
-        soundManager.pop();
+            let esito: 'trashed' | 'nopath' | 'failed' | 'norecycle' = 'failed';
+            const spostati: { img?: boolean; txt?: boolean; condiviso?: boolean } = {};
+            try {
+                esito = await deleteImageFiles(img, spostati);
+            } catch (error) {
+                console.error(error);
+            }
+            if (progetto !== progettoGenRef.current) {
+                console.warn('[Cestino] X su una foto finita dopo la chiusura del progetto: progetto attuale non toccato. Esito:', esito);
+                return;
+            }
+            // ITALIANO: niente Cestino di Windows e niente cartella aperta: si dice perche' e cosa fare.
+            // ENGLISH: no Windows Recycle Bin and no open folder: say why and what to do.
+            if (esito === 'norecycle') {
+                showNotification(t.deleteNoRecycleBin, 'error');
+                return;
+            }
+            // ITALIANO: il Cestino di Windows non e' raggiungibile per questa foto: si puo' solo
+            //           cancellarla per sempre, e non lo si fa senza chiederlo.
+            // ENGLISH: the Windows Recycle Bin is out of reach for this photo: the only option is a
+            //          permanent delete, and that is not done without asking.
+            if (esito === 'nopath') {
+                chiediEliminazioneDefinitiva([img]);
+                return;
+            }
+            // ITALIANO: se il file non e' finito nel Cestino di Windows, la foto RESTA nel cestino
+            //           dell'app: cosi' si puo' riprovare. Prima veniva tolta comunque dal progetto e
+            //           spariva dalla vista pur essendo ancora sul disco.
+            // ENGLISH: if the file did not reach the Windows Recycle Bin, the photo STAYS in the app's
+            //          trash so it can be retried. It used to be dropped from the project anyway,
+            //          vanishing from view while still sitting on disk.
+            if (esito !== 'trashed') {
+                showNotification(t.deleteError, 'error');
+                return;
+            }
+
+            // ITALIANO: il file ha lasciato il disco: non conta piu' nell'impronta del backup, anche se
+            //           era stato chiuso e riportato con Ctrl+Z.
+            // ENGLISH: the file has left the disk: it no longer counts in the backup's fingerprint, even
+            //          if it had been closed and brought back with Ctrl+Z.
+            // ITALIANO: con lei le sue copie chiuse (vedi copieChiuseDelloStessoFile).
+            // ENGLISH: and its closed copies with it (see copieChiuseDelloStessoFile).
+            const copieChiuse = await copieChiuseDelloStessoFile([img]);
+            if (progetto !== progettoGenRef.current) return;
+            fotoChiuseRef.current.delete(id);
+            copieChiuse.forEach(c => fotoChiuseRef.current.delete(c));
+            // ITALIANO: e non conta piu' nemmeno nella cronologia: un Ctrl+Z la rimetteva nel cestino
+            //           dell'app mentre il file era nel Cestino di Windows (vedi purgeIdsFromHistory).
+            //           L'uscita della foto non e' un passo da annullare: il file non c'e' piu'.
+            // ENGLISH: nor in the history any more: one Ctrl+Z put it back in the app's trash while the
+            //          file sat in the Windows Recycle Bin (see purgeIdsFromHistory). The photo leaving
+            //          is not a step to undo: the file is gone.
+            isUndoRedoAction.current = true;
+            setImages(prev => prev.filter(i => i.id !== id));
+            setHistory(prev => purgeIdsFromHistory(prev, new Set([id, ...copieChiuse])));
+            // ITALIANO: la foto non esiste piu': tolgo il suo id anche dalla selezione in blocco, o il
+            //           pannello continuerebbe a contarla e ad agire su un id ormai inesistente.
+            // ENGLISH: the photo no longer exists: drop its id from the bulk selection too, or the panel
+            //          would keep counting it and acting on an id that is gone.
+            setSelectedForBulk(prev => prev.filter(x => x !== id));
+            // ITALIANO: il file non c'era piu' sul disco (cancellato da Esplora file, come consiglia
+            //           deleteNoRecycleBin): la foto esce, ma nel Cestino di Windows non e' andato niente.
+            // ENGLISH: the file was no longer on disk (deleted in File Explorer, as deleteNoRecycleBin
+            //          suggests): the photo leaves, but nothing went to the Windows Recycle Bin.
+            showNotification(spostati.img === false ? t.deleteAlreadyGoneOne : t.deleteSuccess, 'success');
+            soundManager.pop();
+        } finally {
+            svuotamentoInCorsoRef.current = false;
+            setIsEmptyingTrash(false);
+        }
     };
 
     // ITALIANO: ANNULLA LO SVUOTAMENTO
@@ -3157,6 +3173,11 @@ export default function App() {
         //          on finishing, erased its record. The button is off, but a confirmation opened
         //          earlier still gets here: the user is told what is going on.
         if (ripristinoInCorsoRef.current) { showNotification(t.undoEmptyWorking, 'info'); return; }
+        // ITALIANO: non mentre la X su una foto sta ancora spostando il suo file (vedi handleDeletePermanently):
+        //           il tasto e' spento, questo vale se un clic arriva lo stesso.
+        // ENGLISH: not while the X on a photo is still moving its file (see handleDeletePermanently): the
+        //          button is off, this holds if a click gets through anyway.
+        if (svuotamentoInCorsoRef.current) return;
 
         // ITALIANO: si tolgono dal progetto SOLO le foto che sono davvero arrivate nel Cestino di
         //           Windows. Quelle che non ce l'hanno fatta restano nel cestino dell'app, sotto gli
@@ -3653,7 +3674,10 @@ export default function App() {
             //          there is nothing for the new photos, there is nothing to apply.
             const chiesto = !!(riepilogoAlClic && riepilogoAlClic.recupero);
             let recuperoNuove: { n: number; ts: number | null } | null = null;
-            try { recuperoNuove = recuperoDellImport(localStorage.getItem('tagBackup'), d.handle, nuove); } catch (_) { recuperoNuove = null; }
+            try {
+                const chiaveDi = makeBackupKeyer(d.folderOf, d.relPathOf), fogliaDi = makeBackupKeyer(d.folderOf, null);
+                recuperoNuove = recuperoDellImport(localStorage.getItem('tagBackup'), d.handle, nuove, nuove.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]));
+            } catch (_) { recuperoNuove = null; }
             if (recuperoNuove && !chiesto) {
                 if (folderInputRef.current) folderInputRef.current.value = '';
                 setImportSummary({ isOpen: true, summary: { ...(riepilogoAlClic || {}), recupero: recuperoNuove }, pendingData: d });
@@ -3714,7 +3738,10 @@ export default function App() {
             // ENGLISH: without the summary's tick the backup is not applied: the .txt files are taken as they are.
             if (recuperaBackup) {
                 try {
-                    backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature);
+                    // ITALIANO: solo la sorgente con le chiavi di queste foto (vedi backupDellImport).
+                    // ENGLISH: only the source holding these photos' keys (see backupDellImport).
+                    const chiaveDi = makeBackupKeyer(folderOf, relPathOf), fogliaDi = makeBackupKeyer(folderOf, null);
+                    backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature, imgFiles.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]));
                 } catch (_) { backup = null; }
             }
             const backupMap = backup ? backup.voci : null;
@@ -4003,7 +4030,14 @@ export default function App() {
         //          something to recover for this folder (how many photos, from when), with a checkbox ticked
         //          by default. Same fingerprint the import uses (backupDellImport).
         let recupero: { n: number; ts: number | null } | null = null;
-        try { recupero = recuperoDellImport(localStorage.getItem('tagBackup'), handle, imgFiles); } catch (_) { recupero = null; }
+        // ITALIANO: con le chiavi di backup di queste foto: foto sciolte con gli stessi nomi prese da un'altra
+        //           cartella hanno la stessa impronta, ma le loro modifiche non sono queste.
+        // ENGLISH: with these photos' backup keys: loose photos with the same names from another folder
+        //          share the fingerprint, but their edits are not these.
+        try {
+            const chiaveDi = makeBackupKeyer(folderOf, relPathOf), fogliaDi = makeBackupKeyer(folderOf, null);
+            recupero = recuperoDellImport(localStorage.getItem('tagBackup'), handle, imgFiles, imgFiles.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]));
+        } catch (_) { recupero = null; }
 
         setImportSummary({
             isOpen: true,
@@ -4274,13 +4308,20 @@ export default function App() {
         // ITALIANO: senza i file nascosti del Mac ("._nome"), come "Carica cartella".
         // ENGLISH: without the Mac hidden files ("._name"), as in "Load folder".
         const files = Array.from(e.target.files as FileList).filter((f: any) => !fileDiMac(f.name));
-        const imgFiles = files.filter(f => eFileImmagine(f));
-        if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
-        // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
-        // ENGLISH: .txt files are not picked by hand: I find them next to the images
-        const { txtFiles, folderOf } = await loadSidecarTxtFiles(imgFiles);
-        calculateImportSummary(imgFiles, txtFiles, null, folderOf);
-        if (imagesInputRef.current) imagesInputRef.current.value = '';
+        try {
+            const imgFiles = files.filter(f => eFileImmagine(f));
+            if (imgFiles.length === 0) { showNotification(t.noImagesTitle, 'info'); return; }
+            // ITALIANO: i .txt non si scelgono a mano: li trovo io accanto alle immagini
+            // ENGLISH: .txt files are not picked by hand: I find them next to the images
+            const { txtFiles, folderOf } = await loadSidecarTxtFiles(imgFiles);
+            calculateImportSummary(imgFiles, txtFiles, null, folderOf);
+        } finally {
+            // ITALIANO: il campo va liberato in ogni caso, anche senza immagini: altrimenti riscegliendo
+            //           gli stessi file il browser non avvisa piu'.
+            // ENGLISH: the field is cleared in every case, even with no image: otherwise picking the
+            //          same files again the browser no longer tells us.
+            if (imagesInputRef.current) imagesInputRef.current.value = '';
+        }
     };
 
     // ITALIANO: TRASCINAMENTO (drag & drop) di immagini nell'app. Il .txt gemello viene riconosciuto
@@ -4431,6 +4472,16 @@ export default function App() {
             });
             if (dt && ((dt.files && dt.files.length > 0) || maniglie.length > 0)) dropHandlerRef.current(dt.files, maniglie);
         };
+        // ITALIANO: un'immagine della pagina (miniatura, logo) trascinata porta il tipo "Files" e i suoi
+        //           byte: un clic "sporco" su una miniatura accendeva il velo e la importava. Il programma
+        //           non usa trascinamenti interni: quello che parte da un'immagine si annulla subito.
+        //           Il testo selezionato nei campi resta trascinabile.
+        // ENGLISH: a dragged page image (thumbnail, logo) carries the "Files" type and its bytes: a
+        //          "sloppy" click on a thumbnail turned the overlay on and imported it. The program uses
+        //          no internal drags: one that starts from an image is cancelled at once. Selected text
+        //          in the fields stays draggable.
+        const onDragStart = (e: DragEvent) => { if ((e.target as Element | null)?.nodeName === 'IMG') e.preventDefault(); };
+        window.addEventListener('dragstart', onDragStart);
         window.addEventListener('dragenter', onDragEnter);
         window.addEventListener('dragover', onDragOver);
         window.addEventListener('dragleave', onDragLeave);
@@ -4438,6 +4489,7 @@ export default function App() {
         window.addEventListener('mousemove', onMouseDopo);
         window.addEventListener('pointerdown', onMouseDopo);
         return () => {
+            window.removeEventListener('dragstart', onDragStart);
             window.removeEventListener('dragenter', onDragEnter);
             window.removeEventListener('dragover', onDragOver);
             window.removeEventListener('dragleave', onDragLeave);
@@ -7014,10 +7066,14 @@ export default function App() {
             {/* ITALIANO: la finestra con la spiegazione di una sezione delle Impostazioni (tasto "?").
                           Si chiude con Chiudi, con Esc o cliccando fuori; il pannello resta aperto.
                 ENGLISH: the window with the explanation of a Settings section ("?" button). It closes
-                         with Close, Esc or a click outside; the panel stays open. */}
+                         with Close, Esc or a click outside; the panel stays open.
+                ITALIANO: il clic fuori non deve arrivare all'ascolto sul documento: React smonta la finestra
+                          prima che l'ascolto la veda, e chiuderebbe anche Impostazioni e la finestrella MCP.
+                ENGLISH: the click outside must not reach the document listener: React unmounts the window
+                         before the listener sees it, and it would close Settings and the MCP window too. */}
             {aiuto && (
                 <div ref={aiutoRef} role="dialog" aria-modal="true" aria-labelledby="aiuto-titolo"
-                    onMouseDown={(e) => { if (e.target === e.currentTarget) setAiuto(null); }}
+                    onMouseDown={(e) => { if (e.target === e.currentTarget) { e.stopPropagation(); setAiuto(null); } }}
                     className={`fixed inset-0 z-[450] flex items-center justify-center p-4 md:p-6 ${isDarkMode ? 'bg-black/70' : 'bg-gray-900/40'} backdrop-blur-sm animate-in fade-in`}>
                     <div className={`w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl shadow-2xl border overflow-hidden ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-800'}`}>
                         <div className={`flex items-center justify-between gap-3 px-5 py-3 border-b ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
@@ -8331,7 +8387,9 @@ export default function App() {
                                 const untaggedImages = totalImages - taggedImages;
                                 const usageValues = Object.values(tagUsage);
                                 const totalTagInstances = usageValues.reduce((a, b) => a + b, 0);
-                                const avgTagsPerImage = totalImages > 0 ? (totalTagInstances / totalImages).toFixed(1) : '0';
+                                // ITALIANO: decimali come in formatoPeso: punto in inglese, cinese e giapponese, virgola altrove.
+                                // ENGLISH: decimals as in formatoPeso: a point in English, Chinese and Japanese, a comma elsewhere.
+                                const avgTagsPerImage = totalImages > 0 ? (totalTagInstances / totalImages).toFixed(1).replace('.', (lang === 'en' || lang === 'zh' || lang === 'ja') ? '.' : ',') : '0';
                                 const singletonCount = usageValues.filter(c => c === 1).length;
                                 const maxUsage = usageValues.length > 0 ? Math.max(...usageValues) : 0;
 

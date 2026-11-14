@@ -46,13 +46,14 @@ const testo = [
     ritaglia('const SEMBRA_JSON = ', /;\r?\n/g),
     ritaglia('export const parseTagFile = (', fuori),
     ritaglia('export const parseTagTriggers = (', fuori),
+    ritaglia('export const parseTagShape = (', fuori),
     ritaglia('export const serializeTagFile = (', fuori),
     ritaglia('    const inAttesa = (): string[] => ', /;\r?\n/g),
     ritaglia('    const caricaTesto = (', dentro),
     ritaglia('    const salva = async (forzaNuovoFile = false): Promise<boolean> => {', dentro),
 ].join('\n');
 const codice = (await esbuild.transform(testo, { loader: 'ts' })).code;
-const fabbrica = new Function('inputValue', 'tags', 'fileName', 'rileggendo', 'handleRef', 'triggersRef', 'savedTagsRef', 'tagsRef',
+const fabbrica = new Function('inputValue', 'tags', 'fileName', 'rileggendo', 'handleRef', 'triggersRef', 'formaJsonRef', 'savedTagsRef', 'tagsRef',
     'setDirty', 'setFileName', 'setTags', 'setInputValue', 'onImportTagsToProject', 'soundManager', 'showNotification', 't', 'onFileSaved',
     'window', 'document', 'URL', 'Blob', 'uniqueTagsIgnoringCase', 'hasTagIgnoringCase',
     codice + '\nreturn { caricaTesto, inAttesa, salva };');
@@ -65,7 +66,7 @@ const editor = (tags, casella, nome) => {
     const stato = { tags, casella, nome, scritture: [], notifiche: [] };
     const handle = { async createWritable() { return { async write(c) { stato.scritture.push(c); }, async close() { } }; } };
     const refs = { handleRef: { current: handle }, triggersRef: { current: [] }, savedTagsRef: { current: [...tags] }, tagsRef: { current: tags } };
-    stato.render = () => fabbrica(stato.casella, stato.tags, stato.nome, false, refs.handleRef, refs.triggersRef, refs.savedTagsRef, refs.tagsRef,
+    stato.render = () => fabbrica(stato.casella, stato.tags, stato.nome, false, refs.handleRef, refs.triggersRef, { current: null }, refs.savedTagsRef, refs.tagsRef,
         () => { }, (v) => { stato.nome = v; }, (v) => { stato.tags = v; refs.tagsRef.current = v; }, (v) => { stato.casella = v; },
         () => { }, { chime() { }, pop() { } }, (m, tipo) => stato.notifiche.push([m, tipo]),
         { tagEditorSaved: 'File saved', tagEditorSaveError: 'Could not save', tagEditorDownloaded: 'A copy was downloaded ({name}).' },
