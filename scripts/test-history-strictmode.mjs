@@ -41,8 +41,10 @@ const H = await import('data:text/javascript;base64,' + Buffer.from(u.outputFile
 
 // ITALIANO: l'effetto vero della cronologia, dal suo testo fino a `}, [images]);`.
 // ENGLISH: the real history effect, from its text down to `}, [images]);`.
+// ITALIANO: \r?\n: App.tsx e' CRLF solo dove Git converte le fine riga (ZIP, Linux, macOS: LF).
+// ENGLISH: \r?\n: App.tsx is CRLF only where Git converts line endings (ZIP, Linux, macOS: LF).
 const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
-const iCuore = sorgente.indexOf('        if (isUndoRedoAction.current) {\r\n            isUndoRedoAction.current = false;');
+const iCuore = sorgente.search(/        if \(isUndoRedoAction\.current\) \{\r?\n            isUndoRedoAction\.current = false;/);
 const i0 = sorgente.lastIndexOf('    useEffect(() => {', iCuore);
 const i1 = sorgente.indexOf('    }, [images]);', iCuore);
 if (iCuore < 0 || i0 < 0 || i1 < 0) { console.log('NO  effetto della cronologia non trovato in src/App.tsx'); process.exit(1); }
