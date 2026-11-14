@@ -342,7 +342,27 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     // ITALIANO: il nome in hdlr (ultimo campo, dopo 12 byte riservati) si azzera al suo posto.
     // ENGLISH: the name in hdlr (last field, after 12 reserved bytes) is zeroed in place.
     if (hdlr.body + 24 < hdlr.end) out.fill(0, hdlr.body + 24, hdlr.end);
-    for (const x of parts) if (!HEIC_META_KEEP.has(x.type)) blank(x);
+    // ITALIANO: le free/skip dentro meta restano scatole vuote: il loro contenuto non serve a niente e puo'
+    //           contenere un testo (come quelle in cima al file, vedi sotto).
+    // ENGLISH: the free/skip boxes inside meta stay as empty boxes: their content serves nothing and can
+    //          hold a text (like the ones at the top of the file, see below).
+    for (const x of parts) {
+        if (!HEIC_META_KEEP.has(x.type)) blank(x);
+        else if (x.type === 'free' || x.type === 'skip') out.fill(0, x.body, x.end);
+    }
+    // ITALIANO: grpl (gruppi di elementi) non serve a disegnare la foto principale (pitm). Si tiene solo il
+    //           gruppo 'altr' (le alternative: chi non sa disegnare un elemento ne sceglie un altro), con i
+    //           byte dopo il suo elenco di elementi azzerati; ogni altro gruppo diventa 'free'.
+    // ENGLISH: grpl (entity groups) is not needed to draw the primary photo (pitm). Only the 'altr' group
+    //          is kept (alternatives: a reader that cannot draw an item picks another one), with the bytes
+    //          after its entity list zeroed; every other group becomes 'free'.
+    for (const grpl of parts.filter(x => x.type === 'grpl')) {
+        for (const g of childBoxes(b, grpl.body, grpl.end)) {
+            const fine = g.type === 'altr' && g.body + 12 <= g.end ? g.body + 12 + 4 * be32(b, g.body + 8) : Infinity;
+            if (fine > g.end) blank(g);
+            else out.fill(0, fine, g.end);
+        }
+    }
     // ITALIANO: la tabella dref: l'indirizzo di una voce url/urn (un percorso o un sito) si azzera;
     //           una voce "in questo stesso file" (flag 1) non ha indirizzo e resta identica.
     // ENGLISH: the dref table: the address of a url/urn entry (a path or a site) is zeroed; an "in
@@ -405,7 +425,12 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     // ENGLISH: the file ranges that belong to pictures (method 0). If a picture lies inside another
     //          item (method 2) where its bytes are is unknown: then unreferenced ranges are not zeroed
     //          (the photo must stay drawable).
+    // ITALIANO: `tenutiIdat` = lo stesso per i dati delle immagini dentro idat (metodo 1), per esempio la
+    //           descrizione di una griglia.
+    // ENGLISH: `tenutiIdat` = the same for picture data inside idat (method 1), for example a grid's
+    //          description.
     const tenuti: Array<[number, number]> = [];
+    const tenutiIdat: Array<[number, number]> = [];
     let tenutiIncerti = false;
     for (let k = 0; k < count; k++) {
         const id = lv < 2 ? r.u16() : r.u32();
@@ -420,7 +445,8 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
             const len = r.uN(lenSize);
             if (keep) {
                 if (method === 0) tenuti.push([base + off, len === 0 ? b.length : base + off + len]);
-                else if (method !== 1) tenutiIncerti = true;
+                else if (method === 1) { if (idat) tenutiIdat.push([idat.body + base + off, len === 0 ? idat.end : idat.body + base + off + len]); }
+                else tenutiIncerti = true;
                 continue;
             }
             // ITALIANO: un indice diverso da 0 rimanda alla tabella dref, che di solito dice "in questo
@@ -440,25 +466,34 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
         }
     }
     // ITALIANO: in mdat (e nelle free/skip in cima) si azzera ogni byte a cui nessuna immagine punta:
-    //           per esempio un Exif "tolto" da un programma che ha cancellato solo il riferimento.
+    //           per esempio un Exif "tolto" da un programma che ha cancellato solo il riferimento. Lo
+    //           stesso in idat, coi tratti delle immagini di metodo 1.
     // ENGLISH: in mdat (and in the top free/skip boxes) every byte no picture points to is zeroed:
-    //          for example an Exif "removed" by a program that deleted only the reference.
+    //          for example an Exif "removed" by a program that deleted only the reference. The same in
+    //          idat, with the ranges of the method 1 pictures.
+    const azzeraFuori = (inizio: number, fine: number, tratti: Array<[number, number]>) => {
+        let p = inizio;
+        for (const [da, a] of tratti) {
+            if (a <= p) continue;
+            if (da >= fine) break;
+            if (da > p) out.fill(0, p, da);
+            p = Math.max(p, a);
+        }
+        if (p < fine) out.fill(0, p, fine);
+    };
     if (!tenutiIncerti) {
         tenuti.sort((p, q) => p[0] - q[0]);
-        for (const x of top) {
-            if (!HEIC_SENZA_RIFERIMENTI.has(x.type)) continue;
-            let p = x.body;
-            for (const [da, a] of tenuti) {
-                if (a <= p) continue;
-                if (da >= x.end) break;
-                if (da > p) out.fill(0, p, da);
-                p = Math.max(p, a);
-            }
-            if (p < x.end) out.fill(0, p, x.end);
+        for (const x of top) if (HEIC_SENZA_RIFERIMENTI.has(x.type)) azzeraFuori(x.body, x.end, tenuti);
+        if (idat) {
+            tenutiIdat.sort((p, q) => p[0] - q[0]);
+            azzeraFuori(idat.body, idat.end, tenutiIdat);
         }
     }
     if (iprp) {
         const figli = childBoxes(b, iprp.body, iprp.end);
+        // ITALIANO: in iprp servono solo ipco e ipma: ogni altra scatola (di un produttore) diventa 'free'.
+        // ENGLISH: in iprp only ipco and ipma are needed: any other (vendor) box becomes 'free'.
+        for (const x of figli) if (x.type !== 'ipco' && x.type !== 'ipma') blank(x);
         // ITALIANO: quali proprieta' (indice da 1 dentro ipco) sono segnate indispensabili nella ipma.
         // ENGLISH: which properties (1-based index inside ipco) are marked essential in ipma.
         const indispensabili = new Set<number>();

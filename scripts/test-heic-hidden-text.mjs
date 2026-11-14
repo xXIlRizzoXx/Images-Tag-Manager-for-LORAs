@@ -158,5 +158,88 @@ console.log('\n--- vicini che non devono cambiare ---');
         !!r && i > 0 && Buffer.from(r.bytes).subarray(i, i + voceUrl.length).equals(voceUrl));
 }
 
+// ITALIANO: altri posti dove un testo restava: le free/skip DENTRO meta, i byte di idat a cui nessuna
+//           immagine punta, una scatola sconosciuta figlia di iprp (non ipco/ipma), un gruppo dentro
+//           grpl (sconosciuto, o dopo l'elenco degli elementi di un gruppo 'altr'). Foto a griglia: la
+//           descrizione della griglia sta in idat (metodo 1) e deve restare identica, come i pixel del
+//           riquadro in mdat e l'elenco degli elementi del gruppo 'altr'.
+// ENGLISH: other places where a text stayed: the free/skip boxes INSIDE meta, the idat bytes no
+//          picture points to, an unknown child of iprp (not ipco/ipma), a group inside grpl (unknown,
+//          or after the entity list of an 'altr' group). Grid photo: the grid description lives in idat
+//          (method 1) and must stay identical, like the tile pixels in mdat and the 'altr' entity list.
+const SEGRETI_META = {
+    metaFree: 'META-FREE gps=45.1,9.5',
+    metaSkip: 'META-SKIP owner=example',
+    idatOrfano: 'IDAT-ORPHAN gps=11.1,22.2',
+    iprpIgnoto: 'IPRP-VENDOR serial=SN-1',
+    grplIgnoto: 'GRPL-VENDOR note=example',
+    codaAltr: 'ALTR-TAIL note=example',
+};
+const GRIGLIA = B([0, 0, 0, 0], be16(64), be16(64)); // ImageGrid: versione, flag, 1x1, larghezza, altezza
+const RIQUADRO = B('hevc-tile-pixels-ABCDEFGHIJ');
+const ALTR = full('altr', 0, be32(7), be32(2), be32(1), be32(2));
+const heicGriglia = (o = {}) => {
+    const { metodoRiquadro = 0 } = o;
+    const ftyp = box('ftyp', 'heic', be32(0), 'mif1', 'heic');
+    const voce = (id, metodo, off, len) => B(be16(id), be16(metodo), be16(0), be32(0), be16(1), be32(off), be32(len));
+    const meta = (mb) => full('meta', 0,
+        full('hdlr', 0, be32(0), 'pict', zeri(12), '\0'),
+        full('pitm', 0, be16(1)),
+        full('iloc', 1, [0x44, 0x40], be16(2), voce(1, 1, 0, GRIGLIA.length), voce(2, metodoRiquadro, mb, RIQUADRO.length)),
+        full('iinf', 0, be16(2), full('infe', 2, be16(1), [0, 0], 'grid', '\0'), full('infe', 2, be16(2), [0, 0], 'hvc1', '\0')),
+        full('iref', 0, box('dimg', be16(1), be16(1), be16(2))),
+        box('iprp',
+            box('ipco', HVCC, ISPE),
+            full('ipma', 0, be32(2), be16(1), [1], [2], be16(2), [2], [0x81], [2]),
+            box('XvNd', SEGRETI_META.iprpIgnoto)),
+        box('idat', GRIGLIA, SEGRETI_META.idatOrfano),
+        box('grpl', full('altr', 0, be32(7), be32(2), be32(1), be32(2), SEGRETI_META.codaAltr),
+            full('ZzGp', 0, be32(9), be32(1), be32(1), SEGRETI_META.grplIgnoto)),
+        box('free', SEGRETI_META.metaFree),
+        box('skip', SEGRETI_META.metaSkip));
+    const mb = ftyp.length + meta(0).length + 8;
+    return B(ftyp, meta(mb), box('mdat', RIQUADRO));
+};
+console.log('\n--- HEIC a griglia con testi in meta (free/skip), idat, iprp e grpl ---');
+{
+    const file = heicGriglia();
+    const { r, errore } = pulisci(file);
+    dice('la foto si pulisce e parte come image/heic', !!r && r.mimeType === 'image/heic', String(errore));
+    if (r) {
+        const fuori = Buffer.from(r.bytes);
+        dice('stessa lunghezza', fuori.length === file.length, `${file.length} -> ${fuori.length}`);
+        for (const [chiave, testo] of Object.entries(SEGRETI_META)) dice(`tolto: ${chiave}`, trova(fuori, testo) < 0);
+        const iGriglia = trova(file, 'idat') + 4;
+        dice('la descrizione della griglia in idat resta identica, allo stesso posto', fuori.subarray(iGriglia, iGriglia + GRIGLIA.length).equals(GRIGLIA));
+        const iRiquadro = trova(file, RIQUADRO.toString('latin1'));
+        dice('i pixel del riquadro in mdat restano identici', fuori.subarray(iRiquadro, iRiquadro + RIQUADRO.length).equals(RIQUADRO));
+        const iAltr = trova(file, 'altr') - 4;
+        dice('il gruppo altr resta, con la sua misura e il suo elenco di elementi identici',
+            fuori.readUInt32BE(iAltr) === file.readUInt32BE(iAltr) && fuori.subarray(iAltr + 4, iAltr + ALTR.length).equals(ALTR.subarray(4)));
+        for (const tipo of ['iloc', 'iinf', 'iref', 'dimg', 'ipco', 'ipma', 'hvcC', 'ispe', 'idat', 'grpl', 'grid', 'hvc1']) {
+            dice(`scatola ${tipo} al suo posto`, trova(fuori, tipo) === trova(file, tipo));
+        }
+        const iIref = trova(file, 'iref') - 4;
+        const lungIref = file.readUInt32BE(iIref);
+        dice('iref (la griglia punta al riquadro) identica', fuori.subarray(iIref, iIref + lungIref).equals(file.subarray(iIref, iIref + lungIref)));
+        const rifatta = pulisci(fuori);
+        dice('la foto pulita si ripulisce uguale', !!rifatta.r && Buffer.from(rifatta.r.bytes).equals(fuori), String(rifatta.errore));
+    }
+}
+{
+    // ITALIANO: riquadro indicato dentro un altro elemento (metodo 2): non si sa quali byte servono, quindi
+    //           ne' mdat ne' idat si toccano (la foto deve restare disegnabile); gli altri testi si tolgono.
+    // ENGLISH: tile given inside another item (method 2): which bytes are needed is unknown, so neither
+    //          mdat nor idat is touched (the photo must stay drawable); the other texts are removed.
+    const file = heicGriglia({ metodoRiquadro: 2 });
+    const { r, errore } = pulisci(file);
+    const fuori = r ? Buffer.from(r.bytes) : Buffer.alloc(0);
+    const iGriglia = trova(file, 'idat') + 4;
+    dice('metodo 2: la foto parte, griglia e pixel intatti, testi di meta/iprp/grpl tolti',
+        !!r && fuori.subarray(iGriglia, iGriglia + GRIGLIA.length).equals(GRIGLIA) && trova(fuori, RIQUADRO.toString('latin1')) === trova(file, RIQUADRO.toString('latin1'))
+        && trova(fuori, SEGRETI_META.metaFree) < 0 && trova(fuori, SEGRETI_META.iprpIgnoto) < 0 && trova(fuori, SEGRETI_META.grplIgnoto) < 0,
+        String(errore));
+}
+
 console.log(`\n${fatti - guai}/${fatti} prove superate`);
 if (fatti === 0 || guai > 0) process.exit(1);

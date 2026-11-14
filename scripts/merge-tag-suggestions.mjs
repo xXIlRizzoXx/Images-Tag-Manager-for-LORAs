@@ -287,6 +287,17 @@ const leggiPianoEsistente = (file) => {
         console.error(`${file}: esiste gia' e non e' un piano leggibile { tag: { categoria, it } }, non lo sovrascrivo. Correggilo, spostalo o scegli un altro nome con --out.`);
         process.exit(1);
     }
+    // ITALIANO: anche una sola voce che non e' un oggetto { categoria, it } (testo, elenco, numero, null:
+    //   scritta a mano in un'altra forma, o un JSON che non e' un piano, come l'esportazione dei tag del
+    //   progetto) ferma tutto: prima la voce tornava vuota, o le chiavi del file diventavano tag, senza avviso.
+    // ENGLISH: even one entry that is not an object { categoria, it } (string, list, number, null: written
+    //   by hand in another form, or a JSON that is not a plan, like the project tags export) stops
+    //   everything: the entry used to come back empty, or the file's keys became tags, without a warning.
+    const storta = Object.entries(piano).find(([, v]) => v === null || typeof v !== 'object' || Array.isArray(v));
+    if (storta) {
+        console.error(`${file}: esiste gia' ma la voce "${storta[0]}" non e' { categoria, it }: non e' un piano leggibile, non lo sovrascrivo. Correggilo, spostalo o scegli un altro nome con --out.`);
+        process.exit(1);
+    }
     return piano;
 };
 const pianoPrima = OUT ? leggiPianoEsistente(OUT) : null;

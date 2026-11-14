@@ -125,6 +125,43 @@ try {
         dice(nome + ': file intatto', true, prima.equals(fs.readFileSync(path.join(prova, nome))));
     }
 
+    // ITALIANO: un piano con voci scritte a mano in un'altra forma (testo, elenco, numero, null) tornava
+    //           con quelle voci vuote e codice 0; un JSON che non e' un piano (l'esportazione dei tag del
+    //           progetto) veniva riscritto con le sue chiavi come tag. Ora: codice 1, file intatto.
+    // ENGLISH: a plan with entries hand-written in another form (string, list, number, null) came back with
+    //          those entries empty and exit code 0; a JSON that is not a plan (the project tags export)
+    //          was rewritten with its keys as tags. Now: exit code 1, file untouched.
+    const esportazione = JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: ['ohwx'], tags: ['zzqx alfa'] }, null, 2);
+    for (const [nome, contenuto] of [
+        ['voci-a-mano.json', JSON.stringify({ 'zzqx alfa': 'framing, alfa italiano', 'zzqx beta': ['framing', 'beta it'] }, null, 1)],
+        ['voce-nulla.json', JSON.stringify({ 'zzqx alfa': { categoria: 'framing', it: 'alfa it' }, 'zzqx beta': null })],
+        ['voce-numero.json', JSON.stringify({ 'zzqx alfa': 5 })],
+        ['esportazione-progetto.json', esportazione],
+    ]) {
+        scrivi(nome, contenuto);
+        const prima = fs.readFileSync(path.join(prova, nome));
+        const r = lancia('lista1.txt', '--out', nome);
+        dice(nome + ': codice 1, il messaggio nomina il file e dice che non lo sovrascrive', [1, true],
+            [r.codice, r.errore.includes(nome) && /non lo sovrascrivo/.test(r.errore)]);
+        dice(nome + ': file intatto, nessuno stack trace', [true, false], [prima.equals(fs.readFileSync(path.join(prova, nome))), /\n\s+at /.test(r.testo)]);
+    }
+    // ITALIANO: casi vicini: un piano vuoto {} e un piano con voci oggetto (anche con campi in piu') si uniscono come prima.
+    // ENGLISH: neighbouring cases: an empty plan {} and a plan with object entries (extra fields too) are merged as before.
+    {
+        scrivi('piano-vuoto.json', '{}');
+        const r = lancia('lista1.txt', '--out', 'piano-vuoto.json');
+        dice('piano {}: codice 0 e i tag nuovi entrano', [0, { 'zzqx alfa': VUOTA, 'zzqx beta': VUOTA }], [r.codice, leggiPiano('piano-vuoto.json')]);
+        scrivi('piano-campi.json', JSON.stringify({ 'zzqx alfa': { categoria: 'framing', it: 'alfa it', nota: 'mia' } }));
+        const s = lancia('lista1.txt', '--out', 'piano-campi.json');
+        dice('voce con un campo in piu\': codice 0 e la voce resta com\'e\'', [0, { categoria: 'framing', it: 'alfa it', nota: 'mia' }], [s.codice, leggiPiano('piano-campi.json')['zzqx alfa']]);
+    }
+    // ITALIANO: --apply con voci non valide le salta come prima, senza fermarsi.
+    // ENGLISH: --apply with invalid entries skips them as before, without stopping.
+    {
+        const r = lancia('--apply', 'voci-a-mano.json');
+        dice('--apply su un piano con voci testo/elenco: codice 0, voci saltate come non valide', [0, true], [r.codice, /voce non valida/.test(r.testo)]);
+    }
+
     // ITALIANO: un --out vuoto (o solo spazi) non contiene lavoro: si scrive come un piano nuovo.
     // ENGLISH: an empty --out (or spaces only) holds no work: it is written as a new plan.
     {
