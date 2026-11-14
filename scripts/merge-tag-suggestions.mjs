@@ -293,7 +293,12 @@ const leggiPianoEsistente = (file) => {
     // ENGLISH: even one entry that is not an object { categoria, it } (string, list, number, null: written
     //   by hand in another form, or a JSON that is not a plan, like the project tags export) stops
     //   everything: the entry used to come back empty, or the file's keys became tags, without a warning.
-    const storta = Object.entries(piano).find(([, v]) => v === null || typeof v !== 'object' || Array.isArray(v));
+    // ITALIANO: lo stesso per una voce oggetto senza ne' «categoria» ne' «it» (e non vuota): un JSON di
+    //   soli oggetti che non e' un piano (un file di configurazione, di traduzioni) veniva riscritto.
+    // ENGLISH: the same for an object entry with neither "categoria" nor "it" (and not empty): a JSON of
+    //   objects only that is not a plan (a configuration or translations file) was rewritten.
+    const nonPiano = v => Object.keys(v).length > 0 && !('categoria' in v) && !('it' in v);
+    const storta = Object.entries(piano).find(([, v]) => v === null || typeof v !== 'object' || Array.isArray(v) || nonPiano(v));
     if (storta) {
         console.error(`${file}: esiste gia' ma la voce "${storta[0]}" non e' { categoria, it }: non e' un piano leggibile, non lo sovrascrivo. Correggilo, spostalo o scegli un altro nome con --out.`);
         process.exit(1);

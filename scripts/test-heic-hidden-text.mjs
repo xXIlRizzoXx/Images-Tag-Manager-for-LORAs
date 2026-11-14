@@ -9,12 +9,18 @@
    per disegnare identici, una proprieta' sconosciuta segnata "indispensabile" tenuta (la foto parte
    ancora), il tipo di contenuto di un elemento mime al suo posto, una dref "in questo stesso file"
    identica, una HEIC senza dati nascosti identica byte per byte.
+   Anche: pixel (metodo 0) dentro una free/skip di meta o dentro idat restano; una grpl che non si legge
+   diventa 'free' invece di far scartare la foto; ster/pymd/brst diventano 'free'; i testi in coda a
+   pitm, iloc, ipma, iref, dentro dinf e nell'indirizzo di un elemento 'uri ' si tolgono.
    ENGLISH: HEIC SENT TO GOOGLE: THE HIDDEN TEXTS OUTSIDE EXIF AND XMP
    HEIC cleaning removed Exif, XMP and four properties (uuid, udes, taic, itai) but let through: the
    other descriptive properties of the standard (altt, crtt, mdft) and vendor ones with another code;
    each item's name (infe); the name in hdlr; the address in dref; the bytes of mdat (and of the top
    free/skip boxes) that no picture points to. This tests the REAL code with a fake HEIC carrying a
-   recognisable text in each of those places, plus the neighbouring cases that must not change. */
+   recognisable text in each of those places, plus the neighbouring cases that must not change.
+   Also: pixels (method 0) inside a free/skip box of meta or inside idat stay; a grpl that cannot be read
+   becomes 'free' instead of getting the photo rejected; ster/pymd/brst become 'free'; the texts in the
+   tails of pitm, iloc, ipma, iref, inside dinf and in a 'uri ' item's address are removed. */
 
 import * as esbuild from 'esbuild';
 import { fileURLToPath } from 'node:url';
@@ -241,5 +247,146 @@ console.log('\n--- HEIC a griglia con testi in meta (free/skip), idat, iprp e gr
         String(errore));
 }
 
+// ITALIANO: un'immagine i cui byte (metodo 0, posizione assoluta nel file) stanno dentro una free/skip di
+//           meta o dentro idat: azzerare tutta la free, o in idat tenere solo i tratti di metodo 1, la
+//           mandava con i pixel azzerati. Ora si azzera solo quello che sta fuori dai tratti delle immagini;
+//           un testo nella stessa scatola, fuori dal tratto, si toglie lo stesso.
+// ENGLISH: a picture whose bytes (method 0, absolute position in the file) lie inside a free/skip box of
+//          meta or inside idat: zeroing the whole free box, or keeping only the method 1 ranges in idat,
+//          sent it with zeroed pixels. Now only what lies outside the pictures' ranges is zeroed; a text in
+//          the same box, outside the range, is removed all the same.
+const PIXEL_IN_META = 'PIXELS-IN-META-0123456789';
+const SEGRETO_ACCANTO = 'NEXT-TO-PIXELS gps=33.3,44.4';
+const heicPixelInMeta = (dove) => {
+    const ftyp = box('ftyp', 'heic', be32(0), 'mif1', 'heic');
+    const contenitore = dove === 'idat' ? box('idat', PIXEL_IN_META, SEGRETO_ACCANTO) : box(dove, PIXEL_IN_META, SEGRETO_ACCANTO);
+    const meta = (off) => full('meta', 0,
+        full('hdlr', 0, be32(0), 'pict', zeri(12), '\0'),
+        full('pitm', 0, be16(1)),
+        full('iloc', 1, [0x44, 0x40], be16(1), B(be16(1), be16(0), be16(0), be32(0), be16(1), be32(off), be32(PIXEL_IN_META.length))),
+        full('iinf', 0, be16(1), full('infe', 2, be16(1), [0, 0], 'hvc1', '\0')),
+        box('iprp', box('ipco', HVCC, ISPE), full('ipma', 0, be32(1), be16(1), [2], [0x81], [2])),
+        contenitore);
+    const prova = B(ftyp, meta(0), box('mdat', IMG));
+    const off = trova(prova, PIXEL_IN_META);
+    return B(ftyp, meta(off), box('mdat', IMG));
+};
+console.log('\n--- pixel (metodo 0) dentro una free/skip di meta o dentro idat ---');
+for (const dove of ['free', 'skip', 'idat']) {
+    const file = heicPixelInMeta(dove);
+    const { r, errore } = pulisci(file);
+    const fuori = r ? Buffer.from(r.bytes) : Buffer.alloc(0);
+    const i = trova(file, PIXEL_IN_META);
+    dice(`${dove} in meta: la foto parte, stessa lunghezza, pixel identici allo stesso posto`,
+        !!r && fuori.length === file.length && fuori.subarray(i, i + PIXEL_IN_META.length).toString('latin1') === PIXEL_IN_META, String(errore));
+    dice(`${dove} in meta: il testo accanto ai pixel si toglie`, !!r && trova(fuori, SEGRETO_ACCANTO) < 0);
+    dice(`${dove} in meta: la scatola resta al suo posto`, !!r && trova(fuori, dove) === trova(file, dove));
+}
+
+// ITALIANO: una grpl che non si legge (byte in coda dopo l'ultimo gruppo, un gruppo con la misura oltre la
+//           fine) faceva scartare la foto come «tipo di file non supportato». Ora la grpl intera diventa
+//           'free' (stessa misura) e la foto parte. I gruppi standard diversi da 'altr' (ster, pymd, brst)
+//           diventano 'free' anche loro: non servono a disegnare la foto principale.
+// ENGLISH: a grpl that cannot be read (trailing bytes after the last group, a group whose size runs past
+//          the end) made the photo be rejected as "unsupported file type". Now the whole grpl becomes 'free'
+//          (same size) and the photo is sent. Standard groups other than 'altr' (ster, pymd, brst) become
+//          'free' too: they are not needed to draw the primary photo.
+const heicConGrpl = (grpl) => {
+    const ftyp = box('ftyp', 'heic', be32(0), 'mif1', 'heic');
+    const meta = (mb) => full('meta', 0,
+        full('hdlr', 0, be32(0), 'pict', zeri(12), '\0'),
+        full('pitm', 0, be16(1)),
+        full('iloc', 1, [0x44, 0x40], be16(1), B(be16(1), be16(0), be16(0), be32(0), be16(1), be32(mb), be32(IMG.length))),
+        full('iinf', 0, be16(1), full('infe', 2, be16(1), [0, 0], 'hvc1', '\0')),
+        box('iprp', box('ipco', HVCC, ISPE), full('ipma', 0, be32(1), be16(1), [2], [0x81], [2])),
+        grpl);
+    const mb = ftyp.length + meta(0).length + 8;
+    return B(ftyp, meta(mb), box('mdat', IMG));
+};
+console.log('\n--- grpl che non si legge, e i gruppi standard ster/pymd/brst ---');
+for (const [nome, grpl, testo] of [
+    ['3 byte in coda dopo il gruppo altr', box('grpl', full('altr', 0, be32(7), be32(1), be32(1)), 'GRP'), 'GRP'],
+    ['un gruppo con la misura oltre la fine', box('grpl', B(be32(400), 'ster', [0, 0, 0, 0], 'BROKEN-GROUP note=x')), 'BROKEN-GROUP note=x'],
+]) {
+    const file = heicConGrpl(grpl);
+    const { r, errore } = pulisci(file);
+    const fuori = r ? Buffer.from(r.bytes) : Buffer.alloc(0);
+    const iImg = trova(file, IMG.toString('latin1'));
+    dice(`grpl rotta (${nome}): la foto parte, stessa lunghezza, pixel identici`,
+        !!r && fuori.length === file.length && fuori.subarray(iImg, iImg + IMG.length).equals(IMG), String(errore));
+    const iGrpl = trova(file, 'grpl');
+    dice(`grpl rotta (${nome}): diventa 'free' della stessa misura, senza il testo dentro`,
+        !!r && fuori.subarray(iGrpl, iGrpl + 4).toString('latin1') === 'free' && fuori.readUInt32BE(iGrpl - 4) === file.readUInt32BE(iGrpl - 4) && trova(fuori, testo) < 0);
+}
+{
+    const STER = full('ster', 0, be32(5), be32(2), be32(1), be32(2));
+    const PYMD = full('pymd', 0, be32(6), be32(1), be32(1), zeri(8));
+    const BRST = full('brst', 0, be32(8), be32(2), be32(1), be32(2));
+    const file = heicConGrpl(box('grpl', STER, PYMD, BRST, ALTR));
+    const { r, errore } = pulisci(file);
+    const fuori = r ? Buffer.from(r.bytes) : Buffer.alloc(0);
+    dice('grpl con ster, pymd, brst e altr: la foto parte, stessa lunghezza', !!r && fuori.length === file.length, String(errore));
+    dice('...ster, pymd e brst diventano \'free\' (della stessa misura), altr resta identico',
+        !!r && ['ster', 'pymd', 'brst'].every(t => trova(fuori, t) < 0)
+        && fuori.subarray(trova(file, 'altr') - 4, trova(file, 'altr') - 4 + ALTR.length).equals(ALTR)
+        && ['ster', 'pymd', 'brst'].every(t => fuori.readUInt32BE(trova(file, t) - 4) === file.readUInt32BE(trova(file, t) - 4)));
+}
+
+// ITALIANO: altri posti poco usati dove un testo restava: i byte dopo i campi letti di pitm, iloc e ipma,
+//           una scatola sconosciuta dentro dinf (diversa da dref), i byte in coda a un riferimento di iref,
+//           l'indirizzo (item_uri_type) di un elemento 'uri '. Si azzera solo dopo i campi letti: misure,
+//           tipi e campi restano identici.
+// ENGLISH: other rarely used places where a text stayed: the bytes after the fields read in pitm, iloc and
+//          ipma, an unknown box inside dinf (other than dref), the trailing bytes of an iref reference, the
+//          address (item_uri_type) of a 'uri ' item. Only what follows the fields read is zeroed: sizes,
+//          types and fields stay identical.
+const CODA = 'TAIL-TEXT gps=1.2,3.4';
+const heicConCode = ({ pitm = '', iloc = '', ipma = '', dinf = null, iref = null, infe = null }) => {
+    const ftyp = box('ftyp', 'heic', be32(0), 'mif1', 'heic');
+    const meta = (mb) => full('meta', 0,
+        full('hdlr', 0, be32(0), 'pict', zeri(12), '\0'),
+        full('pitm', 0, be16(1), pitm),
+        full('iloc', 1, [0x44, 0x40], be16(1), B(be16(1), be16(0), be16(0), be32(0), be16(1), be32(mb), be32(IMG.length)), iloc),
+        full('iinf', 0, be16(infe ? 2 : 1), full('infe', 2, be16(1), [0, 0], 'hvc1', '\0'), ...(infe ? [infe] : [])),
+        box('iprp', box('ipco', HVCC, ISPE), full('ipma', 0, be32(1), be16(1), [2], [0x81], [2], ipma)),
+        ...(iref ? [full('iref', 0, iref)] : []),
+        ...(dinf ? [box('dinf', full('dref', 0, be32(1), box('url ', [0, 0, 0, 1])), dinf)] : []));
+    const mb = ftyp.length + meta(0).length + 8;
+    return B(ftyp, meta(mb), box('mdat', IMG));
+};
+console.log('\n--- testi in coda a pitm, iloc, ipma, iref, dentro dinf e nel tipo di un elemento uri ---');
+for (const [nome, opz, campi] of [
+    ['coda di pitm', { pitm: CODA }, []],
+    ['coda di iloc', { iloc: CODA }, []],
+    ['coda di ipma', { ipma: CODA }, []],
+    ['scatola sconosciuta dentro dinf', { dinf: box('XURL', CODA) }, [box('url ', [0, 0, 0, 1])]],
+    ['coda di un riferimento di iref', { iref: box('Xnot', be16(1), be16(1), be16(1), CODA) }, []],
+    ['indirizzo di un elemento uri', { infe: full('infe', 2, be16(2), [0, 0], 'uri ', 'ITEM\0', CODA, '\0') }, []],
+]) {
+    const file = heicConCode(opz);
+    const { r, errore } = pulisci(file);
+    const fuori = r ? Buffer.from(r.bytes) : Buffer.alloc(0);
+    dice(`${nome}: la foto parte, stessa lunghezza`, !!r && fuori.length === file.length, String(errore));
+    dice(`${nome}: il testo si toglie`, !!r && trova(fuori, CODA) < 0);
+    const iImg = trova(file, IMG.toString('latin1'));
+    dice(`${nome}: pixel identici; pitm, iloc, iinf, ipma, ipco al loro posto`,
+        !!r && fuori.subarray(iImg, iImg + IMG.length).equals(IMG)
+        && ['pitm', 'iloc', 'iinf', 'ipco', 'ipma', 'hvc1', 'hvcC', 'ispe'].every(t => trova(fuori, t) === trova(file, t)));
+    for (const c of campi) dice(`${nome}: campi letti identici`, !!r && trova(fuori, c.toString('latin1')) === trova(file, c.toString('latin1')));
+    const rifatta = pulisci(fuori);
+    dice(`${nome}: la foto pulita si ripulisce uguale`, !!rifatta.r && Buffer.from(rifatta.r.bytes).equals(fuori), String(rifatta.errore));
+}
+{
+    // ITALIANO: le parti lette restano identiche: il numero dell'immagine principale, la voce di iloc, le
+    //           associazioni di ipma, il riferimento di iref (da, quanti, a), il nome dell'elemento uri (spazi).
+    // ENGLISH: the parts read stay identical: the primary item number, the iloc entry, the ipma
+    //          associations, the iref reference (from, count, to), the uri item's name (spaces).
+    const file = heicConCode({ pitm: CODA, iloc: CODA, ipma: CODA, iref: box('dimg', be16(1), be16(1), be16(2), CODA) });
+    const { r } = pulisci(file);
+    const fuori = r ? Buffer.from(r.bytes) : Buffer.alloc(0);
+    const campo = (tipo, da, n) => { const i = trova(file, tipo) + 4 + da; return [file.subarray(i, i + n), fuori.subarray(i, i + n)]; };
+    const confronti = [campo('pitm', 0, 6), campo('iloc', 0, 4 + 2 + 2 + 20), campo('ipma', 0, 4 + 4 + 2 + 1 + 2), campo('dimg', 0, 6)];
+    dice('campi letti di pitm, iloc, ipma e iref identici, solo la coda azzerata', !!r && confronti.every(([a, b]) => a.equals(b)));
+}
 console.log(`\n${fatti - guai}/${fatti} prove superate`);
 if (fatti === 0 || guai > 0) process.exit(1);

@@ -342,22 +342,25 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     // ITALIANO: il nome in hdlr (ultimo campo, dopo 12 byte riservati) si azzera al suo posto.
     // ENGLISH: the name in hdlr (last field, after 12 reserved bytes) is zeroed in place.
     if (hdlr.body + 24 < hdlr.end) out.fill(0, hdlr.body + 24, hdlr.end);
-    // ITALIANO: le free/skip dentro meta restano scatole vuote: il loro contenuto non serve a niente e puo'
-    //           contenere un testo (come quelle in cima al file, vedi sotto).
-    // ENGLISH: the free/skip boxes inside meta stay as empty boxes: their content serves nothing and can
-    //          hold a text (like the ones at the top of the file, see below).
-    for (const x of parts) {
-        if (!HEIC_META_KEEP.has(x.type)) blank(x);
-        else if (x.type === 'free' || x.type === 'skip') out.fill(0, x.body, x.end);
-    }
+    // ITALIANO: le free/skip dentro meta si azzerano piu' sotto, letta la iloc: possono contenere i byte di
+    //           un'immagine (metodo 0, posizione assoluta), che restano.
+    // ENGLISH: the free/skip boxes inside meta are zeroed further down, once iloc is read: they can hold a
+    //          picture's bytes (method 0, absolute position), which stay.
+    for (const x of parts) if (!HEIC_META_KEEP.has(x.type)) blank(x);
     // ITALIANO: grpl (gruppi di elementi) non serve a disegnare la foto principale (pitm). Si tiene solo il
     //           gruppo 'altr' (le alternative: chi non sa disegnare un elemento ne sceglie un altro), con i
     //           byte dopo il suo elenco di elementi azzerati; ogni altro gruppo diventa 'free'.
     // ENGLISH: grpl (entity groups) is not needed to draw the primary photo (pitm). Only the 'altr' group
     //          is kept (alternatives: a reader that cannot draw an item picks another one), with the bytes
     //          after its entity list zeroed; every other group becomes 'free'.
+    // ITALIANO: una grpl che non si legge (byte in coda, un gruppo con la misura sbagliata) diventa tutta
+    //           'free' invece di far scartare la foto: prima di questa pulizia la foto partiva.
+    // ENGLISH: a grpl that cannot be read (trailing bytes, a group with a wrong size) becomes a 'free' box as
+    //          a whole instead of getting the photo rejected: before this cleaning the photo was sent.
     for (const grpl of parts.filter(x => x.type === 'grpl')) {
-        for (const g of childBoxes(b, grpl.body, grpl.end)) {
+        let gruppi: Box[];
+        try { gruppi = childBoxes(b, grpl.body, grpl.end); } catch (_) { blank(grpl); continue; }
+        for (const g of gruppi) {
             const fine = g.type === 'altr' && g.body + 12 <= g.end ? g.body + 12 + 4 * be32(b, g.body + 8) : Infinity;
             if (fine > g.end) blank(g);
             else out.fill(0, fine, g.end);
@@ -367,19 +370,45 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     //           una voce "in questo stesso file" (flag 1) non ha indirizzo e resta identica.
     // ENGLISH: the dref table: the address of a url/urn entry (a path or a site) is zeroed; an "in
     //          this same file" entry (flag 1) has no address and stays identical.
+    // ITALIANO: in dinf c'e' solo la dref: ogni altra scatola (sconosciuta, puo' contenere un indirizzo)
+    //           diventa 'free'.
+    // ENGLISH: dinf holds only dref: any other box (unknown, it can hold an address) becomes 'free'.
     for (const dinf of parts.filter(x => x.type === 'dinf')) {
         for (const dref of childBoxes(b, dinf.body, dinf.end)) {
-            if (dref.type !== 'dref') continue;
+            if (dref.type !== 'dref') { blank(dref); continue; }
             for (const v of childBoxes(b, dref.body + 8, dref.end)) {
                 if ((v.type === 'url ' || v.type === 'urn ') && v.body + 4 < v.end) out.fill(0, v.body + 4, v.end);
             }
         }
+    }
+    // ITALIANO: iref: ogni riferimento e' "da, quanti, a..." (16 bit, 32 con la versione 1); i byte dopo
+    //           l'ultimo "a" si azzerano. Un riferimento che non si legge resta com'e': la foto parte come
+    //           prima (la griglia, dimg, sta qui e serve a disegnare).
+    // ENGLISH: iref: every reference is "from, count, to..." (16 bits, 32 with version 1); the bytes after
+    //          the last "to" are zeroed. A reference that cannot be read stays as it is: the photo is sent as
+    //          before (the grid, dimg, lives here and is needed to draw).
+    for (const iref of parts.filter(x => x.type === 'iref')) {
+        try {
+            const larghi = b[iref.body] !== 0;
+            for (const rif of childBoxes(b, iref.body + 4, iref.end)) {
+                const q = fieldReader(b, rif.body, rif.end);
+                if (larghi) q.u32(); else q.u16();
+                const quanti = q.u16();
+                for (let k = 0; k < quanti; k++) { if (larghi) q.u32(); else q.u16(); }
+                out.fill(0, q.pos(), rif.end);
+            }
+        } catch (_) { /* ITALIANO: resta com'e' — ENGLISH: stays as it is */ }
     }
 
     r = fieldReader(b, pitm.body, pitm.end);
     const pitmVersion = r.u8();
     r.skip(3);
     const primary = pitmVersion === 0 ? r.u16() : r.u32();
+    // ITALIANO: dopo i campi letti (qui, in iloc e in ipma) non c'e' niente che serva: i byte in coda, dove
+    //           puo' restare un testo, si azzerano. Misura e campi restano identici.
+    // ENGLISH: after the fields read (here, in iloc and in ipma) nothing needed follows: the trailing bytes,
+    //          where a text can stay, are zeroed. Size and fields stay identical.
+    out.fill(0, r.pos(), pitm.end);
 
     // ITALIANO: il tipo di ogni elemento; un elemento senza tipo (infe v0/v1) non e' un'immagine.
     // ENGLISH: the type of every item; an item without a type (infe v0/v1) is not a picture.
@@ -402,7 +431,13 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
         // ENGLISH: the item name (free text; in v0/v1 it follows the 2 protection bytes) becomes spaces
         //          of the same length: its closing zero stays where it is, so the fields after it
         //          (content type) do not move.
-        for (let k = q.pos() + (v >= 2 ? 0 : 2); k < e.end && b[k] !== 0; k++) out[k] = 0x20;
+        let k = q.pos() + (v >= 2 ? 0 : 2);
+        for (; k < e.end && b[k] !== 0; k++) out[k] = 0x20;
+        // ITALIANO: un elemento 'uri ' ha dopo il nome il suo indirizzo (item_uri_type, testo libero): si
+        //           azzera. Non e' un'immagine: chi disegna la foto non lo legge.
+        // ENGLISH: a 'uri ' item has its address after the name (item_uri_type, free text): it is zeroed.
+        //          It is not a picture: whoever draws the photo does not read it.
+        if (type === 'uri ' && k < e.end) out.fill(0, k + 1, e.end);
         if (types.has(id)) throw malformed();
         types.set(id, type);
     }
@@ -465,12 +500,15 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
             out.fill(0, from, from + len);
         }
     }
+    out.fill(0, r.pos(), iloc.end); // la coda dopo le voci (vedi pitm) / the tail after the entries (see pitm)
     // ITALIANO: in mdat (e nelle free/skip in cima) si azzera ogni byte a cui nessuna immagine punta:
     //           per esempio un Exif "tolto" da un programma che ha cancellato solo il riferimento. Lo
-    //           stesso in idat, coi tratti delle immagini di metodo 1.
+    //           stesso in idat, coi tratti delle immagini di metodo 1 e di metodo 0 (posizione assoluta,
+    //           che puo' cadere dentro idat).
     // ENGLISH: in mdat (and in the top free/skip boxes) every byte no picture points to is zeroed:
     //          for example an Exif "removed" by a program that deleted only the reference. The same in
-    //          idat, with the ranges of the method 1 pictures.
+    //          idat, with the ranges of the method 1 and method 0 pictures (absolute position, which can
+    //          fall inside idat).
     const azzeraFuori = (inizio: number, fine: number, tratti: Array<[number, number]>) => {
         let p = inizio;
         for (const [da, a] of tratti) {
@@ -481,14 +519,20 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
         }
         if (p < fine) out.fill(0, p, fine);
     };
+    tenuti.sort((p, q) => p[0] - q[0]);
     if (!tenutiIncerti) {
-        tenuti.sort((p, q) => p[0] - q[0]);
         for (const x of top) if (HEIC_SENZA_RIFERIMENTI.has(x.type)) azzeraFuori(x.body, x.end, tenuti);
-        if (idat) {
-            tenutiIdat.sort((p, q) => p[0] - q[0]);
-            azzeraFuori(idat.body, idat.end, tenutiIdat);
-        }
+        if (idat) azzeraFuori(idat.body, idat.end, [...tenuti, ...tenutiIdat].sort((p, q) => p[0] - q[0]));
     }
+    // ITALIANO: le free/skip dentro meta: il loro contenuto non serve a niente e puo' contenere un testo, ma
+    //           un'immagine (metodo 0) puo' avere i byte li': si azzera tutto tranne i suoi tratti. Anche con
+    //           un'immagine di metodo 2: i byte di un'immagine che sta in un altro elemento sono nei tratti di
+    //           quell'elemento (tenuti se e' un'immagine, azzerati comunque sopra se non lo e').
+    // ENGLISH: the free/skip boxes inside meta: their content serves nothing and can hold a text, but a
+    //          picture (method 0) can have its bytes there: everything but its ranges is zeroed. Also with a
+    //          method 2 picture: the bytes of a picture lying in another item are in that item's ranges
+    //          (kept if it is a picture, zeroed above anyway if it is not).
+    for (const x of parts) if (x.type === 'free' || x.type === 'skip') azzeraFuori(x.body, x.end, tenuti);
     if (iprp) {
         const figli = childBoxes(b, iprp.body, iprp.end);
         // ITALIANO: in iprp servono solo ipco e ipma: ogni altra scatola (di un produttore) diventa 'free'.
@@ -511,6 +555,7 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
                     else { const v = m.u8(); if (v & 0x80) indispensabili.add(v & 0x7F); }
                 }
             }
+            out.fill(0, m.pos(), x.end); // la coda dopo le voci (vedi pitm) / the tail after the entries (see pitm)
         }
         for (const x of figli) {
             if (x.type !== 'ipco') continue;

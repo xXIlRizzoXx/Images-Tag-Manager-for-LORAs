@@ -6,7 +6,8 @@
    unisce: le voci gia' riempite restano (anche scritte con un'altra grafia, o con il BOM del Blocco
    note), i tag nuovi si aggiungono vuoti, le voci che non sono nei file di adesso restano, quelle
    finite nel frattempo nel dizionario si tolgono dicendolo. Un --out che esiste ma non e' un piano
-   leggibile ferma tutto con codice 1 e non viene toccato. Si lancia lo script VERO su una copia del
+   leggibile ferma tutto con codice 1 e non viene toccato (anche un JSON di soli oggetti che non e' un
+   piano, come un file di configurazione: una voce oggetto senza ne' «categoria» ne' «it»). Si lancia lo script VERO su una copia del
    dizionario VERO in una cartella temporanea.
    Uso:  node scripts/test-merge-tag-plan-keep.mjs      (esce con codice 1 se qualcosa non torna)
 
@@ -18,7 +19,8 @@
    entries already filled stay (also when written with another spelling, or with Notepad's BOM),
    new tags are added empty, entries that are not in the current files stay, entries that reached
    the dictionary in the meantime are removed and the script says so. An --out that exists but is
-   not a readable plan stops everything with exit code 1 and is not touched. The REAL script runs on
+   not a readable plan stops everything with exit code 1 and is not touched (also a JSON of objects only
+   that is not a plan, like a configuration file: an object entry with neither "categoria" nor "it"). The REAL script runs on
    a copy of the REAL dictionary in a temporary folder.
    Usage:  node scripts/test-merge-tag-plan-keep.mjs      (exits with code 1 if anything is off) */
 
@@ -144,6 +146,38 @@ try {
         dice(nome + ': codice 1, il messaggio nomina il file e dice che non lo sovrascrive', [1, true],
             [r.codice, r.errore.includes(nome) && /non lo sovrascrivo/.test(r.errore)]);
         dice(nome + ': file intatto, nessuno stack trace', [true, false], [prima.equals(fs.readFileSync(path.join(prova, nome))), /\n\s+at /.test(r.testo)]);
+    }
+    // ITALIANO: un JSON che non e' un piano ma contiene solo oggetti (un file di configurazione, un file di
+    //           traduzioni) passato per sbaglio come --out veniva riscritto con i tag nuovi aggiunti. Ora una
+    //           voce oggetto senza ne' «categoria» ne' «it» (e non vuota) ferma tutto: codice 1, file intatto.
+    // ENGLISH: a JSON that is not a plan but holds only objects (a configuration file, a translations file)
+    //          passed by mistake as --out was rewritten with the new tags added. Now an object entry with
+    //          neither "categoria" nor "it" (and not empty) stops everything: exit code 1, file untouched.
+    for (const [nome, contenuto] of [
+        ['configurazione.json', JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022' }, watchOptions: { watchFile: 'useFsEvents' } }, null, 2)],
+        ['traduzioni.json', JSON.stringify({ en: { hello: 'Hello' }, it: { hello: 'Ciao' } }, null, 2)],
+        ['piano-e-altro.json', JSON.stringify({ 'zzqx alfa': { categoria: 'framing', it: 'alfa it' }, impostazioni: { tema: 'scuro' } }, null, 2)],
+    ]) {
+        scrivi(nome, contenuto);
+        const prima = fs.readFileSync(path.join(prova, nome));
+        const r = lancia('lista1.txt', '--out', nome);
+        dice(nome + ': codice 1, il messaggio nomina il file e dice che non lo sovrascrive', [1, true],
+            [r.codice, r.errore.includes(nome) && /non lo sovrascrivo/.test(r.errore)]);
+        dice(nome + ': file intatto, nessuno stack trace', [true, false], [prima.equals(fs.readFileSync(path.join(prova, nome))), /\n\s+at /.test(r.testo)]);
+    }
+    // ITALIANO: casi vicini che restano come prima: voci con la sola «categoria» o il solo «it», voci vuote {},
+    //           un piano col BOM e gli a capo di Windows.
+    // ENGLISH: neighbouring cases that stay as before: entries with only "categoria" or only "it", empty {}
+    //          entries, a plan with the BOM and Windows line breaks.
+    {
+        scrivi('piano-mezzo.json', JSON.stringify({ 'zzqx alfa': { categoria: 'framing' }, 'zzqx beta': { it: 'beta it' }, 'zzqx gamma': {} }));
+        const r = lancia('lista1.txt', '--out', 'piano-mezzo.json');
+        dice('voci con la sola categoria, il solo it o vuote: codice 0 e voci tenute', [0, { categoria: 'framing' }, { it: 'beta it' }],
+            [r.codice, leggiPiano('piano-mezzo.json')['zzqx alfa'], leggiPiano('piano-mezzo.json')['zzqx beta']]);
+        scrivi('piano-crlf.json', '﻿' + JSON.stringify({ 'zzqx alfa': { categoria: 'framing', it: 'alfa crlf' } }, null, 2).replace(/\n/g, '\r\n'));
+        const s = lancia('lista1.txt', '--out', 'piano-crlf.json');
+        dice('piano con BOM e a capo di Windows: codice 0, la voce riempita resta', [0, { categoria: 'framing', it: 'alfa crlf' }],
+            [s.codice, leggiPiano('piano-crlf.json')['zzqx alfa']]);
     }
     // ITALIANO: casi vicini: un piano vuoto {} e un piano con voci oggetto (anche con campi in piu') si uniscono come prima.
     // ENGLISH: neighbouring cases: an empty plan {} and a plan with object entries (extra fields too) are merged as before.
