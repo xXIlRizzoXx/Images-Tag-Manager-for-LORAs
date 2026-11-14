@@ -84,6 +84,11 @@ const PEZZI = {
     handleTagEditorSaved: ritaglia('    const handleTagEditorSaved = async '),
     handleSuggestedTagClick: ritaglia('    const handleSuggestedTagClick = '),
     handleGlobalTagsChange: ritaglia('    const handleGlobalTagsChange = ('),
+    // ITALIANO: le azioni sull'elenco dei tag del progetto («Visualizza tutti i tag»).
+    // ENGLISH: the actions on the project tag list ("View all tags").
+    handleDeleteAllTags: ritaglia('    const handleDeleteAllTags = () => {'),
+    handleCleanUnusedTags: ritaglia('    const handleCleanUnusedTags = () => {'),
+    handleDeleteTagFromProject: ritaglia('    const handleDeleteTagFromProject = ('),
 };
 for (const [nome, testo] of Object.entries(PEZZI)) {
     if (!testo) { console.log(`NO  ${nome} non trovato in src/App.tsx`); process.exit(1); }
@@ -120,6 +125,12 @@ const testi = [...Object.values(PEZZI), gemelli, conferma, 'const effettoCronolo
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
 testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
 testi.push('const effettoSelezione = ' + (selezione || '() => { }') + ';');
+// ITALIANO: l'effetto che fa un passo della cronologia quando cambia solo l'elenco dei tag del progetto:
+//           il codice di prima non lo aveva, e allora non gira.
+// ENGLISH: the effect that makes a history step when only the project tag list changes: the
+//          previous code did not have it, and then it does not run.
+const elencoEffetto = effetto('    }, [customProjectTags]);');
+testi.push('const effettoElenco = ' + (elencoEffetto || '() => { }') + ';');
 const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedForBulk', 'stagedBulkTags', 'globalTriggers',
     'setImages', 'setHistory', 'setHistoryIndex', 'setToast', 'setSelectedImageId', 'setStagedBulkTags',
     'setSaveCloseDialog', 'setConfirmDialog', 'setIsSaving', 'setImportProgress',
@@ -127,9 +138,12 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
     'setSelectedForBulk', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef', 'uniqueTagsIgnoringCase',
     'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef',
-    'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES'];
+    'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES',
+    // ITALIANO: l'elenco dei tag del progetto e i suoi ricordi per passo (Ctrl+Z lo rimette).
+    // ENGLISH: the project tag list and its per-step records (Ctrl+Z puts it back).
+    'setCustomProjectTags', 'customProjectTags', 'customProjectTagsRef', 'customTagsHistoryRef', 'elencoRegistratoRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
-const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione',
+const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione', 'effettoElenco',
     ...(visualizzatore ? ['effettoVisualizzatore'] : []), ...(conferma ? ['confermaSovrascrittura'] : [])].join(', ') + ' };');
 
 /* ITALIANO: una cartella finta: `scritti` = nome del file -> ultimo contenuto scritto.
@@ -158,14 +172,16 @@ export const foto = (id, tags, cartella = null) => ({
    as seen from the current state; notifiche, finestre and aggiornamenti record what the user sees. */
 // ITALIANO: `finestra` = l'oggetto window visto dal codice (per esempio con un electronAPI finto).
 // ENGLISH: `finestra` = the window object the code sees (for example with a fake electronAPI).
-export const creaApp = (immagini, { trigger = [], finestra = {} } = {}) => {
+// ITALIANO: `elenco` = l'elenco dei tag del progetto all'avvio.  ENGLISH: `elenco` = the project tag list at start.
+export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } = {}) => {
     const stato = {
         images: [], history: [], historyIndex: -1, selectedImageId: null, selectedForBulk: [], stagedBulkTags: [],
-        globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false },
+        globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false }, customProjectTags: elenco,
     };
     const r = { stato, notifiche: [], tagSuFotoAperta: [] };
     const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() },
-        globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] } };
+        globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] },
+        customProjectTagsRef: { current: elenco }, customTagsHistoryRef: { current: [] }, elencoRegistratoRef: { current: elenco } };
     const coda = [];
     let programmato = false;
     const quieto = { log() { }, warn() { }, error() { } };
@@ -175,6 +191,7 @@ export const creaApp = (immagini, { trigger = [], finestra = {} } = {}) => {
         while (coda.length) {
             const primaImmagini = stato.images;
             const primaAperta = stato.selectedImageId;
+            const primaElenco = stato.customProjectTags;
             for (const [k, v] of coda.splice(0)) stato[k] = typeof v === 'function' ? v(stato[k]) : v;
             if (stato.images !== primaImmagini) {
                 // ITALIANO: gli effetti su [images], nell'ordine di App.tsx: cronologia, poi imagesRef.
@@ -187,15 +204,18 @@ export const creaApp = (immagini, { trigger = [], finestra = {} } = {}) => {
                 render().effettoVisualizzatore();
             }
             if (stato.images !== primaImmagini) render().effettoSelezione();
+            // ITALIANO: dopo quelli su [images], come in App.tsx, l'effetto su [customProjectTags].
+            // ENGLISH: after the ones on [images], as in App.tsx, the effect on [customProjectTags].
+            if (stato.customProjectTags !== primaElenco) render().effettoElenco();
         }
     };
     const imposta = (chiave) => (v) => {
         coda.push([chiave, v]);
         if (!programmato) { programmato = true; queueMicrotask(scarica); }
     };
-    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef prende il valore dello stato.
-    // ENGLISH: as in App.tsx, on every render globalTriggersRef takes the state's value.
-    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, fabbrica(
+    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef (e customProjectTagsRef) prende il valore dello stato.
+    // ENGLISH: as in App.tsx, on every render globalTriggersRef (and customProjectTagsRef) takes the state's value.
+    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, refs.customProjectTagsRef.current = stato.customProjectTags, fabbrica(
         stato.images, stato.history, stato.historyIndex, stato.selectedImageId, stato.selectedForBulk, stato.stagedBulkTags, stato.globalTriggers,
         imposta('images'), imposta('history'), imposta('historyIndex'), () => { }, imposta('selectedImageId'), imposta('stagedBulkTags'),
         imposta('saveCloseDialog'), imposta('confirmDialog'), () => { }, () => { },
@@ -205,7 +225,8 @@ export const creaApp = (immagini, { trigger = [], finestra = {} } = {}) => {
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
         (f) => f, finestra, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' },
-        S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024));
+        S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024,
+        imposta('customProjectTags'), stato.customProjectTags, refs.customProjectTagsRef, refs.customTagsHistoryRef, refs.elencoRegistratoRef));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();
@@ -218,5 +239,8 @@ export const creaApp = (immagini, { trigger = [], finestra = {} } = {}) => {
     r.seleziona = (ids) => imposta('selectedForBulk')(ids);
     r.importa = () => imposta('images')(immagini);
     r.fotoCon = (id) => stato.images.find(i => i.id === id);
+    // ITALIANO: un tag scritto nella casella «aggiungi al progetto» (cambia solo l'elenco).
+    // ENGLISH: a tag typed in the "add to project" box (changes only the list).
+    r.aggiungiAlProgetto = (tag) => imposta('customProjectTags')((prev) => [...prev, tag]);
     return r;
 };

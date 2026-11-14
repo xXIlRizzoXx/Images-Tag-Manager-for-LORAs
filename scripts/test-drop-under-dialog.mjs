@@ -49,9 +49,9 @@ const codice = (await esbuild.transform(sorgente.slice(inizio, fine.index + fine
 const trascina = async ({ editor = false, chiave = false, aiuto = null, chiusura = false } = {}) => {
     const r = { notifiche: [], riepiloghi: 0 };
     const f = new Function('useCallback', 'showNotification', 't', 'loadSidecarTxtFiles', 'calculateImportSummary', 'isTagEditorOpen', 'isApiKeyDialogOpen',
-        'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine', codice + '\nreturn handleDroppedFiles;')(
+        'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine', 'cartellaProtettaOraRef', codice + '\nreturn handleDroppedFiles;')(
         (fn) => fn, (m, tipo) => r.notifiche.push([m, tipo]), t, async () => ({ txtFiles: [], folderOf: null }),
-        () => { r.riepiloghi++; }, editor, chiave, fileDiMac, aiuto, { isOpen: chiusura, isSaving: false }, eFileImmagine);
+        () => { r.riepiloghi++; }, editor, chiave, fileDiMac, aiuto, { isOpen: chiusura, isSaving: false }, eFileImmagine, { current: 0 });
     await f([{ name: 'a.png', type: 'image/png' }, { name: 'a.txt', type: 'text/plain' }]);
     return r;
 };

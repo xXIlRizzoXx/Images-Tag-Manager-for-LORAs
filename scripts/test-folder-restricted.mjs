@@ -144,7 +144,7 @@ try {
     console.log('\n--- la pagina dice all\'utente perche\' la cartella non si apre ---');
     const app = fs.readFileSync(path.join(radice, 'src', 'App.tsx'), 'utf8');
     dice('App.tsx ascolta onFolderRestricted e mostra t.folderProtected', true,
-        /onFolderRestricted\?\.\(\(\) => showNotification\(t\.folderProtected, 'error'\)\)/.test(app));
+        /onFolderRestricted\?\.\(\(\) => \{ cartellaProtettaOraRef\.current = Date\.now\(\); showNotification\(t\.folderProtected, 'error'\); \}\)/.test(app));
     const costanti = fs.readFileSync(path.join(radice, 'src', 'constants.ts'), 'utf8');
     dice('folderProtected c\'e\' in tutte e nove le lingue', 9, (costanti.match(/^ {8}folderProtected: "/gm) || []).length);
 

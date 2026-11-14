@@ -172,12 +172,32 @@ const scaduta = (s: any, ora: number): boolean => typeof s.visto === 'number' &&
 //   scriviBackupSubito and sorgentiDaTenere); null = none known, as before.
 export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = [], lottiSessione: Set<string> | null = null): { folder: string; sources: SorgenteBackup[] } | null => {
     const ora = Date.now();
-    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number }>();
+    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number; extra: Set<string> }>();
     const lottoDi = (lotto: string, cartella: string) => {
         let l = lotti.get(lotto);
-        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0, vivi: 0 }; lotti.set(lotto, l); }
+        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0, vivi: 0, extra: new Set() }; lotti.set(lotto, l); }
         if (cartella) l.cartella = cartella;
         return l;
+    };
+    // ITALIANO: `nomiImpronta` (vedi confermaImport) = le foto della stessa cartella gia' aperte in un ALTRO
+    //   lotto quando questo e' entrato (per esempio a.png caricata prima da sola): contano nella sua
+    //   impronta, che cosi' e' quella della cartella intera come la trovera' una riapertura normale. Prima
+    //   l'impronta contava solo le foto del lotto, e dopo un crash le sue modifiche non tornavano. Un nome
+    //   conta solo finche' quella foto e' in memoria in un altro lotto (aperta, nel cestino o chiusa).
+    // ENGLISH: `nomiImpronta` (see confermaImport) = the photos of the same folder already open in ANOTHER
+    //   batch when this one came in (for example a.png loaded alone first): they count in its fingerprint,
+    //   which so is the whole folder's as a normal reopening will find it. The fingerprint used to count
+    //   only the batch's photos, and after a crash its edits did not come back. A name counts only while
+    //   that photo is in memory in another batch (open, trashed or closed).
+    const lottiDelNome = new Map<string, Set<string>>();
+    const segna = (nome: string, lotto: string, foto: any) => {
+        let s = lottiDelNome.get(nome);
+        if (!s) { s = new Set(); lottiDelNome.set(nome, s); }
+        s.add(lotto);
+        if (foto && Array.isArray(foto.nomiImpronta)) {
+            const l = lotti.get(lotto);
+            if (l) for (const n of foto.nomiImpronta) if (typeof n === 'string' && n) l.extra.add(n);
+        }
     };
     const presenti = new Set<string>();
     const chiaviPresenti = new Set<string>();
@@ -186,6 +206,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         chiaviPresenti.add(String(img.lottoImport || '') + BACKUP_KEY_SEP + (img.backupKey || (BACKUP_KEY_SEP + img.file.name)));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
+        segna(img.file.name, String(img.lottoImport || ''), img);
         l.vivi++;
         if (img.isTrashed) continue;
         if (!fotoDaSalvare(img, triggers)) continue;
@@ -223,6 +244,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         const chiaveCompleta = String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa;
         if (chiaviPresenti.has(chiaveCompleta)) continue;
         lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
+        segna(c.name, String(c.lotto || ''), fotoChiusa);
         // ITALIANO: una foto chiusa, ripresa riaprendo la cartella e chiusa di nuovo lascia fra le
         //           chiuse due voci (id vecchio e id nuovo) con lo stesso lotto e la stessa chiave: e'
         //           lo stesso file e si conta una volta. Solo per le chiavi con la cartella: senza
@@ -242,7 +264,9 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     const aperte = new Set<string>();
     const conFirma: { firma: string; lotto: string; data: Record<string, VoceBackup>; voci: number }[] = [];
     for (const [lotto, l] of lotti) {
-        const firma = folderSignature(l.cartella, l.nomi);
+        const propri = l.extra.size > 0 ? new Set(l.nomi) : null;
+        const altrove = propri ? [...l.extra].filter(n => !propri.has(n) && [...(lottiDelNome.get(n) || [])].some(x => x !== lotto)) : [];
+        const firma = folderSignature(l.cartella, [...l.nomi, ...altrove]);
         aperte.add(firma);
         if (l.vivi > 0) firme.set(firma, (firme.get(firma) || 0) + 1);
         conFirma.push({ firma, lotto, data: l.data, voci: l.voci });

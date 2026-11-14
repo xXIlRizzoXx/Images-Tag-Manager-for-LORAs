@@ -127,7 +127,7 @@ console.log('\n--- App.tsx passa i lotti della sessione alle due scritture del b
     const app = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
     dice('un insieme per tutta la sessione (useRef(new Set))', true, /const lottiSessioneRef = useRef<Set<string>>\(new Set\(\)\);/.test(app));
     const righe = app.split('\n').filter(r => r.includes('scriviBackupSubito(localStorage,'));
-    dice('le due scritture (effetto e chiusura della finestra) lo passano', [2, true], [righe.length, righe.every(r => r.includes(', lottiSessioneRef.current);'))]);
+    dice('le due scritture (effetto e chiusura della finestra) lo passano', [2, true], [righe.length, righe.every(r => /, lottiSessioneRef\.current(, [^;]+)?\);/.test(r))]);
 }
 
 process.exit(esito());

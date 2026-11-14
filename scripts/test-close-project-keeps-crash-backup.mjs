@@ -47,7 +47,9 @@ const js = (await esbuild.transform(ritaglia('    const closeProjectNow = '), { 
 const NOMI = ['progettoGenRef', 'aiCancelRequestedRef', 'setAiCancelRequested', 'aiAbortControllerRef', 'localStorage', 'backupDopoChiusura',
     'imagesRef', 'fotoChiuseRef', 'releaseThumbnails', 'images', 'liberaAnteprimeProgetto', 'ultimoSvuotamento', 'setUltimoSvuotamento',
     'setImages', 'setGlobalTriggers', 'setSelectedForBulk', 'setStagedBulkTags', 'setCustomProjectTags', 'setDirHandle', 'setSelectedImageId',
-    'setCopiedTags', 'setHistory', 'setHistoryIndex', 'discoNotoRef', 'soundManager', 'showNotification', 't', 'setTagSearch', 'setBulkSearch'];
+    'setCopiedTags', 'setHistory', 'setHistoryIndex', 'discoNotoRef', 'soundManager', 'showNotification', 't', 'setTagSearch', 'setBulkSearch',
+    // ITALIANO: il conto di fine lavoro dell'AI esterna, fermato alla chiusura.  ENGLISH: the external AI's end-of-work count, stopped on close.
+    'mcpFineRef'];
 const fabbrica = new Function(...NOMI, js + '\nreturn closeProjectNow;');
 
 const SEP = '\x1f';
@@ -87,7 +89,7 @@ const chiudiProgetto = (memoria, aperte, chiuse = []) => {
     const chiudi = fabbrica({ current: 0 }, { current: false }, nulla, { current: null }, memoria, G.backupDopoChiusura,
         { current: aperte }, fotoChiuseRef, nulla, aperte, nulla, null, nulla,
         nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, nulla, { current: new Map() },
-        { chime() { }, pop() { } }, nulla, { closeAllDone: 'chiuso' }, nulla, nulla);
+        { chime() { }, pop() { } }, nulla, { closeAllDone: 'chiuso' }, nulla, nulla, { current: null });
     chiudi();
     G.scriviBackupSubito(memoria, [], fotoChiuseRef.current.values(), '');
 };

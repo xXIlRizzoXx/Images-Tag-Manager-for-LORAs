@@ -48,7 +48,7 @@ const i1 = sorgente.indexOf('    }, [images]);', iCuore);
 if (iCuore < 0 || i0 < 0 || i1 < 0) { console.log('NO  effetto della cronologia non trovato in src/App.tsx'); process.exit(1); }
 const effetto = (await esbuild.transform(sorgente.slice(i0, i1 + '    }, [images]);'.length), { loader: 'ts' })).code;
 const corpo = new Function('React', 'useEffect', 'images', 'historyIndex', 'setHistory', 'setHistoryIndex', 'isUndoRedoAction',
-    'triggerHistoryRef', 'globalTriggers', effetto);
+    'triggerHistoryRef', 'globalTriggers', 'customTagsHistoryRef', 'customProjectTagsRef', 'elencoRegistratoRef', effetto);
 
 // ITALIANO: un contenitore finto: il componente restituisce null, React non tocca il DOM.
 // ENGLISH: a fake container: the component returns null, React does not touch the DOM.
@@ -66,8 +66,14 @@ const prova = async (strict) => {
         const [historyIndex, setHistoryIndex] = React.useState(-1);
         const isUndoRedoAction = React.useRef(false);
         const triggerHistoryRef = React.useRef([]);
-        corpo(React, React.useEffect, images, historyIndex, setHistory, setHistoryIndex, isUndoRedoAction, triggerHistoryRef, []);
-        api = { images, history, historyIndex, setImages, triggerHistoryRef };
+        // ITALIANO: l'elenco dei tag del progetto e i suoi ricordi per passo, come in App.tsx.
+        // ENGLISH: the project tag list and its per-step records, as in App.tsx.
+        const customTagsHistoryRef = React.useRef([]);
+        const customProjectTagsRef = React.useRef([]);
+        const elencoRegistratoRef = React.useRef([]);
+        corpo(React, React.useEffect, images, historyIndex, setHistory, setHistoryIndex, isUndoRedoAction, triggerHistoryRef, [],
+            customTagsHistoryRef, customProjectTagsRef, elencoRegistratoRef);
+        api = { images, history, historyIndex, setImages, triggerHistoryRef, customTagsHistoryRef };
         return null;
     }
     const root = createRoot(contenitore);
@@ -85,7 +91,7 @@ const prova = async (strict) => {
     // ENGLISH: the first Ctrl+Z (same rule as handleUndo) must bring back the photo without "hat".
     const passo = H.nearestDifferentStep(api.history, api.historyIndex, -1);
     const primoUndo = passo >= 0 ? api.history[passo] : null;
-    const triggerAllineate = api.triggerHistoryRef.current.length === api.history.length;
+    const triggerAllineate = api.triggerHistoryRef.current.length === api.history.length && api.customTagsHistoryRef.current.length === api.history.length;
     await React.act(async () => { root.unmount(); });
     return { passi, primoUndo, triggerAllineate };
 };

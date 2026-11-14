@@ -137,6 +137,31 @@ console.log('\n--- foto gia\' aperte: l\'impronta dell\'import puo\' trovare un 
     void fab; void riaperto;
     await app.conferma(d);
     dice('b.png NON prende il backup senza che l\'utente l\'abbia visto', [], (app.images.find(i => i.file.name === 'b.png') || {}).tags || []);
+    // ITALIANO: d.png e' della cartella ma in un altro lotto: ora conta nell'impronta delle foto nuove (vedi
+    //           nomiImpronta in confermaImport), che e' quella del riepilogo (tutte e quattro). Come
+    //           riaprendo la cartella normalmente, il backup di tre foto non combacia: niente da chiedere.
+    // ENGLISH: d.png belongs to the folder but to another batch: it now counts in the new photos'
+    //          fingerprint (see nomiImpronta in confermaImport), which is the summary's (all four). As when
+    //          reopening the folder normally, the three-photo backup does not match: nothing to ask.
+    dice('le foto nuove hanno l\'impronta del riepilogo: il riepilogo non si riapre', undefined, ((app.riepilogoRiaperto || {}).summary || {}).recupero?.n);
+}
+{
+    // ITALIANO: la cartella riaperta con una foto in piu' (c.png) entra nel lotto di quelle gia' aperte: l'impronta
+    //           dell'import e' quella della sola c.png e trova il backup di quando la cartella aveva solo c.png,
+    //           che il riepilogo (tutte e tre) non annunciava: il riepilogo si riapre con la casella.
+    // ENGLISH: the folder reopened with one more photo (c.png) joins the batch of those already open: the import's
+    //          fingerprint is c.png's alone and finds the backup from when the folder held only c.png, which the
+    //          summary (all three) did not announce: the summary reopens with the checkbox.
+    const h3 = cartella('disco4', 'ds');
+    const prima3 = creaApp();
+    await prima3.conferma(riepilogo(h3, ['c.png']));
+    const salvato = JSON.stringify({ ts: 1, ...B.costruisciBackup(prima3.images.map(i => ({ ...i, tags: [...i.tags, 'nuovo'] })), [], 'ds') });
+    const app = creaApp({ backup: salvato });
+    await app.conferma(riepilogo(h3, ['a.png', 'b.png']));
+    const d = riepilogo(h3, ['a.png', 'b.png', 'c.png']);
+    dice('premessa: il riepilogo su tutte e tre non annuncia niente', null, B.recuperoDellImport(salvato, d.handle, d.imgFiles));
+    await app.conferma(d);
+    dice('c.png NON prende il backup senza che l\'utente l\'abbia visto', [], (app.images.find(i => i.file.name === 'c.png') || {}).tags || []);
     dice('il riepilogo si riapre con la casella (foto: 1)', 1, ((app.riepilogoRiaperto || {}).summary || {}).recupero?.n);
 }
 

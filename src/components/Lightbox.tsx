@@ -353,13 +353,13 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     <div className="absolute top-0 right-0 flex gap-2 z-[110]">
                         {/* ITALIANO: foto piccola, o che il programma non sa mostrare (0x0): vedi qualityWarningText. */}
                         {/* ENGLISH: a small photo, or one the program cannot display (0x0): see qualityWarningText. */}
-                        {qualityWarningText(t, image.width, image.height) !== null && (
+                        {qualityWarningText(t, image.width, image.height, lang) !== null && (
                             <div className="relative group/alert">
                                 <div className="p-2.5 bg-yellow-500 text-white rounded-full transition-all border border-yellow-600 shadow-md flex items-center justify-center cursor-help">
                                     <AlertTriangle size={24} strokeWidth={2.5} />
                                 </div>
                                 <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                    {qualityWarningText(t, image.width, image.height)}
+                                    {qualityWarningText(t, image.width, image.height, lang)}
                                 </div>
                             </div>
                         )}

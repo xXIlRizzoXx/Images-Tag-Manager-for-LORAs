@@ -70,7 +70,7 @@ const pezzoDrop = sorgente.slice(inizioDrop, fineDrop.index + fineDrop[0].length
 const js = (await esbuild.transform(pezzoCartella + pezzoDrop, { loader: 'ts' })).code;
 const fabbrica = new Function('window', 't', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'scanDirectoryHandle',
     'useCallback', 'loadSidecarTxtFiles', 'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aperturaCartellaRef', 'aiuto', 'saveCloseDialog', 'eFileImmagine',
-    js + '\nreturn { handleLoadFolderClick, apriCartellaTrascinata, handleDroppedFiles };');
+    'cartellaProtettaOraRef', js + '\nreturn { handleLoadFolderClick, apriCartellaTrascinata, handleDroppedFiles };');
 
 // --- cartelle finte della File System Access API (come in test-load-folder-scan.mjs)
 const file = (name, type) => ({ name, type, size: 10, lastModified: 1 });
@@ -108,7 +108,7 @@ const ambiente = ({ electron = true, radiceVera = 'D:\\prova\\foto', editor = fa
                 percorsi: pathOf ? img.map(f => pathOf.get(f) || '') : null };
         },
         { current: { click: () => { r.log.push('campo nascosto'); } } }, scanDirectoryHandle,
-        (f) => f, async () => { r.sidecar++; return { txtFiles: [], folderOf: null }; }, editor, chiave, fileDiMac, { current: false }, null, { isOpen: false }, eFileImmagine);
+        (f) => f, async () => { r.sidecar++; return { txtFiles: [], folderOf: null }; }, editor, chiave, fileDiMac, { current: false }, null, { isOpen: false }, eFileImmagine, { current: 0 });
     return { r, ...fn };
 };
 const a = file('a.jpg', 'image/jpeg');

@@ -72,7 +72,7 @@ const ritaglia = async (intestazione, chiusura = /\r?\n    \};\r?\n/g) => {
     return (await esbuild.transform(sorgente.slice(inizio, fine.index + fine[0].length), { loader: 'ts' })).code;
 };
 const NOMI = ['t', 'showNotification', 'calculateImportSummary', 'folderInputRef', 'imagesInputRef', 'loadSidecarTxtFiles', 'useCallback',
-    'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine'];
+    'isTagEditorOpen', 'isApiKeyDialogOpen', 'fileDiMac', 'aiuto', 'saveCloseDialog', 'eFileImmagine', 'cartellaProtettaOraRef'];
 const fabbrica = new Function(...NOMI,
     (await ritaglia('    const handleFolderUploadFallback = async (e: any) => {')) + '\n' +
     (await ritaglia('    const handleImagesUpload = async (e: any) => {')) + '\n' +
@@ -83,7 +83,7 @@ const app = () => {
     r.f = fabbrica(t, (m, tipo) => r.notifiche.push([m, tipo]),
         (img, testi) => { r.importate = [img.map(f => f.name), testi.map(f => f.name)]; },
         { current: { value: 'x' } }, { current: { value: 'x' } }, async () => ({ txtFiles: [], folderOf: null }), (fn) => fn, false, false, FS.fileDiMac, null, { isOpen: false },
-        IF.eFileImmagine);
+        IF.eFileImmagine, { current: 0 });
     return r;
 };
 

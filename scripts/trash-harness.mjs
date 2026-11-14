@@ -130,7 +130,13 @@ const NOMI = ['images', 'trashedImages', 'history', 'historyIndex', 'ultimoSvuot
     'txtNonLettoInVigore',
     // ITALIANO: la spia di lavoro del cestino sempre aggiornata (la X su una foto e Svuota cestino la guardano).
     // ENGLISH: the always-current trash work flag (the X on a photo and Empty trash look at it).
-    'svuotamentoInCorsoRef'];
+    'svuotamentoInCorsoRef',
+    // ITALIANO: il conto di fine lavoro dell'AI esterna (Chiudi progetto e Reset lo fermano).
+    // ENGLISH: the external AI's end-of-work count (Close project and Reset stop it).
+    'mcpFineRef',
+    // ITALIANO: l'elenco dei tag del progetto di ogni passo (la cronologia, Ctrl+Z e Annulla lo svuotamento).
+    // ENGLISH: each step's project tag list (the history, Ctrl+Z and Undo the emptying).
+    'customTagsHistoryRef', 'customProjectTagsRef', 'elencoRegistratoRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...FUNZIONI, ...nomiFacoltativi, 'handleUndo', ...(redo ? ['handleRedo'] : []), 'effettoCronologia', 'effettoDisco'].join(', ') + ' };');
 
@@ -217,7 +223,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
     const r = { stato, notifiche: [], revocati: [], avvisi: [] };
     const refs = { imagesRef: { current: immagini }, isUndoRedoAction: { current: false }, fotoChiuseRef: { current: new Map() }, ripristinoInCorsoRef: { current: false }, discoNotoRef: { current: new Map() },
         globalTriggersRef: { current: [] }, triggerHistoryRef: { current: [] }, progettoGenRef: { current: 0 },
-        aiCancelRequestedRef: { current: false }, aiAbortControllerRef: { current: null }, svuotamentoInCorsoRef: { current: false } };
+        aiCancelRequestedRef: { current: false }, aiAbortControllerRef: { current: null }, svuotamentoInCorsoRef: { current: false },
+        customTagsHistoryRef: { current: [] }, customProjectTagsRef: { current: [] }, elencoRegistratoRef: { current: [] } };
     const nulla = () => { };
     const memoria = { getItem: () => null, setItem: nulla, removeItem: nulla };
     const coda = [];
@@ -258,7 +265,8 @@ export const creaApp = (immagini, { api = null } = {}) => {
         nulla, nulla, nulla, nulla, nulla,
         (f) => f, finestra, url, quieto, G.backupDopoChiusura || nulla, stato.isEmptyingTrash,
         H.addPhotosToHistory || ((h) => h),
-        S.parseSidecarText, S.tagDopoEditor, nulla, nulla, S.txtNonLettoInVigore || (() => false), refs.svuotamentoInCorsoRef);
+        S.parseSidecarText, S.tagDopoEditor, nulla, nulla, S.txtNonLettoInVigore || (() => false), refs.svuotamentoInCorsoRef, { current: null },
+        refs.customTagsHistoryRef, refs.customProjectTagsRef, refs.elencoRegistratoRef);
     // ITALIANO: il montaggio: l'effetto della cronologia gira una volta con l'elenco iniziale.
     // ENGLISH: the mount: the history effect runs once with the initial list.
     render().effettoCronologia();

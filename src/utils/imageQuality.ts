@@ -27,11 +27,24 @@ export const qualityState = (width: number, height: number): 'unreadable' | 'low
     return width * height < MIN_TRAINING_PIXELS ? 'low' : 'ok';
 };
 
-// ITALIANO: il testo dell'avviso giallo, o null quando non serve un avviso.
-// ENGLISH: the yellow warning's text, or null when no warning is needed.
-export const qualityWarningText = (t: any, width: number, height: number): string | null => {
+// ITALIANO: il testo dell'avviso giallo, o null quando non serve un avviso. `lang` = la lingua scelta:
+//   i megapixel hanno il decimale come le Statistiche e il peso dell'esportazione (punto in inglese,
+//   cinese e giapponese, virgola altrove; senza lingua il punto). La seconda riga e' una frase intera
+//   con {w}, {h}, {mp} (imageQualityLabel): prima era incollata qui, col punto in tutte le lingue e
+//   senza lo spazio francese prima dei due punti.
+// ENGLISH: the yellow warning's text, or null when no warning is needed. `lang` = the chosen language:
+//   the megapixels get the decimal of the Statistics and of the export size (a point in English,
+//   Chinese and Japanese, a comma elsewhere; with no language a point). The second line is a whole
+//   sentence with {w}, {h}, {mp} (imageQualityLabel): it used to be glued here, with a point in every
+//   language and without the French space before the colon.
+export const qualityWarningText = (t: any, width: number, height: number, lang?: string): string | null => {
     const stato = qualityState(width, height);
     if (stato === 'unreadable') return t.imageUnreadable;
-    if (stato === 'low') return `${t.minQualityWarning}\n${t.imageQualityLabel}: ${width}x${height} (${(width * height / 1000000).toFixed(2)} MP)`;
+    if (stato === 'low') {
+        const punto = !lang || lang === 'en' || lang === 'zh' || lang === 'ja';
+        const mp = (width * height / 1000000).toFixed(2).replace('.', punto ? '.' : ',');
+        const misura = String(t.imageQualityLabel).replace('{w}', String(width)).replace('{h}', String(height)).replace('{mp}', mp);
+        return `${t.minQualityWarning}\n${misura}`;
+    }
     return null;
 };

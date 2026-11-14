@@ -109,6 +109,7 @@ const CITAZIONI = [
     ['dropFolderNoAccess', 'loadFolder'],
     ['closeNewChangesMeanwhile', 'saveAndClose'],
     ['closeNewChangesMeanwhile', 'closeWithoutSaving'],
+    ['backupTooBig', 'saveChanges'],
 ];
 
 const rif = 'en';

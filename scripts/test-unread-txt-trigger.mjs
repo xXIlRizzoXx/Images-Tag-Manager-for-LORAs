@@ -156,7 +156,7 @@ console.log('\n--- il backup anti-crash usa la stessa regola ---');
     G.scriviBackupSubito(archivio, app.stato.images, [], 'dataset', app.stato.trigger);
     dice('un tag messo apposta: entra, come prima', ['b.png', 'c.png'], chiavi().sort());
     const righe = sorgente.split('\n').filter(r => r.includes('scriviBackupSubito(localStorage,'));
-    dice('in App.tsx le due scritture del backup passano le trigger attive', [2, true], [righe.length, righe.every(r => r.includes('globalTriggersRef.current, lottiSessioneRef.current)'))]);
+    dice('in App.tsx le due scritture del backup passano le trigger attive', [2, true], [righe.length, righe.every(r => r.includes('globalTriggersRef.current, lottiSessioneRef.current'))]);
 }
 
 // ITALIANO: il visualizzatore scrive il .txt della foto: si esegue la riga VERA di updateOriginalTags.

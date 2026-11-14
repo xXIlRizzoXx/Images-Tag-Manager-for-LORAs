@@ -522,7 +522,7 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             //           modifiche restano da salvare e "Salva e chiudi" non chiude. Prima diceva "Salvato".
             // ENGLISH: it is a download, not a save: the open file did not change, so the edits stay
             //          unsaved and "Save and close" does not close. It used to say "Saved".
-            showNotification(t.tagEditorDownloaded.replace('{name}', nome), 'info');
+            showNotification(t.tagEditorDownloaded.replace('{name}', () => nome), 'info');
             return false;
         } finally { URL.revokeObjectURL(url); }
     };

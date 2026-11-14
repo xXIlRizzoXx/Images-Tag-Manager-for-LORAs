@@ -54,7 +54,7 @@ export const avvisoImport = (
     if (n.ripristinate > 0) parti.push(t.importRestoredFromBackup.replace('{n}', String(n.ripristinate)));
     if (n.saltati > 0) parti.push(t.importTxtSkipped.replace('{n}', String(n.saltati)));
     const nomi = n.saltati > 0 && Array.isArray(n.nomiSaltati) ? n.nomiSaltati.filter(Boolean) : [];
-    if (nomi.length > 0) parti.push(t.importTxtSkippedNames.replace('{names}', nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
+    if (nomi.length > 0) parti.push(t.importTxtSkippedNames.replace('{names}', () => nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '')));
     // ITALIANO: le foto gia' aperte, non aggiunte una seconda volta (vedi src/utils/alreadyOpen.ts).
     // ENGLISH: the photos already open, not added a second time (see src/utils/alreadyOpen.ts).
     if ((n.giaAperte || 0) > 0 && t.importAlreadyOpen) parti.push(t.importAlreadyOpen.replace('{n}', String(n.giaAperte)));
