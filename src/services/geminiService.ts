@@ -482,6 +482,17 @@ export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean;
     if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 20) {
         return { ok: false, error: 'API key looks invalid (too short)', errorKind: 'invalid_key' };
     }
+    // ITALIANO: una chiave incollata fra virgolette curve, con uno spazio invisibile (U+200B) o
+    //           che e' un testo in un'altra scrittura non arriva mai a Google: il browser rifiuta
+    //           l'intestazione con un errore senza stato, che diventava "Controlla la connessione".
+    //           Le chiavi di Google sono solo ASCII stampabile: tutto il resto e' chiave non valida.
+    // ENGLISH: a key pasted between curly quotes, with an invisible space (U+200B), or that is
+    //          text in another script never reaches Google: the browser rejects the header with
+    //          an error without status, which became "Check your connection". Google keys are
+    //          printable ASCII only: anything else is an invalid key.
+    if (!/^[\x21-\x7E]+$/.test(apiKey)) {
+        return { ok: false, error: 'API key contains invalid characters', errorKind: 'invalid_key' };
+    }
     try {
         const ai = new GoogleGenAI({ apiKey });
         await ai.models.list({
