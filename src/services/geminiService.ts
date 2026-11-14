@@ -700,6 +700,14 @@ export const provaModello = async (apiKey: string, id: string, tempoMs: number =
         const { kind } = classifyGeminiError(err);
         if (kind === 'rate_limit') return 'occupato';
         if (kind === 'busy') return 'sovraccarico';
+        // ITALIANO: uno stato HTTP 4xx sconosciuto (400 INVALID_ARGUMENT: niente JSON o niente
+        //           immagini) e' Google che ha risposto: il modello non fa questo lavoro e si prova
+        //           il candidato dopo, come in statoDaErrore. Senza stato e' la rete: 'incerto'.
+        // ENGLISH: an unknown 4xx HTTP status (400 INVALID_ARGUMENT: no JSON or no images) is
+        //          Google answering: the model does not do this job and the next candidate is
+        //          probed, as in statoDaErrore. With no status it is the network: 'incerto'.
+        const stato = typeof err?.status === 'number' ? err.status : undefined;
+        if (kind === 'unknown' && stato !== undefined && stato >= 400 && stato < 500) return 'no';
         if (kind === 'unknown') return 'incerto';
         return 'no';
     }
