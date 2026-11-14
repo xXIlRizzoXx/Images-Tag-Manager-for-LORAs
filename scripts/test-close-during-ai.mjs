@@ -65,7 +65,7 @@ const codice = [
 const NOMI = ['images', 'imagesRef', 'globalTriggers', 'globalTriggersRef', 'setImages', 't', 'showNotification', 'setSaveCloseDialog', 'setConfirmDialog',
     'closeProjectNow', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef', 'isSavingRef', 'console', 'chiusuraFinestraRef', 'permettiChiusuraRef',
     'window', 'chiudiFinestraSeRichiesto', 'setIsSaving', 'setImportProgress', 'getOrderedTagString', 'soundManager', 'buildTagFileName',
-    'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'gemelliDelTxt', 'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES'];
+    'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'gemelliDelTxt', 'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES', 'confirmDialogRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { handleCloseProject, handleSaveAndCloseProject };');
 // ITALIANO: updateImageTags e' un useCallback: si ritaglia fino a "}, [globalTriggers]);".
 // ENGLISH: updateImageTags is a useCallback: it is cut up to "}, [globalTriggers]);".
@@ -104,7 +104,8 @@ const creaApp = (immagini) => {
         () => { a.chiusure++; a.buttate = a.stato.filter(i => !i.isTrashed && G.fotoDaSalvare(i, [])).map(i => i.id); a.stato = []; },
         G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' }, { current: false }, muto, { current: false }, { current: false },
         {}, () => { }, () => { }, () => { }, (tags) => (tags.length ? tags.join(', ') + ',' : ''), { chime() { } }, P.buildTagFileName,
-        P.sanitizeFileName, P.sidecarTagFileName, { current: false }, async () => () => { }, S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024);
+        P.sanitizeFileName, P.sidecarTagFileName, { current: false }, async () => () => { }, S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024,
+        { current: { isOpen: false } });
     a.aiTagga = (id, tags) => a.setImages(p => p.map(i => i.id === id ? { ...i, tags } : i));
     // ITALIANO: come il lotto AI e "Tagga con AI" di una foto: passa dalla updateImageTags VERA.
     // ENGLISH: like the AI batch and single-photo "Tag with AI": goes through the REAL updateImageTags.

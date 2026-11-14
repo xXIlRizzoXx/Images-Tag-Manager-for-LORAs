@@ -121,7 +121,11 @@ const gemelli = ritaglia('    const gemelliDelTxt = async ');
 //          by handleSaveChanges and the viewer: the previous code did not have it, and then it is not there.
 const conferma = ritaglia('    const confermaSovrascrittura = async ');
 export const haConfermaSovrascrittura = Boolean(conferma);
-const testi = [...Object.values(PEZZI), gemelli, conferma, 'const effettoCronologia = ' + testoCronologia + ';'];
+// ITALIANO: i tre tasti della finestra a tre scelte («Salva e chiudi», «Chiudi senza salvare», «Annulla»).
+// ENGLISH: the three buttons of the three-choice dialog ("Save and close", "Close without saving", "Cancel").
+const treScelte = ['    const handleSaveAndCloseProject = async ', '    const handleDiscardAndClose = () => {', '    const handleCancelClose = () => {'].map(r => ritaglia(r));
+export const haTreScelte = treScelte.every(Boolean);
+const testi = [...Object.values(PEZZI), gemelli, conferma, ...(haTreScelte ? treScelte : []), 'const effettoCronologia = ' + testoCronologia + ';'];
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
 testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
 testi.push('const effettoSelezione = ' + (selezione || '() => { }') + ';');
@@ -153,10 +157,14 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'domandaSovrascritturaRef', 'confirmDialog', 'confirmDialogRef',
     // ITALIANO: la X gia' premuta durante una scrittura (vedi il beforeunload di App.tsx).
     // ENGLISH: the X already pressed during a write (see App.tsx's beforeunload).
-    'chiusuraInScritturaRef'];
+    'chiusuraInScritturaRef',
+    // ITALIANO: per la finestra a tre scelte: una scrittura in corso, la richiesta di chiudere la finestra.
+    // ENGLISH: for the three-choice dialog: a write in progress, the request to close the window.
+    'isSavingRef', 'chiudiFinestraSeRichiesto', 'chiusuraFinestraRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione', 'effettoElenco', 'effettoDomanda',
-    ...(visualizzatore ? ['effettoVisualizzatore'] : []), ...(conferma ? ['confermaSovrascrittura'] : [])].join(', ') + ' };');
+    ...(visualizzatore ? ['effettoVisualizzatore'] : []), ...(conferma ? ['confermaSovrascrittura'] : []),
+    ...(haTreScelte ? ['handleSaveAndCloseProject', 'handleDiscardAndClose', 'handleCancelClose'] : [])].join(', ') + ' };');
 
 /* ITALIANO: una cartella finta: `scritti` = nome del file -> ultimo contenuto scritto.
    ENGLISH: a fake folder: `scritti` = file name -> last content written. */
@@ -192,11 +200,16 @@ export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } =
     };
     // ITALIANO: `eventi` = in ordine, i valori dati a setIsSaving ('salvando') e a setImportProgress ('barra').
     // ENGLISH: `eventi` = in order, the values given to setIsSaving ('salvando') and setImportProgress ('barra').
-    const r = { stato, notifiche: [], tagSuFotoAperta: [], eventi: [] };
+    // ITALIANO: `progettiChiusi` / `finestreChiuse` = quante volte si e' chiuso il progetto (closeProjectNow) e
+    //           si e' chiesto di chiudere la finestra (chiudiFinestraSeRichiesto).
+    // ENGLISH: `progettiChiusi` / `finestreChiuse` = how many times the project was closed (closeProjectNow)
+    //          and closing the window was requested (chiudiFinestraSeRichiesto).
+    const r = { stato, notifiche: [], tagSuFotoAperta: [], eventi: [], progettiChiusi: 0, finestreChiuse: 0 };
     const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() },
         globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] },
         customProjectTagsRef: { current: elenco }, customTagsHistoryRef: { current: [] }, elencoRegistratoRef: { current: elenco },
-        domandaSovrascritturaRef: { current: null }, confirmDialogRef: { current: stato.confirmDialog }, chiusuraInScritturaRef: { current: false } };
+        domandaSovrascritturaRef: { current: null }, confirmDialogRef: { current: stato.confirmDialog }, chiusuraInScritturaRef: { current: false },
+        isSavingRef: { current: false }, chiusuraFinestraRef: { current: false } };
     r.refs = refs;
     const coda = [];
     let programmato = false;
@@ -242,13 +255,17 @@ export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } =
         imposta('saveCloseDialog'), imposta('confirmDialog'), (v) => r.eventi.push(['salvando', v]), (v) => r.eventi.push(['barra', v]),
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         (id, tags) => r.tagSuFotoAperta.push([id, tags]),
-        () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
+        () => { r.progettiChiusi++; }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
         (f) => f, finestra, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' },
         S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024,
         imposta('customProjectTags'), stato.customProjectTags, refs.customProjectTagsRef, refs.customTagsHistoryRef, refs.elencoRegistratoRef,
-        refs.domandaSovrascritturaRef, stato.confirmDialog, refs.confirmDialogRef, refs.chiusuraInScritturaRef));
+        refs.domandaSovrascritturaRef, stato.confirmDialog, refs.confirmDialogRef, refs.chiusuraInScritturaRef,
+        // ITALIANO: come chiudiFinestraSeRichiesto: si chiude la finestra solo se la domanda era nata dalla X.
+        // ENGLISH: like chiudiFinestraSeRichiesto: the window closes only if the question came from the X.
+        refs.isSavingRef, () => { if (!refs.chiusuraFinestraRef.current) return; refs.chiusuraFinestraRef.current = false; r.finestreChiuse++; },
+        refs.chiusuraFinestraRef));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();

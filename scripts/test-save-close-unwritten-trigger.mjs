@@ -60,7 +60,7 @@ const NOMI = ['setIsSaving', 'setImportProgress', 'showNotification', 't', 'getO
     'buildTagFileName', 'sanitizeFileName', 'sidecarTagFileName', 'isUndoRedoAction', 'avvisoSalvataggioRef', 'gemelliDelTxt',
     'images', 'fotoDaSalvare', 'globalTriggers', 'txtNonLettoInVigore',
     'isSavingRef', 'setSaveCloseDialog', 'closeProjectNow', 'chiusuraFinestraRef', 'permettiChiusuraRef', 'imagesRef', 'globalTriggersRef',
-    'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES'];
+    'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES', 'confirmDialogRef'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { handleSaveAndCloseProject };');
 const muto = { log() { }, warn() { }, error() { } };
 
@@ -91,7 +91,7 @@ const app = (images, trigger, { dalla = 'progetto' } = {}) => {
         images, S.fotoDaSalvare, trigger, S.txtNonLettoInVigore,
         { current: false }, (d) => { a.finestra = d; }, () => { a.progettiChiusi++; showNotification(t.closeAllDone, 'success'); },
         { current: dalla === 'finestra' }, { current: false }, { current: images }, { current: trigger },
-        S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024).handleSaveAndCloseProject;
+        S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024, { current: { isOpen: false } }).handleSaveAndCloseProject;
     a.ultimo = () => a.notifiche[a.notifiche.length - 1] || null;
     return a;
 };

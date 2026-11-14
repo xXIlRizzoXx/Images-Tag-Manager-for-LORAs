@@ -11,6 +11,11 @@
    Anche: X con la domanda aperta, risposta, poi X durante la scrittura vera: si ferma di nuovo e dice
    closeWhileWriting (prima chiudeva subito); la domanda del visualizzatore aperta durante un'esportazione
    (scrittura vera): la X dice closeWhileWriting, non closeWhileAsking.
+   Anche: una conferma aperta («Svuota cestino?»), poi la X della finestra (la finestra a tre scelte la
+   copre) e «Salva e chiudi»: la domanda «Sovrascrivere?» non compariva per non coprire la conferma
+   nascosta, a.txt valeva "no" e la finestra non si chiudeva. Ora «Salva e chiudi» annulla prima la
+   conferma nascosta (una volta sola) e la domanda compare; «Annulla» e «Chiudi senza salvare» la lasciano
+   com'e' (torna visibile / se ne va con la finestra).
    La domanda la apre il codice VERO (handleSaveChanges e confermaSovrascrittura, undo-harness.mjs); la
    X la gestisce il testo VERO dell'effetto beforeunload preso da src/App.tsx.
    Uso:  node scripts/test-close-during-save-prompt.mjs      (esce con codice 1 se qualcosa non torna)
@@ -28,6 +33,11 @@
    Also: X with the question open, answer, then X during the real write: it stops again and says
    closeWhileWriting (it used to close at once); the viewer's question open during an export (a real
    write): the X says closeWhileWriting, not closeWhileAsking.
+   Also: a confirm open ("Empty trash?"), then the window's X (the three-choice dialog covers it) and "Save
+   and close": the "Overwrite?" question did not show up so as not to cover the hidden confirm, a.txt
+   counted as "no" and the window did not close. Now "Save and close" first cancels the hidden confirm
+   (once) and the question shows up; "Cancel" and "Close without saving" leave it as it is (it shows
+   again / it goes with the window).
    The question is opened by the REAL code (handleSaveChanges and confermaSovrascrittura,
    undo-harness.mjs); the X is handled by the REAL text of the beforeunload effect from src/App.tsx.
    Usage:  node scripts/test-close-during-save-prompt.mjs      (exits with code 1 if anything is off) */
@@ -36,7 +46,7 @@ import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { creaApp } from './undo-harness.mjs';
+import { creaApp, haTreScelte } from './undo-harness.mjs';
 import { creaControlli } from './main-harness.mjs';
 
 const radice = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -227,6 +237,128 @@ console.log('\n--- domanda del visualizzatore aperta durante un\'esportazione --
     await visualizzatore;
     const b = finestra({ immagini: app3.stato.images, scrittura: true, domanda: app3.refs.domandaSovrascritturaRef, chiusura });
     dice('...risposta data al visualizzatore, esportazione ancora in corso: la seconda X chiude', false, b.chiudi());
+}
+
+// ITALIANO: una conferma aperta («Svuota cestino?»), poi la X della finestra: la finestra a tre scelte (z-[500])
+//           la copre (z-[300]). «Salva e chiudi» non chiedeva «Sovrascrivere?» (per non coprire la conferma,
+//           vedi confermaSovrascrittura): a.txt cambiato da fuori valeva "no", la finestra restava e la
+//           conferma restava nascosta. Ora «Salva e chiudi» la annulla prima (come il suo Annulla) e la domanda
+//           compare. «Annulla» della finestra a tre scelte la lascia aperta (torna visibile); «Chiudi senza
+//           salvare» chiude la finestra del programma e lei se ne va con lui.
+// ENGLISH: a confirm open ("Empty trash?"), then the window's X: the three-choice dialog (z-[500]) covers it
+//          (z-[300]). "Save and close" did not ask "Overwrite?" (so as not to cover the confirm, see
+//          confermaSovrascrittura): a.txt changed from outside counted as "no", the dialog stayed and the
+//          confirm stayed hidden. Now "Save and close" cancels it first (as its Cancel does) and the question
+//          shows up. "Cancel" of the three-choice dialog leaves it open (it shows again); "Close without
+//          saving" closes the program window and it goes with it.
+console.log('\n--- una conferma aperta, poi la X della finestra e la finestra a tre scelte ---');
+{
+    dice('premessa: il banco ha i tre tasti veri della finestra a tre scelte', true, haTreScelte);
+    const ESTERNO = '1girl, outdoors,';
+    const prepara = async () => {
+        const c4 = cartella({ 'a.png': 'x', 'a.txt': 'cat,' });
+        const app4 = creaApp([{ id: 'a', file: { name: 'a.png' }, thumb: 'blob:a', tags: ['cat'], originalTags: ['cat'], isTrashed: false, dirHandle: c4 }], { trigger: ['ohwx'] });
+        app4.importa(); await app4.attendi();
+        c4.disco.set('a.txt', ESTERNO);
+        app4.modifica(prev => prev.map(i => ({ ...i, tags: ['ohwx', ...i.tags] }))); await app4.attendi();
+        // ITALIANO: la conferma aperta prima, con un Annulla come quello vero (chiude; «Elimina per sempre»
+        //           da' anche il suo riepilogo: qui contato in `risposte`).
+        // ENGLISH: the confirm opened before, with a Cancel like the real one (it closes; "Delete forever"
+        //          also gives its summary: counted here in `risposte`).
+        const risposte = [];
+        const svuota = { isOpen: true, title: 'Empty trash?', message: 'x',
+            onConfirm: () => { risposte.push('conferma'); app4.altraDomanda(prev => ({ ...prev, isOpen: false })); },
+            onCancel: () => { risposte.push('annulla'); app4.altraDomanda(prev => ({ ...prev, isOpen: false })); } };
+        app4.altraDomanda(svuota); await app4.attendi();
+        return { c4, app4, risposte, svuota };
+    };
+    // ITALIANO: la domanda «Sovrascrivere?» aperta, oppure null se non compare.
+    // ENGLISH: the "Overwrite?" question open, or null if it does not show up.
+    const domandaDi = async (app) => {
+        for (let i = 0; i < 100; i++) {
+            await new Promise(ok => setTimeout(ok, 2));
+            const d = app.stato.confirmDialog;
+            if (d && d.isOpen && d.title === t.saveTxtChangedTitle) return d;
+        }
+        return null;
+    };
+    const entro = (p, ms = 1500) => Promise.race([p, new Promise(ok => setTimeout(() => ok('APPESA'), ms))]);
+
+    // ITALIANO: il caso del difetto: X, poi «Salva e chiudi», poi Sovrascrivi.
+    // ENGLISH: the defect's case: X, then "Save and close", then Overwrite.
+    {
+        const { c4, app4, risposte } = await prepara();
+        const a = finestra({ immagini: app4.stato.images, scrittura: false });
+        const fermata = a.chiudi();
+        await attendi();
+        dice('premessa: la X apre la finestra a tre scelte sopra la conferma ancora aperta', [true, true, true, 'Empty trash?'],
+            [fermata, !!a.finestra.isOpen, !!app4.stato.confirmDialog.isOpen, app4.stato.confirmDialog.title]);
+        app4.refs.chiusuraFinestraRef.current = true;
+        const p =haTreScelte ? app4.render().handleSaveAndCloseProject() : Promise.resolve();
+        const domanda = await domandaDi(app4);
+        dice('«Salva e chiudi»: la conferma nascosta riceve un solo Annulla', ['annulla'], risposte);
+        dice('«Salva e chiudi»: la domanda «Sovrascrivere?» compare', true, !!domanda);
+        if (domanda) domanda.onConfirm();
+        const fine = await entro(p);
+        await app4.attendi();
+        dice('...Sovrascrivi: a.txt scritto, progetto chiuso, la finestra del programma si chiude, finestra a tre scelte chiusa',
+            [true, 'ohwx, cat,', 1, 1, false], [fine !== 'APPESA', c4.disco.get('a.txt'), app4.progettiChiusi, app4.finestreChiuse, !!app4.stato.saveCloseDialog.isOpen]);
+        dice('...nessuna finestra di conferma resta aperta', false, !!app4.stato.confirmDialog.isOpen);
+        await new Promise(ok => setTimeout(ok, 600));
+    }
+    // ITALIANO: lo stesso, ma alla domanda si risponde Annulla: la finestra a tre scelte resta, niente di nascosto.
+    // ENGLISH: the same, but the question is answered Cancel: the three-choice dialog stays, nothing hidden.
+    {
+        const { c4, app4, risposte } = await prepara();
+        const p = haTreScelte ? app4.render().handleSaveAndCloseProject() : Promise.resolve();
+        const domanda = await domandaDi(app4);
+        if (domanda) domanda.onCancel();
+        const fine = await entro(p);
+        await app4.attendi();
+        dice('«Salva e chiudi», poi Annulla alla domanda: a.txt intatto, progetto aperto, finestra a tre scelte di nuovo attiva, nessuna conferma nascosta',
+            [true, true, ESTERNO, 0, true, false, false, ['annulla']],
+            [!!domanda, fine !== 'APPESA', c4.disco.get('a.txt'), app4.progettiChiusi, !!app4.stato.saveCloseDialog.isOpen, !!app4.stato.saveCloseDialog.isSaving, !!app4.stato.confirmDialog.isOpen, risposte]);
+        await new Promise(ok => setTimeout(ok, 600));
+    }
+    // ITALIANO: «Annulla» della finestra a tre scelte: la conferma resta aperta (ora visibile), nessuna risposta data.
+    // ENGLISH: "Cancel" of the three-choice dialog: the confirm stays open (now visible), no answer given.
+    {
+        const { app4, risposte, svuota } = await prepara();
+        app4.refs.chiusuraFinestraRef.current = true;
+        if (haTreScelte) app4.render().handleCancelClose();
+        await app4.attendi();
+        dice('«Annulla» della finestra a tre scelte: la conferma resta quella, aperta e senza risposta; la finestra del programma resta',
+            [true, true, [], 0, false], [app4.stato.confirmDialog === svuota, !!app4.stato.confirmDialog.isOpen, risposte, app4.finestreChiuse, app4.refs.chiusuraFinestraRef.current]);
+    }
+    // ITALIANO: «Chiudi senza salvare»: il progetto si chiude e la finestra del programma pure; la conferma non riceve risposte.
+    // ENGLISH: "Close without saving": the project closes and so does the program window; the confirm gets no answer.
+    {
+        const { c4, app4, risposte } = await prepara();
+        app4.refs.chiusuraFinestraRef.current = true;
+        if (haTreScelte) app4.render().handleDiscardAndClose();
+        await app4.attendi();
+        dice('«Chiudi senza salvare»: progetto chiuso, chiusura della finestra chiesta, a.txt intatto, nessuna risposta alla conferma',
+            [1, 1, ESTERNO, []], [app4.progettiChiusi, app4.finestreChiuse, c4.disco.get('a.txt'), risposte]);
+    }
+    // ITALIANO: quello che NON deve cambiare: «Chiudi progetto» con modifiche e nessuna conferma aperta -> la
+    //           finestra a tre scelte, e «Salva e chiudi» chiede «Sovrascrivere?» come prima.
+    // ENGLISH: what must NOT change: "Close project" with edits and no confirm open -> the three-choice
+    //          dialog, and "Save and close" asks "Overwrite?" as before.
+    {
+        const { c4, app4, risposte } = await prepara();
+        app4.altraDomanda(prev => ({ ...prev, isOpen: false })); await app4.attendi();
+        app4.render().handleCloseProject(); await app4.attendi();
+        dice('«Chiudi progetto»: si apre la finestra a tre scelte', true, !!app4.stato.saveCloseDialog.isOpen);
+        const p = haTreScelte ? app4.render().handleSaveAndCloseProject() : Promise.resolve();
+        const domanda = await domandaDi(app4);
+        dice('...«Salva e chiudi» senza conferme aperte: la domanda compare, nessun Annulla mandato a nessuno', [true, []], [!!domanda, risposte]);
+        if (domanda) domanda.onConfirm();
+        const fine = await entro(p);
+        await app4.attendi();
+        dice('...Sovrascrivi: a.txt scritto, progetto chiuso, la finestra del programma resta (non era la X)',
+            [true, 'ohwx, cat,', 1, 0], [fine !== 'APPESA', c4.disco.get('a.txt'), app4.progettiChiusi, app4.finestreChiuse]);
+        await new Promise(ok => setTimeout(ok, 600));
+    }
 }
 
 console.log('\n--- la frase nelle nove lingue ---');

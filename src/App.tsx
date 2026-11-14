@@ -6315,6 +6315,18 @@ export default function App() {
             showNotification(t.saveWaitForWrite, 'info');
             return;
         }
+        // ITALIANO: una finestra di conferma rimasta aperta sotto questa (per esempio «Svuota cestino?», poi la
+        //           X della finestra: la finestra a tre scelte, z-[500], la copre) si annulla prima di salvare,
+        //           come col suo Annulla. Restava nascosta: Salva non chiedeva «Sovrascrivere?» per non coprirla
+        //           (vedi confermaSovrascrittura), i .txt cambiati da fuori valevano "no" e la finestra non si
+        //           chiudeva. La domanda «Sovrascrivere?» del visualizzatore (sopra) si vede gia' e resta.
+        // ENGLISH: a confirm dialog left open under this one (for example "Empty trash?", then the window's X:
+        //          the three-choice dialog, z-[500], covers it) is cancelled before saving, as its Cancel does.
+        //          It stayed hidden: Save did not ask "Overwrite?" so as not to cover it (see
+        //          confermaSovrascrittura), the .txt files changed from outside counted as "no" and the dialog
+        //          did not close. The viewer's "Overwrite?" question (sopra) is already in view and stays.
+        const nascosta = confirmDialogRef.current;
+        if (nascosta && nascosta.isOpen && !nascosta.sopra) nascosta.onCancel();
         setSaveCloseDialog({ isOpen: true, isSaving: true });
         avvisoSalvataggioRef.current = '';
         let saved = false;
