@@ -1885,6 +1885,14 @@ export default function App() {
         const smettiStato = api.onStatus?.((s) => setMcpStato(s)) ?? (() => { });
         return () => { smetti(); smettiStato(); mcpFineRef.current?.ferma(); };
     }, []);
+    // ITALIANO: una cartella protetta (Windows, programmi, dati del programma) resta chiusa: il
+    //           processo principale lo dice qui, e l'utente sa perche' non si e' aperta niente.
+    // ENGLISH: a protected folder (Windows, programs, program data) stays closed: the main process
+    //          says so here, and the user learns why nothing opened.
+    useEffect(() => {
+        const smetti = window.electronAPI?.onFolderRestricted?.(() => showNotification(t.folderProtected, 'error'));
+        return () => { smetti?.(); };
+    }, [t]);
     const cambiaMcp = async (acceso: boolean) => {
         const api = window.electronAPI?.mcp;
         if (!api) return;

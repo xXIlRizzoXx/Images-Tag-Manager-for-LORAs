@@ -53,7 +53,7 @@ const ipcRenderer = {
         inviati.push({ canale, argomenti });
     },
     on: (canale, fn) => {
-        if (canale !== 'mcp:request' && canale !== 'mcp:status') throw new Error('test-preload-bridge: ipcRenderer.on is only expected on mcp:request and mcp:status');
+        if (canale !== 'mcp:request' && canale !== 'mcp:status' && canale !== 'folder:restricted') throw new Error('test-preload-bridge: ipcRenderer.on is only expected on mcp:request, mcp:status and folder:restricted');
         ascolti.push({ canale, fn });
     },
     removeListener: (canale, fn) => { tolti.push({ canale, fn }); },
@@ -115,9 +115,9 @@ dice('ogni canale registrato in main.cjs e\' raggiungibile dal preload', [], reg
 //           undefined); getPathForFile e' l'unico che non passa da un canale.
 // ENGLISH: a method that uses a channel returns its answer (otherwise the page would get
 //          undefined); getPathForFile is the only one that does not go through a channel.
-const SENZA_INVOKE = ['getPathForFile', 'mcp.onRequest', 'mcp.respond', 'mcp.onStatus'];
+const SENZA_INVOKE = ['getPathForFile', 'mcp.onRequest', 'mcp.respond', 'mcp.onStatus', 'onFolderRestricted'];
 for (const [chiave, { canali, avuto }] of esitoDi) {
-    if (chiave === 'mcp.onRequest' || chiave === 'mcp.respond' || chiave === 'mcp.onStatus') continue;
+    if (chiave === 'mcp.onRequest' || chiave === 'mcp.respond' || chiave === 'mcp.onStatus' || chiave === 'onFolderRestricted') continue;
     if (chiave === 'getPathForFile') {
         dice('getPathForFile usa webUtils e nessun canale', [[], 'C:\\finto\\foto.png'], [canali, avuto]);
         continue;
@@ -207,6 +207,19 @@ dice('mcp ha esattamente le chiavi di ElectronMcp', membri('ElectronMcp'), Objec
     dice('...e alla pagina arriva lo stato, non l\'evento', [{ acceso: true, ultimoContatto: 5 }], stati);
     smetti();
     dice('...e la funzione restituita toglie lo stesso ascolto', true, tolti.length === 1 && tolti[0].canale === 'mcp:status' && tolti[0].fn === (ascolti[0] && ascolti[0].fn));
+}
+
+// ITALIANO: una cartella protetta resta chiusa: main.cjs lo dice su 'folder:restricted', senza dati.
+// ENGLISH: a protected folder stays closed: main.cjs says so on 'folder:restricted', with no data.
+{
+    let chiamate = 0;
+    ascolti.length = 0; tolti.length = 0;
+    const smetti = api.onFolderRestricted(() => { chiamate++; });
+    dice('onFolderRestricted ascolta il canale folder:restricted', ['folder:restricted'], ascolti.map((a) => a.canale));
+    ascolti[0] && ascolti[0].fn({ sender: 'evento' });
+    dice('...e la pagina viene chiamata una volta', 1, chiamate);
+    smetti();
+    dice('...e la funzione restituita toglie lo stesso ascolto', true, tolti.length === 1 && tolti[0].canale === 'folder:restricted' && tolti[0].fn === (ascolti[0] && ascolti[0].fn));
 }
 
 // ITALIANO: la pagina non deve ricevere ipcRenderer (o i suoi metodi) per intero.

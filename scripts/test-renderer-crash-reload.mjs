@@ -90,7 +90,7 @@ const electronFinto = {
     ipcMain: { handle() {}, on() {} },
     net: { request: vietato('the network') },
     safeStorage: { isEncryptionAvailable: () => false, encryptString: vietato('safeStorage'), decryptString: vietato('safeStorage') },
-    session: { defaultSession: { webRequest: { onHeadersReceived() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+    session: { defaultSession: { webRequest: { onHeadersReceived() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, on() {} } },
     Menu: { setApplicationMenu() {} },
     shell: { trashItem: vietato('the Recycle Bin'), openExternal: vietato('opening addresses') },
 };

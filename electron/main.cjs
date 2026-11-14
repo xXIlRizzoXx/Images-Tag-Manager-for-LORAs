@@ -1396,6 +1396,38 @@ const applyContentSecurityPolicy = (sess) => {
 // ENGLISH: the only permissions the page asks for (see setPermissionRequestHandler).
 const PERMESSI_USATI = new Set(['fileSystem', 'clipboard-sanitized-write']);
 
+/* ITALIANO: CARTELLE PROTETTE DA CHROMIUM
+   Electron non apre da solo certe cartelle scelte nel selettore o trascinate (Desktop, Documenti e
+   Download come cartelle singole, la cartella utente, AppData con tutto il contenuto, Windows,
+   Programmi, la radice di C:): manda l'evento 'file-system-access-restricted' e aspetta una
+   risposta. Senza risposta la cartella non si apriva e la pagina non sapeva perche'. Qui si apre
+   cio' che l'utente ha scelto di persona, e restano chiuse solo le cartelle di Windows e dei
+   programmi, la cartella dei dati di QUESTO programma (anche quando la scelta la contiene, come la
+   cartella utente intera o AppData\Roaming) e le chiavi .ssh/.gnupg. Solo testo: niente disco.
+   ENGLISH: FOLDERS CHROMIUM PROTECTS
+   Electron does not open by itself some folders picked or dropped (Desktop, Documents and
+   Downloads as single folders, the home folder, AppData with all it holds, Windows, Program Files,
+   the root of C:): it sends the 'file-system-access-restricted' event and waits for an answer.
+   With no answer the folder did not open and the page did not know why. Here what the user picked
+   in person opens, and only the Windows and program folders, THIS program's data folder (also
+   when the pick contains it, like the whole home folder or AppData\Roaming) and the .ssh/.gnupg
+   keys stay closed. Text only: no disk access. */
+const dentroOUguale = (figlio, padre) => {
+    const r = path.relative(padre, figlio);
+    return r === '' || (r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r));
+};
+const rispostaCartellaProtetta = (p) => {
+    if (!isSafeLocalPath(p)) return 'deny';
+    if (p.split(/[\\/]+/).some((parte) => /^\.(ssh|gnupg)$/i.test(parte))) return 'deny';
+    let datiProgramma = '';
+    try { datiProgramma = app.getPath('userData'); } catch (_) { /* ignore */ }
+    const chiuse = [datiProgramma, process.env.SystemRoot, process.env.windir, process.env.ProgramFiles,
+        process.env['ProgramFiles(x86)'], process.env.ProgramW6432, process.env.ProgramData]
+        .filter((c) => typeof c === 'string' && c && path.isAbsolute(c));
+    if (chiuse.some((c) => dentroOUguale(p, c) || dentroOUguale(c, p))) return 'deny';
+    return 'allow';
+};
+
 function resolveIconPath() {
     const ico = path.join(__dirname, '../public/icon.ico');
     if (process.platform === 'win32' && fs.existsSync(ico)) return ico;
@@ -1678,6 +1710,29 @@ app.whenReady().then(() => {
     session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
         if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
         return PERMESSI_USATI.has(permission);
+    });
+    // ITALIANO: le cartelle protette (vedi rispostaCartellaProtetta). La risposta parte SEMPRE, una
+    //           volta sola, anche se qualcosa va storto: senza, la scelta della cartella restava
+    //           senza esito. Quando resta chiusa la pagina viene avvisata e lo dice all'utente.
+    // ENGLISH: the protected folders (see rispostaCartellaProtetta). The answer ALWAYS leaves, once,
+    //          even when something goes wrong: without it the folder pick had no outcome. When it
+    //          stays closed the page is told and tells the user.
+    session.defaultSession.on('file-system-access-restricted', (_event, details, callback) => {
+        let risposta = 'deny';
+        try {
+            const p = details && typeof details.path === 'string' ? details.path : '';
+            risposta = rispostaCartellaProtetta(p);
+            if (risposta === 'allow' && details.isDirectory) rememberPickedDir(p);
+        } catch (e) { risposta = 'deny'; console.warn('[Cartelle] controllo fallito:', e && e.message); }
+        if (risposta === 'deny') {
+            console.warn('[Cartelle] cartella protetta, non aperta');
+            try {
+                const wc = details && details.webContents && !details.webContents.isDestroyed() ? details.webContents
+                    : (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null);
+                if (wc) wc.send('folder:restricted');
+            } catch (_) { /* ignore */ }
+        }
+        callback(risposta);
     });
     // ITALIANO: Nessuna barra dei menù di default in produzione
     // ENGLISH: No default menu bar in production

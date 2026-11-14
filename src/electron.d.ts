@@ -65,6 +65,9 @@ export interface ElectronAPI {
     //          folder really holds those files. An empty list closes the recording window without
     //          asking for anything (pick aborted).
     takePickedFolderPath: (proofs: Array<{ rel: string; name: string; size: number; mtime: number }>) => Promise<string>;
+    /** ITALIANO: la cartella scelta o trascinata e' protetta e resta chiusa; restituisce la funzione che smette di ascoltare.
+     *  ENGLISH: the picked or dropped folder is protected and stays closed; returns the unsubscribe function. */
+    onFolderRestricted: (cb: () => void) => () => void;
     openExternal: (url: string) => Promise<boolean>;
 
     /** ITALIANO: null = niente di nuovo, nessuna rete, o controllo non acconsentito.

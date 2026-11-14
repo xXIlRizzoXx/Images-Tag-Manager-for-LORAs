@@ -60,6 +60,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     //          and then "hand me what you saw". The path is known and validated by the main process.
     beginFolderPick: () => ipcRenderer.invoke('folder:begin-pick'),
     takePickedFolderPath: (proofs) => ipcRenderer.invoke('folder:take-picked-dir', proofs),
+    // ITALIANO: avviso del processo principale: la cartella scelta o trascinata e' protetta e resta
+    //           chiusa (cartelle di Windows, dei programmi o dei dati del programma). Non porta dati.
+    // ENGLISH: notice from the main process: the picked or dropped folder is protected and stays
+    //          closed (Windows, program or program-data folders). It carries no data.
+    onFolderRestricted: (cb) => {
+        const ascolta = () => { if (typeof cb === 'function') cb(); };
+        ipcRenderer.on('folder:restricted', ascolta);
+        return () => ipcRenderer.removeListener('folder:restricted', ascolta);
+    },
     // ITALIANO: apre un indirizzo web nel browser di sistema (solo http/https)
     // ENGLISH: opens a web address in the system browser (http/https only)
     openExternal: (url) => ipcRenderer.invoke('shell:open-external', String(url)),
