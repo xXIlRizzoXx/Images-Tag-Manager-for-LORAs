@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     trashFiles: (paths) => ipcRenderer.invoke('shell:trash-files', paths),
     // ITALIANO: rimette al loro posto i file finiti nel Cestino di Windows (annulla lo svuotamento)
     // ENGLISH: puts files that reached the Windows Recycle Bin back where they were (undo the empty)
-    restoreTrashed: (paths) => ipcRenderer.invoke('shell:restore-trashed', paths),
+    restoreTrashed: (paths, finoA) => ipcRenderer.invoke('shell:restore-trashed', paths, finoA),
     // ITALIANO: nessun percorso attraversa il ponte in entrata: la pagina dice solo "sto per far
     //           scegliere una cartella" e poi "dammi quello che hai visto". Il percorso lo conosce
     //           e lo valida il processo principale.

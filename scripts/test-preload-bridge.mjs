@@ -146,7 +146,7 @@ const ATTESI = {
     readSidecarTags: ['images:read-sidecar-tags', ['a']],
     writeSidecarTags: ['images:write-sidecar-tags', ['a']],
     trashFiles: ['shell:trash-files', ['a']],
-    restoreTrashed: ['shell:restore-trashed', ['a']],
+    restoreTrashed: ['shell:restore-trashed', ['a', 'b']],
     beginFolderPick: ['folder:begin-pick', []],
     takePickedFolderPath: ['folder:take-picked-dir', ['a']],
     openExternal: ['shell:open-external', ['a']],

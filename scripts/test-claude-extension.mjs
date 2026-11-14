@@ -156,6 +156,14 @@ try {
     buono.manda('{non e\' json');
     const rotto = await buono.aspetta((m) => m.error?.code === -32700);
     dice('una riga illeggibile riceve l\'errore di lettura, e il ponte resta vivo', [true, null], [!!rotto, buono.figlio.exitCode]);
+    // ITALIANO: una chat rimasta con il solo strumento di stato lo richiama a programma aperto: il server
+    //           vero non lo conosce, quindi risponde il ponte (prima: «Tool ... not found» con isError).
+    // ENGLISH: a chat left with only the status tool calls it with the program open: the real server
+    //          does not know it, so the bridge answers (before: "Tool ... not found" with isError).
+    const statoAperto = await buono.chiedi('tools/call', { name: 'images_tag_manager_status', arguments: {} });
+    dice('programma aperto: lo strumento di stato dice "collegato", senza errore, e nomina la chat nuova', [undefined, true, true, false],
+        [statoAperto?.result?.isError, /is connected now/.test(statoAperto?.result?.content?.[0]?.text || ''), /new chat/.test(statoAperto?.result?.content?.[0]?.text || ''), /not found/.test(JSON.stringify(statoAperto || {}))]);
+    dice('lo strumento di stato non arriva al programma', false, domande.includes('images_tag_manager_status'));
 
     console.log('\n--- il ponte con un codice sbagliato ---');
     const contattiPrima = contatti;
@@ -215,6 +223,11 @@ try {
     dice('il controllo del ponte non accende il semaforino da solo', 0, contattiRiaperto);
     const elencoDopo = await solo.chiedi('tools/list', {});
     dice('e da li\' elenca gli strumenti veri', true, (elencoDopo?.result?.tools || []).some((s) => s.name === 'list_photos'));
+    const contattiPrimaDelloStato = contattiRiaperto;
+    const statoDopo = await solo.chiedi('tools/call', { name: 'images_tag_manager_status', arguments: {} });
+    dice('riaperto: lo strumento di stato dice "collegato", senza errore, e nomina la chat nuova', [undefined, true, true],
+        [statoDopo?.result?.isError, /is connected now/.test(statoDopo?.result?.content?.[0]?.text || ''), /new chat/.test(statoDopo?.result?.content?.[0]?.text || '')]);
+    dice('e il suo controllo non conta come contatto di un\'AI', contattiPrimaDelloStato, contattiRiaperto);
     const avvisi = solo.arrivati.filter((m) => m.method === 'notifications/tools/list_changed').length;
     await new Promise((r) => setTimeout(r, 500));
     dice('l\'avviso parte una volta sola', avvisi, solo.arrivati.filter((m) => m.method === 'notifications/tools/list_changed').length);

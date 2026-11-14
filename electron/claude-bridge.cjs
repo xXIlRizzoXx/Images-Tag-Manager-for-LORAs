@@ -123,8 +123,26 @@ const rispostaSenzaProgramma = (messaggio, esito) => {
 };
 
 const gestisci = async (messaggio) => {
-    const esito = await chiama(messaggio);
     const attesaRisposta = messaggio.id !== undefined && messaggio.id !== null;
+    // ITALIANO: lo strumento di stato esiste solo qui nel ponte: una chat rimasta con l'elenco vecchio
+    //           lo richiama anche a programma aperto, e il server risponderebbe "Tool not found". Il
+    //           ponte prova il programma (senza contarlo come contatto) e risponde da solo.
+    // ENGLISH: the status tool exists only here in the bridge: a chat left with the old list calls it
+    //          even with the program open, and the server would answer "Tool not found". The bridge
+    //          checks the program (without counting it as a contact) and answers by itself.
+    if (messaggio.method === 'tools/call' && messaggio.params && messaggio.params.name === STRUMENTO_STATO && attesaRisposta) {
+        const prova = await chiama({ jsonrpc: '2.0', id: 'itm-check', method: 'ping' }, true);
+        if (riuscita(prova)) {
+            scrivi({ jsonrpc: '2.0', id: messaggio.id, result: { content: [{ type: 'text', text: 'Images Tag Manager for LORAs is connected now. Use its tools: list_photos, get_photo, list_project_tags, set_tags, add_tags, remove_tags. If they are not in your tool list, ask the user to open a new chat in Claude.' }] } });
+            return;
+        }
+        if (assente(prova)) {
+            if (!prova.codiceRotto) tieniDOcchio();
+            scrivi(rispostaSenzaProgramma(messaggio, prova));
+            return;
+        }
+    }
+    const esito = await chiama(messaggio);
     if (assente(esito)) {
         // ITALIANO: un codice illeggibile non si aggiusta da solo: inutile riprovare.
         // ENGLISH: an unreadable token does not fix itself: no point trying again.

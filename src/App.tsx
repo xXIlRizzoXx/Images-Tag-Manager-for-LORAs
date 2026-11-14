@@ -2880,7 +2880,7 @@ export default function App() {
             //          back: it would land beside the different image that has taken its name in the
             //          meantime and silently attach another photo's tags to it. For a dataset that is
             //          a mistake nobody ever catches. The pair comes back together or not at all.
-            const esito = await apiLocale.restoreTrashed(voci.map((v: any) => v.imgPath).filter(Boolean));
+            const esito = await apiLocale.restoreTrashed(voci.map((v: any) => v.imgPath).filter(Boolean), ultimoSvuotamento.finoA);
             const perPercorso = new Map<string, string>();
             if (esito && Array.isArray(esito.results)) {
                 esito.results.forEach((r: any) => { if (r && r.percorso) perPercorso.set(r.percorso, String(r.esito || '')); });
@@ -2926,7 +2926,7 @@ export default function App() {
             if (testi.length > 0) {
                 let esitoTesti: any = null;
                 try {
-                    esitoTesti = await apiLocale.restoreTrashed(testi);
+                    esitoTesti = await apiLocale.restoreTrashed(testi, ultimoSvuotamento.finoA);
                 } catch (err) {
                     console.warn('[Cestino] I file di testo non sono tornati:', err);
                 }
@@ -3282,7 +3282,13 @@ export default function App() {
                 const nelProgetto = new Set(imagesRef.current.map(i => i.id));
                 releaseThumbnails(ultimoSvuotamento.voci.map((v: any) => v.img).filter((img: any) => !nelProgetto.has(img.id)));
             }
-            setUltimoSvuotamento({ voci: ripescabili, trigger: triggerAlloSvuotamento });
+            // ITALIANO: finoA = quando lo svuotamento e' finito. Una voce del Cestino di Windows con lo
+            //           stesso percorso ma cancellata DOPO (un omonimo buttato via da Esplora file dopo
+            //           l'avviso "c'e' gia' un file") non e' nostra: il canale la salta.
+            // ENGLISH: finoA = when the emptying ended. A Windows Recycle Bin entry with the same path but
+            //          deleted AFTER it (a namesake thrown away from Explorer after the "already a file"
+            //          notice) is not ours: the channel skips it.
+            setUltimoSvuotamento({ voci: ripescabili, trigger: triggerAlloSvuotamento, finoA: Date.now() });
         }
 
         // ITALIANO: se non e' stata rimossa nemmeno una foto, NON si tocca `images`: `filter` creerebbe

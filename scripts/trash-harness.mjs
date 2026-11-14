@@ -187,8 +187,12 @@ export const apiFinta = ({ esitoDi = () => 'ok', prima = null, ripristino = null
             .map(([p, v]) => ({ name: p.slice(p.lastIndexOf('\\') + 1), dir: p.slice(0, p.lastIndexOf('\\')), tags: [],
                 ...(v === 'saltato' ? { skipped: true } : typeof v === 'string' ? { content: v } : {}) }));
     }
-    a.restoreTrashed = async (percorsi) => {
+    // ITALIANO: ripristiniFinoA: l'ora dello svuotamento passata a ogni chiamata (secondo argomento).
+    // ENGLISH: ripristiniFinoA: the emptying time passed to each call (second argument).
+    a.ripristiniFinoA = [];
+    a.restoreTrashed = async (percorsi, finoA) => {
         a.ripristini.push([...percorsi]);
+        a.ripristiniFinoA.push(finoA);
         await new Promise(ok => setTimeout(ok, 0));
         if (typeof ripristino === 'function') return ripristino(percorsi);
         return { results: percorsi.map(p => ({ percorso: p, esito: 'ok' })) };
