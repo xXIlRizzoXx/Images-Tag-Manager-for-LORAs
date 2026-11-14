@@ -164,7 +164,15 @@ export const fileTagCambiato = async (handle: any, nome: string, ricordo: string
     let letti: string[];
     try { letti = parseTagFile(testo, nome); } catch (_) { return true; }
     const chiave = (l: string[]) => [...new Set(l)].sort().join('\x1f');
-    return chiave(letti) !== chiave(Array.isArray(ricordo) ? ricordo : []);
+    // ITALIANO: i tag ricordati passano dalla stessa pulizia di parseTagFile (divisi su virgole e a capo,
+    //           caratteri di controllo come spazi): un tag con un TAB incollato si scrive col TAB e si rilegge
+    //           con uno spazio, e il Salva dopo chiedeva «Sovrascrivere?» anche se fuori non era cambiato niente.
+    // ENGLISH: the remembered tags go through the same cleaning as parseTagFile (split on commas and line
+    //          breaks, control characters as spaces): a tag with a pasted TAB is written with the TAB and read
+    //          back with a space, and the next Save asked "Overwrite?" although nothing had changed outside.
+    const puliti = (Array.isArray(ricordo) ? ricordo : []).flatMap(x => String(x).split(/[,\n\r]+/))
+        .map(x => x.replace(/[\x00-\x1F\x7F]/g, ' ').trim()).filter(Boolean);
+    return chiave(letti) !== chiave(puliti);
 };
 
 export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject, onDirtyChange }: { t: Strings; [chiave: string]: any }) => {
@@ -774,7 +782,9 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                 <div className="fixed inset-0 z-[340] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => rispostaSovrascritturaRef.current?.(false)}>
                     <div className={`w-[90%] max-w-md rounded-2xl shadow-2xl border p-5 flex flex-col gap-4 animate-in zoom-in-95 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
                         <p className={`text-sm font-bold ${testo}`}>{t.saveTxtChangedTitle}</p>
-                        <p className={`text-sm ${testo}`}>{t.saveTxtChangedAskOne.replace('{names}', () => fileName || 'tags.txt')}</p>
+                        {/* ITALIANO: un testo dell'editor: il file puo' essere un .json o un .txt che non e' di una foto. */}
+                        {/* ENGLISH: an editor string: the file can be a .json or a .txt that belongs to no photo. */}
+                        <p className={`text-sm ${testo}`}>{t.tagEditorFileChangedAsk.replace('{name}', () => fileName || 'tags.txt')}</p>
                         <div className="flex justify-end gap-2">
                             <button onClick={() => rispostaSovrascritturaRef.current?.(false)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
                             <button onClick={() => rispostaSovrascritturaRef.current?.(true)} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.saveTxtChangedTitle}</button>

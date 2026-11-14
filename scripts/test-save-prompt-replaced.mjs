@@ -9,6 +9,9 @@
    Casi vicini che non devono cambiare: la risposta normale (Annulla / Sovrascrivi) funziona come
    prima e libera la domanda; una seconda domanda «Sovrascrivere?» (il visualizzatore) che prende il
    posto della prima chiude la prima con "no" e resta lei a chiedere.
+   Il verso opposto: una conferma aperta PRIMA della domanda (mentre si rileggono i .txt) veniva coperta
+   e spariva senza risposta. Ora resta aperta e Salva vale "no" per i .txt cambiati (l'avviso lo dice);
+   una conferma gia' chiusa non conta.
    Si eseguono i testi VERI di handleSaveChanges, performSave, confermaSovrascrittura e dell'effetto
    su confirmDialog (undo-harness.mjs).
    Uso:  node scripts/test-save-prompt-replaced.mjs      (esce con codice 1 se qualcosa non torna)
@@ -24,6 +27,9 @@
    Neighbouring cases that must not change: the normal answer (Cancel / Overwrite) works as before
    and frees the question; a second "Overwrite?" question (the viewer) taking the first one's place
    answers the first with "no" and stays open itself.
+   The opposite direction: a confirm opened BEFORE the question (while the .txt files are read back) was
+   covered and vanished unanswered. Now it stays open and Save counts as "no" for the changed .txt files
+   (the notice says so); a confirm already closed does not count.
    The REAL texts of handleSaveChanges, performSave, confermaSovrascrittura and of the effect on
    confirmDialog (undo-harness.mjs) are run.
    Usage:  node scripts/test-save-prompt-replaced.mjs      (exits with code 1 if anything is off) */
@@ -35,7 +41,9 @@ const { dice, esito } = creaControlli();
 
 // ITALIANO: una cartella sul "disco" che si rilegge (come in test-save-txt-changed-outside.mjs).
 // ENGLISH: a folder on the "disk" that can be read back (as in test-save-txt-changed-outside.mjs).
-const cartella = (voci) => {
+// ITALIANO: `ritardo` = ms per ogni rilettura (una cartella di rete lenta).
+// ENGLISH: `ritardo` = ms for every read-back (a slow network folder).
+const cartella = (voci, ritardo = 0) => {
     const disco = new Map(Object.entries(voci));
     const nonCe = () => new DOMException('not found', 'NotFoundError');
     return {
@@ -43,7 +51,11 @@ const cartella = (voci) => {
         getFileHandle: async (nome, o) => {
             if (!disco.has(nome) && !(o && o.create)) throw nonCe();
             return {
-                getFile: async () => { if (!disco.has(nome)) throw nonCe(); return new File([disco.get(nome)], nome, { type: 'text/plain' }); },
+                getFile: async () => {
+                    if (ritardo) await new Promise(ok => setTimeout(ok, ritardo));
+                    if (!disco.has(nome)) throw nonCe();
+                    return new File([disco.get(nome)], nome, { type: 'text/plain' });
+                },
                 createWritable: async () => { let s = ''; return { write: async (x) => { s += x; }, close: async () => { disco.set(nome, s); } }; },
             };
         },
@@ -70,8 +82,8 @@ const aspettaDomanda = async (app) => {
 const riposo = () => new Promise(ok => setTimeout(ok, 600));
 const ultimoSalvando = (app) => { const e = app.eventi.filter(([k]) => k === 'salvando'); return e.length ? e[e.length - 1][1] : null; };
 const ELIMINA = { isOpen: true, title: 'Delete forever?', message: 'x', onConfirm: () => { }, onCancel: () => { } };
-const prepara = async () => {
-    const c = cartella({ 'a.png': 'x', 'a.txt': 'cat,', 'b.png': 'x', 'b.txt': 'dog,' });
+const prepara = async (ritardo = 0) => {
+    const c = cartella({ 'a.png': 'x', 'a.txt': 'cat,', 'b.png': 'x', 'b.txt': 'dog,' }, ritardo);
     const app = creaApp([foto('a', ['cat'], c), foto('b', ['dog'], c)], { trigger: ['ohwx'] });
     app.importa(); await app.attendi();
     c.disco.set('a.txt', ESTERNO);
@@ -160,6 +172,64 @@ console.log('\n--- una seconda «Sovrascrivere?» (visualizzatore) prende il pos
     if (domandaNuova) domandaNuova.onConfirm();
     const esclusi = await entro(seconda);
     dice('...e risponde normalmente (Sovrascrivi: nessuna foto esclusa)', 0, esclusi && esclusi.size);
+}
+
+// ITALIANO: il verso opposto: un'altra conferma si apre PRIMA della domanda, mentre Salva rilegge i .txt
+//           (cartella lenta). La domanda la sostituiva: «Elimina per sempre» spariva senza risposta e lo
+//           svuotamento non partiva mai. Ora la conferma aperta resta e risponde; Salva vale "no" per i .txt
+//           cambiati (restano come sono, l'avviso lo dice) e scrive le altre foto.
+// ENGLISH: the opposite direction: another confirm opens BEFORE the question, while Save reads the .txt
+//          files back (slow folder). The question replaced it: "Delete forever" vanished unanswered and the
+//          emptying never started. Now the open confirm stays and answers; Save counts as "no" for the
+//          changed .txt files (they stay as they are, the notice says so) and writes the other photos.
+console.log('\n--- una conferma aperta mentre Salva rilegge i .txt («Elimina per sempre») non viene coperta ---');
+{
+    const { c, app } = await prepara(40);
+    const promessa = app.render().handleSaveChanges();
+    const risposte = [];
+    const elimina = { ...ELIMINA, onConfirm: () => risposte.push('elimina'), onCancel: () => risposte.push('annulla') };
+    app.altraDomanda(elimina);
+    await app.attendi();
+    const ok = await entro(promessa, 1500);
+    await app.attendi();
+    await riposo();
+    dice('Salva finisce da solo, senza una domanda sopra la conferma (non resta appeso)', true, ok !== 'APPESA');
+    dice('la conferma aperta resta quella, aperta', [true, true, 'Delete forever?'], [app.stato.confirmDialog === elimina, !!app.stato.confirmDialog.isOpen, app.stato.confirmDialog.title]);
+    dice('Salva finisce con "no": torna false, isSaving spento, domanda libera', [false, false, null], [ok, ultimoSalvando(app), app.refs.domandaSovrascritturaRef.current]);
+    dice('a.txt cambiato da fuori resta com\'e\', b.txt si salva', [ESTERNO, 'ohwx, dog,'], [c.disco.get('a.txt'), c.disco.get('b.txt')]);
+    const ultimo = app.notifiche[app.notifiche.length - 1];
+    dice('l\'avviso nomina a.png come non salvata', true, !!ultimo && String(ultimo[0]).includes(t.saveTxtChangedOne.replace('{names}', 'a.png')));
+    app.stato.confirmDialog.onConfirm();
+    dice('«Elimina per sempre» riceve la sua risposta', ['elimina'], risposte);
+}
+{
+    // ITALIANO: casi vicini: una conferma gia' CHIUSA (prev => isOpen: false, il titolo resta) non conta: la
+    //           domanda compare e la risposta vale; lo stesso per il visualizzatore senza conferme aperte.
+    // ENGLISH: neighbouring cases: a confirm already CLOSED (prev => isOpen: false, the title stays) does not
+    //          count: the question shows up and the answer counts; the same for the viewer with no open confirm.
+    const { c, app } = await prepara(300);
+    const promessa = app.render().handleSaveChanges();
+    app.altraDomanda({ ...ELIMINA });
+    app.altraDomanda(prev => ({ ...prev, isOpen: false }));
+    let domanda = null;
+    for (let i = 0; i < 200 && !domanda; i++) {
+        await new Promise(ok => setTimeout(ok, 5));
+        if (app.stato.confirmDialog.isOpen && app.stato.confirmDialog.title === t.saveTxtChangedTitle) domanda = app.stato.confirmDialog;
+    }
+    dice('conferma gia\' chiusa: la domanda compare', true, !!domanda);
+    if (domanda) domanda.onConfirm();
+    const ok = await entro(promessa, 1500);
+    dice('...e Sovrascrivi scrive a.txt', [true, 'ohwx, cat,'], [ok, c.disco.get('a.txt')]);
+}
+{
+    // ITALIANO: il visualizzatore («Salva file .txt») con una conferma aperta: niente domanda sopra, vale "no".
+    // ENGLISH: the viewer ("Save .txt file") with a confirm open: no question on top, it counts as "no".
+    const { c, app } = await prepara();
+    app.altraDomanda({ ...ELIMINA });
+    await app.attendi();
+    const esclusi = await entro(app.render().confermaSovrascrittura([app.fotoCon('a')]));
+    dice('visualizzatore con una conferma aperta: a.png esclusa, la conferma resta, a.txt intatto',
+        [true, 'Delete forever?', ESTERNO], [!!esclusi && esclusi.has && esclusi.has('a'), app.stato.confirmDialog.title, c.disco.get('a.txt')]);
 }
 
 process.exit(esito());

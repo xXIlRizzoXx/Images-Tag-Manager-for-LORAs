@@ -150,7 +150,10 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'setCustomProjectTags', 'customProjectTags', 'customProjectTagsRef', 'customTagsHistoryRef', 'elencoRegistratoRef',
     // ITALIANO: la domanda «Sovrascrivere?» aperta e la finestra di conferma di adesso.
     // ENGLISH: the open "Overwrite?" question and the current confirm dialog.
-    'domandaSovrascritturaRef', 'confirmDialog', 'confirmDialogRef'];
+    'domandaSovrascritturaRef', 'confirmDialog', 'confirmDialogRef',
+    // ITALIANO: la X gia' premuta durante una scrittura (vedi il beforeunload di App.tsx).
+    // ENGLISH: the X already pressed during a write (see App.tsx's beforeunload).
+    'chiusuraInScritturaRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione', 'effettoElenco', 'effettoDomanda',
     ...(visualizzatore ? ['effettoVisualizzatore'] : []), ...(conferma ? ['confermaSovrascrittura'] : [])].join(', ') + ' };');
@@ -193,7 +196,7 @@ export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } =
     const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() },
         globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] },
         customProjectTagsRef: { current: elenco }, customTagsHistoryRef: { current: [] }, elencoRegistratoRef: { current: elenco },
-        domandaSovrascritturaRef: { current: null } };
+        domandaSovrascritturaRef: { current: null }, confirmDialogRef: { current: stato.confirmDialog }, chiusuraInScritturaRef: { current: false } };
     r.refs = refs;
     const coda = [];
     let programmato = false;
@@ -228,9 +231,12 @@ export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } =
         coda.push([chiave, v]);
         if (!programmato) { programmato = true; queueMicrotask(scarica); }
     };
-    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef (e customProjectTagsRef) prende il valore dello stato.
-    // ENGLISH: as in App.tsx, on every render globalTriggersRef (and customProjectTagsRef) takes the state's value.
-    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, refs.customProjectTagsRef.current = stato.customProjectTags, fabbrica(
+    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef (e customProjectTagsRef, confirmDialogRef) prende il
+    //           valore dello stato: lo stesso ref, visto anche da una funzione di un render precedente ancora in attesa.
+    // ENGLISH: as in App.tsx, on every render globalTriggersRef (and customProjectTagsRef, confirmDialogRef) takes the
+    //          state's value: the same ref, seen also by a function of an earlier render still waiting.
+    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, refs.customProjectTagsRef.current = stato.customProjectTags,
+        refs.confirmDialogRef.current = stato.confirmDialog, fabbrica(
         stato.images, stato.history, stato.historyIndex, stato.selectedImageId, stato.selectedForBulk, stato.stagedBulkTags, stato.globalTriggers,
         imposta('images'), imposta('history'), imposta('historyIndex'), () => { }, imposta('selectedImageId'), imposta('stagedBulkTags'),
         imposta('saveCloseDialog'), imposta('confirmDialog'), (v) => r.eventi.push(['salvando', v]), (v) => r.eventi.push(['barra', v]),
@@ -242,7 +248,7 @@ export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } =
         (f) => f, finestra, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' },
         S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024,
         imposta('customProjectTags'), stato.customProjectTags, refs.customProjectTagsRef, refs.customTagsHistoryRef, refs.elencoRegistratoRef,
-        refs.domandaSovrascritturaRef, stato.confirmDialog, { current: stato.confirmDialog }));
+        refs.domandaSovrascritturaRef, stato.confirmDialog, refs.confirmDialogRef, refs.chiusuraInScritturaRef));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();

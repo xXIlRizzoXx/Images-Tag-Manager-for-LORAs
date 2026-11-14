@@ -1027,7 +1027,11 @@ export default function App() {
     //           rimasto indietro che la vede ancora non scambia lei per una finestra nuova.
     // ENGLISH: `prima` = the confirm dialog shown when the question started: an effect lagging behind
     //          that still sees it does not take it for a new dialog.
-    const domandaSovrascritturaRef = useRef<{ dialogo: any; prima: any; risolvi: (si: boolean) => void } | null>(null);
+    // ITALIANO: `perSalva` = la domanda e' quella di «Salva Modifiche» (isSaving acceso da lei, nessuna
+    //           scrittura in corso). Quella del visualizzatore puo' aprirsi mentre un'esportazione scrive.
+    // ENGLISH: `perSalva` = the question is the one of "Save Changes" (isSaving turned on by it, no write
+    //          in progress). The viewer's one can open while an export is writing.
+    const domandaSovrascritturaRef = useRef<{ dialogo: any; prima: any; risolvi: (si: boolean) => void; perSalva: boolean } | null>(null);
     const confirmDialogRef = useRef(confirmDialog);
     confirmDialogRef.current = confirmDialog;
     const chiusuraInScritturaRef = useRef(false);
@@ -1084,7 +1088,11 @@ export default function App() {
                 e.preventDefault();
                 e.returnValue = false;
                 chiusuraInScritturaRef.current = true;
-                const avviso = domandaSovrascritturaRef.current ? t.closeWhileAsking : t.closeWhileWriting;
+                // ITALIANO: solo la domanda di «Salva Modifiche» vuol dire "non si scrive niente"; con quella
+                //           del visualizzatore isSaving e' di un'altra scrittura (un'esportazione), che e' vera.
+                // ENGLISH: only the "Save Changes" question means "nothing is being written"; with the
+                //          viewer's one isSaving belongs to another write (an export), which is real.
+                const avviso = domandaSovrascritturaRef.current && domandaSovrascritturaRef.current.perSalva ? t.closeWhileAsking : t.closeWhileWriting;
                 setTimeout(() => showNotification(avviso, 'info'), 0);
                 return;
             }
@@ -5124,9 +5132,37 @@ export default function App() {
             }
         }
         if (cambiate.length === 0) return new Set();
+        // ITALIANO: un'altra finestra di conferma gia' aperta (per esempio «Elimina per sempre», comparsa
+        //           mentre si rileggevano i .txt) non si copre: la domanda la sostituiva e lei spariva senza
+        //           risposta (lo svuotamento non partiva e il suo riepilogo non arrivava). Vale "no": i .txt
+        //           cambiati restano come sono e l'avviso di chi chiama lo dice. Si copre solo un'altra
+        //           «Sovrascrivere?» (vedi sotto).
+        // ENGLISH: another confirm dialog already open (for example "Delete forever", shown while the .txt
+        //          files were read back) is not covered: the question replaced it and it vanished
+        //          unanswered (the emptying never started and its summary never came). It counts as "no":
+        //          the changed .txt files stay as they are and the caller's notice says so. Only another
+        //          "Overwrite?" question is covered (see below).
+        const finestraAperta = confirmDialogRef.current;
+        const domandaAperta = domandaSovrascritturaRef.current;
+        if (finestraAperta && finestraAperta.isOpen && !(domandaAperta && domandaAperta.dialogo === finestraAperta)) return new Set(cambiate.map(img => img.id));
         const nomi = cambiate.map(img => img.file.name);
         const primi = nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '');
-        const sovrascrivi = await new Promise<boolean>(risolvi => {
+        // ITALIANO: `avanza` lo passa solo «Salva Modifiche» (vedi sopra): la domanda e' la sua (perSalva).
+        // ENGLISH: only "Save Changes" passes `avanza` (see above): the question is its own (perSalva).
+        const perSalva = typeof avanza === 'function';
+        const sovrascrivi = await new Promise<boolean>(risolviPromessa => {
+            // ITALIANO: chiusa la domanda di Salva, una X premuta mentre era aperta non conta piu': la
+            //           scrittura che segue (Sovrascrivi, o le altre foto con "no") riceve di nuovo il suo
+            //           avviso «aspetta la barra». Prima chiusuraInScritturaRef restava vero (isSaving passa
+            //           da spento ad acceso nello stesso giro, nessun render lo azzera) e una sola X chiudeva.
+            // ENGLISH: once Save's question is closed, an X pressed while it was open no longer counts: the
+            //          write that follows (Overwrite, or the other photos with "no") gets its own "wait for
+            //          the bar" notice again. chiusuraInScritturaRef used to stay true (isSaving goes off and
+            //          on in the same batch, no render resets it) and a single X closed.
+            const risolvi = (si: boolean) => {
+                if (perSalva) chiusuraInScritturaRef.current = false;
+                risolviPromessa(si);
+            };
             const rispondi = (si: boolean) => {
                 domandaSovrascritturaRef.current = null;
                 setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
@@ -5144,7 +5180,7 @@ export default function App() {
             // ITALIANO: una domanda «Sovrascrivere?» gia' aperta (Salva e il visualizzatore insieme) vale "no".
             // ENGLISH: an "Overwrite?" question already open (Save and the viewer together) counts as "no".
             const vecchia = domandaSovrascritturaRef.current;
-            domandaSovrascritturaRef.current = { dialogo, prima: confirmDialogRef.current, risolvi };
+            domandaSovrascritturaRef.current = { dialogo, prima: confirmDialogRef.current, risolvi, perSalva };
             if (vecchia) vecchia.risolvi(false);
             setConfirmDialog(dialogo);
         });

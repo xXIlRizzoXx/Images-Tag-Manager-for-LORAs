@@ -11,6 +11,8 @@
    chiedere; un handle che non si rilegge (senza getFile) si scrive come prima; un .json funziona allo
    stesso modo (anche nella forma del progetto con le trigger); un file oltre 1 MB o un JSON rotto
    contano come cambiati; chiudere l'editor con la domanda aperta vale "no".
+   Anche: un tag con un TAB (incollato) non fa chiedere «Sovrascrivere?» al Salva dopo; la domanda
+   dell'editor ha un testo suo (tagEditorFileChangedAsk), non quello delle foto.
    Si eseguono i testi VERI di parseTagFile, fileTagCambiato, chiediSovrascrittura, salva e
    salvaEChiudiFile presi da src/components/TagFileEditor.tsx (compilati con esbuild).
    Uso:  node scripts/test-tag-editor-changed-outside.mjs      (esce con codice 1 se qualcosa non torna)
@@ -28,6 +30,8 @@
    without asking; a handle that cannot be read back (no getFile) is written as before; a .json works
    the same way (also in the project shape with triggers); a file over 1 MB or broken JSON count as
    changed; closing the editor with the question open counts as "no".
+   Also: a tag with a (pasted) TAB does not make the next Save ask "Overwrite?"; the editor's question
+   has its own string (tagEditorFileChangedAsk), not the photos' one.
    The REAL texts of parseTagFile, fileTagCambiato, chiediSovrascrittura, salva and salvaEChiudiFile
    from src/components/TagFileEditor.tsx are run (compiled with esbuild).
    Usage:  node scripts/test-tag-editor-changed-outside.mjs      (exits with code 1 if anything is off) */
@@ -241,14 +245,55 @@ console.log('\n--- l\'editor si chiude con la domanda aperta ---');
     dice('il salvataggio finisce con "no": file intatto, Salva torna false, domanda chiusa', [true, false, ESTERNO, false], [chiesto, esito1, f.testo, r.domanda]);
 }
 
+// ITALIANO: un tag con un carattere di controllo (un TAB incollato nella casella) si scrive col TAB e
+//           parseTagFile lo rilegge con uno spazio: il Salva dopo chiedeva «Sovrascrivere?» anche se fuori
+//           non era cambiato niente. Ora i tag ricordati passano dalla stessa pulizia.
+// ENGLISH: a tag with a control character (a TAB pasted into the box) is written with the TAB and
+//          parseTagFile reads it back with a space: the next Save asked "Overwrite?" although nothing had
+//          changed outside. Now the remembered tags go through the same cleaning.
+console.log('\n--- un tag con un TAB dentro (incollato nella casella) ---');
+{
+    const f = fileSulDisco('a.txt', 'cat,');
+    const r = editor(f, ['cat'], ['cat', 'a\tb']);
+    const a = await salva(r, false);
+    dice('primo Salva: nessuna domanda, scritto', [false, true, 'cat, a\tb,'], [a.chiesto, a.ok, f.testo]);
+    const b = await salva(r, false);
+    dice('secondo Salva senza cambi da fuori: nessuna domanda, scritto', [false, true, []], [b.chiesto, b.ok, r.notifiche.filter(([, tipo]) => tipo === 'error')]);
+    f.testo = ESTERNO;
+    const c = await salva(r, false);
+    dice('...ma un cambio vero da fuori si vede ancora (si chiede, file intatto)', [true, false, ESTERNO], [c.chiesto, c.ok, f.testo]);
+}
+{
+    const f = fileSulDisco('tags.json', JSON.stringify(['cat'], null, 2));
+    const r = editor(f, ['cat'], ['cat', 'x\ty', 'a\u0001b']);
+    const a = await salva(r, false);
+    const b = await salva(r, false);
+    dice('.json con tag con TAB e altri caratteri di controllo: due Salva di fila, nessuna domanda', [false, true, false, true], [a.chiesto, a.ok, b.chiesto, b.ok]);
+}
+{
+    // ITALIANO: la galleria («Salva Modifiche») confronta gia' dopo la stessa pulizia dalle due parti.
+    // ENGLISH: the gallery ("Save Changes") already compares after the same cleaning on both sides.
+    dice('la galleria non ha lo stesso difetto: un .txt scritto con un TAB non risulta cambiato', false,
+        S.txtCambiatoSulDisco('cat, a\tb,', ['cat', 'a\tb']));
+}
+
 console.log('\n--- i pulsanti e i testi della domanda ---');
 {
     const blocco = sorgente.slice(sorgente.indexOf('{domandaSovrascrittura && ('));
-    dice('la domanda usa i testi del progetto (titolo, domanda, Annulla) e la forma a funzione per il nome', true,
-        sorgente.includes('{domandaSovrascrittura && (') && /t\.saveTxtChangedTitle/.test(blocco) && /t\.saveTxtChangedAskOne\.replace\('\{names\}', \(\) => /.test(blocco) && /t\.cancel/.test(blocco));
+    // ITALIANO: la domanda dell'editor ha un testo suo: quello del progetto parla de «il file .txt di
+    //           questa foto» e de «la foto resta da salvare», falso per un .json o un .txt che non e' di una foto.
+    // ENGLISH: the editor's question has its own string: the project one speaks of "this photo's .txt
+    //          file" and "the photo stays unsaved", false for a .json or a .txt that belongs to no photo.
+    dice('la domanda usa il titolo del progetto, Annulla e un testo suo (forma a funzione per il nome)', true,
+        sorgente.includes('{domandaSovrascrittura && (') && /t\.saveTxtChangedTitle/.test(blocco) && /t\.tagEditorFileChangedAsk\.replace\('\{name\}', \(\) => /.test(blocco) && /t\.cancel/.test(blocco));
+    dice('...e non piu\' il testo delle foto (saveTxtChangedAskOne)', false, /saveTxtChangedAskOne/.test(blocco));
+    const domandaEn = typeof t.tagEditorFileChangedAsk === 'string' ? t.tagEditorFileChangedAsk.replace('{name}', () => 'progetto.json') : '';
+    dice('en: per progetto.json la domanda nomina il file e non parla di una foto', [true, false], [domandaEn.includes('progetto.json'), /photo/i.test(domandaEn)]);
     for (const [lingua, tl] of Object.entries(lingue)) {
-        dice(`${lingua}: saveTxtChangedTitle e saveTxtChangedAskOne con {names}`, true,
-            typeof tl.saveTxtChangedTitle === 'string' && typeof tl.saveTxtChangedAskOne === 'string' && tl.saveTxtChangedAskOne.includes('{names}'));
+        dice(`${lingua}: saveTxtChangedTitle, e tagEditorFileChangedAsk con {name} una volta, diverso da saveTxtChangedAskOne`, true,
+            typeof tl.saveTxtChangedTitle === 'string' && typeof tl.tagEditorFileChangedAsk === 'string'
+            && tl.tagEditorFileChangedAsk.split('{name}').length === 2 && !tl.tagEditorFileChangedAsk.includes('{names}')
+            && tl.tagEditorFileChangedAsk !== tl.saveTxtChangedAskOne);
     }
 }
 
