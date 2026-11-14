@@ -110,7 +110,13 @@ const selezione = sorgente.includes(RIGA_SELEZIONE) ? effetto('    }, [images]);
 // ENGLISH: the twins of the same .txt (gemelliDelTxt), used by performSave and updateOriginalTags:
 //          the previous code did not have it, and then it is not there.
 const gemelli = ritaglia('    const gemelliDelTxt = async ');
-const testi = [...Object.values(PEZZI), gemelli, 'const effettoCronologia = ' + testoCronologia + ';'];
+// ITALIANO: il controllo dei .txt cambiati sul disco prima di scriverli (confermaSovrascrittura), usato
+//           da handleSaveChanges e dal visualizzatore: il codice di prima non l'aveva, e allora non c'e'.
+// ENGLISH: the check of the .txt files changed on disk before writing them (confermaSovrascrittura), used
+//          by handleSaveChanges and the viewer: the previous code did not have it, and then it is not there.
+const conferma = ritaglia('    const confermaSovrascrittura = async ');
+export const haConfermaSovrascrittura = Boolean(conferma);
+const testi = [...Object.values(PEZZI), gemelli, conferma, 'const effettoCronologia = ' + testoCronologia + ';'];
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
 testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
 testi.push('const effettoSelezione = ' + (selezione || '() => { }') + ';');
@@ -120,10 +126,11 @@ const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedF
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
     'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
     'setSelectedForBulk', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef', 'uniqueTagsIgnoringCase',
-    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef'];
+    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef',
+    'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
 const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione',
-    ...(visualizzatore ? ['effettoVisualizzatore'] : [])].join(', ') + ' };');
+    ...(visualizzatore ? ['effettoVisualizzatore'] : []), ...(conferma ? ['confermaSovrascrittura'] : [])].join(', ') + ' };');
 
 /* ITALIANO: una cartella finta: `scritti` = nome del file -> ultimo contenuto scritto.
    ENGLISH: a fake folder: `scritti` = file name -> last content written. */
@@ -149,7 +156,9 @@ export const foto = (id, tags, cartella = null) => ({
    ENGLISH: the fake app. It mounts empty, like the real one, then imports `immagini`: the first
    history step is the empty gallery, the second one the import. render() gives the real functions
    as seen from the current state; notifiche, finestre and aggiornamenti record what the user sees. */
-export const creaApp = (immagini, { trigger = [] } = {}) => {
+// ITALIANO: `finestra` = l'oggetto window visto dal codice (per esempio con un electronAPI finto).
+// ENGLISH: `finestra` = the window object the code sees (for example with a fake electronAPI).
+export const creaApp = (immagini, { trigger = [], finestra = {} } = {}) => {
     const stato = {
         images: [], history: [], historyIndex: -1, selectedImageId: null, selectedForBulk: [], stagedBulkTags: [],
         globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false },
@@ -195,7 +204,8 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
-        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' }));
+        (f) => f, finestra, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' },
+        S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();

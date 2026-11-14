@@ -26,7 +26,7 @@ import { hasTagIgnoringCase, splitTagInput, countNewTagsIgnoringCase } from '../
 import { qualityWarningText } from '../utils/imageQuality';
 import type { Strings } from '../constants';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: { t: Strings; [chiave: string]: any }) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false, confermaSovrascrittura }: { t: Strings; [chiave: string]: any }) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -224,6 +224,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         };
 
         try {
+            // ITALIANO: il .txt cambiato sul disco dopo l'apertura (un altro programma) non si sostituisce
+            //           senza chiedere: con "no" resta com'e' e la foto resta da salvare (vedi
+            //           confermaSovrascrittura in App.tsx). Prima lo si riscriveva in silenzio.
+            // ENGLISH: a .txt changed on disk after opening (another program) is not replaced without
+            //          asking: with "no" it stays as it is and the photo stays unsaved (see
+            //          confermaSovrascrittura in App.tsx). It used to be rewritten silently.
+            if (typeof confermaSovrascrittura === 'function' && (await confermaSovrascrittura([image])).size > 0) {
+                if (showNotification) showNotification(t.saveTxtChangedOne.replace('{names}', () => image.file.name), 'info');
+                return;
+            }
             if (dirHandle) {
                 // ITALIANO: accanto alla foto va il .txt che l'import rilegge e Kohya usa, col nome
                 //           non ripulito (vedi sidecarTagFileName); `fileName` resta per il download.

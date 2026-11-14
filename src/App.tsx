@@ -41,7 +41,7 @@ import { AppleToggle, TagInput, Toast, CustomConfirmDialog, SaveBeforeCloseDialo
 import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
-import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, leggiTestoSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore } from './utils/sidecarTags';
+import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, leggiTestoSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore, txtCambiatoSulDisco, testoTxtSulDisco } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, recuperoDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
@@ -442,7 +442,9 @@ export default function App() {
     const [selectedImageId, setSelectedImageId] = useState<string | null>(null); 
     const [slideDirection, setSlideDirection] = useState('right');
     const [toast, setToast] = useState({ show: false, message: '', type: 'info', id: 0 });
-    const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+    // ITALIANO: `sopra` = la domanda arriva durante "Salva e chiudi": va sopra quella finestra (vedi confermaSovrascrittura).
+    // ENGLISH: `sopra` = the question comes during "Save and close": it goes above that dialog (see confermaSovrascrittura).
+    const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void; sopra?: boolean }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
     // ITALIANO: Finestra a tre scelte mostrata chiudendo il progetto con modifiche non salvate
     // ENGLISH: Three-choice dialog shown when closing the project with unsaved changes
     const [saveCloseDialog, setSaveCloseDialog] = useState({ isOpen: false, isSaving: false });
@@ -4911,6 +4913,79 @@ export default function App() {
             }));
         };
     };
+    // ITALIANO: prima di scrivere i .txt di `foto`, controlla che sul disco ci siano ancora i tag che il
+    //           programma conosce (originalTags: letti all'import o scritti da lui, vedi txtCambiatoSulDisco).
+    //           Un altro programma (il tagger WD14 di Kohya, il Blocco note, OneDrive) puo' averli riscritti
+    //           a programma aperto, e "Salva" li sostituiva in silenzio coi tag del programma, con l'avviso
+    //           verde. Se qualcuno e' cambiato lo dice e chiede se sovrascrivere; torna gli id da NON
+    //           scrivere (vuoto se non c'e' niente di cambiato o se l'utente sceglie di sovrascrivere). Un
+    //           .txt mai letto (txtNonLettoInVigore) non si controlla: lo si sostituisce apposta. La domanda
+    //           va sopra la finestra di "Salva e chiudi" (sopra), che altrimenti la nascondeva.
+    // ENGLISH: before writing the .txt files of `foto`, checks that the disk still holds the tags the
+    //          program knows (originalTags: read at import or written by it, see txtCambiatoSulDisco).
+    //          Another program (Kohya's WD14 tagger, Notepad, OneDrive) may have rewritten them while the
+    //          program was open, and "Save" silently replaced them with the program's tags, with the green
+    //          notice. If any changed it says so and asks whether to overwrite; it returns the ids NOT to
+    //          write (empty when nothing changed or the user chooses to overwrite). A .txt never read
+    //          (txtNonLettoInVigore) is not checked: it is replaced on purpose. The question goes above
+    //          the "Save and close" dialog (sopra), which hid it otherwise.
+    const confermaSovrascrittura = async (foto: any[]): Promise<Set<string>> => {
+        const cambiate: any[] = [];
+        const daControllare = foto.filter(img => !txtNonLettoInVigore(img));
+        for (const img of daControllare.filter(i => i.dirHandle)) {
+            const testo = await testoTxtSulDisco(img.dirHandle, sidecarTagFileName(img.file.name), TXT_MAX_BYTES);
+            if (testo !== undefined && txtCambiatoSulDisco(testo, img.originalTags || [])) cambiate.push(img);
+        }
+        // ITALIANO: senza cartella ("Carica immagini"): lo stesso canale dell'import, abbinato per .txt di
+        //           arrivo (cartella + sidecarTagFileName, come txtDiArrivo in performSave).
+        // ENGLISH: with no folder ("Load images"): the same channel as the import, paired by target .txt
+        //          (folder + sidecarTagFileName, as txtDiArrivo in performSave).
+        const sciolte = daControllare.filter(i => !i.dirHandle);
+        const api = (window as any).electronAPI;
+        if (sciolte.length > 0 && api && typeof api.readSidecarTags === 'function' && typeof api.getPathForFile === 'function') {
+            const chiave = (s: string) => s.replace(/\//g, '\\').toLowerCase();
+            const percorsi = sciolte.map(img => String(api.getPathForFile(img.file) || ''));
+            try {
+                const letti = await api.readSidecarTags(percorsi.filter(Boolean));
+                const perTxt = new Map<string, string | false>();
+                for (const s of Array.isArray(letti) ? letti : []) {
+                    if (!s || typeof s.name !== 'string' || typeof s.dir !== 'string') continue;
+                    perTxt.set(chiave(s.dir + (/[\\/]$/.test(s.dir) ? '' : '\\') + s.name), !s.skipped && typeof s.content === 'string' ? s.content : false);
+                }
+                sciolte.forEach((img, i) => {
+                    const p = percorsi[i];
+                    if (!p) return;
+                    const taglio = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1;
+                    const k = chiave(p.slice(0, taglio) + sidecarTagFileName(p.slice(taglio)));
+                    if (txtCambiatoSulDisco(perTxt.has(k) ? perTxt.get(k) as string | false : null, img.originalTags || [])) cambiate.push(img);
+                });
+            } catch (err) {
+                // ITALIANO: la rilettura non riesce: si scrive come prima (la scrittura dira' il suo esito).
+                // ENGLISH: the read-back fails: write as before (the write will give its own outcome).
+                console.error('[Salvataggio] .txt non riletti prima di scrivere', err);
+            }
+        }
+        if (cambiate.length === 0) return new Set();
+        const nomi = cambiate.map(img => img.file.name);
+        const primi = nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '');
+        const sovrascrivi = await new Promise<boolean>(risolvi => {
+            const rispondi = (si: boolean) => {
+                setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
+                risolvi(si);
+            };
+            setConfirmDialog({
+                isOpen: true,
+                sopra: true,
+                title: t.saveTxtChangedTitle,
+                message: nomi.length === 1 ? t.saveTxtChangedAskOne.replace('{names}', () => primi)
+                    : t.saveTxtChangedAskMany.replace('{n}', String(nomi.length)).replace('{names}', () => primi),
+                onConfirm: () => rispondi(true),
+                onCancel: () => rispondi(false),
+            });
+        });
+        return sovrascrivi ? new Set() : new Set(cambiate.map(img => img.id));
+    };
+
     // ITALIANO: `fraseNonScritte` =la frase sulle foto lasciate fuori da handleSaveChanges perche' il
     //           loro .txt non si e' potuto leggere (vedi txtNonLettoInVigore): va nello stesso avviso.
     // ENGLISH: `fraseNonScritte` = the sentence on the photos handleSaveChanges left out because their
@@ -5274,15 +5349,38 @@ export default function App() {
         //          FALSE is returned: "Save and close" does not close. To replace it on purpose: the viewer.
         const modificheNonScritte = modifiedImages.filter(img => txtNonLettoInVigore(img)).map(img => img.file.name);
         const nonScritte = [...modificheNonScritte, ...soloTrigger];
-        const daScrivere = modifiedImages.filter(img => !txtNonLettoInVigore(img));
+        let daScrivere = modifiedImages.filter(img => !txtNonLettoInVigore(img));
         const primi = nonScritte.slice(0, 3).join(', ') + (nonScritte.length > 3 ? '…' : '');
-        const fraseNonScritte = nonScritte.length === 0 ? ''
-            : nonScritte.length === 1 ? t.saveUnreadTxtOne.replace('{names}', primi)
-            : t.saveUnreadTxtMany.replace('{n}', String(nonScritte.length)).replace('{names}', primi);
+        // ITALIANO: un .txt cambiato sul disco dopo l'apertura (un altro programma): si chiede se
+        //           sovrascriverlo (vedi confermaSovrascrittura). Con "no" la foto non si scrive, resta da
+        //           salvare, l'avviso la nomina e si torna FALSE: "Salva e chiudi" non chiude. Mentre si
+        //           rileggono i .txt e si aspetta la risposta i tasti di scrittura restano spenti (isSaving).
+        // ENGLISH: a .txt changed on disk after opening (another program): the user is asked whether to
+        //          overwrite it (see confermaSovrascrittura). With "no" the photo is not written, stays
+        //          unsaved, the notice names it and FALSE is returned: "Save and close" does not close.
+        //          While the .txt files are read back and the answer awaited the write buttons stay off (isSaving).
+        let escluse = new Set<string>();
+        if (daScrivere.length > 0) {
+            setIsSaving(true);
+            try { escluse = await confermaSovrascrittura(daScrivere); }
+            finally { setIsSaving(false); }
+        }
+        const cambiateFuori = daScrivere.filter(img => escluse.has(img.id)).map(img => img.file.name);
+        daScrivere = daScrivere.filter(img => !escluse.has(img.id));
+        const primiCambiati = cambiateFuori.slice(0, 3).join(', ') + (cambiateFuori.length > 3 ? '…' : '');
+        const fraseNonScritte = [
+            nonScritte.length === 0 ? ''
+                : nonScritte.length === 1 ? t.saveUnreadTxtOne.replace('{names}', primi)
+                : t.saveUnreadTxtMany.replace('{n}', String(nonScritte.length)).replace('{names}', primi),
+            cambiateFuori.length === 0 ? ''
+                : cambiateFuori.length === 1 ? t.saveTxtChangedOne.replace('{names}', () => primiCambiati)
+                : t.saveTxtChangedMany.replace('{n}', String(cambiateFuori.length)).replace('{names}', () => primiCambiati),
+        ].filter(Boolean).join(' ');
+        const blocca = modificheNonScritte.length > 0 || cambiateFuori.length > 0;
         // ITALIANO: anche qui "Salva e chiudi" rimostra la frase dopo "Progetto chiuso" (vedi avvisoSalvataggioRef).
         // ENGLISH: here too "Save and close" shows the sentence again after "Project closed" (see avvisoSalvataggioRef).
-        if (daScrivere.length === 0) { avvisoSalvataggioRef.current = fraseNonScritte; showNotification(fraseNonScritte, "info"); return modificheNonScritte.length === 0; }
-        return performSave(daScrivere, fraseNonScritte, modificheNonScritte.length > 0);
+        if (daScrivere.length === 0) { avvisoSalvataggioRef.current = fraseNonScritte; showNotification(fraseNonScritte, "info"); return !blocca; }
+        return performSave(daScrivere, fraseNonScritte, blocca);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto
@@ -6948,7 +7046,7 @@ export default function App() {
                 onCancel={() => setUpdateFound(null)}
                 isDarkMode={isDarkMode}
             />
-            <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} t={t} isDarkMode={isDarkMode} />
+            <CustomConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={confirmDialog.onCancel} sopra={!!confirmDialog.sopra} t={t} isDarkMode={isDarkMode} />
             {/* ITALIANO: area di RILASCIO che appare mentre si trascinano file sopra la finestra. */}
             {/* ENGLISH: DROP overlay shown while files are dragged over the window. */}
             {isDragging && (
@@ -7275,6 +7373,7 @@ export default function App() {
                     slideDirection={slideDirection}
                     showNotification={showNotification}
                     updateOriginalTags={updateOriginalTags}
+                    confermaSovrascrittura={confermaSovrascrittura}
                     dirHandle={lightboxImages.find(img => img.id === selectedImageId)?.dirHandle || null}
                     isDarkMode={isDarkMode}
                     onMoveToTrash={handleTrashFromLightbox}
