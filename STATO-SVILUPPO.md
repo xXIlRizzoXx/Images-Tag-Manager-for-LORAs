@@ -1,7 +1,20 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 7 novembre 2026
-**Versione attuale:** 2.0.3 in sviluppo (costruita e provata dal vivo il 7 novembre 2026, non ancora pubblicata). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 14 novembre 2026
+**Versione attuale:** 2.0.3 in sviluppo (costruita e provata dal vivo il 7 novembre 2026, poi corretta con il debug del 14 novembre 2026; non ancora pubblicata). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità 2.0.3 (traguardo 120, 14 novembre 2026): **debug completo prima della pubblicazione.**
+Due giri di ricerca dei problemi in tutto il programma, ogni segnalazione verificata da tre controllori,
+ogni correzione con la sua prova automatica e poi fatta rivedere; poi due passate sui difetti trovati
+dai revisori nelle correzioni stesse. 53 problemi corretti, nessun bloccante o grave aperto. Il più
+importante: «Salva Modifiche», «Salva file .txt» del visualizzatore e «Salva» dell'editor dei file di
+tag riscrivevano in silenzio un .txt cambiato da un altro programma (per esempio un tagger esterno)
+dopo l'apertura della cartella; ora rileggono il file e chiedono «Sovrascrivere?» nominando le foto.
+Fra gli altri: Ctrl+Z rimette l'elenco dei tag del progetto, il recupero dopo un crash funziona anche
+con una foto aperta prima da sola, l'avviso quando il backup anti-crash non entra più, le foto HEIC
+mandate a Google ripulite anche dei testi nascosti in punti poco usati del file (pixel intatti), i
+pannelli che non si chiudono più selezionando un testo, la chiave API con virgolette curve riconosciuta
+come non valida. 310 file di prove automatiche verdi.
+
 Novità 2.0.3 (traguardo 119, 7 novembre 2026): **Claude Desktop si collega trascinando un file.**
 Nella parte MCP delle Impostazioni (e nella finestrella del semaforino) c'è «Collega Claude Desktop»: una
 finestra con due strade. La prima salva un'estensione `images-tag-manager.mcpb` da trascinare in Claude,
