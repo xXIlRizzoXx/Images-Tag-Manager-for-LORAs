@@ -84,6 +84,8 @@ Grab the latest build from the [Releases](../../releases) page. No Node.js neede
 
 Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to the executable, in both the portable and the installed version. **Your images and `.txt` files are never copied there**: they stay where they are, and are only rewritten when you press Save.
 
+Uninstalling the app (or deleting the portable copy) does **not** remove that folder: your encrypted AI key, the MCP server settings with its token, the backup of unsaved tags and your settings stay there. To remove everything, close the app and delete the `%APPDATA%\images-tag-manager` folder.
+
 > **Tip:** the first time you work on a folder, keep a copy of its images and `.txt` files. The app only rewrites them when you press Save, but a backup costs nothing.
 
 ---

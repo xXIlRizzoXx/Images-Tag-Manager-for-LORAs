@@ -1,7 +1,7 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
 **Ultimo aggiornamento:** 7 novembre 2026
-**Versione attuale:** 2.0.3 in sviluppo (31 ottobre 2026, non ancora costruita). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Versione attuale:** 2.0.3 in sviluppo (costruita e provata dal vivo il 7 novembre 2026, non ancora pubblicata). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
 Novità 2.0.3 (traguardo 119, 7 novembre 2026): **Claude Desktop si collega trascinando un file.**
 Nella parte MCP delle Impostazioni (e nella finestrella del semaforino) c'è «Collega Claude Desktop»: una
 finestra con due strade. La prima salva un'estensione `images-tag-manager.mcpb` da trascinare in Claude,
@@ -634,14 +634,13 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 | Priorità | Traguardo | In parole semplici | Versione |
 |----------|-----------|--------------------|----------|
-| Bassa | Sistemare il velo del trascinamento | Quando si trascinano file sopra la finestra compare la scritta "Rilascia qui le immagini". Se si annulla il trascinamento premendo Esc, quel velo può restare a schermo finché non si trascina di nuovo qualcosa. È **solo estetico** (non blocca i clic, perché è trasparente ai comandi). Per toglierlo serve un controllo a tempo sul trascinamento, che va provato bene per non far sfarfallare il velo mentre si trascina davvero. | 1.0.x |
 | Bassa | Tradurre il dizionario dei tag | I ~1050 tag suggeriti (e i 27 nomi di categoria) hanno la traduzione solo in italiano e inglese: nelle altre 7 lingue restano in inglese. In 1.0.4 la **torta delle statistiche** è stata resa coerente (fuori da it/en è tutta in inglese, non più mezza tradotta e mezza no), ma **tradurre davvero tutti i ~1080 testi nelle 7 lingue** resta un lavoro grosso e delicato (va fatto bene, non a macchina): da decidere se e come affrontarlo (traduzione umana/professionale, oppure accettare l'inglese). | 1.0.x |
 
 ---
 
 ## Vincoli sempre validi del progetto
 
-- **Consegna Windows:** i due file finali (portable + installer) vanno messi nella cartella
+- **Consegna Windows:** i tre file finali (installer, portable .exe e portable .zip) vanno messi nella cartella
   `Release\` della radice del progetto (non dentro la cartella di lavoro git).
 - **Dati dell'app:** sempre in `%APPDATA%\images-tag-manager` (mai accanto all'exe).
   È la cartella da cancellare per far ripartire l'app "da zero".
