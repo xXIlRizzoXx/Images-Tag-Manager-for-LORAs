@@ -24,6 +24,7 @@ import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
 import { hasTagIgnoringCase, splitTagInput, countNewTagsIgnoringCase } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
+import { useChiusuraSfondo } from '../utils/backdropClose';
 import type { Strings } from '../constants';
 
 export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false, confermaSovrascrittura }: { t: Strings; [chiave: string]: any }) => {
@@ -79,6 +80,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         } else setHighResUrl(null);
         return () => { if (currentUrl) URL.revokeObjectURL(currentUrl); };
     }, [image?.id, image?.file]);
+
+    // ITALIANO: lo sfondo chiude solo se la pressione e' partita dallo sfondo (selezionare il testo
+    //           della casella e rilasciare fuori non chiude piu' il visualizzatore).
+    // ENGLISH: the backdrop closes only if the press started on it (selecting the field's text and
+    //          releasing outside no longer closes the viewer).
+    const chiusuraSfondo = useChiusuraSfondo(onClose);
 
     if (!image) return null;
 
@@ -330,7 +337,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const animClass = slideDirection === 'left' ? 'anim-slide-right' : 'anim-slide-left';
 
     return (
-        <div className={`fixed inset-0 z-[100] flex ${isDarkMode ? 'bg-black/95' : 'bg-gray-50/98'} backdrop-blur-sm p-4 md:p-6 animate-in fade-in`} onClick={onClose}>
+        <div className={`fixed inset-0 z-[100] flex ${isDarkMode ? 'bg-black/95' : 'bg-gray-50/98'} backdrop-blur-sm p-4 md:p-6 animate-in fade-in`} {...chiusuraSfondo}>
             {/* ITALIANO: Nessun tetto di larghezza: la finestra riempie tutto lo schermo anche
                           su monitor larghi (prima si fermava a 1920px lasciando fasce vuote).
                 ENGLISH: No width cap: the window fills the whole screen even on wide monitors

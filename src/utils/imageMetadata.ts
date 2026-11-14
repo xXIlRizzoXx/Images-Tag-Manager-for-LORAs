@@ -309,7 +309,17 @@ const fieldReader = (b: Uint8Array, from: number, end: number) => {
 const HEIC_PICTURE_ITEMS = new Set(['hvc1', 'grid', 'iden', 'iovl', 'tmap']);
 const HEIC_TOP_KEEP = new Set(['ftyp', 'meta', 'mdat', 'free', 'skip']);
 const HEIC_META_KEEP = new Set(['hdlr', 'pitm', 'iloc', 'iinf', 'iref', 'iprp', 'idat', 'dinf', 'grpl', 'free', 'skip']);
-const HEIC_PROPRIETA_TOLTE = new Set(['uuid', 'udes', 'taic', 'itai']);
+const HEIC_PROPRIETA_TOLTE = new Set(['uuid', 'udes', 'taic', 'itai', 'altt', 'crtt', 'mdft']);
+// ITALIANO: le proprieta' che servono a disegnare la foto. Ogni altra proprieta' si azzera, salvo
+//           quelle segnate "indispensabili" nella ipma (un lettore che non le capisce non deve
+//           disegnare la foto: sono istruzioni di disegno, non testi).
+// ENGLISH: the properties needed to draw the photo. Every other property is zeroed, except those
+//          marked "essential" in ipma (a reader that does not understand them must not draw the
+//          photo: they are drawing instructions, not texts).
+const HEIC_PROPRIETA_TENUTE = new Set(['hvcC', 'lhvC', 'ispe', 'irot', 'imir', 'iscl', 'clap', 'pasp', 'colr', 'pixi', 'cloc', 'auxC', 'clli', 'mdcv', 'cclv', 'amve', 'rloc', 'lsel', 'oinf', 'tols']);
+// ITALIANO: scatole in cima al file dove possono restare byte a cui nessuna immagine punta.
+// ENGLISH: top-level boxes where bytes no picture points to can remain.
+const HEIC_SENZA_RIFERIMENTI = new Set(['mdat', 'free', 'skip']);
 const stripHeic = (b: Uint8Array): Uint8Array => {
     const out = b.slice();
     const blank = (x: Box) => { out.set([0x66, 0x72, 0x65, 0x65], x.start + 4); out.fill(0, x.body, x.end); }; // 'free'
@@ -329,7 +339,22 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     let r = fieldReader(b, hdlr.body, hdlr.end);
     r.skip(8);
     if (r.four() !== 'pict') throw malformed();
+    // ITALIANO: il nome in hdlr (ultimo campo, dopo 12 byte riservati) si azzera al suo posto.
+    // ENGLISH: the name in hdlr (last field, after 12 reserved bytes) is zeroed in place.
+    if (hdlr.body + 24 < hdlr.end) out.fill(0, hdlr.body + 24, hdlr.end);
     for (const x of parts) if (!HEIC_META_KEEP.has(x.type)) blank(x);
+    // ITALIANO: la tabella dref: l'indirizzo di una voce url/urn (un percorso o un sito) si azzera;
+    //           una voce "in questo stesso file" (flag 1) non ha indirizzo e resta identica.
+    // ENGLISH: the dref table: the address of a url/urn entry (a path or a site) is zeroed; an "in
+    //          this same file" entry (flag 1) has no address and stays identical.
+    for (const dinf of parts.filter(x => x.type === 'dinf')) {
+        for (const dref of childBoxes(b, dinf.body, dinf.end)) {
+            if (dref.type !== 'dref') continue;
+            for (const v of childBoxes(b, dref.body + 8, dref.end)) {
+                if ((v.type === 'url ' || v.type === 'urn ') && v.body + 4 < v.end) out.fill(0, v.body + 4, v.end);
+            }
+        }
+    }
 
     r = fieldReader(b, pitm.body, pitm.end);
     const pitmVersion = r.u8();
@@ -351,6 +376,13 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
         const id = v === 3 ? q.u32() : q.u16();
         let type = '';
         if (v >= 2) { q.skip(2); type = q.four(); }
+        // ITALIANO: il nome dell'elemento (testo libero; in v0/v1 viene dopo i 2 byte della protezione)
+        //           diventa spazi della stessa lunghezza: lo zero che lo chiude resta dov'e', quindi i
+        //           campi dopo (tipo di contenuto) non si spostano.
+        // ENGLISH: the item name (free text; in v0/v1 it follows the 2 protection bytes) becomes spaces
+        //          of the same length: its closing zero stays where it is, so the fields after it
+        //          (content type) do not move.
+        for (let k = q.pos() + (v >= 2 ? 0 : 2); k < e.end && b[k] !== 0; k++) out[k] = 0x20;
         if (types.has(id)) throw malformed();
         types.set(id, type);
     }
@@ -367,6 +399,14 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
     const s1 = r.u8(), s2 = r.u8();
     const offSize = s1 >> 4, lenSize = s1 & 15, baseSize = s2 >> 4, idxSize = lv > 0 ? s2 & 15 : 0;
     const count = lv < 2 ? r.u16() : r.u32();
+    // ITALIANO: i tratti del file che appartengono alle immagini (metodo 0). Se un'immagine sta dentro
+    //           un altro elemento (metodo 2) non si sa dove sono i suoi byte: allora i tratti senza
+    //           riferimenti non si azzerano (la foto deve restare disegnabile).
+    // ENGLISH: the file ranges that belong to pictures (method 0). If a picture lies inside another
+    //          item (method 2) where its bytes are is unknown: then unreferenced ranges are not zeroed
+    //          (the photo must stay drawable).
+    const tenuti: Array<[number, number]> = [];
+    let tenutiIncerti = false;
     for (let k = 0; k < count; k++) {
         const id = lv < 2 ? r.u16() : r.u32();
         const method = lv > 0 ? r.u16() & 15 : 0;
@@ -378,7 +418,11 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
             r.uN(idxSize);
             const off = r.uN(offSize);
             const len = r.uN(lenSize);
-            if (keep) continue;
+            if (keep) {
+                if (method === 0) tenuti.push([base + off, len === 0 ? b.length : base + off + len]);
+                else if (method !== 1) tenutiIncerti = true;
+                continue;
+            }
             // ITALIANO: un indice diverso da 0 rimanda alla tabella dref, che di solito dice "in questo
             //           stesso file" (url con flag 1): saltarlo lasciava il GPS nella foto mandata. Qui
             //           non si interpreta la tabella: la foto non parte.
@@ -395,11 +439,57 @@ const stripHeic = (b: Uint8Array): Uint8Array => {
             out.fill(0, from, from + len);
         }
     }
+    // ITALIANO: in mdat (e nelle free/skip in cima) si azzera ogni byte a cui nessuna immagine punta:
+    //           per esempio un Exif "tolto" da un programma che ha cancellato solo il riferimento.
+    // ENGLISH: in mdat (and in the top free/skip boxes) every byte no picture points to is zeroed:
+    //          for example an Exif "removed" by a program that deleted only the reference.
+    if (!tenutiIncerti) {
+        tenuti.sort((p, q) => p[0] - q[0]);
+        for (const x of top) {
+            if (!HEIC_SENZA_RIFERIMENTI.has(x.type)) continue;
+            let p = x.body;
+            for (const [da, a] of tenuti) {
+                if (a <= p) continue;
+                if (da >= x.end) break;
+                if (da > p) out.fill(0, p, da);
+                p = Math.max(p, a);
+            }
+            if (p < x.end) out.fill(0, p, x.end);
+        }
+    }
     if (iprp) {
-        for (const x of childBoxes(b, iprp.body, iprp.end)) {
-            // ITALIANO: proprieta' private (uuid), descrizione scritta dall'utente (udes) e orari (taic, itai).
-            // ENGLISH: private properties (uuid), user-written description (udes) and timestamps (taic, itai).
-            if (x.type === 'ipco') for (const p of childBoxes(b, x.body, x.end)) if (HEIC_PROPRIETA_TOLTE.has(p.type)) blank(p);
+        const figli = childBoxes(b, iprp.body, iprp.end);
+        // ITALIANO: quali proprieta' (indice da 1 dentro ipco) sono segnate indispensabili nella ipma.
+        // ENGLISH: which properties (1-based index inside ipco) are marked essential in ipma.
+        const indispensabili = new Set<number>();
+        for (const x of figli) {
+            if (x.type !== 'ipma') continue;
+            const m = fieldReader(b, x.body, x.end);
+            const mv = m.u8();
+            const larghi = (m.u8() << 16 | m.u16()) & 1;
+            const voci = m.u32();
+            for (let k = 0; k < voci; k++) {
+                if (mv < 1) m.u16(); else m.u32();
+                const quante = m.u8();
+                for (let a = 0; a < quante; a++) {
+                    if (larghi) { const v = m.u16(); if (v & 0x8000) indispensabili.add(v & 0x7FFF); }
+                    else { const v = m.u8(); if (v & 0x80) indispensabili.add(v & 0x7F); }
+                }
+            }
+        }
+        for (const x of figli) {
+            if (x.type !== 'ipco') continue;
+            // ITALIANO: si tolgono sempre le proprieta' private (uuid), i testi scritti dall'utente (udes,
+            //           altt) e gli orari (taic, itai, crtt, mdft); delle altre restano solo quelle per
+            //           disegnare e quelle indispensabili. La scatola tolta diventa 'free' della stessa
+            //           misura: gli indici della ipma restano validi.
+            // ENGLISH: private properties (uuid), user-written texts (udes, altt) and times (taic, itai,
+            //          crtt, mdft) are always removed; of the others only the drawing ones and the
+            //          essential ones stay. The removed box becomes a 'free' box of the same size: the
+            //          ipma indexes stay valid.
+            childBoxes(b, x.body, x.end).forEach((p, i) => {
+                if (HEIC_PROPRIETA_TOLTE.has(p.type) || (!HEIC_PROPRIETA_TENUTE.has(p.type) && !indispensabili.has(i + 1))) blank(p);
+            });
         }
     }
     return out;

@@ -46,6 +46,7 @@ import { BACKUP_KEY_SEP, folderSignature, backupDellImport, recuperoDellImport, 
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
+import { useChiusuraSfondo } from './utils/backdropClose';
 import { avvisoImport } from './utils/importNotice';
 import { purgeIdsFromHistory, addPhotosToHistory, withLiveOriginalTags, nearestDifferentStep } from './utils/historyUtils';
 import { hasTagIgnoringCase, uniqueTagsIgnoringCase, countNewTagsIgnoringCase, hasTagsBeyondTriggers, splitTagInput } from './utils/tagCase';
@@ -714,6 +715,12 @@ export default function App() {
     }, [t]);
 
     const [isGlobalTagManagerOpen, setIsGlobalTagManagerOpen] = useState(false);
+    // ITALIANO: pannello dei tag del progetto e Statistiche chiudono dallo sfondo solo se la pressione
+    //           e' partita dallo sfondo: selezionare il testo di una casella e rilasciare fuori non chiude.
+    // ENGLISH: the project tags panel and Statistics close from the backdrop only if the press started
+    //          there: selecting a field's text and releasing outside does not close them.
+    const chiusuraSfondoTag = useChiusuraSfondo(() => setIsGlobalTagManagerOpen(false));
+    const chiusuraSfondoStatistiche = useChiusuraSfondo(() => setIsStatsOpen(false));
     const [isTagSuggestionsOpen, setIsTagSuggestionsOpen] = useState(false);
     const [customProjectTags, setCustomProjectTags] = useState<string[]>([]);
     const [showSplash, setShowSplash] = useState(true);
@@ -8456,7 +8463,7 @@ export default function App() {
             </div>
 
             {isGlobalTagManagerOpen && (
-                <div className="fixed inset-0 z-[200] flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsGlobalTagManagerOpen(false)}>
+                <div className="fixed inset-0 z-[200] flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in" {...chiusuraSfondoTag}>
                     <div className={`w-96 max-w-[90vw] h-full ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-2xl flex flex-col animate-in slide-in-from-right-4`} onClick={e => e.stopPropagation()}>
                         <div className={`p-5 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-100'} flex justify-between items-center shrink-0`}>
                             <h2 className={`text-lg font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><Tag size={20} className="text-indigo-500"/> {t.projectTagManager}</h2>
@@ -8537,7 +8544,7 @@ export default function App() {
             )}
 
             {isStatsOpen && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setIsStatsOpen(false)}>
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" {...chiusuraSfondoStatistiche}>
                     <div className={`w-[90vw] max-w-5xl max-h-[90vh] ${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95`} onClick={e => e.stopPropagation()}>
                         <div className={`p-6 border-b ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'} flex justify-between items-center shrink-0`}>
                             <h2 className={`text-xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'} flex items-center gap-2`}><PieChart size={24} className="text-indigo-500"/> {t.projectStats}</h2>
