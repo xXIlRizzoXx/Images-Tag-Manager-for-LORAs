@@ -948,9 +948,13 @@ export default function App() {
     //          import, not by a crash, and leaves the backup (see sorgentiDaTenere).
     const lottiSessioneRef = useRef<Set<string>>(new Set());
     // ITALIANO: il backup non entra piu' nel localStorage (troppe foto da salvare insieme): lo si dice
-    //           una volta per sessione, e si chiede di salvare. Prima il rifiuto era muto.
+    //           e si chiede di salvare. Prima il rifiuto era muto. Una volta sola finche' non entra di
+    //           nuovo: dopo una scrittura riuscita (backupPienoDettoRef torna false) la volta dopo che
+    //           non entra lo si ridice. Prima lo si diceva una volta per tutta la sessione.
     // ENGLISH: the backup no longer fits in localStorage (too many photos to save at once): the user is
-    //          told once per session and asked to save. The refusal used to be silent.
+    //          told and asked to save. The refusal used to be silent. Once only until it fits again:
+    //          after a successful write (backupPienoDettoRef back to false) the next time it does not
+    //          fit the user is told again. It used to be said once for the whole session.
     const backupPienoDettoRef = useRef(false);
     const avvisoBackupPienoRef = useRef<() => void>(() => { });
     avvisoBackupPienoRef.current = () => { if (backupPienoDettoRef.current) return; backupPienoDettoRef.current = true; showNotification(t.backupTooBig, 'error'); };
@@ -959,7 +963,8 @@ export default function App() {
         else if (!backupConFotoRef.current) return undefined;
         const handle = setTimeout(() => {
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
-            scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current, () => avvisoBackupPienoRef.current());
+            const scritto = scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current, () => avvisoBackupPienoRef.current());
+            if (scritto) backupPienoDettoRef.current = false;
         }, 1000);
         return () => clearTimeout(handle);
     }, [images, dirHandle]);
@@ -1012,6 +1017,19 @@ export default function App() {
     //          the write is over it starts again from scratch.
     const isSavingRef = useRef(isSaving);
     isSavingRef.current = isSaving;
+    // ITALIANO: la domanda «Sovrascrivere?» aperta da confermaSovrascrittura (null se non ce n'e'): la
+    //           finestra di conferma che le spetta e chi aspetta la risposta. isSaving e' acceso, ma non
+    //           si sta scrivendo niente: si aspetta l'utente.
+    // ENGLISH: the "Overwrite?" question opened by confermaSovrascrittura (null when there is none): its
+    //          confirm dialog and whoever awaits the answer. isSaving is on, but nothing is being
+    //          written: the user is awaited.
+    // ITALIANO: `prima` = la finestra di conferma mostrata quando la domanda e' partita: un effetto
+    //           rimasto indietro che la vede ancora non scambia lei per una finestra nuova.
+    // ENGLISH: `prima` = the confirm dialog shown when the question started: an effect lagging behind
+    //          that still sees it does not take it for a new dialog.
+    const domandaSovrascritturaRef = useRef<{ dialogo: any; prima: any; risolvi: (si: boolean) => void } | null>(null);
+    const confirmDialogRef = useRef(confirmDialog);
+    confirmDialogRef.current = confirmDialog;
     const chiusuraInScritturaRef = useRef(false);
     if (!isSaving) chiusuraInScritturaRef.current = false;
     // ITALIANO: lo stesso per "Annulla lo svuotamento" (ripristinoInCorsoRef): riprende prima le
@@ -1056,13 +1074,18 @@ export default function App() {
             const folder = (dirHandle && dirHandle.name) ? String(dirHandle.name) : '';
             if (conFoto) scriviBackupSubito(localStorage, lista, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current);
             if (!(window as any).electronAPI) return;
-            // ITALIANO: una scrittura in corso (vedi isSavingRef): la prima X si ferma e avvisa.
-            // ENGLISH: a write in progress (see isSavingRef): the first X stops and warns.
+            // ITALIANO: una scrittura in corso (vedi isSavingRef): la prima X si ferma e avvisa. Con la
+            //           domanda «Sovrascrivere?» aperta non si scrive niente: si aspetta la risposta, e
+            //           l'avviso lo dice (prima diceva di aspettare la barra, che non spariva da sola).
+            // ENGLISH: a write in progress (see isSavingRef): the first X stops and warns. With the
+            //          "Overwrite?" question open nothing is being written: the answer is awaited, and
+            //          the notice says so (it used to say to wait for the bar, which never went away).
             if (isSavingRef.current && !chiusuraInScritturaRef.current) {
                 e.preventDefault();
                 e.returnValue = false;
                 chiusuraInScritturaRef.current = true;
-                setTimeout(() => showNotification(t.closeWhileWriting, 'info'), 0);
+                const avviso = domandaSovrascritturaRef.current ? t.closeWhileAsking : t.closeWhileWriting;
+                setTimeout(() => showNotification(avviso, 'info'), 0);
                 return;
             }
             // ITALIANO: un "Annulla lo svuotamento" in corso (vedi chiusuraInRipristinoRef).
@@ -5023,6 +5046,20 @@ export default function App() {
             }));
         };
     };
+    // ITALIANO: un'altra finestra di conferma ha preso il posto della domanda «Sovrascrivere?» (per esempio
+    //           la seconda conferma di «Svuota cestino» su una cartella di rete), o qualcuno l'ha chiusa:
+    //           vale come "no". Prima la domanda spariva senza risposta, Salva non finiva mai e isSaving
+    //           restava acceso per tutta la sessione. La finestra nuova non si tocca.
+    // ENGLISH: another confirm dialog took the place of the "Overwrite?" question (for example the second
+    //          confirm of "Empty trash" on a network folder), or someone closed it: it counts as "no". The
+    //          question used to vanish unanswered, Save never finished and isSaving stayed on for the
+    //          whole session. The new dialog is left alone.
+    useEffect(() => {
+        const aperta = domandaSovrascritturaRef.current;
+        if (!aperta || aperta.dialogo === confirmDialog || aperta.prima === confirmDialog) return;
+        domandaSovrascritturaRef.current = null;
+        aperta.risolvi(false);
+    }, [confirmDialog]);
     // ITALIANO: prima di scrivere i .txt di `foto`, controlla che sul disco ci siano ancora i tag che il
     //           programma conosce (originalTags: letti all'import o scritti da lui, vedi txtCambiatoSulDisco).
     //           Un altro programma (il tagger WD14 di Kohya, il Blocco note, OneDrive) puo' averli riscritti
@@ -5039,12 +5076,23 @@ export default function App() {
     //          write (empty when nothing changed or the user chooses to overwrite). A .txt never read
     //          (txtNonLettoInVigore) is not checked: it is replaced on purpose. The question goes above
     //          the "Save and close" dialog (sopra), which hid it otherwise.
-    const confermaSovrascrittura = async (foto: any[]): Promise<Set<string>> => {
+    // ITALIANO: `avanza(fatte, totale)` = facoltativo, dice quante foto con la cartella sono state rilette
+    //           (Salva lo usa per la barra; il visualizzatore no). Si rilegge a gruppi di 6 in parallelo:
+    //           prima un file alla volta, con migliaia di foto o una cartella di rete la barra restava
+    //           ferma a 0% per decine di secondi. I nomi restano nell'ordine delle foto.
+    // ENGLISH: `avanza(fatte, totale)` = optional, tells how many photos with a folder were read back
+    //          (Save uses it for the bar; the viewer does not). The re-read goes in groups of 6 in
+    //          parallel: it used to be one file at a time, and with thousands of photos or a network
+    //          folder the bar stayed at 0% for tens of seconds. The names stay in photo order.
+    const confermaSovrascrittura = async (foto: any[], avanza?: (fatte: number, totale: number) => void): Promise<Set<string>> => {
         const cambiate: any[] = [];
         const daControllare = foto.filter(img => !txtNonLettoInVigore(img));
-        for (const img of daControllare.filter(i => i.dirHandle)) {
-            const testo = await testoTxtSulDisco(img.dirHandle, sidecarTagFileName(img.file.name), TXT_MAX_BYTES);
-            if (testo !== undefined && txtCambiatoSulDisco(testo, img.originalTags || [])) cambiate.push(img);
+        const conCartella = daControllare.filter(i => i.dirHandle);
+        for (let i = 0; i < conCartella.length; i += 6) {
+            const gruppo = conCartella.slice(i, i + 6);
+            const testi = await Promise.all(gruppo.map(img => testoTxtSulDisco(img.dirHandle, sidecarTagFileName(img.file.name), TXT_MAX_BYTES)));
+            gruppo.forEach((img, k) => { const testo = testi[k]; if (testo !== undefined && txtCambiatoSulDisco(testo, img.originalTags || [])) cambiate.push(img); });
+            if (avanza) avanza(i + gruppo.length, conCartella.length);
         }
         // ITALIANO: senza cartella ("Carica immagini"): lo stesso canale dell'import, abbinato per .txt di
         //           arrivo (cartella + sidecarTagFileName, come txtDiArrivo in performSave).
@@ -5080,10 +5128,11 @@ export default function App() {
         const primi = nomi.slice(0, 3).join(', ') + (nomi.length > 3 ? '…' : '');
         const sovrascrivi = await new Promise<boolean>(risolvi => {
             const rispondi = (si: boolean) => {
+                domandaSovrascritturaRef.current = null;
                 setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {}, onCancel: () => {} });
                 risolvi(si);
             };
-            setConfirmDialog({
+            const dialogo = {
                 isOpen: true,
                 sopra: true,
                 title: t.saveTxtChangedTitle,
@@ -5091,7 +5140,13 @@ export default function App() {
                     : t.saveTxtChangedAskMany.replace('{n}', String(nomi.length)).replace('{names}', () => primi),
                 onConfirm: () => rispondi(true),
                 onCancel: () => rispondi(false),
-            });
+            };
+            // ITALIANO: una domanda «Sovrascrivere?» gia' aperta (Salva e il visualizzatore insieme) vale "no".
+            // ENGLISH: an "Overwrite?" question already open (Save and the viewer together) counts as "no".
+            const vecchia = domandaSovrascritturaRef.current;
+            domandaSovrascritturaRef.current = { dialogo, prima: confirmDialogRef.current, risolvi };
+            if (vecchia) vecchia.risolvi(false);
+            setConfirmDialog(dialogo);
         });
         return sovrascrivi ? new Set() : new Set(cambiate.map(img => img.id));
     };
@@ -5104,7 +5159,11 @@ export default function App() {
     //           Falso quando la frase nomina solo foto che avevano in piu' la sola trigger.
     // ENGLISH: `blocca` = the photos left out were real edits: "Save and close" does not close.
     //          False when the sentence only names photos whose only extra was the trigger.
-    const performSave = async (imagesToSave: any[], fraseNonScritte = '', blocca = !!fraseNonScritte): Promise<boolean> => {
+    // ITALIANO: `inizioBarra` = da dove parte la barra (la rilettura di handleSaveChanges ne ha gia'
+    //           riempito una parte): la scrittura la porta da li' a 100%, senza farla tornare a 0.
+    // ENGLISH: `inizioBarra` = where the bar starts (handleSaveChanges' re-read already filled part of
+    //          it): the write takes it from there to 100%, without sending it back to 0.
+    const performSave = async (imagesToSave: any[], fraseNonScritte = '', blocca = !!fraseNonScritte, inizioBarra = 0): Promise<boolean> => {
         // ITALIANO: Ogni immagine viene riscritta nella SUA cartella (img.dirHandle), non in una
         //           cartella globale: con due cartelle aperte insieme i tag finivano nel posto
         //           sbagliato. Le immagini senza cartella (caricate come file singoli) proseguono
@@ -5131,7 +5190,7 @@ export default function App() {
         };
         const total = imagesToSave.length;
         let done = 0;
-        const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, Math.round((done / total) * 100))); };
+        const bump = (n = 1) => { done += n; if (total > 0) setImportProgress(Math.min(100, inizioBarra + Math.round((done / total) * (100 - inizioBarra)))); };
         // ITALIANO: due copie della stessa foto (la stessa cartella aperta due volte) con tag DIVERSI
         //           finirebbero nello stesso .txt: vinceva l'ultima scritta, e la card dell'altra
         //           mostrava come salvata una modifica che sul disco non c'era piu'. Non si sceglie
@@ -5195,7 +5254,7 @@ export default function App() {
             }
         }
 
-        if (total > 0) { setIsSaving(true); setImportProgress(0); }
+        if (total > 0) { setIsSaving(true); setImportProgress(inizioBarra); }
         try {
             // ITALIANO: 1) Immagini con una cartella scrivibile: ognuna nel SUO handle di cartella.
             //           Ogni file ha il PROPRIO try/catch: una foto che fallisce (bloccata, permessi,
@@ -5469,10 +5528,13 @@ export default function App() {
         //          overwrite it (see confermaSovrascrittura). With "no" the photo is not written, stays
         //          unsaved, the notice names it and FALSE is returned: "Save and close" does not close.
         //          While the .txt files are read back and the answer awaited the write buttons stay off (isSaving).
+        // ITALIANO: la rilettura occupa la prima meta' della barra (`barra`), la scrittura il resto (performSave).
+        // ENGLISH: the re-read takes the first half of the bar (`barra`), the write the rest (performSave).
         let escluse = new Set<string>();
+        let barra = 0;
         if (daScrivere.length > 0) {
-            setIsSaving(true);
-            try { escluse = await confermaSovrascrittura(daScrivere); }
+            setIsSaving(true); setImportProgress(0);
+            try { escluse = await confermaSovrascrittura(daScrivere, (fatte, totale) => { barra = Math.round((fatte / totale) * 50); setImportProgress(barra); }); }
             finally { setIsSaving(false); }
         }
         const cambiateFuori = daScrivere.filter(img => escluse.has(img.id)).map(img => img.file.name);
@@ -5490,7 +5552,7 @@ export default function App() {
         // ITALIANO: anche qui "Salva e chiudi" rimostra la frase dopo "Progetto chiuso" (vedi avvisoSalvataggioRef).
         // ENGLISH: here too "Save and close" shows the sentence again after "Project closed" (see avvisoSalvataggioRef).
         if (daScrivere.length === 0) { avvisoSalvataggioRef.current = fraseNonScritte; showNotification(fraseNonScritte, "info"); return !blocca; }
-        return performSave(daScrivere, fraseNonScritte, blocca);
+        return performSave(daScrivere, fraseNonScritte, blocca, barra);
     };
 
     // ITALIANO: Esporta i tag di tutte le immagini del progetto

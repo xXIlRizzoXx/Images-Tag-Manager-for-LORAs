@@ -3,8 +3,9 @@
    word) il backup supera il tetto del localStorage di Chromium (10 MiB, circa 5,2 milioni di
    caratteri). La scrittura lanciava QuotaExceededError e scriviBackupSubito lo inghiottiva: nel
    localStorage restava il backup di prima, la copia su file non partiva, e nessuno lo diceva. Dopo un
-   crash il lavoro non salvato era perso. Ora l'errore di spazio arriva ad App.tsx, che una volta per
-   sessione chiede di premere «Salva Modifiche» (backupTooBig, nelle nove lingue).
+   crash il lavoro non salvato era perso. Ora l'errore di spazio arriva ad App.tsx, che chiede di
+   premere «Salva Modifiche» (backupTooBig, nelle nove lingue), una volta finche' il backup non torna
+   a entrare.
    Si eseguono le regole vere di src/utils/closeGuard.ts e src/utils/backupFile.ts con un localStorage
    finto che ha il tetto di Chromium, e il testo VERO dell'effetto del backup preso da src/App.tsx.
    Uso:  node scripts/test-backup-quota-notice.mjs      (esce con codice 1 se qualcosa non torna)
@@ -14,8 +15,8 @@
    word) the backup exceeds Chromium's localStorage cap (10 MiB, about 5.2 million characters). The
    write threw QuotaExceededError and scriviBackupSubito swallowed it: localStorage kept the previous
    backup, the file copy did not start, and nobody said so. After a crash the unsaved work was lost.
-   Now the out-of-space error reaches App.tsx, which once per session asks to press "Save Changes"
-   (backupTooBig, in the nine languages).
+   Now the out-of-space error reaches App.tsx, which asks to press "Save Changes" (backupTooBig, in
+   the nine languages), once until the backup fits again.
    The real rules of src/utils/closeGuard.ts and src/utils/backupFile.ts are run with a fake
    localStorage holding Chromium's cap, and the REAL text of the backup effect taken from src/App.tsx.
    Usage:  node scripts/test-backup-quota-notice.mjs      (exits with code 1 if anything is off) */
@@ -116,10 +117,55 @@ console.log('\n--- App.tsx: l\'effetto del backup passa l\'errore all\'avviso --
     effetto(progetto(10000), { name: 'dataset' }, memoriaConTetto(), { current: new Map() }, G.scriviBackupSubito, (f) => { f(); return 0; }, () => { },
         ...altriRef.map(n => refs[n]))();
     dice('con il backup troppo grande l\'avviso della pagina viene chiamato', 1, avvisi);
-    // ITALIANO: l'avviso vero: una volta sola per sessione, con la frase backupTooBig.
-    // ENGLISH: the real notice: once per session, with the backupTooBig sentence.
-    dice('App.tsx: l\'avviso mostra t.backupTooBig una sola volta per sessione', true,
+    // ITALIANO: l'avviso vero: una volta sola finche' il backup non torna a entrare (vedi sotto), con la frase backupTooBig.
+    // ENGLISH: the real notice: once until the backup fits again (see below), with the backupTooBig sentence.
+    dice('App.tsx: l\'avviso mostra t.backupTooBig una volta sola finche\' il backup non torna a entrare', true,
         /avvisoBackupPienoRef\.current = \(\) => \{ if \(backupPienoDettoRef\.current\) return; backupPienoDettoRef\.current = true; showNotification\(t\.backupTooBig, 'error'\); \};/.test(sorgente));
+}
+
+// ITALIANO: l'avviso compariva una volta per tutta la sessione: dopo il primo, un secondo dataset
+//           grande (o un'altra modifica in blocco) tornava a non entrare nel backup in silenzio. Ora
+//           ricompare a ogni nuovo passaggio da «entra» a «non entra», ma non a ogni scrittura rifiutata
+//           di fila. Si eseguono le righe VERE dell'avviso e dell'effetto (con un useRef finto che tiene
+//           i ref fra un render e l'altro) su un localStorage finto con il tetto di Chromium.
+// ENGLISH: the notice showed once for the whole session: after the first one, a second large dataset
+//          (or another bulk edit) silently failed to fit in the backup again. Now it shows again on
+//          every new passage from "fits" to "does not fit", but not on every refused write in a row.
+//          The REAL lines of the notice and of the effect run (with a fake useRef keeping the refs
+//          between renders) on a fake localStorage with Chromium's cap.
+console.log('\n--- l\'avviso ricompare dopo che il backup e\' tornato a entrare ---');
+{
+    const sorgente = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
+    const iInizio = sorgente.indexOf('    const backupPienoDettoRef = useRef(false);');
+    const iFine = iInizio < 0 ? -1 : sorgente.indexOf('    }, [images, dirHandle]);', iInizio);
+    if (iInizio < 0 || iFine < 0) { console.log('NO  l\'avviso e l\'effetto del backup non trovati in src/App.tsx'); process.exit(1); }
+    const testo = sorgente.slice(iInizio, iFine + '    }, [images, dirHandle]);'.length);
+    const js = (await esbuild.transform(testo, { loader: 'ts' })).code;
+    const nomiRef = [...new Set(testo.match(/\b\w+Ref\b/g) || [])].filter(n => !/^(backupPienoDettoRef|avvisoBackupPienoRef|useRef)$/.test(n));
+    const render = new Function('useRef', 'useEffect', 'images', 'dirHandle', 'localStorage', 'scriviBackupSubito', 'setTimeout', 'clearTimeout', 'showNotification', 't', ...nomiRef, js);
+    const memoria = memoriaConTetto();
+    const avvisi = [];
+    const slot = [];
+    const refs = Object.fromEntries(nomiRef.map(n => [n, { current: n === 'lottiSessioneRef' ? new Set() : (n === 'globalTriggersRef' ? [] : (n === 'fotoChiuseRef' ? new Map() : false)) }]));
+    // ITALIANO: un render di App con queste foto: i useRef tengono il loro oggetto, l'effetto gira subito.
+    // ENGLISH: an App render with these photos: the useRefs keep their object, the effect runs at once.
+    const giro = (immagini) => {
+        let i = 0;
+        render((v) => (slot[i] = slot[i] || { current: v }, slot[i++]), (f) => { f(); }, immagini, { name: 'dataset' }, memoria, G.scriviBackupSubito,
+            (f) => { f(); return 0; }, () => { }, (m, tipo) => avvisi.push([m, tipo]), lingue.en, ...nomiRef.map(n => refs[n]));
+    };
+    giro(progetto(10000));
+    dice('premessa: 10.000 foto da salvare, il backup non entra: un avviso', 1, avvisi.length);
+    giro(progetto(10000));
+    dice('una seconda scrittura rifiutata di fila: nessun avviso in piu\'', 1, avvisi.length);
+    giro(progetto(100));
+    dice('dopo il salvataggio il backup torna a entrare (100 foto): nessun avviso', [1, true], [avvisi.length, memoria.getItem('tagBackup') !== null]);
+    giro(progetto(10000));
+    dice('un\'altra modifica in blocco non entra di nuovo: l\'avviso ricompare', 2, avvisi.length);
+    dice('...con la frase backupTooBig, come rosso', [lingue.en.backupTooBig, 'error'], avvisi[1] || null);
+    giro([]);
+    giro(progetto(10000));
+    dice('backup tolto (niente da salvare) e poi di nuovo troppo grande: l\'avviso ricompare ancora', 3, avvisi.length);
 }
 
 console.log('\n--- la frase nelle nove lingue, col nome vero del tasto ---');

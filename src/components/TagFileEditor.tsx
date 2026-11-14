@@ -139,6 +139,34 @@ export const serializeTagFile = (tags: string[], fileName: string, triggers: str
     return tags.length > 0 ? tags.join(', ') + ',' : '';
 };
 
+// ITALIANO: il file aperto e' cambiato sul disco dopo che l'editor l'ha letto o scritto? Un altro
+//   programma (il tagger WD14 di Kohya, il Blocco note) puo' riscriverlo con l'editor aperto, e "Salva"
+//   lo sostituiva in silenzio. `ricordo` = i tag del file come l'editor li conosce (savedTagsRef). Stessa
+//   regola di txtCambiatoSulDisco (sidecarTags.ts), ma i tag si leggono con parseTagFile, come li legge
+//   l'editor, cosi' vale anche per i .json: senza ordine e doppioni; file sparito = non e' un cambio
+//   (niente da perdere); illeggibile, oltre 1 MB o JSON rotto = cambiato.
+// ENGLISH: has the open file changed on disk since the editor read or wrote it? Another program
+//   (Kohya's WD14 tagger, Notepad) can rewrite it with the editor open, and "Save" silently replaced
+//   it. `ricordo` = the file's tags as the editor knows them (savedTagsRef). Same rule as
+//   txtCambiatoSulDisco (sidecarTags.ts), but the tags are read with parseTagFile, as the editor reads
+//   them, so it works for .json too: regardless of order and duplicates; file gone = not a change
+//   (nothing to lose); unreadable, over 1 MB or broken JSON = changed.
+export const fileTagCambiato = async (handle: any, nome: string, ricordo: string[]): Promise<boolean> => {
+    if (!handle || typeof handle.getFile !== 'function') return false;
+    let testo: string;
+    try {
+        const file = await handle.getFile();
+        if (Number(file.size) > EDITOR_MAX_BYTES) return true;
+        testo = await leggiTestoSidecar(file);
+    } catch (e: any) {
+        return !(e && e.name === 'NotFoundError');
+    }
+    let letti: string[];
+    try { letti = parseTagFile(testo, nome); } catch (_) { return true; }
+    const chiave = (l: string[]) => [...new Set(l)].sort().join('\x1f');
+    return chiave(letti) !== chiave(Array.isArray(ricordo) ? ricordo : []);
+};
+
 export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', showNotification, onFileSaved, projectTags = [], onImportTagsToProject, onDirtyChange }: { t: Strings; [chiave: string]: any }) => {
     const [tags, setTags] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string>('');
@@ -151,6 +179,12 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
     const [discardAction, setDiscardAction] = useState<null | (() => void)>(null);
     // ITALIANO: e' aperta la domanda "chiudo il file: salvo prima?" — ENGLISH: the "closing the file: save first?" question is open
     const [chiusuraFile, setChiusuraFile] = useState(false);
+    // ITALIANO: e' aperta la domanda «Sovrascrivere?» (il file e' cambiato da fuori, vedi fileTagCambiato);
+    //           `rispostaSovrascritturaRef` = chi aspetta la risposta (null se non c'e' domanda).
+    // ENGLISH: the "Overwrite?" question is open (the file changed from outside, see fileTagCambiato);
+    //          `rispostaSovrascritturaRef` = whoever awaits the answer (null when there is no question).
+    const [domandaSovrascrittura, setDomandaSovrascrittura] = useState(false);
+    const rispostaSovrascritturaRef = useRef<null | ((si: boolean) => void)>(null);
     const handleRef = useRef<any>(null);
     // ITALIANO: i tag COME STANNO NEL FILE (ultima apertura o ultimo salvataggio riuscito). Servono
     //           a "Scarta modifiche": si torna a questi, senza chiudere il file.
@@ -255,6 +289,12 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         })();
         return () => { annullato = true; setRileggendo(false); };
     }, [isOpen]);
+
+    // ITALIANO: la finestra dell'editor si chiude con la domanda «Sovrascrivere?» aperta: vale "no" (il file
+    //           resta com'e'), invece di lasciare il salvataggio in attesa e la domanda alla riapertura.
+    // ENGLISH: the editor window closes with the "Overwrite?" question open: it counts as "no" (the file
+    //          stays as it is), instead of leaving the save waiting and the question there on reopening.
+    useEffect(() => { if (!isOpen && rispostaSovrascritturaRef.current) rispostaSovrascritturaRef.current(false); }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -388,6 +428,21 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
         }
     };
 
+    // ITALIANO: mostra la domanda «Sovrascrivere?» e aspetta la risposta (true = sovrascrivi). Una domanda
+    //           gia' aperta vale "no".
+    // ENGLISH: shows the "Overwrite?" question and awaits the answer (true = overwrite). A question
+    //          already open counts as "no".
+    const chiediSovrascrittura = () => new Promise<boolean>(risolvi => {
+        const vecchia = rispostaSovrascritturaRef.current;
+        if (vecchia) vecchia(false);
+        const rispondi = (si: boolean) => {
+            if (rispostaSovrascritturaRef.current === rispondi) { rispostaSovrascritturaRef.current = null; setDomandaSovrascrittura(false); }
+            risolvi(si);
+        };
+        rispostaSovrascritturaRef.current = rispondi;
+        setDomandaSovrascrittura(true);
+    });
+
     // ITALIANO: restituisce true SOLO se il file e' stato scritto davvero. Serve a "Salva e chiudi":
     //           se la scrittura fallisce o l'utente annulla la finestra di salvataggio, il file NON
     //           va chiuso, altrimenti il lavoro sparirebbe in silenzio.
@@ -453,6 +508,14 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
             //          routine in LoRA datasets — the wrong photo took those tags in memory and the
             //          next project save overwrote its real .txt.
             const bersaglio = handleRef.current;
+            // ITALIANO: il file cambiato da un altro programma dopo l'apertura (vedi fileTagCambiato) non si
+            //           sostituisce senza chiedere: con "no" resta com'e', le modifiche restano da salvare e
+            //           "Salva e chiudi" non chiude. Un handle che non si rilegge non si controlla.
+            // ENGLISH: the file changed by another program after opening (see fileTagCambiato) is not
+            //          replaced without asking: with "no" it stays as it is, the edits stay unsaved and
+            //          "Save and close" does not close. A handle that cannot be read back is not checked.
+            const ricordo = savedTagsRef.current;
+            if (typeof bersaglio.getFile === 'function' && await fileTagCambiato(bersaglio, nome, ricordo) && !(await chiediSovrascrittura())) return false;
             try {
                 const writable = await bersaglio.createWritable();
                 await writable.write(contenuto);
@@ -700,6 +763,21 @@ export const TagFileEditor = ({ isOpen, onClose, t, isDarkMode, lang = 'it', sho
                             <button onClick={salvaEChiudiFile} disabled={(tags.length === 0 && inputValue.trim() === '') || rileggendo} className={`${tastoBase} bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 text-white shadow-md`}>
                                 <Save size={14} /> {t.saveAndClose}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ITALIANO: il file e' cambiato da fuori dopo l'apertura: sovrascriverlo? (vedi fileTagCambiato). */}
+            {/* ENGLISH: the file changed from outside after opening: overwrite it? (see fileTagCambiato). */}
+            {domandaSovrascrittura && (
+                <div className="fixed inset-0 z-[340] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => rispostaSovrascritturaRef.current?.(false)}>
+                    <div className={`w-[90%] max-w-md rounded-2xl shadow-2xl border p-5 flex flex-col gap-4 animate-in zoom-in-95 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
+                        <p className={`text-sm font-bold ${testo}`}>{t.saveTxtChangedTitle}</p>
+                        <p className={`text-sm ${testo}`}>{t.saveTxtChangedAskOne.replace('{names}', () => fileName || 'tags.txt')}</p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => rispostaSovrascritturaRef.current?.(false)} className={`${tastoBase} ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>{t.cancel}</button>
+                            <button onClick={() => rispostaSovrascritturaRef.current?.(true)} className={`${tastoBase} bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 text-white shadow-md`}>{t.saveTxtChangedTitle}</button>
                         </div>
                     </div>
                 </div>

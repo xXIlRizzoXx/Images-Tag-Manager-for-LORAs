@@ -59,7 +59,7 @@ const ritaglia = async (intestazione) => {
 const jsChiudi = await ritaglia('    const handleCloseProject = () => {');
 const jsSalva = await ritaglia('    const handleSaveChanges = async (): Promise<boolean> => {');
 const fabbrica = new Function('images', 't', 'showNotification', 'performSave', 'setSaveCloseDialog', 'setConfirmDialog', 'closeProjectNow', 'fotoDaSalvare', 'globalTriggers', 'txtNonLettoInVigore', 'avvisoSalvataggioRef',
-    'setIsSaving', 'confermaSovrascrittura',
+    'setIsSaving', 'confermaSovrascrittura', 'setImportProgress',
     jsChiudi + '\n' + jsSalva + '\nreturn { handleCloseProject, handleSaveChanges };');
 
 // ITALIANO: preme "Chiudi progetto" e poi, se compare la finestra a tre scelte, "Salva e chiudi".
@@ -74,7 +74,7 @@ const prova = async (images) => {
         () => { }, G.fotoDaSalvare, [], S.txtNonLettoInVigore, { current: '' },
         // ITALIANO: nessun .txt cambiato da fuori (vedi test-save-txt-changed-outside.mjs).
         // ENGLISH: no .txt changed from outside (see test-save-txt-changed-outside.mjs).
-        () => { }, async () => new Set());
+        () => { }, async () => new Set(), () => { });
     f.handleCloseProject();
     if (r.finestra === 'tre scelte') await f.handleSaveChanges();
     return r;

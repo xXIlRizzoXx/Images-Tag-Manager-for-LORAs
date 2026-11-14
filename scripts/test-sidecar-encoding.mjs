@@ -137,7 +137,9 @@ console.log('\n--- l\'editor dei file di tag legge con la stessa regola ---');
 {
     const ed = fs.readFileSync(path.join(radice, 'src/components/TagFileEditor.tsx'), 'utf8');
     dice('nessuna lettura con file.text() (che decodifica sempre in UTF-8)', 0, (ed.match(/\bfile\.text\(\)/g) || []).length);
-    dice('...le tre letture passano da leggiTestoSidecar', 3, (ed.match(/await leggiTestoSidecar\(file\)/g) || []).length);
+    // ITALIANO: apertura, apertura senza selettore, rilettura alla riapertura e controllo prima di Salva (fileTagCambiato).
+    // ENGLISH: open, open without the picker, re-read on reopening and check before Save (fileTagCambiato).
+    dice('...le quattro letture passano da leggiTestoSidecar', 4, (ed.match(/await leggiTestoSidecar\(file\)/g) || []).length);
 }
 
 process.exit(esito());
