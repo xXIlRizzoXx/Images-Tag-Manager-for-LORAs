@@ -200,6 +200,14 @@ if (APPLY) {
         console.error(`${APPLY}: non e' un JSON valido (controlla virgole, virgolette e parentesi), nessun tag aggiunto.`);
         process.exit(1);
     }
+    // ITALIANO: un JSON valido ma che non e' un oggetto (null, elenco, testo, numero) prima faceva
+    //   fermare lo script con un TypeError e lo stack trace.
+    // ENGLISH: valid JSON that is not an object (null, list, string, number) used to stop the
+    //   script with a TypeError and the stack trace.
+    if (piano === null || typeof piano !== 'object' || Array.isArray(piano)) {
+        console.error(`${APPLY}: il piano deve essere un oggetto { tag: { categoria, it } }, nessun tag aggiunto.`);
+        process.exit(1);
+    }
     const { src, categorie, perChiave } = leggiDizionario();
     const perCategoria = new Map();
     const saltati = [];
@@ -207,6 +215,9 @@ if (APPLY) {
     for (const [tag, info] of Object.entries(piano)) {
         const k = chiave(tag);
         if (perChiave.has(k)) { saltati.push(`${tag} -> gia' presente in ${perChiave.get(k).categoria}`); continue; }
+        // ITALIANO: una voce null (o testo, numero, elenco) si salta invece di fermare tutto.
+        // ENGLISH: a null (or string, number, list) entry is skipped instead of stopping everything.
+        if (info === null || typeof info !== 'object' || Array.isArray(info)) { saltati.push(`${tag} -> voce non valida (servono categoria e it)`); continue; }
         const cat = categorie.find(c => c.id === info.categoria);
         if (!cat) { saltati.push(`${tag} -> categoria sconosciuta "${info.categoria}"`); continue; }
         if (!info.it || !String(info.it).trim()) { saltati.push(`${tag} -> manca la traduzione italiana`); continue; }
