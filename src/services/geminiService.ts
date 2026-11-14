@@ -220,9 +220,17 @@ export const getGeminiTags = async (foto: File | FotoConCartella, opts: GeminiTa
     if (!opts.apiKey || typeof opts.apiKey !== 'string') {
         throw new Error('Missing API key');
     }
+    opts.signal?.throwIfAborted();
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
     const file = foto instanceof File ? foto : await fileDiAdesso(foto);
     const immagine = await imageForGemini(file);
+    // ITALIANO: la libreria di Google guarda il segnale solo con l'evento 'abort': un segnale gia'
+    //           fermato (Annulla, AI spenta o chiave tolta mentre la foto si preparava) non la ferma,
+    //           e la foto partiva lo stesso, senza piu' nemmeno il limite di tempo. Si controlla qui.
+    // ENGLISH: Google's library looks at the signal only through the 'abort' event: a signal already
+    //          aborted (Cancel, AI off or key removed while the photo was being prepared) does not stop
+    //          it, and the photo was sent anyway, without even the time limit. It is checked here.
+    opts.signal?.throwIfAborted();
 
     const response = await ai.models.generateContent({
         model: opts.modelName,
@@ -897,6 +905,9 @@ export const statoDaErrore = (err: any): { stato?: StatoModello; ferma?: FermaPr
 export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal, tempoMs: number = PROVA_TIMEOUT_MS): Promise<{ stato?: StatoModello; ferma?: FermaProva; scaduto?: boolean }> => {
     const tempo = AbortSignal.timeout(tempoMs);
     try {
+        // ITALIANO: un giro gia' fermato non chiama Google (la libreria ignora un segnale gia' fermato).
+        // ENGLISH: a round already stopped does not call Google (the library ignores an already aborted signal).
+        segnale?.throwIfAborted();
         const ai = new GoogleGenAI({ apiKey });
         const risposta = await ai.models.generateContent({
             model: id,
