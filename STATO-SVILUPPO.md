@@ -1,7 +1,7 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 14 novembre 2026
-**Versione attuale:** 2.0.3 in sviluppo (costruita e provata dal vivo il 7 novembre 2026, poi corretta con il debug del 14 novembre 2026; non ancora pubblicata). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 17 novembre 2026
+**Versione attuale:** 2.0.3, pubblicata il 17 novembre 2026 (Latest, con installer, portable .exe e portable .zip), dopo il debug del 14 novembre e le prove dal vivo del 17 novembre sulla versione installata. Prima c'era la 2.0.2 (26 ottobre 2026). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
 Novità 2.0.3 (traguardo 120, 14 novembre 2026): **debug completo prima della pubblicazione.**
 Due giri di ricerca dei problemi in tutto il programma, ogni segnalazione verificata da tre controllori,
 ogni correzione con la sua prova automatica e poi fatta rivedere; poi due passate sui difetti trovati
