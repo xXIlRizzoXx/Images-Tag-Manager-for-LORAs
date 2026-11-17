@@ -370,6 +370,45 @@ v = await S.verifyGeminiApiKey(CHIAVE);
 dice('chiave buona ma di corsa: limite di frequenza, NON fatturazione', [false, 'rate_limit'], [v.ok, v.errorKind]);
 
 // =============================================================================
+console.log('\n--- un 400 di Google su un candidato: Google ha risposto, si prova il candidato dopo ---');
+// ITALIANO: un modello nuovo della linea flash che non sa fare questo lavoro risponde 400
+//           INVALID_ARGUMENT (niente JSON o niente immagini). Google ha risposto: non e' "non
+//           raggiungibile", e il candidato dopo va provato (in riparazione e' l'unica via d'uscita).
+//           La rete assente (errore senza stato) resta "non raggiungibile".
+// ENGLISH: a new flash-line model unable to do this job answers 400 INVALID_ARGUMENT (no JSON or
+//          no images). Google answered: it is not "unreachable", and the next candidate must be
+//          probed (in a repair it is the only way out). A missing network (error with no status)
+//          stays "unreachable".
+{
+    const nonAdatto400 = () => apiErrore(400, { code: 400, status: 'INVALID_ARGUMENT', message: 'JSON mode is not enabled for this model.' });
+    const modelli = [M('gemini-3.7-flash-speech'), M('gemini-3.6-flash'), M('gemini-3.6-flash-lite')];
+    const primo400 = async (_k, p) => { if (p.model === 'gemini-3.7-flash-speech') throw nonAdatto400(); return { text: '["ok"]' }; };
+    googleCon({ generate: async () => { throw nonAdatto400(); } });
+    dice('la prova di un modello che risponde 400 INVALID_ARGUMENT: no, NON incerto', 'no', await S.provaModello(CHIAVE, 'gemini-3.7-flash-speech'));
+    googleCon({ generate: async () => { throw ERR.rete(); } });
+    dice('la prova con la rete assente (errore senza stato): resta incerto', 'incerto', await S.provaModello(CHIAVE, 'gemini-3.7-flash-speech'));
+    googleCon({ generate: async () => { throw apiErrore(500, { code: 500, status: 'UNKNOWN', message: 'Something odd.' }); } });
+    dice('un 5xx sconosciuto non diventa "no" (non e un 4xx)', true, (await S.provaModello(CHIAVE, 'gemini-3.7-flash-speech')) !== 'no');
+
+    let g4 = googleCon({ modelli, generate: primo400 });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.5-flash');
+    dice('controllo normale: primo candidato 400, si adotta il secondo', ['aggiornato', 'gemini-3.6-flash', true], [e.esito, e.modello, e.cambiato]);
+    dice('...dopo aver provato davvero il primo', true, g4.chiamate.includes('generate:gemini-3.7-flash-speech'));
+    googleCon({ modelli, generate: primo400 });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.6-flash');
+    dice('controllo normale: primo candidato 400, il secondo e quello in uso: invariato', ['invariato', 'gemini-3.6-flash', false], [e.esito, e.modello, e.cambiato]);
+    googleCon({ modelli, generate: primo400 });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.5-flash', true);
+    dice('riparazione: primo candidato 400, si ripara col secondo', ['riparato', 'gemini-3.6-flash', true], [e.esito, e.modello, e.cambiato]);
+    googleCon({ modelli, generate: async () => { throw nonAdatto400(); } });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.5-flash', true);
+    dice('riparazione: tutti i candidati 400: nessunoValido, NON nonRaggiungibile', ['nessunoValido', 'gemini-3.5-flash', false], [e.esito, e.modello, e.cambiato]);
+    googleCon({ modelli, generate: async () => { throw ERR.rete(); } });
+    e = await S.aggiornaModelloAutomatico(CHIAVE, 'gemini-3.5-flash', true);
+    dice('riparazione con la rete caduta durante la prova: resta nonRaggiungibile', 'nonRaggiungibile', e.esito);
+}
+
+// =============================================================================
 console.log('\n--- l\'elenco dei modelli non puo restare appeso per sempre ---');
 // ITALIANO: su una connessione che si apre e non risponde mai, senza un segnale con scadenza la
 //           richiesta non finisce piu' e il pulsante "Controlla ora" resta bloccato fino al riavvio.

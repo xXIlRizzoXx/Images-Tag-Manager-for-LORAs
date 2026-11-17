@@ -345,11 +345,36 @@ const fsp = fs.promises;
 //          synchronous. Without it, a viewer "Save .txt" pressed during a long "Save" was then written
 //          over by the batch with the old tags. An error does not block the queue.
 let codaSidecar = Promise.resolve();
+let lavoriSidecar = 0;
 const inCodaSidecar = (lavoro) => {
+    lavoriSidecar++;
     const risultato = codaSidecar.then(lavoro, lavoro);
-    codaSidecar = risultato.then(() => undefined, () => undefined);
+    codaSidecar = risultato.then(() => undefined, () => undefined).then(() => { lavoriSidecar--; });
     return risultato;
 };
+// ITALIANO: la seconda X durante "Salva" chiude il programma. Prima il processo finiva a meta' di un
+//           .txt e accanto restava per sempre il suo temporaneo (.itm-tmp). Ora alla chiusura si
+//           finisce solo il file in corso, gli altri si saltano senza toccarli (tornano "non
+//           salvati"), e poi si esce davvero; al massimo qualche secondo, per una cartella di rete
+//           che non risponde.
+// ENGLISH: the second X during "Save" closes the program. The process used to end halfway through a
+//          .txt, and its temporary file (.itm-tmp) stayed beside it forever. Now on quitting only the
+//          file in progress is finished, the others are skipped untouched (they come back "not
+//          saved"), and then it really quits; a few seconds at most, for a network folder that does
+//          not answer.
+const ATTESA_CHIUSURA_SIDECAR_MS = 3000;
+let sidecarInChiusura = false;
+let chiusuraSidecarPronta = false;
+app.on('before-quit', (event) => {
+    if (chiusuraSidecarPronta || lavoriSidecar === 0) return;
+    event.preventDefault();
+    if (sidecarInChiusura) return;
+    sidecarInChiusura = true;
+    Promise.race([codaSidecar, new Promise((ok) => setTimeout(ok, ATTESA_CHIUSURA_SIDECAR_MS))]).then(() => {
+        chiusuraSidecarPronta = true;
+        app.quit();
+    });
+});
 ipcMain.handle('images:read-sidecar-tags', (_event, imagePaths) => inCodaSidecar(() => leggiSidecar(imagePaths)));
 const leggiSidecar = async (imagePaths) => {
     if (!Array.isArray(imagePaths)) return [];
@@ -473,6 +498,9 @@ const scriviSidecar = async (items) => {
     for (const it of items) {
         const imagePath = it && typeof it.imagePath === 'string' ? it.imagePath : '';
         const content = it && typeof it.content === 'string' ? it.content : '';
+        // ITALIANO: il programma si sta chiudendo: i file non ancora toccati restano com'erano.
+        // ENGLISH: the program is closing: the files not yet touched stay as they were.
+        if (sidecarInChiusura) { failed++; results.push(false); continue; }
         try {
             // ITALIANO: dev'essere un'immagine VERA presente su disco (stesso contratto della lettura)
             // ENGLISH: it must be a REAL image present on disk (same contract as reading)
@@ -743,6 +771,9 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
       file, non per perderne di nuovi.
    4. nel Cestino possono esserci due voci con lo stesso percorso d'origine (un omonimo cancellato
       prima): si ripristina quella cancellata per ULTIMA, cioe' quella appena svuotata dall'app.
+      Le voci cancellate DOPO la fine dello svuotamento (finoA, mandato dalla pagina) non sono
+      dell'app (un omonimo buttato via dopo l'avviso 'occupato') e si saltano. L'ora si legge dal
+      file $I della voce, che Windows scrive in UTC: la data della shell non dice il suo fuso.
    5. PowerShell legge e scrive con la code page della console, non in UTF-8: senza dirglielo
       ogni percorso con una lettera accentata, cirillica o cinese tornava "non trovato".
 
@@ -765,6 +796,9 @@ ipcMain.handle('shell:trash-files', async (_event, filePaths) => {
       lost, not so that new ones are.
    4. the Recycle Bin can hold two entries with the same original path (a namesake deleted
       earlier): the one deleted LAST is restored, i.e. the one the app has just emptied.
+      Entries deleted AFTER the emptying ended (finoA, sent by the page) are not the app's (a
+      namesake thrown away after the 'occupato' notice) and are skipped. The time is read from
+      the entry's $I file, which Windows writes in UTC: the shell's date does not tell its zone.
    5. PowerShell reads and writes with the console code page, not UTF-8: unless told otherwise,
       every path with an accented, Cyrillic or Chinese letter came back "not found".
 
@@ -783,10 +817,14 @@ const SCRIPT_RIPRISTINO = [
     "# rompe e main.cjs lo segna fallito. Se manca la console il catch lascia tutto come prima.",
     "try { [Console]::OutputEncoding = (New-Object System.Text.UTF8Encoding $false); [Console]::InputEncoding = (New-Object System.Text.UTF8Encoding $false) } catch {}",
     "$grezzo = [Console]::In.ReadToEnd()",
-    "# ConvertFrom-Json NON sgrana l elenco: lo consegna tutto intero come un oggetto solo.",
-    "# Senza questo giro $voluti diventa un elenco con dentro un elenco, il ciclo gira una",
-    "# volta sola e non ripristina niente. Provato: senza, il canale torna tutto fallito.",
-    "if ($grezzo) { foreach ($x in (ConvertFrom-Json $grezzo)) { $voluti += [string]$x } }",
+    "# Arriva { percorsi, finoA }. ConvertFrom-Json NON sgrana un elenco: si scorre percorsi uno a",
+    "# uno, altrimenti $voluti diventa un elenco con dentro un elenco e non si ripristina niente.",
+    "# finoA (millisecondi Unix, UTC) + 5 secondi di margine: le voci cancellate dopo non sono nostre.",
+    "$finoA = $null",
+    "if ($grezzo) { $dati = ConvertFrom-Json $grezzo; foreach ($x in @($dati.percorsi)) { $voluti += [string]$x }; if ($null -ne $dati.finoA) { try { $finoA = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$dati.finoA).UtcDateTime.AddSeconds(5) } catch { $finoA = $null } } }",
+    "# L ora di cancellazione dal file $I accanto a $R (offset 16, FILETIME UTC). Se non si legge,",
+    "# nessun filtro: si fa come prima.",
+    "function QuandoCancellata($v) { try { $r = [string]$v.Path; $n = [System.IO.Path]::GetFileName($r); if (-not $n.StartsWith('$R')) { return $null }; $b = [System.IO.File]::ReadAllBytes([System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($r), '$I' + $n.Substring(2))); if ($b.Length -lt 24) { return $null }; return [DateTime]::FromFileTimeUtc([BitConverter]::ToInt64($b, 16)) } catch { return $null } }",
     "$esiti = @{}",
     "foreach ($p in $voluti) { $esiti[$p.ToLowerInvariant()] = 'nonTrovato' }",
     "$shell = New-Object -ComObject Shell.Application",
@@ -815,6 +853,7 @@ const SCRIPT_RIPRISTINO = [
     "  $possibili = @()",
     "  try { $cart = [string]$bin.GetDetailsOf($v, 1); foreach ($n in $nomi) { $c = [System.IO.Path]::Combine($cart, $n); if ($esiti.ContainsKey($c.ToLowerInvariant())) { $possibili += $c } } } catch { continue }",
     "  if ($possibili.Count -eq 0) { continue }",
+    "  if ($null -ne $finoA) { $cancellata = QuandoCancellata $v; if (($null -ne $cancellata) -and ($cancellata -gt $finoA)) { continue } }",
     "  $candidate += [pscustomobject]@{ voce = $v; possibili = $possibili }",
     "}",
     "$prese = @{}",
@@ -869,8 +908,13 @@ const SCRIPT_RIPRISTINO = [
     "[Console]::Out.Write('[' + ($pezzi -join ',') + ']')",
 ].join('\n');
 
-ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
+// ITALIANO: finoA (facoltativo) = quando la pagina ha finito lo svuotamento, in millisecondi Unix.
+//           Un valore che non e' un numero sensato si ignora: si fa come prima.
+// ENGLISH: finoA (optional) = when the page finished the emptying, in Unix milliseconds. A value
+//          that is not a sensible number is ignored: it behaves as before.
+ipcMain.handle('shell:restore-trashed', async (_event, filePaths, finoA) => {
     const results = [];
+    const finoAValido = (typeof finoA === 'number' && Number.isFinite(finoA) && finoA > 0) ? Math.floor(finoA) : null;
     if (process.platform !== 'win32' || !Array.isArray(filePaths)) return { ok: false, restored: 0, results };
     const voluti = [];
     // ITALIANO: nessun tetto sul NUMERO di file per richiesta. Prima si guardavano solo i primi
@@ -938,7 +982,7 @@ ipcMain.handle('shell:restore-trashed', async (_event, filePaths) => {
                 try { fine(JSON.parse(out.trim() || '[]')); } catch (e) { console.error('restore-trashed: risposta illeggibile', e); fine(null); }
             });
             ps.stdin.on('error', () => {});
-            ps.stdin.end(JSON.stringify(voluti));
+            ps.stdin.end(JSON.stringify({ percorsi: voluti, finoA: finoAValido }));
         } catch (e) {
             console.error('restore-trashed: non riuscito', e);
             fine(null);
@@ -1088,6 +1132,32 @@ let mcpServer = null;
 let mcpErrore = '';
 let mcpProssimoId = 1;
 const mcpInAttesa = new Map();
+// ITALIANO: ultimo contatto di un'AI col codice giusto (0 = nessuno da quando il server e' partito).
+//           Il server e' "senza sessione": nessuna linea resta aperta, quindi questo e' tutto quello
+//           che si puo' sapere. Il giro scarta i contatti di un server gia' fermato (codice vecchio).
+// ENGLISH: last contact from an AI with the right token (0 = none since the server started). The
+//          server is stateless: no line stays open, so this is all that can be known. The round
+//          drops contacts from a server already stopped (old token).
+let mcpUltimoContatto = 0;
+let mcpUltimoAvviso = 0;
+let mcpGiro = 0;
+const MCP_AVVISO_CONTATTO_MS = 30000;
+const segnaContattoMcp = (giro) => {
+    if (giro !== mcpGiro) return;
+    const ora = Date.now();
+    mcpUltimoContatto = ora;
+    // ITALIANO: la finestra si avvisa al primo contatto e poi al massimo ogni 30 s: con centinaia di
+    //           chiamate di fila non si ridisegna tutto a ogni chiamata. Il conto parte dall'ultimo
+    //           AVVISO, non dall'ultimo contatto: con un'AI che chiama di continuo l'ora mostrata
+    //           si aggiorna lo stesso ogni 30 s.
+    // ENGLISH: the window is told at the first contact and then at most every 30 s: with hundreds of
+    //          calls in a row everything is not redrawn at every call. The count starts from the last
+    //          NOTICE, not the last contact: with an AI calling non-stop the time shown still moves on
+    //          every 30 s.
+    if (mcpUltimoAvviso && ora - mcpUltimoAvviso < MCP_AVVISO_CONTATTO_MS) return;
+    mcpUltimoAvviso = ora;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mcp:status', statoMcp());
+};
 
 const chiediAllaFinestra = (strumento, argomenti) => new Promise((risolvi) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -1114,11 +1184,14 @@ ipcMain.on('mcp:response', (event, messaggio) => {
 });
 const statoMcp = () => {
     const c = leggiMcp();
-    return { acceso: c.acceso, attivo: mcpServer !== null, porta: MCP_PORTA, codice: c.codice, errore: mcpErrore };
+    return { acceso: c.acceso, attivo: mcpServer !== null, porta: MCP_PORTA, codice: c.codice, errore: mcpErrore, ultimoContatto: mcpUltimoContatto };
 };
 const fermaMcp = async () => {
     const s = mcpServer;
     mcpServer = null;
+    mcpGiro++;
+    mcpUltimoContatto = 0;
+    mcpUltimoAvviso = 0;
     if (s) { try { await s.chiudi(); } catch (_) { } }
     for (const voce of mcpInAttesa.values()) {
         clearTimeout(voce.timer);
@@ -1136,7 +1209,8 @@ const avviaMcp = async () => {
     }
     try {
         const { avviaServerMcp } = require('./mcp-server.cjs');
-        mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion });
+        const giro = mcpGiro;
+        mcpServer = await avviaServerMcp({ porta: MCP_PORTA, codice: c.codice, chiedi: chiediAllaFinestra, versione: appVersion, contatto: () => segnaContattoMcp(giro) });
     } catch (e) {
         mcpServer = null;
         // ITALIANO: 'porta' = un altro programma usa gia' la porta (EADDRINUSE) oppure Windows l'ha riservata
@@ -1365,6 +1439,38 @@ const applyContentSecurityPolicy = (sess) => {
 // ITALIANO: i soli permessi che la pagina chiede (vedi setPermissionRequestHandler).
 // ENGLISH: the only permissions the page asks for (see setPermissionRequestHandler).
 const PERMESSI_USATI = new Set(['fileSystem', 'clipboard-sanitized-write']);
+
+/* ITALIANO: CARTELLE PROTETTE DA CHROMIUM
+   Electron non apre da solo certe cartelle scelte nel selettore o trascinate (Desktop, Documenti e
+   Download come cartelle singole, la cartella utente, AppData con tutto il contenuto, Windows,
+   Programmi, la radice di C:): manda l'evento 'file-system-access-restricted' e aspetta una
+   risposta. Senza risposta la cartella non si apriva e la pagina non sapeva perche'. Qui si apre
+   cio' che l'utente ha scelto di persona, e restano chiuse solo le cartelle di Windows e dei
+   programmi, la cartella dei dati di QUESTO programma (anche quando la scelta la contiene, come la
+   cartella utente intera o AppData\Roaming) e le chiavi .ssh/.gnupg. Solo testo: niente disco.
+   ENGLISH: FOLDERS CHROMIUM PROTECTS
+   Electron does not open by itself some folders picked or dropped (Desktop, Documents and
+   Downloads as single folders, the home folder, AppData with all it holds, Windows, Program Files,
+   the root of C:): it sends the 'file-system-access-restricted' event and waits for an answer.
+   With no answer the folder did not open and the page did not know why. Here what the user picked
+   in person opens, and only the Windows and program folders, THIS program's data folder (also
+   when the pick contains it, like the whole home folder or AppData\Roaming) and the .ssh/.gnupg
+   keys stay closed. Text only: no disk access. */
+const dentroOUguale = (figlio, padre) => {
+    const r = path.relative(padre, figlio);
+    return r === '' || (r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r));
+};
+const rispostaCartellaProtetta = (p) => {
+    if (!isSafeLocalPath(p)) return 'deny';
+    if (p.split(/[\\/]+/).some((parte) => /^\.(ssh|gnupg)$/i.test(parte))) return 'deny';
+    let datiProgramma = '';
+    try { datiProgramma = app.getPath('userData'); } catch (_) { /* ignore */ }
+    const chiuse = [datiProgramma, process.env.SystemRoot, process.env.windir, process.env.ProgramFiles,
+        process.env['ProgramFiles(x86)'], process.env.ProgramW6432, process.env.ProgramData]
+        .filter((c) => typeof c === 'string' && c && path.isAbsolute(c));
+    if (chiuse.some((c) => dentroOUguale(p, c) || dentroOUguale(c, p))) return 'deny';
+    return 'allow';
+};
 
 function resolveIconPath() {
     const ico = path.join(__dirname, '../public/icon.ico');
@@ -1648,6 +1754,29 @@ app.whenReady().then(() => {
     session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => {
         if (permission === 'fileSystem' && details && details.isDirectory) rememberPickedDir(details.filePath);
         return PERMESSI_USATI.has(permission);
+    });
+    // ITALIANO: le cartelle protette (vedi rispostaCartellaProtetta). La risposta parte SEMPRE, una
+    //           volta sola, anche se qualcosa va storto: senza, la scelta della cartella restava
+    //           senza esito. Quando resta chiusa la pagina viene avvisata e lo dice all'utente.
+    // ENGLISH: the protected folders (see rispostaCartellaProtetta). The answer ALWAYS leaves, once,
+    //          even when something goes wrong: without it the folder pick had no outcome. When it
+    //          stays closed the page is told and tells the user.
+    session.defaultSession.on('file-system-access-restricted', (_event, details, callback) => {
+        let risposta = 'deny';
+        try {
+            const p = details && typeof details.path === 'string' ? details.path : '';
+            risposta = rispostaCartellaProtetta(p);
+            if (risposta === 'allow' && details.isDirectory) rememberPickedDir(p);
+        } catch (e) { risposta = 'deny'; console.warn('[Cartelle] controllo fallito:', e && e.message); }
+        if (risposta === 'deny') {
+            console.warn('[Cartelle] cartella protetta, non aperta');
+            try {
+                const wc = details && details.webContents && !details.webContents.isDestroyed() ? details.webContents
+                    : (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null);
+                if (wc) wc.send('folder:restricted');
+            } catch (_) { /* ignore */ }
+        }
+        callback(risposta);
     });
     // ITALIANO: Nessuna barra dei menù di default in produzione
     // ENGLISH: No default menu bar in production

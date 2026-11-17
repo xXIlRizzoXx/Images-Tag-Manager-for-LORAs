@@ -56,7 +56,7 @@ export interface ElectronAPI {
     readSidecarTags: (paths: string[]) => Promise<Array<{ name: string; content?: string; dir?: string; skipped?: boolean }>>;
     writeSidecarTags: (items: Array<{ imagePath: string; content: string }>) => Promise<WriteSidecarResult>;
     trashFiles: (paths: string[]) => Promise<TrashResult>;
-    restoreTrashed: (paths: string[]) => Promise<{ ok: boolean; restored: number; results: { percorso: string; esito: string }[] }>;
+    restoreTrashed: (paths: string[], finoA?: number) => Promise<{ ok: boolean; restored: number; results: { percorso: string; esito: string }[] }>;
     beginFolderPick: () => Promise<boolean>;
     // ITALIANO: le prove di cosa la pagina ha appena letto. Il processo principale risponde con un
     //           percorso solo se una cartella contiene davvero quei file. Un elenco vuoto chiude la
@@ -65,6 +65,9 @@ export interface ElectronAPI {
     //          folder really holds those files. An empty list closes the recording window without
     //          asking for anything (pick aborted).
     takePickedFolderPath: (proofs: Array<{ rel: string; name: string; size: number; mtime: number }>) => Promise<string>;
+    /** ITALIANO: la cartella scelta o trascinata e' protetta e resta chiusa; restituisce la funzione che smette di ascoltare.
+     *  ENGLISH: the picked or dropped folder is protected and stays closed; returns the unsubscribe function. */
+    onFolderRestricted: (cb: () => void) => () => void;
     openExternal: (url: string) => Promise<boolean>;
 
     /** ITALIANO: null = niente di nuovo, nessuna rete, o controllo non acconsentito.
@@ -86,6 +89,9 @@ export interface McpStatus {
     porta: number;
     codice: string;
     errore: '' | 'porta' | 'avvio' | 'salvataggio';
+    /** ITALIANO: ultimo contatto di un'AI col codice giusto, in ms (0 = nessuno da quando il server e' partito).
+     *  ENGLISH: last contact from an AI with the right token, in ms (0 = none since the server started). */
+    ultimoContatto?: number;
 }
 export interface McpRichiesta {
     id: number;
@@ -99,6 +105,8 @@ export interface ElectronMcp {
     /** ITALIANO: restituisce la funzione che smette di ascoltare. ENGLISH: returns the unsubscribe function. */
     onRequest: (cb: (richiesta: McpRichiesta) => void) => () => void;
     respond: (id: number, risposta: unknown) => void;
+    /** ITALIANO: restituisce la funzione che smette di ascoltare. ENGLISH: returns the unsubscribe function. */
+    onStatus: (cb: (stato: McpStatus) => void) => () => void;
 }
 
 declare global {

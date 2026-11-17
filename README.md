@@ -54,7 +54,7 @@ It runs entirely on your machine and sends **no telemetry**. AI tagging is **opt
 
 <img src="docs/img/features/17-mcp.jpg" alt="MCP server: Claude Code, Claude Desktop, Cursor or any MCP client can see the open photos and change their tags, without ever saving" width="100%" />
 
-<img src="docs/img/features/19-mcp-light.jpg" alt="MCP light: next to Trash, green while the server listens, yellow while an external AI works, red if it did not start; a click shows the connection details, and a chime tells you when the AI has finished changing tags" width="100%" />
+<img src="docs/img/features/19-mcp-light.jpg" alt="MCP light: next to Trash, red until an AI connects, green once one has, yellow while an external AI works, a red triangle if the server did not start; a click shows the connection details, and a chime tells you when the AI has finished changing tags" width="100%" />
 
 <img src="docs/img/features/18-help.jpg" alt="Help where you need it: a question-mark button next to every Settings section opens its explanation" width="100%" />
 
@@ -84,6 +84,8 @@ Grab the latest build from the [Releases](../../releases) page. No Node.js neede
 
 Settings, cache and logs go to `%APPDATA%\images-tag-manager` — never next to the executable, in both the portable and the installed version. **Your images and `.txt` files are never copied there**: they stay where they are, and are only rewritten when you press Save.
 
+Uninstalling the app (or deleting the portable copy) does **not** remove that folder: your encrypted AI key, the MCP server settings with its token, the backup of unsaved tags and your settings stay there. To remove everything, close the app and delete the `%APPDATA%\images-tag-manager` folder.
+
 > **Tip:** the first time you work on a folder, keep a copy of its images and `.txt` files. The app only rewrites them when you press Save, but a backup costs nothing.
 
 ---
@@ -107,9 +109,10 @@ Settings has a built-in **MCP server**, **off by default**. Switch it on and an 
 *   It listens **only on your own computer** (`127.0.0.1`), never on the network, and asks for a **secret token**; **Create a new token** locks out every AI connected with the old one. Claude Code then refuses to add the server a second time under the same name: first run `claude mcp remove images-tag-manager`, then paste the new command.
 *   The AI sees only the photos open in the app. Each photo it looks at is a copy at most 1024 px on its longest side, redrawn so that the hidden details of the file (GPS position, camera serial number, author) do not go with it. What it sees then goes wherever that AI goes: an assistant that runs in the cloud sends it to its own servers.
 *   **It never saves.** Tags changed by the AI show up in the app as unsaved changes: review them, and the `.txt` files are written only when you press **Save Changes**.
-*   With the server on, a small **MCP light** next to **Trash** shows its state: green listening, yellow while an AI is working, red if it could not start. Click it for the address, the token and the ready-made configurations. When the AI has changed some tags and then goes quiet for 30 seconds, the app plays a sound and tells you how many photos are waiting to be saved.
+*   With the server on, a small **MCP light** next to **Trash** shows its state: red while no AI has connected yet, green once one has (the small window tells you when it last showed up), yellow while an AI is working, and a red triangle if the server could not start. The server keeps no line open between requests, so "connected" means "has talked to the app with the right token": the light disappears when you switch the server off, and starts red again when you switch it back on or create a new token. Click it for the address, the token and the ready-made configurations. When the AI has changed some tags and then goes quiet for 30 seconds, the app plays a sound and tells you how many photos are waiting to be saved.
 *   For Claude Code and other clients that read skills, [`skills/lora-dataset-tagging`](skills/lora-dataset-tagging/SKILL.md) teaches the AI a careful tagging method for LoRA datasets: it looks at every photo, asks what the subject is, reuses your project's tags and leaves saving to you. Copy the folder into `~/.claude/skills/` to use it.
 *   Settings gives you the ready-made command or configuration to copy for Claude Code, Claude Desktop and the others. Claude Desktop connects through the small `mcp-remote` program, so the computer needs [Node.js](https://nodejs.org) (free; it brings the `npx` command); after that Claude Desktop downloads `mcp-remote` from the internet by itself the first time. Claude Code and Cursor don't need Node.js.
+*   **Claude Desktop, the easy way:** in the MCP part of Settings, **Connect Claude Desktop** saves a small `images-tag-manager.mcpb` extension. Drag it onto Claude's **Settings → Extensions** page, paste the token when Claude asks and **turn the extension on** (Claude installs it switched off): no Node.js needed, and the token is kept by Claude, not written in the file. If the program is closed, Claude is told to ask you to open it. The same window explains the manual way: paste only the server's entry into Claude's configuration file, never the whole file over it. **Add custom connector** in Claude does not work here: those connectors start from Anthropic's cloud, which cannot reach your computer.
 
 ---
 

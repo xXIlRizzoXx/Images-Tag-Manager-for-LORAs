@@ -74,7 +74,7 @@ const electronFinto = {
     net: { request: vietato('the network') },
     safeStorage: { isEncryptionAvailable: () => false, encryptString: vietato('safeStorage'), decryptString: vietato('safeStorage') },
     session: { defaultSession: { webRequest: { onHeadersReceived() {} },
-        setPermissionRequestHandler(fn) { permessi.richiesta = fn; }, setPermissionCheckHandler(fn) { permessi.controllo = fn; } } },
+        setPermissionRequestHandler(fn) { permessi.richiesta = fn; }, setPermissionCheckHandler(fn) { permessi.controllo = fn; }, on() {} } },
     Menu: { setApplicationMenu() {} },
     shell: { trashItem: vietato('the Recycle Bin'), openExternal: vietato('opening addresses') },
 };

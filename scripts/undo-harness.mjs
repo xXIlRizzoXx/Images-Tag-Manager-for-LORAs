@@ -84,6 +84,11 @@ const PEZZI = {
     handleTagEditorSaved: ritaglia('    const handleTagEditorSaved = async '),
     handleSuggestedTagClick: ritaglia('    const handleSuggestedTagClick = '),
     handleGlobalTagsChange: ritaglia('    const handleGlobalTagsChange = ('),
+    // ITALIANO: le azioni sull'elenco dei tag del progetto («Visualizza tutti i tag»).
+    // ENGLISH: the actions on the project tag list ("View all tags").
+    handleDeleteAllTags: ritaglia('    const handleDeleteAllTags = () => {'),
+    handleCleanUnusedTags: ritaglia('    const handleCleanUnusedTags = () => {'),
+    handleDeleteTagFromProject: ritaglia('    const handleDeleteTagFromProject = ('),
 };
 for (const [nome, testo] of Object.entries(PEZZI)) {
     if (!testo) { console.log(`NO  ${nome} non trovato in src/App.tsx`); process.exit(1); }
@@ -110,20 +115,56 @@ const selezione = sorgente.includes(RIGA_SELEZIONE) ? effetto('    }, [images]);
 // ENGLISH: the twins of the same .txt (gemelliDelTxt), used by performSave and updateOriginalTags:
 //          the previous code did not have it, and then it is not there.
 const gemelli = ritaglia('    const gemelliDelTxt = async ');
-const testi = [...Object.values(PEZZI), gemelli, 'const effettoCronologia = ' + testoCronologia + ';'];
+// ITALIANO: il controllo dei .txt cambiati sul disco prima di scriverli (confermaSovrascrittura), usato
+//           da handleSaveChanges e dal visualizzatore: il codice di prima non l'aveva, e allora non c'e'.
+// ENGLISH: the check of the .txt files changed on disk before writing them (confermaSovrascrittura), used
+//          by handleSaveChanges and the viewer: the previous code did not have it, and then it is not there.
+const conferma = ritaglia('    const confermaSovrascrittura = async ');
+export const haConfermaSovrascrittura = Boolean(conferma);
+// ITALIANO: i tre tasti della finestra a tre scelte («Salva e chiudi», «Chiudi senza salvare», «Annulla»).
+// ENGLISH: the three buttons of the three-choice dialog ("Save and close", "Close without saving", "Cancel").
+const treScelte = ['    const handleSaveAndCloseProject = async ', '    const handleDiscardAndClose = () => {', '    const handleCancelClose = () => {'].map(r => ritaglia(r));
+export const haTreScelte = treScelte.every(Boolean);
+const testi = [...Object.values(PEZZI), gemelli, conferma, ...(haTreScelte ? treScelte : []), 'const effettoCronologia = ' + testoCronologia + ';'];
 if (visualizzatore) testi.push('const effettoVisualizzatore = ' + visualizzatore + ';');
 testi.push('const effettoDisco = ' + (disco || '() => { }') + ';');
 testi.push('const effettoSelezione = ' + (selezione || '() => { }') + ';');
+// ITALIANO: l'effetto che fa un passo della cronologia quando cambia solo l'elenco dei tag del progetto:
+//           il codice di prima non lo aveva, e allora non gira.
+// ENGLISH: the effect that makes a history step when only the project tag list changes: the
+//          previous code did not have it, and then it does not run.
+const elencoEffetto = effetto('    }, [customProjectTags]);');
+testi.push('const effettoElenco = ' + (elencoEffetto || '() => { }') + ';');
+// ITALIANO: l'effetto che chiude con "no" la domanda «Sovrascrivere?» quando un'altra finestra di conferma
+//           prende il suo posto: il codice di prima non lo aveva, e allora non gira.
+// ENGLISH: the effect that answers "no" to the "Overwrite?" question when another confirm dialog takes
+//          its place: the previous code did not have it, and then it does not run.
+const domandaEffetto = effetto('    }, [confirmDialog]);');
+testi.push('const effettoDomanda = ' + (domandaEffetto || '() => { }') + ';');
 const NOMI = ['images', 'history', 'historyIndex', 'selectedImageId', 'selectedForBulk', 'stagedBulkTags', 'globalTriggers',
     'setImages', 'setHistory', 'setHistoryIndex', 'setToast', 'setSelectedImageId', 'setStagedBulkTags',
     'setSaveCloseDialog', 'setConfirmDialog', 'setIsSaving', 'setImportProgress',
     'showNotification', 'updateImageTags', 'closeProjectNow', 't', 'soundManager', 'imagesRef', 'isUndoRedoAction',
     'sidecarTagFileName', 'buildTagFileName', 'purgeIdsFromHistory', 'withLiveOriginalTags', 'nearestDifferentStep', 'discoNotoRef', 'tagDopoEditor',
     'setSelectedForBulk', 'setGlobalTriggers', 'globalTriggersRef', 'triggerHistoryRef', 'uniqueTagsIgnoringCase',
-    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef'];
+    'useCallback', 'window', 'document', 'URL', 'Blob', 'console', 'fotoDaSalvare', 'txtNonLettoInVigore', 'avvisoSalvataggioRef',
+    'testoTxtSulDisco', 'txtCambiatoSulDisco', 'TXT_MAX_BYTES',
+    // ITALIANO: l'elenco dei tag del progetto e i suoi ricordi per passo (Ctrl+Z lo rimette).
+    // ENGLISH: the project tag list and its per-step records (Ctrl+Z puts it back).
+    'setCustomProjectTags', 'customProjectTags', 'customProjectTagsRef', 'customTagsHistoryRef', 'elencoRegistratoRef',
+    // ITALIANO: la domanda «Sovrascrivere?» aperta e la finestra di conferma di adesso.
+    // ENGLISH: the open "Overwrite?" question and the current confirm dialog.
+    'domandaSovrascritturaRef', 'confirmDialog', 'confirmDialogRef',
+    // ITALIANO: la X gia' premuta durante una scrittura (vedi il beforeunload di App.tsx).
+    // ENGLISH: the X already pressed during a write (see App.tsx's beforeunload).
+    'chiusuraInScritturaRef',
+    // ITALIANO: per la finestra a tre scelte: una scrittura in corso, la richiesta di chiudere la finestra.
+    // ENGLISH: for the three-choice dialog: a write in progress, the request to close the window.
+    'isSavingRef', 'chiudiFinestraSeRichiesto', 'chiusuraFinestraRef'];
 const codice = (await esbuild.transform(testi.join('\n'), { loader: 'ts' })).code;
-const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione',
-    ...(visualizzatore ? ['effettoVisualizzatore'] : [])].join(', ') + ' };');
+const fabbrica = new Function(...NOMI, codice + '\nreturn { ' + [...Object.keys(PEZZI), 'effettoCronologia', 'effettoDisco', 'effettoSelezione', 'effettoElenco', 'effettoDomanda',
+    ...(visualizzatore ? ['effettoVisualizzatore'] : []), ...(conferma ? ['confermaSovrascrittura'] : []),
+    ...(haTreScelte ? ['handleSaveAndCloseProject', 'handleDiscardAndClose', 'handleCancelClose'] : [])].join(', ') + ' };');
 
 /* ITALIANO: una cartella finta: `scritti` = nome del file -> ultimo contenuto scritto.
    ENGLISH: a fake folder: `scritti` = file name -> last content written. */
@@ -149,14 +190,27 @@ export const foto = (id, tags, cartella = null) => ({
    ENGLISH: the fake app. It mounts empty, like the real one, then imports `immagini`: the first
    history step is the empty gallery, the second one the import. render() gives the real functions
    as seen from the current state; notifiche, finestre and aggiornamenti record what the user sees. */
-export const creaApp = (immagini, { trigger = [] } = {}) => {
+// ITALIANO: `finestra` = l'oggetto window visto dal codice (per esempio con un electronAPI finto).
+// ENGLISH: `finestra` = the window object the code sees (for example with a fake electronAPI).
+// ITALIANO: `elenco` = l'elenco dei tag del progetto all'avvio.  ENGLISH: `elenco` = the project tag list at start.
+export const creaApp = (immagini, { trigger = [], finestra = {}, elenco = [] } = {}) => {
     const stato = {
         images: [], history: [], historyIndex: -1, selectedImageId: null, selectedForBulk: [], stagedBulkTags: [],
-        globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false },
+        globalTriggers: trigger, saveCloseDialog: { isOpen: false }, confirmDialog: { isOpen: false }, customProjectTags: elenco,
     };
-    const r = { stato, notifiche: [], tagSuFotoAperta: [] };
+    // ITALIANO: `eventi` = in ordine, i valori dati a setIsSaving ('salvando') e a setImportProgress ('barra').
+    // ENGLISH: `eventi` = in order, the values given to setIsSaving ('salvando') and setImportProgress ('barra').
+    // ITALIANO: `progettiChiusi` / `finestreChiuse` = quante volte si e' chiuso il progetto (closeProjectNow) e
+    //           si e' chiesto di chiudere la finestra (chiudiFinestraSeRichiesto).
+    // ENGLISH: `progettiChiusi` / `finestreChiuse` = how many times the project was closed (closeProjectNow)
+    //          and closing the window was requested (chiudiFinestraSeRichiesto).
+    const r = { stato, notifiche: [], tagSuFotoAperta: [], eventi: [], progettiChiusi: 0, finestreChiuse: 0 };
     const refs = { imagesRef: { current: [] }, isUndoRedoAction: { current: false }, discoNotoRef: { current: new Map() },
-        globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] } };
+        globalTriggersRef: { current: trigger }, triggerHistoryRef: { current: [] },
+        customProjectTagsRef: { current: elenco }, customTagsHistoryRef: { current: [] }, elencoRegistratoRef: { current: elenco },
+        domandaSovrascritturaRef: { current: null }, confirmDialogRef: { current: stato.confirmDialog }, chiusuraInScritturaRef: { current: false },
+        isSavingRef: { current: false }, chiusuraFinestraRef: { current: false } };
+    r.refs = refs;
     const coda = [];
     let programmato = false;
     const quieto = { log() { }, warn() { }, error() { } };
@@ -166,6 +220,8 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
         while (coda.length) {
             const primaImmagini = stato.images;
             const primaAperta = stato.selectedImageId;
+            const primaElenco = stato.customProjectTags;
+            const primaDomanda = stato.confirmDialog;
             for (const [k, v] of coda.splice(0)) stato[k] = typeof v === 'function' ? v(stato[k]) : v;
             if (stato.images !== primaImmagini) {
                 // ITALIANO: gli effetti su [images], nell'ordine di App.tsx: cronologia, poi imagesRef.
@@ -178,24 +234,38 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
                 render().effettoVisualizzatore();
             }
             if (stato.images !== primaImmagini) render().effettoSelezione();
+            // ITALIANO: dopo quelli su [images], come in App.tsx, l'effetto su [customProjectTags].
+            // ENGLISH: after the ones on [images], as in App.tsx, the effect on [customProjectTags].
+            if (stato.customProjectTags !== primaElenco) render().effettoElenco();
+            if (stato.confirmDialog !== primaDomanda) render().effettoDomanda();
         }
     };
     const imposta = (chiave) => (v) => {
         coda.push([chiave, v]);
         if (!programmato) { programmato = true; queueMicrotask(scarica); }
     };
-    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef prende il valore dello stato.
-    // ENGLISH: as in App.tsx, on every render globalTriggersRef takes the state's value.
-    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, fabbrica(
+    // ITALIANO: come in App.tsx, a ogni render globalTriggersRef (e customProjectTagsRef, confirmDialogRef) prende il
+    //           valore dello stato: lo stesso ref, visto anche da una funzione di un render precedente ancora in attesa.
+    // ENGLISH: as in App.tsx, on every render globalTriggersRef (and customProjectTagsRef, confirmDialogRef) takes the
+    //          state's value: the same ref, seen also by a function of an earlier render still waiting.
+    const render = () => (refs.globalTriggersRef.current = stato.globalTriggers, refs.customProjectTagsRef.current = stato.customProjectTags,
+        refs.confirmDialogRef.current = stato.confirmDialog, fabbrica(
         stato.images, stato.history, stato.historyIndex, stato.selectedImageId, stato.selectedForBulk, stato.stagedBulkTags, stato.globalTriggers,
         imposta('images'), imposta('history'), imposta('historyIndex'), () => { }, imposta('selectedImageId'), imposta('stagedBulkTags'),
-        imposta('saveCloseDialog'), imposta('confirmDialog'), () => { }, () => { },
+        imposta('saveCloseDialog'), imposta('confirmDialog'), (v) => r.eventi.push(['salvando', v]), (v) => r.eventi.push(['barra', v]),
         (m, tipo = 'info') => r.notifiche.push([m, tipo]),
         (id, tags) => r.tagSuFotoAperta.push([id, tags]),
-        () => { }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
+        () => { r.progettiChiusi++; }, t, { pop() { }, chime() { }, click() { } }, refs.imagesRef, refs.isUndoRedoAction,
         P.sidecarTagFileName, P.buildTagFileName, H.purgeIdsFromHistory, H.withLiveOriginalTags, H.nearestDifferentStep, refs.discoNotoRef, S.tagDopoEditor,
         imposta('selectedForBulk'), imposta('globalTriggers'), refs.globalTriggersRef, refs.triggerHistoryRef, C.uniqueTagsIgnoringCase,
-        (f) => f, {}, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' }));
+        (f) => f, finestra, { createElement: () => ({ click() { } }), body: { appendChild() { }, removeChild() { } } }, url, Blob, quieto, G.fotoDaSalvare, S.txtNonLettoInVigore, { current: '' },
+        S.testoTxtSulDisco, S.txtCambiatoSulDisco, 1024 * 1024,
+        imposta('customProjectTags'), stato.customProjectTags, refs.customProjectTagsRef, refs.customTagsHistoryRef, refs.elencoRegistratoRef,
+        refs.domandaSovrascritturaRef, stato.confirmDialog, refs.confirmDialogRef, refs.chiusuraInScritturaRef,
+        // ITALIANO: come chiudiFinestraSeRichiesto: si chiude la finestra solo se la domanda era nata dalla X.
+        // ENGLISH: like chiudiFinestraSeRichiesto: the window closes only if the question came from the X.
+        refs.isSavingRef, () => { if (!refs.chiusuraFinestraRef.current) return; refs.chiusuraFinestraRef.current = false; r.finestreChiuse++; },
+        refs.chiusuraFinestraRef));
     // ITALIANO: il montaggio (galleria vuota), poi l'import.
     // ENGLISH: the mount (empty gallery), then the import.
     render().effettoCronologia();
@@ -208,5 +278,13 @@ export const creaApp = (immagini, { trigger = [] } = {}) => {
     r.seleziona = (ids) => imposta('selectedForBulk')(ids);
     r.importa = () => imposta('images')(immagini);
     r.fotoCon = (id) => stato.images.find(i => i.id === id);
+    // ITALIANO: un tag scritto nella casella «aggiungi al progetto» (cambia solo l'elenco).
+    // ENGLISH: a tag typed in the "add to project" box (changes only the list).
+    r.aggiungiAlProgetto = (tag) => imposta('customProjectTags')((prev) => [...prev, tag]);
+    // ITALIANO: un'altra parte del programma apre (o cambia) la finestra di conferma, come
+    //           chiediEliminazioneDefinitiva; `v` puo' essere un oggetto o una funzione (prev => ...).
+    // ENGLISH: another part of the program opens (or changes) the confirm dialog, like
+    //          chiediEliminazioneDefinitiva; `v` can be an object or a function (prev => ...).
+    r.altraDomanda = (v) => imposta('confirmDialog')(v);
     return r;
 };

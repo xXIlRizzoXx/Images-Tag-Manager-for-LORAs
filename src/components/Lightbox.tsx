@@ -24,9 +24,10 @@ import { TagSuggestionsPanel } from './TagSuggestionsPanel';
 import { buildTagFileName, sidecarTagFileName } from '../utils/pathUtils';
 import { hasTagIgnoringCase, splitTagInput, countNewTagsIgnoringCase } from '../utils/tagCase';
 import { qualityWarningText } from '../utils/imageQuality';
+import { useChiusuraSfondo } from '../utils/backdropClose';
 import type { Strings } from '../constants';
 
-export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false }: { t: Strings; [chiave: string]: any }) => {
+export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPrev, hasNext, hasPrev, slideDirection, showNotification, updateOriginalTags, dirHandle, isDarkMode, onMoveToTrash, imageIndex = -1, imageCount = 0, lang, globalTriggers = [], aiEnabled = false, aiBusy = false, onAITagSingle, addProjectTag, copiedTags = null, onCopyTags, tastiBloccati = false, confermaSovrascrittura }: { t: Strings; [chiave: string]: any }) => {
     const [zoomLevel, setZoomLevel] = useState(0);
     const [filterText, setFilterText] = useState('');
     const [zoomOrigin, setZoomOrigin] = useState('center');
@@ -79,6 +80,12 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         } else setHighResUrl(null);
         return () => { if (currentUrl) URL.revokeObjectURL(currentUrl); };
     }, [image?.id, image?.file]);
+
+    // ITALIANO: lo sfondo chiude solo se la pressione e' partita dallo sfondo (selezionare il testo
+    //           della casella e rilasciare fuori non chiude piu' il visualizzatore).
+    // ENGLISH: the backdrop closes only if the press started on it (selecting the field's text and
+    //          releasing outside no longer closes the viewer).
+    const chiusuraSfondo = useChiusuraSfondo(onClose);
 
     if (!image) return null;
 
@@ -224,6 +231,16 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
         };
 
         try {
+            // ITALIANO: il .txt cambiato sul disco dopo l'apertura (un altro programma) non si sostituisce
+            //           senza chiedere: con "no" resta com'e' e la foto resta da salvare (vedi
+            //           confermaSovrascrittura in App.tsx). Prima lo si riscriveva in silenzio.
+            // ENGLISH: a .txt changed on disk after opening (another program) is not replaced without
+            //          asking: with "no" it stays as it is and the photo stays unsaved (see
+            //          confermaSovrascrittura in App.tsx). It used to be rewritten silently.
+            if (typeof confermaSovrascrittura === 'function' && (await confermaSovrascrittura([image])).size > 0) {
+                if (showNotification) showNotification(t.saveTxtChangedOne.replace('{names}', () => image.file.name), 'info');
+                return;
+            }
             if (dirHandle) {
                 // ITALIANO: accanto alla foto va il .txt che l'import rilegge e Kohya usa, col nome
                 //           non ripulito (vedi sidecarTagFileName); `fileName` resta per il download.
@@ -320,7 +337,7 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
     const animClass = slideDirection === 'left' ? 'anim-slide-right' : 'anim-slide-left';
 
     return (
-        <div className={`fixed inset-0 z-[100] flex ${isDarkMode ? 'bg-black/95' : 'bg-gray-50/98'} backdrop-blur-sm p-4 md:p-6 animate-in fade-in`} onClick={onClose}>
+        <div className={`fixed inset-0 z-[100] flex ${isDarkMode ? 'bg-black/95' : 'bg-gray-50/98'} backdrop-blur-sm p-4 md:p-6 animate-in fade-in`} {...chiusuraSfondo}>
             {/* ITALIANO: Nessun tetto di larghezza: la finestra riempie tutto lo schermo anche
                           su monitor larghi (prima si fermava a 1920px lasciando fasce vuote).
                 ENGLISH: No width cap: the window fills the whole screen even on wide monitors
@@ -343,13 +360,13 @@ export const Lightbox = ({ image, onClose, updateTags, allTags, t, onNext, onPre
                     <div className="absolute top-0 right-0 flex gap-2 z-[110]">
                         {/* ITALIANO: foto piccola, o che il programma non sa mostrare (0x0): vedi qualityWarningText. */}
                         {/* ENGLISH: a small photo, or one the program cannot display (0x0): see qualityWarningText. */}
-                        {qualityWarningText(t, image.width, image.height) !== null && (
+                        {qualityWarningText(t, image.width, image.height, lang) !== null && (
                             <div className="relative group/alert">
                                 <div className="p-2.5 bg-yellow-500 text-white rounded-full transition-all border border-yellow-600 shadow-md flex items-center justify-center cursor-help">
                                     <AlertTriangle size={24} strokeWidth={2.5} />
                                 </div>
                                 <div className="absolute right-0 top-full mt-2 w-64 p-2.5 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover/alert:opacity-100 group-hover/alert:visible transition-all duration-200 pointer-events-none whitespace-pre-line border border-gray-700">
-                                    {qualityWarningText(t, image.width, image.height)}
+                                    {qualityWarningText(t, image.width, image.height, lang)}
                                 </div>
                             </div>
                         )}

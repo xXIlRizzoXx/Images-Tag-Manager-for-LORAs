@@ -55,7 +55,7 @@ console.log('\n--- una foto che il programma non sa leggere (TIFF) ---');
     const r = await I.generateThumbnail({ name: 'ritratto-24mp.tif', type: 'image/tiff' });
     dice('premessa: la miniatura arriva con 0x0', [0, 0], [r.width, r.height]);
     dice('l\'avviso dice che il programma non riesce a mostrarla', t.imageUnreadable, testo(r.width, r.height));
-    dice('e non parla di megapixel', false, String(testo(r.width, r.height)).includes(t.imageQualityLabel));
+    dice('e non parla di megapixel', false, String(testo(r.width, r.height)).includes(' MP)'));
     dice('lo stesso con una sola misura a 0', t.imageUnreadable, testo(0, 5000));
 }
 
@@ -65,7 +65,7 @@ for (const [lingua, testi] of Object.entries(lingue)) {
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
-dice('una foto piccola (800x600): l\'avviso del megapixel con la sua misura', `${t.minQualityWarning}\n${t.imageQualityLabel}: 800x600 (0.48 MP)`, testo(800, 600));
+dice('una foto piccola (800x600): l\'avviso del megapixel con la sua misura', `${t.minQualityWarning}\nQuality of this image: 800x600 (0.48 MP)`, testo(800, 600));
 dice('una foto da 1024x1024: nessun avviso', null, testo(1024, 1024));
 dice('una foto da 24 megapixel: nessun avviso', null, testo(4000, 6000));
 
@@ -80,8 +80,8 @@ console.log('\n--- src/App.tsx e src/components/Lightbox.tsx ---');
     const crudo = /\.width \* \w+\.height < 1048576/g;
     dice('App.tsx: nessun confronto scritto a mano (galleria e cestino)', 0, (app.match(crudo) || []).length);
     dice('Lightbox.tsx: nessun confronto scritto a mano (visualizzatore)', 0, (visore.match(crudo) || []).length);
-    dice('App.tsx: la galleria e il cestino usano la regola', true, (app.match(/qualityWarningText\(t, img\.width, img\.height\)/g) || []).length >= 2);
-    dice('Lightbox.tsx: il visualizzatore usa la regola', true, /qualityWarningText\(t, image\.width, image\.height\)/.test(visore));
+    dice('App.tsx: la galleria e il cestino usano la regola', true, (app.match(/qualityWarningText\(t, img\.width, img\.height(, lang)?\)/g) || []).length >= 2);
+    dice('Lightbox.tsx: il visualizzatore usa la regola', true, /qualityWarningText\(t, image\.width, image\.height(, lang)?\)/.test(visore));
 }
 
 process.exit(esito());

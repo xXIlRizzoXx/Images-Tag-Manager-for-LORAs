@@ -74,10 +74,11 @@ const app = ({ dalla = 'progetto' } = {}) => {
         {}, () => { }, { chime() { } }, muto, P.buildTagFileName, P.sanitizeFileName, P.sidecarTagFileName, { current: false }, avvisoSalvataggioRef, async () => () => { });
     a.salva = async () => true;
     const f = new Function('isSavingRef', 'showNotification', 't', 'setSaveCloseDialog', 'handleSaveChanges', 'closeProjectNow', 'console',
-        'chiusuraFinestraRef', 'permettiChiusuraRef', 'window', 'avvisoSalvataggioRef', 'images', 'imagesRef', 'globalTriggersRef', 'fotoDaSalvare', jsChiudi + '\nreturn handleSaveAndCloseProject;')(
+        'chiusuraFinestraRef', 'permettiChiusuraRef', 'window', 'avvisoSalvataggioRef', 'images', 'imagesRef', 'globalTriggersRef', 'fotoDaSalvare', 'confirmDialogRef', jsChiudi + '\nreturn handleSaveAndCloseProject;')(
         { current: false }, showNotification, t, (d) => { a.finestra = d; }, () => a.salva(),
         () => { a.progettiChiusi++; showNotification(t.closeAllDone, 'success'); }, muto,
-        { current: dalla === 'finestra' }, { current: false }, { close: () => { a.chiusi++; } }, avvisoSalvataggioRef, [], { current: [] }, { current: [] }, () => false);
+        { current: dalla === 'finestra' }, { current: false }, { close: () => { a.chiusi++; } }, avvisoSalvataggioRef, [], { current: [] }, { current: [] }, () => false,
+        { current: { isOpen: false } });
     a.salvaEChiudi = f;
     a.ultimo = () => a.notifiche[a.notifiche.length - 1] || null;
     return a;

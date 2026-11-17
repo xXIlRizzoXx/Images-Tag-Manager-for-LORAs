@@ -75,6 +75,11 @@ export const caricaMain = ({ userData = null } = {}) => {
     const rifiutaCestino = new Set();
     const lanci = [];
     let vociCestino = [];
+    // ITALIANO: gli ascoltatori di app.on (per evento) e le chiamate ad app.quit(): nessuno chiude niente.
+    // ENGLISH: the app.on listeners (per event) and the app.quit() calls: nothing is really closed.
+    const eventiApp = new Map();
+    const uscite = [];
+    let allUscita = null;
     const vietato = (cosa) => () => { throw new Error(`main-harness: ${cosa} is not allowed in tests`); };
 
     const electronFinto = {
@@ -88,8 +93,8 @@ export const caricaMain = ({ userData = null } = {}) => {
             //          that passes ITS own temporary folder (userData).
             getPath: () => userData || path.join(os.tmpdir(), 'itm-test-userdata-missing'),
             requestSingleInstanceLock: () => true,
-            quit() {},
-            on() {},
+            quit() { uscite.push(Date.now()); if (allUscita) allUscita(); },
+            on(evento, fn) { if (!eventiApp.has(evento)) eventiApp.set(evento, []); eventiApp.get(evento).push(fn); },
             whenReady: () => new Promise(() => {}),
         },
         BrowserWindow: class { constructor() { throw new Error('main-harness: no window in tests'); } static getAllWindows() { return []; } },
@@ -132,7 +137,17 @@ export const caricaMain = ({ userData = null } = {}) => {
     } finally {
         Module._load = caricaOriginale;
     }
-    return { handlers, cestinati, rifiutaCestino, lanci, impostaCestino: (voci) => { vociCestino = voci; } };
+    // ITALIANO: emettiApp(evento) chiama gli ascoltatori con un evento finto e dice se uno ha fermato
+    //           la chiusura (preventDefault); allUscita(fn) fa sapere quando main.cjs chiama app.quit().
+    // ENGLISH: emettiApp(event) calls the listeners with a fake event and tells whether one stopped the
+    //          quit (preventDefault); allUscita(fn) reports when main.cjs calls app.quit().
+    const emettiApp = (evento) => {
+        let fermata = false;
+        for (const fn of eventiApp.get(evento) || []) fn({ preventDefault: () => { fermata = true; } });
+        return fermata;
+    };
+    return { handlers, cestinati, rifiutaCestino, lanci, impostaCestino: (voci) => { vociCestino = voci; },
+        emettiApp, uscite, allUscita: (fn) => { allUscita = fn; } };
 };
 
 // ITALIANO: piccolo contatore di controlli, uguale nello stile a quello di test-ai-models.mjs.

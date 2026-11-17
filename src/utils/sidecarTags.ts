@@ -193,6 +193,49 @@ export const parseSidecarText = (text: string): { tags: string[]; truncated: boo
     return { tags: tags.slice(0, TXT_MAX_TAGS_PER_FILE), truncated };
 };
 
+// ITALIANO: il .txt di una foto e' cambiato sul disco dopo che il programma l'ha letto o scritto? Un
+//   altro programma (il tagger WD14 di Kohya, il Blocco note, OneDrive) puo' riscriverlo a programma
+//   aperto, e "Salva" lo sostituiva in silenzio coi tag del programma. `testo` = il testo che c'e'
+//   adesso; null = il .txt non c'e' (niente da perdere: non e' un cambio); false = c'e' ma non si
+//   legge (bloccato, oltre 1 MB, non UTF-8: conta come cambiato). `ricordo` = originalTags, cioe' i
+//   tag del disco come il programma li conosce. Si confrontano i tag letti con la regola dell'import
+//   (parseSidecarText), senza badare all'ordine e agli spazi: lo stesso elenco riordinato non e' un cambio.
+// ENGLISH: has a photo's .txt changed on disk since the program read or wrote it? Another program
+//   (Kohya's WD14 tagger, Notepad, OneDrive) can rewrite it while the program is open, and "Save"
+//   silently replaced it with the program's tags. `testo` = the text there now; null = there is no
+//   .txt (nothing to lose: not a change); false = it is there but cannot be read (locked, over 1 MB,
+//   not UTF-8: counts as changed). `ricordo` = originalTags, i.e. the disk's tags as the program knows
+//   them. The tags read with the import's rule (parseSidecarText) are compared, regardless of order
+//   and spaces: the same list reordered is not a change.
+export const txtCambiatoSulDisco = (testo: string | null | false, ricordo: string[]): boolean => {
+    if (testo === null) return false;
+    if (testo === false) return true;
+    const chiave = (s: string) => [...new Set(parseSidecarText(s).tags)].sort().join('\x1f');
+    return chiave(testo) !== chiave((Array.isArray(ricordo) ? ricordo : []).join(','));
+};
+
+// ITALIANO: il testo del .txt `nome` nella cartella `dir` (un handle di "Carica cartella"), per
+//   txtCambiatoSulDisco: null se non c'e', false se c'e' ma non si legge (oltre `maxByte`, bloccato, non
+//   UTF-8), undefined se non si puo' sapere (un handle che non si rilegge, un errore della cartella):
+//   allora non si controlla e la scrittura va come prima.
+// ENGLISH: the text of the .txt `nome` in the folder `dir` (a "Load Folder" handle), for
+//   txtCambiatoSulDisco: null if it is not there, false if it is there but cannot be read (over
+//   `maxByte`, locked, not UTF-8), undefined if it cannot be known (a handle that cannot be read back,
+//   a folder error): then nothing is checked and the write goes as before.
+export const testoTxtSulDisco = async (dir: any, nome: string, maxByte: number): Promise<string | null | false | undefined> => {
+    let fh: any;
+    try { fh = await dir.getFileHandle(nome); }
+    catch (e: any) { return e && e.name === 'NotFoundError' ? null : undefined; }
+    if (!fh || typeof fh.getFile !== 'function') return undefined;
+    try {
+        const file = await fh.getFile();
+        if (Number(file.size) > maxByte) return false;
+        return await leggiTestoSidecar(file);
+    } catch (e: any) {
+        return e && e.name === 'NotFoundError' ? null : false;
+    }
+};
+
 // ITALIANO: Quanti tag al massimo entrano da un file di tag del progetto (JSON o TXT).
 // ENGLISH: How many tags at most come in from a project tags file (JSON or TXT).
 export const PROJECT_TAGS_MAX = 5000;
@@ -207,10 +250,15 @@ export const PROJECT_TAGS_MAX = 5000;
 //   PROJECT_TAGS_MAX in all. Each tag used to be cut at 100 characters: a sentence caption
 //   exported whole came back cut, mid-word, with no notice. `truncated` says whether anything was
 //   shortened or left out, so it can be said.
+// ITALIANO: ogni voce si divide su virgole e a capo come un .txt: una voce JSON "red hair, blue eyes"
+//   diventava una sola pillola, e nel .txt salvato tornava come due tag (con doppioni).
+// ENGLISH: each entry is split on commas and newlines like a .txt: a JSON entry "red hair, blue eyes"
+//   became a single pill, and in the saved .txt it came back as two tags (with duplicates).
 export const pulisciTagProgetto = (voci: unknown[]): { tags: string[]; truncated: boolean } => {
     let truncated = false;
     const tags = [...new Set(voci
-        .map((s: unknown) => String(s).replace(/[\x00-\x1F\x7F]/g, ' ').trim())
+        .flatMap((s: unknown) => String(s).split(/[\r\n,]+/))
+        .map((s: string) => s.replace(/[\x00-\x1F\x7F]/g, ' ').trim())
         .filter((tag: string) => tag.length > 0)
         .map((tag: string) => {
             if (tag.length <= TXT_TAG_MAX_CHARS) return tag;

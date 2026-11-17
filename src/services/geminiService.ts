@@ -220,9 +220,17 @@ export const getGeminiTags = async (foto: File | FotoConCartella, opts: GeminiTa
     if (!opts.apiKey || typeof opts.apiKey !== 'string') {
         throw new Error('Missing API key');
     }
+    opts.signal?.throwIfAborted();
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
     const file = foto instanceof File ? foto : await fileDiAdesso(foto);
     const immagine = await imageForGemini(file);
+    // ITALIANO: la libreria di Google guarda il segnale solo con l'evento 'abort': un segnale gia'
+    //           fermato (Annulla, AI spenta o chiave tolta mentre la foto si preparava) non la ferma,
+    //           e la foto partiva lo stesso, senza piu' nemmeno il limite di tempo. Si controlla qui.
+    // ENGLISH: Google's library looks at the signal only through the 'abort' event: a signal already
+    //          aborted (Cancel, AI off or key removed while the photo was being prepared) does not stop
+    //          it, and the photo was sent anyway, without even the time limit. It is checked here.
+    opts.signal?.throwIfAborted();
 
     const response = await ai.models.generateContent({
         model: opts.modelName,
@@ -474,6 +482,17 @@ export const verifyGeminiApiKey = async (apiKey: string): Promise<{ ok: boolean;
     if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 20) {
         return { ok: false, error: 'API key looks invalid (too short)', errorKind: 'invalid_key' };
     }
+    // ITALIANO: una chiave incollata fra virgolette curve, con uno spazio invisibile (U+200B) o
+    //           che e' un testo in un'altra scrittura non arriva mai a Google: il browser rifiuta
+    //           l'intestazione con un errore senza stato, che diventava "Controlla la connessione".
+    //           Le chiavi di Google sono solo ASCII stampabile: tutto il resto e' chiave non valida.
+    // ENGLISH: a key pasted between curly quotes, with an invisible space (U+200B), or that is
+    //          text in another script never reaches Google: the browser rejects the header with
+    //          an error without status, which became "Check your connection". Google keys are
+    //          printable ASCII only: anything else is an invalid key.
+    if (!/^[\x21-\x7E]+$/.test(apiKey)) {
+        return { ok: false, error: 'API key contains invalid characters', errorKind: 'invalid_key' };
+    }
     try {
         const ai = new GoogleGenAI({ apiKey });
         await ai.models.list({
@@ -692,6 +711,14 @@ export const provaModello = async (apiKey: string, id: string, tempoMs: number =
         const { kind } = classifyGeminiError(err);
         if (kind === 'rate_limit') return 'occupato';
         if (kind === 'busy') return 'sovraccarico';
+        // ITALIANO: uno stato HTTP 4xx sconosciuto (400 INVALID_ARGUMENT: niente JSON o niente
+        //           immagini) e' Google che ha risposto: il modello non fa questo lavoro e si prova
+        //           il candidato dopo, come in statoDaErrore. Senza stato e' la rete: 'incerto'.
+        // ENGLISH: an unknown 4xx HTTP status (400 INVALID_ARGUMENT: no JSON or no images) is
+        //          Google answering: the model does not do this job and the next candidate is
+        //          probed, as in statoDaErrore. With no status it is the network: 'incerto'.
+        const stato = typeof err?.status === 'number' ? err.status : undefined;
+        if (kind === 'unknown' && stato !== undefined && stato >= 400 && stato < 500) return 'no';
         if (kind === 'unknown') return 'incerto';
         return 'no';
     }
@@ -897,6 +924,9 @@ export const statoDaErrore = (err: any): { stato?: StatoModello; ferma?: FermaPr
 export const provaModelloChiave = async (apiKey: string, id: string, segnale?: AbortSignal, tempoMs: number = PROVA_TIMEOUT_MS): Promise<{ stato?: StatoModello; ferma?: FermaProva; scaduto?: boolean }> => {
     const tempo = AbortSignal.timeout(tempoMs);
     try {
+        // ITALIANO: un giro gia' fermato non chiama Google (la libreria ignora un segnale gia' fermato).
+        // ENGLISH: a round already stopped does not call Google (the library ignores an already aborted signal).
+        segnale?.throwIfAborted();
         const ai = new GoogleGenAI({ apiKey });
         const risposta = await ai.models.generateContent({
             model: id,

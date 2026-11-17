@@ -1,7 +1,41 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 26 ottobre 2026
-**Versione attuale:** 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 14 novembre 2026
+**Versione attuale:** 2.0.3 in sviluppo (costruita e provata dal vivo il 7 novembre 2026, poi corretta con il debug del 14 novembre 2026; non ancora pubblicata). Ultima pubblicata: 2.0.2, ricostruita e pubblicata il 26 ottobre 2026 (Latest, con installer, portable .exe e portable .zip). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità 2.0.3 (traguardo 120, 14 novembre 2026): **debug completo prima della pubblicazione.**
+Due giri di ricerca dei problemi in tutto il programma, ogni segnalazione verificata da tre controllori,
+ogni correzione con la sua prova automatica e poi fatta rivedere; poi due passate sui difetti trovati
+dai revisori nelle correzioni stesse. 53 problemi corretti, nessun bloccante o grave aperto. Il più
+importante: «Salva Modifiche», «Salva file .txt» del visualizzatore e «Salva» dell'editor dei file di
+tag riscrivevano in silenzio un .txt cambiato da un altro programma (per esempio un tagger esterno)
+dopo l'apertura della cartella; ora rileggono il file e chiedono «Sovrascrivere?» nominando le foto.
+Fra gli altri: Ctrl+Z rimette l'elenco dei tag del progetto, il recupero dopo un crash funziona anche
+con una foto aperta prima da sola, l'avviso quando il backup anti-crash non entra più, le foto HEIC
+mandate a Google ripulite anche dei testi nascosti in punti poco usati del file (pixel intatti), i
+pannelli che non si chiudono più selezionando un testo, la chiave API con virgolette curve riconosciuta
+come non valida. 310 file di prove automatiche verdi.
+
+Novità 2.0.3 (traguardo 119, 7 novembre 2026): **Claude Desktop si collega trascinando un file.**
+Nella parte MCP delle Impostazioni (e nella finestrella del semaforino) c'è «Collega Claude Desktop»: una
+finestra con due strade. La prima salva un'estensione `images-tag-manager.mcpb` da trascinare in Claude,
+Impostazioni, Estensioni: Claude chiede il codice segreto e lo tiene lui, nel file non c'è (poi va acceso il suo interruttore: Claude la installa spenta, visto nella prova dal vivo del 7/11, PASSATA); non serve
+Node.js perché Claude usa il suo. Dentro c'è un ponte (electron/claude-bridge.cjs) che gira i messaggi al
+server: a programma chiuso o con il codice sbagliato non esce, come faceva mcp-remote, ma offre uno
+strumento che spiega all'AI cosa dire, e avvisa Claude appena il programma si riapre; il suo controllo
+periodico non accende il semaforino. La seconda strada è la configurazione a mano, con i nomi dei menu
+come li scrive Claude in ogni lingua e il pulsante che copia la sola voce del server (incollare il file
+intero cancellava le impostazioni di Claude). Avvisa anche che «Aggiungi connettore personalizzato» non
+può funzionare: parte dal cloud di Anthropic. File controllato con lo strumento ufficiale `mcpb validate`.
+Due revisioni di un agente: 5 minori nella prima, 3 nella seconda, tutti corretti. 277 file di prove verdi.
+
+Novità 2.0.3 (traguardo 118, 31 ottobre 2026): **il semaforino MCP dice se un'AI si è collegata davvero.**
+Prima era verde appena il server ascoltava, anche senza nessuna AI: chi aveva dato il comando sbagliato
+all'AI vedeva verde e credeva di essere collegato. Ora è rosso finché un'AI col codice giusto non si fa
+viva, verde dopo (la finestrella e le Impostazioni dicono l'ora dell'ultimo contatto), giallo mentre lavora;
+il server che non parte ha il triangolo rosso. Il server non tiene linee aperte, quindi «collegata» vuol
+dire «ha parlato col codice giusto»: spegnendo il server o creando un codice nuovo si riparte dal rosso.
+Due revisioni di un agente: 3 minori nella prima (ora ferma con un'AI sempre al lavoro, due testi non
+veri), 2 testi nella seconda, tutti corretti. 276 file di prove automatiche verdi.
 Novità 2.0.2 (traguardo 117, 26 ottobre 2026): **una portable in .zip per chi ha l'antivirus che blocca
 l'installer.** Avast ha fermato l'installer 2.0.2, nuovo e non firmato, per il suo comportamento (estrae
 file, chiude il programma aperto) e pochi secondi dopo lo ha dichiarato pulito. Accanto a installer e
@@ -613,14 +647,13 @@ fatto (✅) e cosa manca ancora (⏳). Scritto in italiano semplice.
 
 | Priorità | Traguardo | In parole semplici | Versione |
 |----------|-----------|--------------------|----------|
-| Bassa | Sistemare il velo del trascinamento | Quando si trascinano file sopra la finestra compare la scritta "Rilascia qui le immagini". Se si annulla il trascinamento premendo Esc, quel velo può restare a schermo finché non si trascina di nuovo qualcosa. È **solo estetico** (non blocca i clic, perché è trasparente ai comandi). Per toglierlo serve un controllo a tempo sul trascinamento, che va provato bene per non far sfarfallare il velo mentre si trascina davvero. | 1.0.x |
 | Bassa | Tradurre il dizionario dei tag | I ~1050 tag suggeriti (e i 27 nomi di categoria) hanno la traduzione solo in italiano e inglese: nelle altre 7 lingue restano in inglese. In 1.0.4 la **torta delle statistiche** è stata resa coerente (fuori da it/en è tutta in inglese, non più mezza tradotta e mezza no), ma **tradurre davvero tutti i ~1080 testi nelle 7 lingue** resta un lavoro grosso e delicato (va fatto bene, non a macchina): da decidere se e come affrontarlo (traduzione umana/professionale, oppure accettare l'inglese). | 1.0.x |
 
 ---
 
 ## Vincoli sempre validi del progetto
 
-- **Consegna Windows:** i due file finali (portable + installer) vanno messi nella cartella
+- **Consegna Windows:** i tre file finali (installer, portable .exe e portable .zip) vanno messi nella cartella
   `Release\` della radice del progetto (non dentro la cartella di lavoro git).
 - **Dati dell'app:** sempre in `%APPDATA%\images-tag-manager` (mai accanto all'exe).
   È la cartella da cancellare per far ripartire l'app "da zero".

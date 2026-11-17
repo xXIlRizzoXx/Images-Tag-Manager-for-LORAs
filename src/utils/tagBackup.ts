@@ -172,12 +172,32 @@ const scaduta = (s: any, ora: number): boolean => typeof s.visto === 'number' &&
 //   scriviBackupSubito and sorgentiDaTenere); null = none known, as before.
 export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = [], lottiSessione: Set<string> | null = null): { folder: string; sources: SorgenteBackup[] } | null => {
     const ora = Date.now();
-    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number }>();
+    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number; extra: Set<string> }>();
     const lottoDi = (lotto: string, cartella: string) => {
         let l = lotti.get(lotto);
-        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0, vivi: 0 }; lotti.set(lotto, l); }
+        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0, vivi: 0, extra: new Set() }; lotti.set(lotto, l); }
         if (cartella) l.cartella = cartella;
         return l;
+    };
+    // ITALIANO: `nomiImpronta` (vedi confermaImport) = le foto della stessa cartella gia' aperte in un ALTRO
+    //   lotto quando questo e' entrato (per esempio a.png caricata prima da sola): contano nella sua
+    //   impronta, che cosi' e' quella della cartella intera come la trovera' una riapertura normale. Prima
+    //   l'impronta contava solo le foto del lotto, e dopo un crash le sue modifiche non tornavano. Un nome
+    //   conta solo finche' quella foto e' in memoria in un altro lotto (aperta, nel cestino o chiusa).
+    // ENGLISH: `nomiImpronta` (see confermaImport) = the photos of the same folder already open in ANOTHER
+    //   batch when this one came in (for example a.png loaded alone first): they count in its fingerprint,
+    //   which so is the whole folder's as a normal reopening will find it. The fingerprint used to count
+    //   only the batch's photos, and after a crash its edits did not come back. A name counts only while
+    //   that photo is in memory in another batch (open, trashed or closed).
+    const lottiDelNome = new Map<string, Set<string>>();
+    const segna = (nome: string, lotto: string, foto: any) => {
+        let s = lottiDelNome.get(nome);
+        if (!s) { s = new Set(); lottiDelNome.set(nome, s); }
+        s.add(lotto);
+        if (foto && Array.isArray(foto.nomiImpronta)) {
+            const l = lotti.get(lotto);
+            if (l) for (const n of foto.nomiImpronta) if (typeof n === 'string' && n) l.extra.add(n);
+        }
     };
     const presenti = new Set<string>();
     const chiaviPresenti = new Set<string>();
@@ -186,6 +206,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         chiaviPresenti.add(String(img.lottoImport || '') + BACKUP_KEY_SEP + (img.backupKey || (BACKUP_KEY_SEP + img.file.name)));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
+        segna(img.file.name, String(img.lottoImport || ''), img);
         l.vivi++;
         if (img.isTrashed) continue;
         if (!fotoDaSalvare(img, triggers)) continue;
@@ -223,6 +244,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         const chiaveCompleta = String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa;
         if (chiaviPresenti.has(chiaveCompleta)) continue;
         lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
+        segna(c.name, String(c.lotto || ''), fotoChiusa);
         // ITALIANO: una foto chiusa, ripresa riaprendo la cartella e chiusa di nuovo lascia fra le
         //           chiuse due voci (id vecchio e id nuovo) con lo stesso lotto e la stessa chiave: e'
         //           lo stesso file e si conta una volta. Solo per le chiavi con la cartella: senza
@@ -233,11 +255,18 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         //          same-named photos of different subfolders would share the key.
         if (!chiaveChiusa.startsWith(BACKUP_KEY_SEP)) chiaviPresenti.add(chiaveCompleta);
     }
+    // ITALIANO: le cartelle (la parte della chiave prima del nome) delle foto in memoria, aperte o chiuse:
+    //           vedi sorgentiDaTenere. Si toglie prima il lotto davanti alla chiave.
+    // ENGLISH: the folders (the key part before the name) of the photos in memory, open or closed: see
+    //          sorgentiDaTenere. The batch in front of the key is removed first.
+    const cartelleInMemoria = new Set<string>([...chiaviPresenti].map(k => cartellaDellaChiave(k.slice(k.indexOf(BACKUP_KEY_SEP) + 1))));
     const firme = new Map<string, number>();
     const aperte = new Set<string>();
     const conFirma: { firma: string; lotto: string; data: Record<string, VoceBackup>; voci: number }[] = [];
     for (const [lotto, l] of lotti) {
-        const firma = folderSignature(l.cartella, l.nomi);
+        const propri = l.extra.size > 0 ? new Set(l.nomi) : null;
+        const altrove = propri ? [...l.extra].filter(n => !propri.has(n) && [...(lottiDelNome.get(n) || [])].some(x => x !== lotto)) : [];
+        const firma = folderSignature(l.cartella, [...l.nomi, ...altrove]);
         aperte.add(firma);
         if (l.vivi > 0) firme.set(firma, (firme.get(firma) || 0) + 1);
         conFirma.push({ firma, lotto, data: l.data, voci: l.voci });
@@ -245,7 +274,7 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     const sources: SorgenteBackup[] = conFirma
         .filter(l => l.voci > 0 && firme.get(l.firma) === 1)
         .map(l => ({ signature: l.firma, data: l.data, visto: ora, ...(l.lotto ? { lotto: l.lotto } : {}) }));
-    sources.unshift(...sorgentiDaTenere(precedente, aperte, new Set([...lotti.keys()].filter(Boolean)), ora, lottiSessione));
+    sources.unshift(...sorgentiDaTenere(precedente, aperte, new Set([...lotti.keys()].filter(Boolean)), ora, lottiSessione, cartelleInMemoria));
     return sources.length > 0 ? { folder: cartellaCorrente, sources } : null;
 };
 
@@ -278,14 +307,31 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
 //   crash. It used to stay, and on reopening the folder the undone edits came back as "recovered",
 //   or that time's trigger as a tag on every photo. The sources of earlier sessions (the recovery
 //   after a crash) are not among these batches and stay.
-const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiAperti: Set<string>, ora: number, lottiSessione: Set<string> | null = null): SorgenteBackup[] => {
+// ITALIANO: una sorgente con l'impronta di una cartella aperta cade solo se almeno una sua chiave e'
+//   della cartella di una foto in memoria (`cartelleInMemoria`). Foto sciolte con gli stessi nomi
+//   (1.png...3.png) prese da un'altra cartella hanno la stessa impronta ma chiavi col loro percorso:
+//   prima, aprirle cancellava in silenzio le modifiche da recuperare della cartella vera. Due cartelle
+//   "img" aperte con "Carica cartella" hanno chiavi relative uguali e restano come prima. null = come
+//   prima (cade per impronta).
+// ENGLISH: a source with the fingerprint of an open folder is dropped only when at least one of its
+//   keys is in the folder of a photo in memory (`cartelleInMemoria`). Loose photos with the same names
+//   (1.png...3.png) taken from another folder share the fingerprint but have keys with their own path:
+//   opening them used to silently delete the real folder's edits to recover. Two "img" folders opened
+//   with "Load folder" have the same relative keys and stay as before. null = as before (dropped by
+//   fingerprint).
+const cartellaDellaChiave = (chiave: string): string => {
+    const i = chiave.lastIndexOf(BACKUP_KEY_SEP);
+    return i < 0 ? '' : chiave.slice(0, i);
+};
+const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiAperti: Set<string>, ora: number, lottiSessione: Set<string> | null = null, cartelleInMemoria: Set<string> | null = null): SorgenteBackup[] => {
     if (!precedente) return [];
     let parsed: any = null;
     try { parsed = JSON.parse(precedente); } catch (_) { return []; }
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.sources)) return [];
     const tenute: SorgenteBackup[] = [];
     for (const s of parsed.sources) {
-        if (!s || typeof s.signature !== 'string' || aperte.has(s.signature) || !s.data || typeof s.data !== 'object') continue;
+        if (!s || typeof s.signature !== 'string' || !s.data || typeof s.data !== 'object') continue;
+        if (aperte.has(s.signature) && (cartelleInMemoria === null || Object.keys(s.data).some(k => cartelleInMemoria.has(cartellaDellaChiave(k))))) continue;
         if (typeof s.lotto === 'string' && (lottiAperti.has(s.lotto) || (lottiSessione !== null && lottiSessione.has(s.lotto)))) continue;
         if (scaduta(s, ora)) continue;
         const data: Record<string, VoceBackup> = {};
@@ -316,7 +362,15 @@ const sorgentiDaTenere = (precedente: string | null, aperte: Set<string>, lottiA
 //   safe side. An import with no folder ("Load images", drag and drop) has an empty name in its
 //   fingerprint: it only matches another folder-less import of the same photos, never a picked
 //   folder, and the other way round.
-export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string): { voci: Record<string, any>; ts: number | null; visto?: number } | null => {
+// ITALIANO: `chiaviImport` = le chiavi di backup delle foto che si importano (cartella + nome, e le forme
+//   delle versioni precedenti): conta solo una sorgente che ne ha almeno una. Due serie di foto sciolte
+//   con gli stessi nomi hanno la stessa impronta: senza le chiavi il riepilogo annunciava un recupero
+//   che non avveniva, e due sorgenti uguali nell'impronta non si recuperavano piu'. null = come prima.
+// ENGLISH: `chiaviImport` = the backup keys of the photos being imported (folder + name, and the earlier
+//   versions' forms): only a source holding at least one of them counts. Two loose sets with the same
+//   names share the fingerprint: without the keys the summary announced a recovery that did not happen,
+//   and two sources with the same fingerprint could no longer be recovered. null = as before.
+export const backupDellImport = (grezzo: string | null, importFolder: string, importSignature: string, chiaviImport: Iterable<string> | null = null): { voci: Record<string, any>; ts: number | null; visto?: number } | null => {
     if (!grezzo) return null;
     let parsed: any = null;
     try { parsed = JSON.parse(grezzo); } catch (_) { return null; }
@@ -328,7 +382,11 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
         // ENGLISH: an expired source (see DURATA_SORGENTE_MS) is not applied, even if the backup has
         //          not been rewritten since.
         const ora = Date.now();
-        const uguali = parsed.sources.filter((s: any) => s && typeof s.signature === 'string' && s.signature === importSignature && s.data && typeof s.data === 'object' && !scaduta(s, ora));
+        let uguali = parsed.sources.filter((s: any) => s && typeof s.signature === 'string' && s.signature === importSignature && s.data && typeof s.data === 'object' && !scaduta(s, ora));
+        if (chiaviImport) {
+            const mie = new Set(chiaviImport);
+            uguali = uguali.filter((s: any) => Object.keys(s.data).some(k => mie.has(k)));
+        }
         if (uguali.length !== 1) return null;
         // ITALIANO: le voci con la chiave senza cartella (scritte prima che restassero fuori, vedi
         //           costruisciBackup) non si applicano: potrebbero essere di un'altra serie.
@@ -353,11 +411,14 @@ export const backupDellImport = (grezzo: string | null, importFolder: string, im
 // ENGLISH: what there is to recover for the import about to start (how many photos and from when), or
 //   null. The import summary uses it to ask before applying the backup: same fingerprint as
 //   processImportData (picked folder's name + image names).
-export const recuperoDellImport = (grezzo: string | null, cartellaScelta: { name?: string } | null, immagini: Array<{ name: string }>): { n: number; ts: number | null } | null => {
+// ITALIANO: `chiaviImport` come in backupDellImport: si contano solo le voci di queste foto.
+// ENGLISH: `chiaviImport` as in backupDellImport: only these photos' entries are counted.
+export const recuperoDellImport = (grezzo: string | null, cartellaScelta: { name?: string } | null, immagini: Array<{ name: string }>, chiaviImport: Iterable<string> | null = null): { n: number; ts: number | null } | null => {
     try {
         const nome = cartellaScelta && cartellaScelta.name ? String(cartellaScelta.name) : '';
-        const b = backupDellImport(grezzo, nome, folderSignature(nome, immagini.map(f => f.name)));
-        const n = b ? Object.keys(b.voci).length : 0;
+        const mie = chiaviImport ? new Set(chiaviImport) : null;
+        const b = backupDellImport(grezzo, nome, folderSignature(nome, immagini.map(f => f.name)), mie);
+        const n = b ? Object.keys(b.voci).filter(k => mie === null || mie.has(k)).length : 0;
         // ITALIANO: la data della SORGENTE di questa cartella (visto), non quella generale del backup, che
         //           ogni scrittura rinnova (aprire un'altra cartella la faceva diventare "adesso").
         // ENGLISH: the date of THIS folder's SOURCE (visto), not the backup's overall one, which every

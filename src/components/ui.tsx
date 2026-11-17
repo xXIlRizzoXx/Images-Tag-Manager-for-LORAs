@@ -388,10 +388,14 @@ export const UpdateDialog = ({ isOpen, title, message, confirmLabel, cancelLabel
     );
 };
 
-export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode }: { t: Strings; [chiave: string]: any }) => {
+// ITALIANO: `sopra` = una domanda che arriva durante "Salva e chiudi" (z-[500], vedi SaveBeforeCloseDialog):
+//           va sopra di lei, altrimenti restava nascosta sotto e il salvataggio aspettava per sempre.
+// ENGLISH: `sopra` = a question that comes during "Save and close" (z-[500], see SaveBeforeCloseDialog):
+//          it goes above it, otherwise it stayed hidden underneath and the save waited forever.
+export const CustomConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, t, isDarkMode, sopra = false }: { t: Strings; [chiave: string]: any }) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4" style={sopra ? { zIndex: 510 } : undefined}>
             <div className={`${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}>
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-3 text-red-500 dark:text-red-400">

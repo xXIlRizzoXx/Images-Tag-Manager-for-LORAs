@@ -114,7 +114,7 @@ dice('niente text.split( scritto a mano nell\'import', false, /\btext\.split\(/.
 
 // ITALIANO: 4) il ripristino dal backup: backupDellImport e tagDaRipristinare decidono.
 // ENGLISH: 4) restoring from the backup: backupDellImport and tagDaRipristinare decide.
-dice('l\'import legge il backup con backupDellImport', true, /backup = backupDellImport\(localStorage\.getItem\('tagBackup'\), importFolder, importSignature\)/.test(importa));
+dice('l\'import legge il backup con backupDellImport', true, /backup = backupDellImport\(localStorage\.getItem\('tagBackup'\), importFolder, importSignature[,)]/.test(importa));
 dice('l\'import ripristina con tagDaRipristinare', true, /const ripristinati = tagDaRipristinare\(entry, orderedTags, originalTags, /.test(importa));
 
 // ITALIANO: 5) l'effetto del backup anti-crash scrive tramite scriviBackupSubito, che usa
@@ -123,7 +123,7 @@ dice('l\'import ripristina con tagDaRipristinare', true, /const ripristinati = t
 //             costruisciBackup; no fingerprint computed inside the effect.
 const effetto = tratto(app, 'const backupConFotoRef = useRef(false);', '}, [images, dirHandle]);');
 dice('premessa: trovato l\'effetto del backup anti-crash', true, effetto.length > 0);
-dice('l\'effetto chiama scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current)', true, /scriviBackupSubito\(localStorage, images, fotoChiuseRef\.current\.values\(\), folder, globalTriggersRef\.current, lottiSessioneRef\.current\)/.test(effetto));
+dice('l\'effetto chiama scriviBackupSubito(localStorage, images, fotoChiuseRef.current.values(), folder, globalTriggersRef.current, lottiSessioneRef.current)', true, /scriviBackupSubito\(localStorage, images, fotoChiuseRef\.current\.values\(\), folder, globalTriggersRef\.current, lottiSessioneRef\.current(, \(\) => avvisoBackupPienoRef\.current\(\))?\)/.test(effetto));
 dice('l\'effetto NON calcola l\'impronta da solo (folderSignature)', false, /folderSignature\(/.test(effetto));
 dice('l\'effetto NON scrive tagBackup a mano', false, /localStorage\.setItem\(/.test(effetto));
 dice('scriviBackupSubito viene importato da utils/closeGuard', true, /import \{[^}]*\bscriviBackupSubito\b[^}]*\} from '\.\/utils\/closeGuard';/.test(app));

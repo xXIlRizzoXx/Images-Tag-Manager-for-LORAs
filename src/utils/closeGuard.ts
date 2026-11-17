@@ -41,14 +41,33 @@ export const modificheNonSalvate = (images: any[], triggers: string[] = []): boo
 //          one for the page's whole life): the batches of the current photos are added here. A
 //          stored source with one of these batches that is no longer in memory was thrown away by
 //          the user (Ctrl+Z past the import), not by a crash: it is dropped (see sorgentiDaTenere).
-export const scriviBackupSubito = (storage: Storage, images: any[], chiuse: Iterable<FotoChiusa>, cartella: string, triggers: string[] = [], lottiSessione: Set<string> | null = null): void => {
+// ITALIANO: `spazioFinito` = chiamato quando il localStorage rifiuta il backup perche' e' pieno (circa
+//           5,2 milioni di caratteri in Chromium: migliaia di foto da salvare insieme). Prima l'errore
+//           si inghiottiva e basta: restava il backup vecchio, la copia su file non partiva e dopo un
+//           crash il lavoro era perso senza che nessuno l'avesse detto. Gli altri errori restano muti.
+// ENGLISH: `spazioFinito` = called when localStorage refuses the backup because it is full (about 5.2
+//          million characters in Chromium: thousands of photos to save at once). The error used to be
+//          just swallowed: the old backup stayed, the file copy did not start and after a crash the
+//          work was lost without anyone saying so. Other errors stay silent.
+// ITALIANO: torna true se il backup e' stato scritto (o tolto) davvero: App.tsx lo usa per poter
+//           ridire "non entra" la volta dopo che torna a non entrare.
+// ENGLISH: returns true when the backup was really written (or removed): App.tsx uses it to be able
+//          to say "it does not fit" again the next time it stops fitting.
+export const scriviBackupSubito = (storage: Storage, images: any[], chiuse: Iterable<FotoChiusa>, cartella: string, triggers: string[] = [], lottiSessione: Set<string> | null = null, spazioFinito?: () => void): boolean => {
     try {
         const sessione = lottiSessione instanceof Set ? lottiSessione : null;
         if (sessione) for (const img of images) if (img && img.lottoImport) sessione.add(String(img.lottoImport));
         const backup = costruisciBackup(images, chiuse, cartella, storage.getItem('tagBackup'), triggers, sessione);
         if (!backup) storage.removeItem('tagBackup');
         else storage.setItem('tagBackup', JSON.stringify({ ts: Date.now(), ...backup }));
-    } catch (_) { /* best-effort: quota piena o storage assente non devono rompere l'app */ }
+        return true;
+    } catch (e: any) {
+        // ITALIANO: best-effort: quota piena o storage assente non devono rompere l'app.
+        // ENGLISH: best-effort: a full quota or a missing storage must not break the app.
+        const pieno = !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+        if (pieno && typeof spazioFinito === 'function') { try { spazioFinito(); } catch (_) { /* ignore */ } }
+        return false;
+    }
 };
 
 // ITALIANO: il backup anti-crash quando si chiude il progetto (Chiudi progetto, Salva e chiudi,

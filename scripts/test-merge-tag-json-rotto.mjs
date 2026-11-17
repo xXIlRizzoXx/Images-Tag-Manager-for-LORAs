@@ -78,6 +78,44 @@ try {
 
     dice('il dizionario del progetto non e\' cambiato', true,
         fs.readFileSync(originale, 'utf8') === fs.readFileSync(path.join(prova, 'src', 'constants', 'tagSuggestions.ts'), 'utf8'));
+
+    // ITALIANO: --apply con un piano che vale null (o un elenco, o un testo): codice 1, un messaggio
+    //           chiaro, niente TypeError ne' stack trace, dizionario invariato.
+    // ENGLISH: --apply with a plan that is null (or a list, or a string): exit code 1, a clear
+    //          message, no TypeError nor stack trace, dictionary unchanged.
+    const copiaDizionario = path.join(prova, 'src', 'constants', 'tagSuggestions.ts');
+    for (const [nome, testo] of [['piano-null.json', 'null'], ['piano-elenco.json', '["zzqx a"]'], ['piano-testo.json', '"zzqx"']]) {
+        scrivi(nome, testo);
+        const r = lancia('--apply', nome);
+        dice(nome + ': --apply esce con codice 1', 1, r.codice);
+        dice(nome + ': il messaggio nomina il file e dice che il piano deve essere un oggetto', true,
+            r.errore.includes(nome) && /il piano deve essere un oggetto/.test(r.errore));
+        dice(nome + ': nessun TypeError e nessuno stack trace', [false, false], [/TypeError/.test(r.testo), /\n\s+at /.test(r.testo)]);
+        dice(nome + ': dizionario invariato', true, fs.readFileSync(originale, 'utf8') === fs.readFileSync(copiaDizionario, 'utf8'));
+    }
+
+    // ITALIANO: una voce a null, un numero o un testo si salta con un motivo; i tag validi dello
+    //           stesso piano vengono aggiunti.
+    // ENGLISH: a null, number or string entry is skipped with a reason; the valid tags of the same
+    //          plan are added.
+    {
+        scrivi('piano-misto.json', JSON.stringify({
+            'zzqx cielo nuovo': null,
+            'zzqx numero': 7,
+            'zzqx stringa': 'framing',
+            'zzqx altro tag': { categoria: 'framing', it: 'zzqx altro' },
+        }));
+        const r = lancia('--apply', 'piano-misto.json');
+        dice('piano misto: --apply finisce con codice 0', 0, r.codice);
+        dice('piano misto: nessun TypeError e nessuno stack trace', [false, false], [/TypeError/.test(r.testo), /\n\s+at /.test(r.testo)]);
+        const diz = fs.readFileSync(copiaDizionario, 'utf8');
+        dice('piano misto: il tag valido e\' aggiunto', true, diz.includes("{ tag: 'zzqx altro tag', translations: { it: 'zzqx altro'"));
+        dice('piano misto: le voci non valide non sono aggiunte', [false, false, false],
+            ['zzqx cielo nuovo', 'zzqx numero', 'zzqx stringa'].map((t) => diz.includes(`tag: '${t}'`)));
+        dice('piano misto: la voce null e\' fra i saltati', true, /zzqx cielo nuovo -> voce non valida/.test(r.testo));
+        dice('piano misto: la voce numero e\' fra i saltati', true, /zzqx numero -> voce non valida/.test(r.testo));
+        dice('piano misto: la voce testo e\' fra i saltati', true, /zzqx stringa -> voce non valida/.test(r.testo));
+    }
 } finally {
     fs.rmSync(prova, { recursive: true, force: true });
 }

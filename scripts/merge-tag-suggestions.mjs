@@ -5,7 +5,8 @@
  *     node scripts/merge-tag-suggestions.mjs lista1.txt lista2.txt
  *   Stampa quanti tag erano gia' presenti (e in quale categoria) e quali mancano.
  *   Con --out piano.json scrive un file gia' pronto da riempire, dove per ogni tag
- *   nuovo si indica la categoria e la traduzione italiana.
+ *   nuovo si indica la categoria e la traduzione italiana. Se quel file c'e' gia', le voci
+ *   gia' riempite restano: i tag nuovi si aggiungono vuoti, niente si riscrive da zero.
  *
  *   Passo 2 — inseriscili davvero:
  *     node scripts/merge-tag-suggestions.mjs --apply piano.json
@@ -14,6 +15,7 @@
  *
  * ENGLISH: merges new tags into the suggestion dictionary without ever creating duplicates.
  *   Step 1 reports what is new, step 2 (--apply) inserts them into their category.
+ *   An existing --out plan is merged, never rewritten from scratch: filled entries stay.
  *   A tag already in the dictionary is never inserted twice, whatever its spelling.
  */
 import fs from 'fs';
@@ -200,6 +202,14 @@ if (APPLY) {
         console.error(`${APPLY}: non e' un JSON valido (controlla virgole, virgolette e parentesi), nessun tag aggiunto.`);
         process.exit(1);
     }
+    // ITALIANO: un JSON valido ma che non e' un oggetto (null, elenco, testo, numero) prima faceva
+    //   fermare lo script con un TypeError e lo stack trace.
+    // ENGLISH: valid JSON that is not an object (null, list, string, number) used to stop the
+    //   script with a TypeError and the stack trace.
+    if (piano === null || typeof piano !== 'object' || Array.isArray(piano)) {
+        console.error(`${APPLY}: il piano deve essere un oggetto { tag: { categoria, it } }, nessun tag aggiunto.`);
+        process.exit(1);
+    }
     const { src, categorie, perChiave } = leggiDizionario();
     const perCategoria = new Map();
     const saltati = [];
@@ -207,6 +217,9 @@ if (APPLY) {
     for (const [tag, info] of Object.entries(piano)) {
         const k = chiave(tag);
         if (perChiave.has(k)) { saltati.push(`${tag} -> gia' presente in ${perChiave.get(k).categoria}`); continue; }
+        // ITALIANO: una voce null (o testo, numero, elenco) si salta invece di fermare tutto.
+        // ENGLISH: a null (or string, number, list) entry is skipped instead of stopping everything.
+        if (info === null || typeof info !== 'object' || Array.isArray(info)) { saltati.push(`${tag} -> voce non valida (servono categoria e it)`); continue; }
         const cat = categorie.find(c => c.id === info.categoria);
         if (!cat) { saltati.push(`${tag} -> categoria sconosciuta "${info.categoria}"`); continue; }
         if (!info.it || !String(info.it).trim()) { saltati.push(`${tag} -> manca la traduzione italiana`); continue; }
@@ -256,6 +269,44 @@ if (ingressi.length === 0) {
     process.exit(1);
 }
 
+// ITALIANO: un piano gia' scritto con --out (forse riempito a mano, anche centinaia di voci) prima
+//   si riscriveva da zero rilanciando il passo 1, e categorie e traduzioni sparivano senza avviso.
+//   Ora si legge (stessa decodifica di --apply) e si unisce; se esiste ma non e' un piano leggibile
+//   ci si ferma prima di tutto, senza toccarlo. Un file vuoto non contiene lavoro: si scrive.
+// ENGLISH: a plan already written with --out (maybe filled in by hand, even hundreds of entries)
+//   used to be rewritten from scratch when step 1 ran again, and categories and translations were
+//   gone without a warning. Now it is read (same decoding as --apply) and merged; if it exists but
+//   is not a readable plan everything stops first, without touching it. An empty file holds no work.
+const leggiPianoEsistente = (file) => {
+    if (!fs.existsSync(file)) return null;
+    const testo = decodifica(fs.readFileSync(file));
+    if (testo !== null && !testo.trim()) return null;
+    let piano = null;
+    try { if (testo !== null) piano = JSON.parse(testo); } catch (_) { piano = null; }
+    if (piano === null || typeof piano !== 'object' || Array.isArray(piano)) {
+        console.error(`${file}: esiste gia' e non e' un piano leggibile { tag: { categoria, it } }, non lo sovrascrivo. Correggilo, spostalo o scegli un altro nome con --out.`);
+        process.exit(1);
+    }
+    // ITALIANO: anche una sola voce che non e' un oggetto { categoria, it } (testo, elenco, numero, null:
+    //   scritta a mano in un'altra forma, o un JSON che non e' un piano, come l'esportazione dei tag del
+    //   progetto) ferma tutto: prima la voce tornava vuota, o le chiavi del file diventavano tag, senza avviso.
+    // ENGLISH: even one entry that is not an object { categoria, it } (string, list, number, null: written
+    //   by hand in another form, or a JSON that is not a plan, like the project tags export) stops
+    //   everything: the entry used to come back empty, or the file's keys became tags, without a warning.
+    // ITALIANO: lo stesso per una voce oggetto senza ne' «categoria» ne' «it» (e non vuota): un JSON di
+    //   soli oggetti che non e' un piano (un file di configurazione, di traduzioni) veniva riscritto.
+    // ENGLISH: the same for an object entry with neither "categoria" nor "it" (and not empty): a JSON of
+    //   objects only that is not a plan (a configuration or translations file) was rewritten.
+    const nonPiano = v => Object.keys(v).length > 0 && !('categoria' in v) && !('it' in v);
+    const storta = Object.entries(piano).find(([, v]) => v === null || typeof v !== 'object' || Array.isArray(v) || nonPiano(v));
+    if (storta) {
+        console.error(`${file}: esiste gia' ma la voce "${storta[0]}" non e' { categoria, it }: non e' un piano leggibile, non lo sovrascrivo. Correggilo, spostalo o scegli un altro nome con --out.`);
+        process.exit(1);
+    }
+    return piano;
+};
+const pianoPrima = OUT ? leggiPianoEsistente(OUT) : null;
+
 const { categorie, perChiave } = leggiDizionario();
 console.log(`dizionario attuale: ${perChiave.size} tag in ${categorie.length} categorie\n`);
 
@@ -286,8 +337,41 @@ if (nuovi.length) {
 if (OUT) {
     const piano = {};
     nuovi.forEach(t => { piano[t] = { categoria: '', it: '' }; });
-    fs.writeFileSync(OUT, JSON.stringify(piano, null, 1));
+    // ITALIANO: le voci del piano di prima, confrontate con chiave() come i tag (un 'ZZQX_Beta' scritto
+    //   a mano e' 'zzqx beta'): se lo stesso tag c'e' due volte vince la voce riempita. Un tag ancora
+    //   nuovo tiene la sua voce, uno che non e' nei file di adesso resta nel piano, uno che nel
+    //   frattempo e' nel dizionario si toglie (--apply lo salterebbe comunque).
+    // ENGLISH: the entries of the earlier plan, compared with chiave() like the tags (a hand-written
+    //   'ZZQX_Beta' is 'zzqx beta'): when the same tag is there twice the filled entry wins. A tag
+    //   that is still new keeps its entry, one not in the current files stays in the plan, one that
+    //   meanwhile is in the dictionary is removed (--apply would skip it anyway).
+    let tenute = 0, fuori = 0, tolte = 0;
+    if (pianoPrima) {
+        const riempita = v => !!v && typeof v === 'object' && !Array.isArray(v) && (String(v.categoria ?? '').trim() !== '' || String(v.it ?? '').trim() !== '');
+        const prima = new Map();
+        for (const [tag, info] of Object.entries(pianoPrima)) {
+            const k = chiave(tag);
+            if (!k || (prima.has(k) && (riempita(prima.get(k).info) || !riempita(info)))) continue;
+            prima.set(k, { tag, info });
+        }
+        const nuoviPerChiave = new Map(nuovi.map(t => [chiave(t), t]));
+        for (const [k, { tag, info }] of prima) {
+            if (perChiave.has(k)) { tolte++; continue; }
+            const nome = nuoviPerChiave.get(k);
+            if (nome === undefined) fuori++;
+            piano[nome ?? tag] = info && typeof info === 'object' && !Array.isArray(info) ? info : { categoria: '', it: '' };
+            if (riempita(info)) tenute++;
+        }
+    }
+    const ordinato = {};
+    Object.keys(piano).sort().forEach(t => { ordinato[t] = piano[t]; });
+    fs.writeFileSync(OUT, JSON.stringify(ordinato, null, 1));
     console.log(`\nscritto ${OUT} — riempi "categoria" e "it" per ogni tag, poi --apply`);
+    if (pianoPrima) {
+        console.log(`${OUT} c'era gia': ${tenute === 1 ? "tenuta 1 voce gia' riempita" : `tenute ${tenute} voci gia' riempite`} (categoria e traduzione)`);
+        if (fuori) console.log(`  ${fuori === 1 ? "1 voce del piano non e' nei file di adesso: resta" : `${fuori} voci del piano non sono nei file di adesso: restano`} nel piano`);
+        if (tolte) console.log(`  ${tolte === 1 ? "1 voce del piano e' gia' nel dizionario: tolta" : `${tolte} voci del piano sono gia' nel dizionario: tolte`} dal piano`);
+    }
     console.log('categorie disponibili:');
     categorie.forEach(c => console.log(`  ${c.id.padEnd(20)} ${c.en}`));
 }

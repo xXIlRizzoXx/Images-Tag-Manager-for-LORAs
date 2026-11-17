@@ -52,11 +52,18 @@ const inizio = sorgente.indexOf('    const calculateImportSummary = (');
 const fine = /\r?\n    \};\r?\n/g; fine.lastIndex = inizio;
 const corpo = fine.exec(sorgente);
 if (inizio < 0 || !corpo) { console.log('NO  calculateImportSummary non trovata'); process.exit(1); }
-const codice = (await esbuild.transform(sorgente.slice(inizio, corpo.index + corpo[0].length), { loader: 'ts' })).code;
+// ITALIANO: con la chiave di backup vera (makeBackupKeyer di App.tsx): il riepilogo conta solo le voci di queste foto.
+// ENGLISH: with the real backup key (App.tsx's makeBackupKeyer): the summary counts only these photos' entries.
+const iChiave = sorgente.indexOf('const makeBackupKeyer = ');
+const fineChiave = /\r?\n\};\r?\n/g; fineChiave.lastIndex = Math.max(iChiave, 0);
+const corpoChiave = iChiave < 0 ? null : fineChiave.exec(sorgente);
+if (!corpoChiave) { console.log('NO  makeBackupKeyer non trovata'); process.exit(1); }
+const codice = (await esbuild.transform(sorgente.slice(iChiave, corpoChiave.index + corpoChiave[0].length) + '\n' +
+    sorgente.slice(inizio, corpo.index + corpo[0].length), { loader: 'ts' })).code;
 const riepilogoCon = (salvato, d) => {
     let stato = null;
-    new Function('makeFolderKeyer', 'setImportSummary', 'recuperoDellImport', 'localStorage', codice + '\nreturn calculateImportSummary;')(
-        S.makeFolderKeyer, (v) => { stato = v; }, B.recuperoDellImport, { getItem: (k) => (k === 'tagBackup' ? salvato : null) },
+    new Function('makeFolderKeyer', 'setImportSummary', 'recuperoDellImport', 'localStorage', 'BACKUP_KEY_SEP', codice + '\nreturn calculateImportSummary;')(
+        S.makeFolderKeyer, (v) => { stato = v; }, B.recuperoDellImport, { getItem: (k) => (k === 'tagBackup' ? salvato : null) }, B.BACKUP_KEY_SEP,
     )(d.imgFiles, d.txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf);
     return stato && stato.summary;
 };
@@ -130,6 +137,31 @@ console.log('\n--- foto gia\' aperte: l\'impronta dell\'import puo\' trovare un 
     void fab; void riaperto;
     await app.conferma(d);
     dice('b.png NON prende il backup senza che l\'utente l\'abbia visto', [], (app.images.find(i => i.file.name === 'b.png') || {}).tags || []);
+    // ITALIANO: d.png e' della cartella ma in un altro lotto: ora conta nell'impronta delle foto nuove (vedi
+    //           nomiImpronta in confermaImport), che e' quella del riepilogo (tutte e quattro). Come
+    //           riaprendo la cartella normalmente, il backup di tre foto non combacia: niente da chiedere.
+    // ENGLISH: d.png belongs to the folder but to another batch: it now counts in the new photos'
+    //          fingerprint (see nomiImpronta in confermaImport), which is the summary's (all four). As when
+    //          reopening the folder normally, the three-photo backup does not match: nothing to ask.
+    dice('le foto nuove hanno l\'impronta del riepilogo: il riepilogo non si riapre', undefined, ((app.riepilogoRiaperto || {}).summary || {}).recupero?.n);
+}
+{
+    // ITALIANO: la cartella riaperta con una foto in piu' (c.png) entra nel lotto di quelle gia' aperte: l'impronta
+    //           dell'import e' quella della sola c.png e trova il backup di quando la cartella aveva solo c.png,
+    //           che il riepilogo (tutte e tre) non annunciava: il riepilogo si riapre con la casella.
+    // ENGLISH: the folder reopened with one more photo (c.png) joins the batch of those already open: the import's
+    //          fingerprint is c.png's alone and finds the backup from when the folder held only c.png, which the
+    //          summary (all three) did not announce: the summary reopens with the checkbox.
+    const h3 = cartella('disco4', 'ds');
+    const prima3 = creaApp();
+    await prima3.conferma(riepilogo(h3, ['c.png']));
+    const salvato = JSON.stringify({ ts: 1, ...B.costruisciBackup(prima3.images.map(i => ({ ...i, tags: [...i.tags, 'nuovo'] })), [], 'ds') });
+    const app = creaApp({ backup: salvato });
+    await app.conferma(riepilogo(h3, ['a.png', 'b.png']));
+    const d = riepilogo(h3, ['a.png', 'b.png', 'c.png']);
+    dice('premessa: il riepilogo su tutte e tre non annuncia niente', null, B.recuperoDellImport(salvato, d.handle, d.imgFiles));
+    await app.conferma(d);
+    dice('c.png NON prende il backup senza che l\'utente l\'abbia visto', [], (app.images.find(i => i.file.name === 'c.png') || {}).tags || []);
     dice('il riepilogo si riapre con la casella (foto: 1)', 1, ((app.riepilogoRiaperto || {}).summary || {}).recupero?.n);
 }
 

@@ -45,7 +45,7 @@ const NOMI = ['progettoGenRef', 'aiCancelRequestedRef', 'setAiCancelRequested', 
     'imagesRef', 'fotoChiuseRef', 'releaseThumbnails', 'images', 'liberaAnteprimeProgetto', 'ultimoSvuotamento', 'setUltimoSvuotamento',
     'setImages', 'setGlobalTriggers', 'setSelectedForBulk', 'setStagedBulkTags', 'setCustomProjectTags', 'setDirHandle', 'setSelectedImageId',
     'setCopiedTags', 'setHistory', 'setHistoryIndex', 'discoNotoRef', 'soundManager', 'showNotification', 't', 'setConfirmDialog',
-    'setTagSearch', 'setBulkSearch'];
+    'setTagSearch', 'setBulkSearch', 'mcpFineRef'];
 const fabbrica = new Function(...NOMI, js + '\nreturn { closeProjectNow, handleResetProject };');
 
 // ITALIANO: l'app finta: ogni setter annota l'ultimo valore; le ricerche partono scritte.
@@ -61,6 +61,7 @@ const app = () => {
         soundManager: { chime() { }, pop() { } }, showNotification: nulla, t: {},
         setConfirmDialog: (d) => { stato.dialogo = d; },
         setTagSearch: (v) => { stato.tagSearch = v; }, setBulkSearch: (v) => { stato.bulkSearch = v; },
+        mcpFineRef: { current: null },
     };
     const f = fabbrica(...NOMI.map(n => (n in finti ? finti[n] : nulla)));
     return { stato, ...f };

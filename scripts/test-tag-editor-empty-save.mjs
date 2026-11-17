@@ -41,7 +41,7 @@ const ritaglia = async (intestazione, chiusura) => {
 const testo = (await ritaglia('export const serializeTagFile = (', /\r?\n\};\r?\n/g)) + '\n' +
     (await ritaglia('    const salvaEChiudiFile = async () => {', /\r?\n    \};\r?\n/g)) + '\n' +
     (await ritaglia('    const salva = async (forzaNuovoFile = false): Promise<boolean> => {', /\r?\n    \};\r?\n/g));
-const fabbrica = new Function('tags', 'fileName', 'rileggendo', 'handleRef', 'triggersRef', 'savedTagsRef', 'tagsRef', 'setDirty', 'setFileName',
+const fabbrica = new Function('tags', 'fileName', 'rileggendo', 'handleRef', 'triggersRef', 'formaJsonRef', 'savedTagsRef', 'tagsRef', 'setDirty', 'setFileName',
     'setChiusuraFile', 'azzera', 'soundManager', 'showNotification', 't', 'onFileSaved', 'window', 'document', 'URL', 'Blob',
     'inAttesa', 'setTags', 'setInputValue', 'uniqueTagsIgnoringCase', 'hasTagIgnoringCase',
     testo + '\nreturn { salva, salvaEChiudiFile };');
@@ -59,7 +59,7 @@ const editor = (tags, { attesa = [], conSelettore = true } = {}) => {
     };
     const finestra = conSelettore ? { async showSaveFilePicker() { r.aperturaSalvataggio++; return handle; } } : {};
     const documento = { createElement: () => ({ click() { r.scaricato = true; } }), body: { appendChild() { }, removeChild() { } } };
-    const conHandle = (h) => fabbrica(tags, 'img_001.txt', false, { current: h }, { current: [] }, { current: ['smile'] }, { current: tags },
+    const conHandle = (h) => fabbrica(tags, 'img_001.txt', false, { current: h }, { current: [] }, { current: null }, { current: ['smile'] }, { current: tags },
         () => { }, () => { }, () => { }, () => { r.chiuso = true; }, { chime() { }, pop() { } }, (m, tipo) => r.notifiche.push([m, tipo]), t,
         (nome, lista) => r.sincronizzati.push([nome, lista]), finestra, documento, URL, Blob,
         () => [...attesa], (v) => { r.tagMostrati = v; }, (v) => { r.casella = v; }, (l) => [...new Set(l)], (l, x) => l.includes(x));

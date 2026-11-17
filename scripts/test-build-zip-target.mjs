@@ -41,4 +41,4 @@ dice('portable .exe: nome di sempre', 'Images Tag Manager for LORAs 2.0.2.exe', 
 dice('portable .zip: il nome dice che e\' la portable', 'Images Tag Manager for LORAs 2.0.2 portable.zip', nome('zip', 'zip'));
 dice('i tre nomi sono diversi (nessun file ne copre un altro)', 3, new Set([nome('nsis', 'exe'), nome('portable', 'exe'), nome('zip', 'zip')]).size);
 
-esito();
+process.exit(esito());

@@ -61,7 +61,11 @@ dice('premessa: git segue almeno 4 file in electron/', true, seguiti.filter((s) 
 //           MCP e zod) in electron/mcp-server.cjs, che invece deve esserci (npm run build:mcp).
 // ENGLISH: the MCP server source is not shipped as is: it goes in bundled (with the MCP library and
 //          zod) as electron/mcp-server.cjs, which instead must be there (npm run build:mcp).
-const SORGENTI_IMPACCHETTATI = { 'electron/mcp-server.src.mjs': 'electron/mcp-server.cjs' };
+// ITALIANO: il ponte dell'estensione per Claude Desktop entra come testo nella pagina (dist), che lo
+//           mette nel file .mcpb: dentro il programma non gira mai.
+// ENGLISH: the Claude Desktop extension bridge goes in as text inside the page (dist), which puts it
+//          in the .mcpb file: it never runs inside the program.
+const SORGENTI_IMPACCHETTATI = { 'electron/mcp-server.src.mjs': 'electron/mcp-server.cjs', 'electron/claude-bridge.cjs': 'dist/index.html' };
 for (const rel of seguiti) {
     if (SORGENTI_IMPACCHETTATI[rel]) {
         dice(`${rel} entra impacchettato come ${SORGENTI_IMPACCHETTATI[rel]}`, [false, true], [spedito(rel), spedito(SORGENTI_IMPACCHETTATI[rel])]);

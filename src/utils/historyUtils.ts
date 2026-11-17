@@ -107,13 +107,22 @@ const stessaFotoASchermo = (a: any, b: any): boolean => {
 //   equal: typing a trigger the photos already have (reopened dataset) changes only the box, and that
 //   step was skipped together with the edit before it.
 const stesseTrigger = (a: string[], b: string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+// ITALIANO: `elenco` = lo stesso per l'elenco dei tag del progetto («Visualizza tutti i tag»), che
+//   Ctrl+Z ora rimette come le trigger: la X su un tag che nessuna foto ha cambia solo l'elenco, e
+//   quel passo veniva saltato insieme alla modifica di prima (che Ctrl+Z annullava al suo posto).
+// ENGLISH: `elenco` = the same for the project tag list ("View all tags"), which Ctrl+Z now puts back
+//   like the triggers: the X on a tag no photo has changes only the list, and that step was skipped
+//   together with the edit before it (which Ctrl+Z undid instead).
 export const nearestDifferentStep = <T>(history: T[][], index: number, direction: 1 | -1,
-    trigger?: { passi: (string[] | undefined)[]; attuali: string[] }): number => {
+    trigger?: { passi: (string[] | undefined)[]; attuali: string[] },
+    elenco?: { passi: (string[] | undefined)[]; attuali: string[] }): number => {
     const attuale = history[index] || [];
     const uguale = (passo: T[], j: number) => {
         if (passo.length !== attuale.length || !passo.every((foto, k) => stessaFotoASchermo(foto, attuale[k]))) return false;
         const delPasso = trigger?.passi[j];
-        return !delPasso || passo.length === 0 || stesseTrigger(delPasso, trigger!.attuali);
+        if (delPasso && passo.length > 0 && !stesseTrigger(delPasso, trigger!.attuali)) return false;
+        const elencoDelPasso = elenco?.passi[j];
+        return !elencoDelPasso || passo.length === 0 || stesseTrigger(elencoDelPasso, elenco!.attuali);
     };
     for (let j = index + direction; j >= 0 && j < history.length; j += direction) {
         if (!uguale(history[j], j)) return j;

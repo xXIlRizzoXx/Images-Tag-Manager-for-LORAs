@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     trashFiles: (paths) => ipcRenderer.invoke('shell:trash-files', paths),
     // ITALIANO: rimette al loro posto i file finiti nel Cestino di Windows (annulla lo svuotamento)
     // ENGLISH: puts files that reached the Windows Recycle Bin back where they were (undo the empty)
-    restoreTrashed: (paths) => ipcRenderer.invoke('shell:restore-trashed', paths),
+    restoreTrashed: (paths, finoA) => ipcRenderer.invoke('shell:restore-trashed', paths, finoA),
     // ITALIANO: nessun percorso attraversa il ponte in entrata: la pagina dice solo "sto per far
     //           scegliere una cartella" e poi "dammi quello che hai visto". Il percorso lo conosce
     //           e lo valida il processo principale.
@@ -60,6 +60,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     //          and then "hand me what you saw". The path is known and validated by the main process.
     beginFolderPick: () => ipcRenderer.invoke('folder:begin-pick'),
     takePickedFolderPath: (proofs) => ipcRenderer.invoke('folder:take-picked-dir', proofs),
+    // ITALIANO: avviso del processo principale: la cartella scelta o trascinata e' protetta e resta
+    //           chiusa (cartelle di Windows, dei programmi o dei dati del programma). Non porta dati.
+    // ENGLISH: notice from the main process: the picked or dropped folder is protected and stays
+    //          closed (Windows, program or program-data folders). It carries no data.
+    onFolderRestricted: (cb) => {
+        const ascolta = () => { if (typeof cb === 'function') cb(); };
+        ipcRenderer.on('folder:restricted', ascolta);
+        return () => ipcRenderer.removeListener('folder:restricted', ascolta);
+    },
     // ITALIANO: apre un indirizzo web nel browser di sistema (solo http/https)
     // ENGLISH: opens a web address in the system browser (http/https only)
     openExternal: (url) => ipcRenderer.invoke('shell:open-external', String(url)),
@@ -86,5 +95,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return () => ipcRenderer.removeListener('mcp:request', ascolta);
         },
         respond: (id, risposta) => ipcRenderer.send('mcp:response', { id, risposta }),
+        // ITALIANO: lo stato nuovo, quando un'AI si fa viva. ENGLISH: the new state, when an AI shows up.
+        onStatus: (cb) => {
+            const ascolta = (_event, stato) => { if (typeof cb === 'function') cb(stato); };
+            ipcRenderer.on('mcp:status', ascolta);
+            return () => ipcRenderer.removeListener('mcp:status', ascolta);
+        },
     },
 });
