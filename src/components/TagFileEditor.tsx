@@ -55,7 +55,11 @@ export const parseTagFile = (text: string, fileName: string): string[] => {
     let raw: unknown[] = [];
     if (isJson) {
         if (Array.isArray(parsed)) raw = parsed;
-        else if (parsed && Array.isArray(parsed.tags)) raw = [...(parsed.globalTriggers || []), ...parsed.tags];
+        // ITALIANO: globalTriggers solo se e' un elenco, come nell'import dei tag del progetto: un testo
+        //           ("ohwx") veniva sparso lettera per lettera in «o», «h», «w», «x».
+        // ENGLISH: globalTriggers only when it is a list, as in the project tag import: a text ("ohwx")
+        //          was spread letter by letter into "o", "h", "w", "x".
+        else if (parsed && Array.isArray(parsed.tags)) raw = [...(Array.isArray(parsed.globalTriggers) ? parsed.globalTriggers : []), ...parsed.tags];
         else throw new Error('JSON senza elenco di tag');
         // ITALIANO: i tag devono essere testo (o numeri), non oggetti/array. Senza questo controllo
         //           un elenco di oggetti diventava un unico tag "[object Object]" e, salvando, il
@@ -66,6 +70,11 @@ export const parseTagFile = (text: string, fileName: string): string[] => {
         if (raw.some(x => x !== null && typeof x === 'object')) {
             throw new Error('JSON senza elenco di tag');
         }
+        // ITALIANO: le voci null (e undefined) si saltano, come nell'import dei tag del progetto:
+        //           String(null) diventava il tag «null», anche nell'elenco del progetto e nel file salvato.
+        // ENGLISH: null (and undefined) entries are skipped, as in the project tag import: String(null)
+        //          became the tag "null", in the project list and in the saved file too.
+        raw = raw.filter(x => x !== null && x !== undefined);
         // ITALIANO: una voce con una virgola dentro ("red hair, blue eyes") si divide come nel TXT:
         //           nel .txt salvato tornava come due tag, con doppioni.
         // ENGLISH: an entry with a comma inside ("red hair, blue eyes") is split as in the TXT: in the
@@ -89,7 +98,7 @@ export const parseTagTriggers = (text: string, fileName: string): string[] => {
     try {
         const parsed = JSON.parse(text);
         if (parsed && Array.isArray(parsed.globalTriggers)) {
-            const puliti = (parsed.globalTriggers as unknown[]).flatMap(x => String(x).split(/[,\n\r]+/)).map(x => x.trim()).filter(Boolean);
+            const puliti = (parsed.globalTriggers as unknown[]).filter(x => x !== null && x !== undefined).flatMap(x => String(x).split(/[,\n\r]+/)).map(x => x.trim()).filter(Boolean);
             return [...new Set(puliti)];
         }
     } catch (_) { /* ITALIANO: gestito da parseTagFile — ENGLISH: handled by parseTagFile */ }
@@ -131,7 +140,9 @@ export const serializeTagFile = (tags: string[], fileName: string, triggers: str
         const rest = tags.filter(x => !trig.includes(x));
         if (forma) {
             const fuori: Record<string, unknown> = { ...forma, tags: rest };
-            if ('globalTriggers' in forma || trig.length > 0) fuori.globalTriggers = trig;
+            // ITALIANO: un globalTriggers che non e' un elenco (parseTagFile lo ignora) resta com'era.
+            // ENGLISH: a globalTriggers that is not a list (parseTagFile ignores it) stays as it was.
+            if (Array.isArray(forma.globalTriggers) || trig.length > 0) fuori.globalTriggers = trig;
             return JSON.stringify(fuori, null, 2);
         }
         return JSON.stringify({ app: 'Images Tag Manager for LORAs', type: 'project-tags', version: 1, globalTriggers: trig, tags: rest }, null, 2);

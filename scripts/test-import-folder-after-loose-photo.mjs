@@ -120,20 +120,23 @@ console.log('\n--- quello che NON deve cambiare ---');
     await app1.conferma(riepilogo(F(), ['a.png', 'b.png']));
     await app1.conferma(riepilogo(F(), TUTTE));
     dice('premessa: c.png nello stesso lotto di a.png e b.png', 1, new Set(app1.images.map(i => i.lottoImport)).size);
-    dice('...e senza nomi in piu\' per l\'impronta', [], app1.images.filter(i => Array.isArray(i.nomiImpronta) && i.nomiImpronta.length > 0).map(i => i.file.name));
+    dice('...e senza nomi in piu\' per l\'impronta', [], app1.images.filter(i => Array.isArray(i.aperteImpronta) && i.aperteImpronta.length > 0).map(i => i.file.name));
     const st = memoria();
     C.scriviBackupSubito(st, modifica(app1.images, 'c.png', 'nuova'), [], 'F', [], new Set());
     dice('l\'impronta e\' quella della cartella intera', [B.folderSignature('F', TUTTE)], JSON.parse(st.valore).sources.map(s => s.signature));
 }
 {
-    // ITALIANO: verso 1, la foto sciolta modificata: il suo lotto conserva la sua impronta (solo a.png).
-    // ENGLISH: direction 1, the loose photo edited: its batch keeps its own fingerprint (a.png only).
+    // ITALIANO: verso 1, la foto sciolta modificata: il suo lotto conserva la sua impronta (solo a.png), e la
+    //           modifica entra anche nella sorgente della cartella intera (test-backup-already-open-photos).
+    // ENGLISH: direction 1, the loose photo edited: its batch keeps its own fingerprint (a.png only), and the
+    //          edit also goes into the whole folder's source (test-backup-already-open-photos).
     const app1 = creaApp();
     await app1.conferma(sciolte('E:' + BS + 'F', ['a.png']));
     await app1.conferma(riepilogo(F(), TUTTE));
     const st = memoria();
     C.scriviBackupSubito(st, modifica(app1.images, 'a.png', 'sciolta'), [], 'F', [], new Set());
-    dice('la foto sciolta modificata: impronta della sola a.png', [B.folderSignature('', ['a.png'])], JSON.parse(st.valore).sources.map(s => s.signature));
+    dice('la foto sciolta modificata: impronta della sola a.png, e quella della cartella intera', [B.folderSignature('', ['a.png']), B.folderSignature('F', TUTTE)].sort(),
+        JSON.parse(st.valore).sources.map(s => s.signature).sort());
     const app2 = creaApp({ backup: dopoIlCrash(st.valore) });
     await app2.conferma(sciolte('E:' + BS + 'F', ['a.png']), true);
     dice('...e ricaricandola da sola torna la modifica', ['sciolta'], tagDi(app2, 'a.png'));

@@ -50,12 +50,15 @@ if (m) {
         const r = { importate: null, notifiche: [], chiuso: false };
         const confermaImport = new Function('importSummary', 'window', 'fotoGiaAperte', 'imagesRef', 'percorsiSuDisco', 'setImportSummary',
             'folderInputRef', 'showNotification', 't', 'processImportData', 'progettoGenRef', 'asDirHandle', 'importInCorsoRef', 'nuovoIdFoto',
-            'makeFolderKeyer', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setImages', 'setHistory', codice + '\nreturn confermaImport;')(
+            'makeFolderKeyer', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setImages', 'setHistory', 'makeBackupKeyer', codice + '\nreturn confermaImport;')(
             { pendingData: { imgFiles: inArrivo, txtFiles: [], handle: null, folderOf: null, relPathOf: null, pathOf: percorso, cartellaRelOf: null } },
             {}, A.fotoGiaAperte, { current: aperte.map(p => ({ p, file: { name: '' } })) }, (img) => ({ imgPath: img.p, txtPath: '' }),
             () => { r.chiuso = true; }, { current: null }, (msg, tipo) => r.notifiche.push([msg, tipo]), t,
             async (...arg) => { r.importate = arg[0].map(f => f.name); r.giaAperte = arg[7]; }, { current: 0 }, () => null, { current: [] },
-            () => 'lotto', S.makeFolderKeyer, { current: false }, { current: false }, () => { }, () => { });
+            () => 'lotto', S.makeFolderKeyer, { current: false }, { current: false }, () => { }, () => { },
+            // ITALIANO: la chiave di backup delle foto gia' aperte (aperteImpronta in confermaImport).
+            // ENGLISH: the backup key of the photos already open (aperteImpronta in confermaImport).
+            () => (f) => '\x1f' + f.name);
         await confermaImport();
         return r;
     };

@@ -70,14 +70,14 @@ dice('una foto da 1024x1024: nessun avviso', null, testo(1024, 1024));
 dice('una foto da 24 megapixel: nessun avviso', null, testo(4000, 6000));
 
 // ITALIANO: le tre schede che mostrano l'avviso devono passare dalla regola: nessun confronto
-//           "larghezza x altezza < 1048576" scritto a mano deve restare nei sorgenti.
+//           "larghezza x altezza < 1000000" (o il vecchio 1048576) scritto a mano deve restare nei sorgenti.
 // ENGLISH: the three cards showing the warning must go through the rule: no hand-written
-//          "width x height < 1048576" comparison may be left in the sources.
+//          "width x height < 1000000" (or the old 1048576) comparison may be left in the sources.
 console.log('\n--- src/App.tsx e src/components/Lightbox.tsx ---');
 {
     const app = fs.readFileSync(path.join(radice, 'src/App.tsx'), 'utf8');
     const visore = fs.readFileSync(path.join(radice, 'src/components/Lightbox.tsx'), 'utf8');
-    const crudo = /\.width \* \w+\.height < 1048576/g;
+    const crudo = /\.width \* \w+\.height < (1048576|1000000|1e6)/g;
     dice('App.tsx: nessun confronto scritto a mano (galleria e cestino)', 0, (app.match(crudo) || []).length);
     dice('Lightbox.tsx: nessun confronto scritto a mano (visualizzatore)', 0, (visore.match(crudo) || []).length);
     dice('App.tsx: la galleria e il cestino usano la regola', true, (app.match(/qualityWarningText\(t, img\.width, img\.height(, lang)?\)/g) || []).length >= 2);

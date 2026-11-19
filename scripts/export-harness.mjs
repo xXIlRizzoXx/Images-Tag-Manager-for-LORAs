@@ -148,8 +148,18 @@ export const cartellaFinta = (attuali) => ({
    rename) presses "Export" in the choice dialog. Returns notifications, the choice shown, the
    archive bytes and how the destination file ended. `ordine` = the "Sort by" choice (the app's
    sortOrder). */
-export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc', lang = 'en' } = {}) => {
-    const r = { notifiche: [], scelta: null, pezzi: [], chiuso: false, annullato: false, scaricato: null };
+// ITALIANO: `fileDiPrima` = i byte del file scelto subito dopo la finestra «Salva». Chromium crea il
+//           file o lo svuota quando l'utente conferma (0, il valore normale); le scritture vanno in un
+//           file di scambio che close() porta sul file e abort() butta. `r.sulDisco` = i byte del file
+//           scelto adesso, `r.rimosso` = il file e' stato tolto (handle.remove()).
+// ENGLISH: `fileDiPrima` = the bytes of the chosen file right after the "Save" dialog. Chromium creates
+//          the file or empties it when the user confirms (0, the normal value); writes go to a swap
+//          file that close() moves onto the file and abort() throws away. `r.sulDisco` = the chosen
+//          file's bytes now, `r.rimosso` = the file was removed (handle.remove()).
+// ITALIANO: `discoPieno` = la prima scrittura fallisce come con il disco pieno.
+// ENGLISH: `discoPieno` = the first write fails as with a full disk.
+export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc', lang = 'en', fileDiPrima = 0, discoPieno = false } = {}) => {
+    const r = { notifiche: [], scelta: null, pezzi: [], chiuso: false, annullato: false, scaricato: null, sulDisco: fileDiPrima, rimosso: false };
     const finestra = {};
     if (conFinestra) {
         finestra.showSaveFilePicker = async () => {
@@ -161,6 +171,7 @@ export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc'
                 name: 'dataset.zip',
                 createWritable: async () => ({
                     write: async (pezzo) => {
+                        if (discoPieno) throw new DOMException('There is not enough space on the disk', 'QuotaExceededError');
                         const b = pezzo instanceof Uint8Array ? pezzo : new Uint8Array(pezzo);
                         // ITALIANO: il disco vero ci mette un po': il pezzo conta come scritto solo
                         //           dopo, cosi' uno scrittore che non aspetta il disco si vede.
@@ -170,9 +181,11 @@ export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc'
                         r.pezzi.push(Buffer.from(b));
                         sonda.scrittura(b.length);
                     },
-                    close: async () => { r.chiuso = true; },
+                    close: async () => { r.chiuso = true; r.sulDisco = r.pezzi.reduce((n, p) => n + p.length, 0); },
                     abort: async () => { r.annullato = true; },
                 }),
+                getFile: async () => ({ size: r.sulDisco }),
+                remove: async () => { r.rimosso = true; },
             };
         };
     }

@@ -44,7 +44,7 @@ import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, leggiTestoSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore, txtCambiatoSulDisco, testoTxtSulDisco } from './utils/sidecarTags';
 import { BACKUP_KEY_SEP, folderSignature, backupDellImport, recuperoDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
-import { isLetterShortcut, isTextEditingElement } from './utils/shortcuts';
+import { isLetterShortcut, isTextEditingWithText } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
 import { useChiusuraSfondo } from './utils/backdropClose';
 import { avvisoImport } from './utils/importNotice';
@@ -872,6 +872,18 @@ export default function App() {
             elencoRegistratoRef.current = customProjectTags;
             return;
         }
+        // ITALIANO: a galleria vuota niente passo (come handleGlobalTagsChange per le trigger): sarebbe un
+        //           passo vuoto, che Ctrl+Z salta sempre, ma tagliava i passi da rifare (dopo un Ctrl+Z
+        //           oltre l'import le foto non tornavano piu') e restava in mezzo prima dell'import, dove
+        //           «Annulla lo svuotamento» lo riempiva. L'import dopo registra l'elenco nel suo passo.
+        // ENGLISH: with an empty gallery no step (like handleGlobalTagsChange for the triggers): it would be
+        //          an empty step, which Ctrl+Z always skips, but it cut the steps to redo (after a Ctrl+Z
+        //          past the import the photos never came back) and stayed before the import, where "Undo
+        //          the emptying" filled it. The import after records the list in its own step.
+        if (images.length === 0) {
+            elencoRegistratoRef.current = customProjectTags;
+            return;
+        }
         setImages(prev => [...prev]);
     }, [customProjectTags]);
 
@@ -1241,7 +1253,11 @@ export default function App() {
             //           il cursore dello zoom no, e dopo averlo trascinato Ctrl+Z restava muto.
             // ENGLISH: only fields where text is typed keep Ctrl+Z for themselves (see isTextEditingElement):
             //          the zoom slider does not, and after dragging it Ctrl+Z stayed silent.
-            if (isTextEditingElement(document.activeElement as any)) {
+            // ITALIANO: e solo se hanno del testo (isTextEditingWithText): dopo Invio la casella dei tag
+            //           resta vuota col fuoco, e Ctrl+Z non annullava il tag appena aggiunto.
+            // ENGLISH: and only when they hold text (isTextEditingWithText): after Enter the tag box
+            //          stays empty with the focus, and Ctrl+Z did not undo the tag just added.
+            if (isTextEditingWithText(document.activeElement as any)) {
                 return;
             }
             // ITALIANO: con una finestra aperta SOPRA il progetto, Ctrl+Z non lo tocca: nell'editor
@@ -3775,7 +3791,18 @@ export default function App() {
             //          normal reopening finds it. The fingerprint used to count the new photos only: after a crash
             //          reopening the folder did not offer their unsaved edits, and the other way round a recovery
             //          announced by the summary was not applied.
-            const nomiImpronta = ([...doppi.entries()] as any[]).filter(([, a]) => !a || String(a.lotto || '') !== lotto).map(([f]) => String(f.name || ''));
+            const altroLotto = ([...doppi.entries()] as any[]).filter(([, a]) => !a || String(a.lotto || '') !== lotto);
+            const nomiImpronta = altroLotto.map(([f]) => String(f.name || ''));
+            // ITALIANO: e chi sono: l'id della foto aperta e la chiave di backup che quel file ha in QUESTA
+            //           cartella. Col solo nome, 0001.png di 10_face e di 20_body sembravano la stessa foto
+            //           (l'impronta scritta perdeva le due di 10_face), e la modifica non salvata di una foto
+            //           aperta per prima non entrava mai nella sorgente della cartella intera.
+            // ENGLISH: and who they are: the open photo's id and the backup key that file has in THIS
+            //          folder. With the name alone, 10_face's and 20_body's 0001.png looked like the same
+            //          photo (the written fingerprint lost the two of 10_face), and the unsaved edit of a photo
+            //          opened first never reached the whole folder's source.
+            const chiaveQui = makeBackupKeyer(d.folderOf, d.relPathOf);
+            const aperteImpronta = altroLotto.map(([f, a]) => ({ id: a && a.id ? String(a.id) : '', nome: String(f.name || ''), chiave: chiaveQui(f) }));
             // ITALIANO: i .txt delle foto gia' aperte non si rileggono: l'avviso di fine import li
             //           contava di nuovo fra i saltati o gli accorciati (un errore al posto di "N foto
             //           caricate"). Resta ogni .txt che serve a una foto nuova (a.png aperta e a.jpg nuova
@@ -3803,7 +3830,14 @@ export default function App() {
             let recuperoNuove: { n: number; ts: number | null } | null = null;
             try {
                 const chiaveDi = makeBackupKeyer(d.folderOf, d.relPathOf), fogliaDi = makeBackupKeyer(d.folderOf, null);
-                recuperoNuove = recuperoDellImport(localStorage.getItem('tagBackup'), d.handle, [...nuove, ...nomiImpronta.map(name => ({ name }))], nuove.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]));
+                // ITALIANO: contano anche le voci delle foto gia' aperte altrove: processImportData le rimette
+                //           su quelle foto (vedi aperteImpronta). Prima il riepilogo le annunciava, l'import
+                //           non le applicava e alla riscrittura del backup sparivano.
+                // ENGLISH: the entries of the photos already open elsewhere count too: processImportData puts
+                //          them back on those photos (see aperteImpronta). The summary used to announce them,
+                //          the import did not apply them and they vanished when the backup was rewritten.
+                recuperoNuove = recuperoDellImport(localStorage.getItem('tagBackup'), d.handle, [...nuove, ...nomiImpronta.map(name => ({ name }))],
+                    [...nuove.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]), ...aperteImpronta.filter(v => v.id).map(v => v.chiave)]);
             } catch (_) { recuperoNuove = null; }
             if (recuperoNuove && !chiesto) {
                 if (folderInputRef.current) folderInputRef.current.value = '';
@@ -3811,13 +3845,15 @@ export default function App() {
                 return;
             }
             voce.foto = nuove.map((f: any) => ({ ...descritte.get(f), lotto, cartellaImport: importFolder }));
-            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto, recuperaBackup !== false && !!recuperoNuove, nomiImpronta);
+            await processImportData(nuove, txtFiles, d.handle, d.folderOf, d.relPathOf, d.pathOf, d.cartellaRelOf, doppi.size, lotto, recuperaBackup !== false && !!recuperoNuove, nomiImpronta,
+                aperteImpronta, () => imagesRef.current);
         } finally {
             importInCorsoRef.current = importInCorsoRef.current.filter(v => v !== voce);
         }
     };
 
-    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0, lottoDaRiusare = '', recuperaBackup = true, nomiImpronta: string[] = []) => {
+    const processImportData = async (imgFiles: any[], txtFiles: any[], handle: any = null, folderOf: Map<any, any> | null = null, relPathOf: Map<any, string> | null = null, pathOf: Map<any, string> | null = null, cartellaRelOf: Map<any, string> | null = null, giaAperte = 0, lottoDaRiusare = '', recuperaBackup = true, nomiImpronta: string[] = [],
+        aperteImpronta: { id: string; nome: string; chiave: string }[] = [], leggiAperte: (() => any[]) | null = null) => {
         setImportSummary({ isOpen: false, summary: null, pendingData: null });
         // ITALIANO: la cartella globale serve solo come "cartella corrente" (backup anti-crash,
         //           visualizzatore). NON la azzeriamo se questo import non ne ha una — prima
@@ -3872,7 +3908,10 @@ export default function App() {
                     // ITALIANO: solo la sorgente con le chiavi di queste foto (vedi backupDellImport).
                     // ENGLISH: only the source holding these photos' keys (see backupDellImport).
                     const chiaveDi = makeBackupKeyer(folderOf, relPathOf), fogliaDi = makeBackupKeyer(folderOf, null);
-                    backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature, imgFiles.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]));
+                    // ITALIANO: con le chiavi delle foto gia' aperte altrove (vedi aperteImpronta).
+                    // ENGLISH: with the keys of the photos already open elsewhere (see aperteImpronta).
+                    backup = backupDellImport(localStorage.getItem('tagBackup'), importFolder, importSignature,
+                        [...imgFiles.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]), ...aperteImpronta.filter(v => v.id).map(v => v.chiave)]);
                 } catch (_) { backup = null; }
             }
             const backupMap = backup ? backup.voci : null;
@@ -4061,10 +4100,12 @@ export default function App() {
                     lottoImport,
                     cartellaImport: importFolder,
                     // ITALIANO: le foto della cartella gia' aperte in un altro lotto: contano nell'impronta del backup
-                    //           di questo lotto (vedi costruisciBackup e confermaImport).
+                    //           di questo lotto, e la loro modifica entra nella sua sorgente (vedi costruisciBackup
+                    //           e confermaImport).
                     // ENGLISH: the folder's photos already open in another batch: they count in this batch's backup
-                    //          fingerprint (see costruisciBackup and confermaImport).
-                    ...(nomiImpronta.length > 0 ? { nomiImpronta } : {}),
+                    //          fingerprint, and their edit goes into its source (see costruisciBackup and
+                    //          confermaImport).
+                    ...(aperteImpronta.length > 0 ? { aperteImpronta } : {}),
                     // ITALIANO: percorso VERO del file sul disco, quello che serve a Windows per
                     //           mandarlo nel Cestino. Vuoto quando non si conosce: cartella di rete
                     //           (dove il Cestino di Windows non esiste), oppure fuori da Electron.
@@ -4112,8 +4153,34 @@ export default function App() {
                 return;
             }
             newImages.forEach(img => { if (img.thumb) anteprimeProgettoRef.current.add(img.thumb); });
+            // ITALIANO: le voci del backup delle foto di questa cartella gia' aperte in un altro lotto (vedi
+            //           aperteImpronta) tornano su quelle foto, con la regola di tagDaRipristinare, solo se la
+            //           foto aperta non ha modifiche sue (i suoi tag sono quelli del .txt piu' le trigger) e il
+            //           .txt non e' cambiato dopo il backup. Prima il riepilogo le annunciava, non tornavano, e
+            //           alla riscrittura del backup sparivano per sempre. Nello stesso passo dell'import.
+            // ENGLISH: the backup entries of this folder's photos already open in another batch (see
+            //          aperteImpronta) go back on those photos, with tagDaRipristinare's rule, only when the
+            //          open photo has no edits of its own (its tags are the .txt's plus the triggers) and the
+            //          .txt has not changed since the backup. The summary used to announce them, they did not
+            //          come back, and they vanished for good when the backup was rewritten. In the same step as
+            //          the import.
+            const daRimettere = new Map<string, { prima: string[]; tags: string[] }>();
+            if (backupMap && leggiAperte && aperteImpronta.length > 0) {
+                const chiaveDellId = new Map(aperteImpronta.filter(v => v.id).map(v => [v.id, v.chiave]));
+                for (const img of leggiAperte()) {
+                    const chiave = chiaveDellId.get(String(img.id));
+                    if (!chiave || img.isTrashed || img.baseTxtNonLetto || !Object.prototype.hasOwnProperty.call(backupMap, chiave)) continue;
+                    const comeDalTxt = tagDiImport(triggerAttive, img.originalTags || []).tags;
+                    if (JSON.stringify([...img.tags].sort()) !== JSON.stringify([...comeDalTxt].sort())) continue;
+                    const ripresi = tagDaRipristinare(backupMap[chiave], img.tags, img.originalTags || [], triggerAttive);
+                    if (ripresi) daRimettere.set(String(img.id), { prima: img.tags, tags: ripresi });
+                }
+                restoredCount += daRimettere.size;
+            }
             setImages(prev => {
-                const combined = [...prev, ...newImages];
+                const combined = [...(daRimettere.size > 0
+                    ? prev.map(p => { const r = daRimettere.get(String(p.id)); return r && p.tags === r.prima ? { ...p, tags: r.tags } : p; })
+                    : prev), ...newImages];
                 return combined.sort((a, b) => a.file.name.localeCompare(b.file.name));
             });
             soundManager.chime();
@@ -5912,17 +5979,28 @@ export default function App() {
                     suggestedName: nomeSuggerito,
                     types: [{ description: 'ZIP', accept: { 'application/zip': ['.zip'] } }],
                 });
-                const writable = await handle.createWritable();
+                let writable: any = null;
                 try {
+                    writable = await handle.createWritable();
                     await scriviZip(voci, { write: (pezzo) => writable.write(pezzo) }, { onAvanzamento: avanzamento });
                 } catch (errScrittura) {
                     // ITALIANO: si butta via, NON si chiude: close() SALVEREBBE il pezzo scritto
                     //           fin qui, e resterebbe sul disco un dataset.zip troncato che
-                    //           sembra buono. abort() lascia il file di prima com'era.
+                    //           sembra buono. abort() butta solo il file di scambio: il file scelto
+                    //           l'ha gia' creato (o svuotato) la finestra «Salva», e restava un
+                    //           dataset.zip da 0 byte mentre l'avviso dice «non e' stato creato».
+                    //           Lo si toglie, ma solo se e' davvero vuoto.
                     // ENGLISH: discard it, do NOT close: close() would SAVE the part written so
                     //          far, leaving a truncated dataset.zip on disk that looks fine.
-                    //          abort() leaves the previous file as it was.
-                    try { await writable.abort(); } catch (_) { }
+                    //          abort() throws away only the swap file: the "Save" dialog already
+                    //          created (or emptied) the chosen file, and a 0-byte dataset.zip was
+                    //          left while the notice says "was not created". It is removed, but
+                    //          only when it really is empty.
+                    if (writable) { try { await writable.abort(); } catch (_) { } }
+                    try {
+                        const rimasto = typeof handle.getFile === 'function' ? await handle.getFile() : null;
+                        if (rimasto && rimasto.size === 0 && typeof handle.remove === 'function') await handle.remove();
+                    } catch (_) { }
                     throw errScrittura;
                 }
                 await writable.close();

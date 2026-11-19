@@ -47,3 +47,19 @@ export const isTextEditingElement = (el: { tagName?: string; type?: string; isCo
     if (tag !== 'INPUT') return false;
     return !INPUT_SENZA_TESTO.has(String(el.type || '').toLowerCase());
 };
+
+// ITALIANO: il fuoco e' in un campo di testo che ha del testo da annullare? Un <input> o una
+//   <textarea> VUOTI no: dopo Invio la casella dei tag si svuota e tiene il fuoco, e Ctrl+Z restava
+//   muto finche' non si cliccava altrove. Un elemento contenteditable conta sempre (per prudenza), e
+//   anche un campo senza `value` di tipo testo. Limite noto: chi cancella tutto il testo con Backspace
+//   e preme Ctrl+Z annulla l'ultima azione del progetto invece di riavere il testo.
+// ENGLISH: is the focus in a text field that has text to undo? An EMPTY <input> or <textarea> does
+//   not: after Enter the tag box empties and keeps the focus, and Ctrl+Z stayed silent until a click
+//   elsewhere. A contenteditable element always counts (to be safe), and so does a field whose
+//   `value` is not a string. Known limit: someone who deletes all the text with Backspace and presses
+//   Ctrl+Z undoes the project's last action instead of getting the text back.
+export const isTextEditingWithText = (el: { tagName?: string; type?: string; isContentEditable?: boolean; value?: unknown } | null | undefined): boolean => {
+    if (!isTextEditingElement(el)) return false;
+    if (el!.isContentEditable) return true;
+    return !(typeof el!.value === 'string' && el!.value === '');
+};

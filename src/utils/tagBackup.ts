@@ -68,6 +68,14 @@ export type FotoChiusa = { id: string; name: string; lotto: string; cartella: st
 
 type VoceBackup = { tags: string[]; base: string };
 
+// ITALIANO: una foto della cartella gia' aperta in un ALTRO lotto quando il lotto e' entrato (vedi
+//   aperteImpronta in confermaImport): `id` = la foto aperta ('' se non si conosce), `chiave` = la
+//   chiave di backup che quel file ha in QUESTA cartella.
+// ENGLISH: a photo of the folder already open in ANOTHER batch when the batch came in (see
+//   aperteImpronta in confermaImport): `id` = the open photo ('' when unknown), `chiave` = the backup
+//   key that file has in THIS folder.
+export type FotoAltrove = { id: string; nome: string; chiave: string };
+
 // ITALIANO: una sorgente del backup = le voci di una cartella. `visto` = l'ultima volta che l'hanno
 //   scritta le foto in memoria (la data generale `ts` non serve: ogni scrittura la rinnova); `lotto`
 //   = l'import che l'ha scritta (lottoImport). Tutti e due mancano nei backup scritti prima.
@@ -172,33 +180,46 @@ const scaduta = (s: any, ora: number): boolean => typeof s.visto === 'number' &&
 //   scriviBackupSubito and sorgentiDaTenere); null = none known, as before.
 export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, cartellaCorrente: string, precedente: string | null = null, triggers: string[] = [], lottiSessione: Set<string> | null = null): { folder: string; sources: SorgenteBackup[] } | null => {
     const ora = Date.now();
-    const lotti = new Map<string, { cartella: string; nomi: string[]; data: Record<string, VoceBackup>; voci: number; vivi: number; extra: Set<string> }>();
+    const lotti = new Map<string, { cartella: string; nomi: string[]; chiavi: Set<string>; data: Record<string, VoceBackup>; voci: number; vivi: number; extra: Map<string, FotoAltrove> }>();
     const lottoDi = (lotto: string, cartella: string) => {
         let l = lotti.get(lotto);
-        if (!l) { l = { cartella: '', nomi: [], data: {}, voci: 0, vivi: 0, extra: new Set() }; lotti.set(lotto, l); }
+        if (!l) { l = { cartella: '', nomi: [], chiavi: new Set(), data: {}, voci: 0, vivi: 0, extra: new Map() }; lotti.set(lotto, l); }
         if (cartella) l.cartella = cartella;
         return l;
     };
-    // ITALIANO: `nomiImpronta` (vedi confermaImport) = le foto della stessa cartella gia' aperte in un ALTRO
+    // ITALIANO: `aperteImpronta` (vedi confermaImport) = le foto della stessa cartella gia' aperte in un ALTRO
     //   lotto quando questo e' entrato (per esempio a.png caricata prima da sola): contano nella sua
     //   impronta, che cosi' e' quella della cartella intera come la trovera' una riapertura normale. Prima
     //   l'impronta contava solo le foto del lotto, e dopo un crash le sue modifiche non tornavano. Un nome
     //   conta solo finche' quella foto e' in memoria in un altro lotto (aperta, nel cestino o chiusa).
-    // ENGLISH: `nomiImpronta` (see confermaImport) = the photos of the same folder already open in ANOTHER
+    // ENGLISH: `aperteImpronta` (see confermaImport) = the photos of the same folder already open in ANOTHER
     //   batch when this one came in (for example a.png loaded alone first): they count in its fingerprint,
     //   which so is the whole folder's as a normal reopening will find it. The fingerprint used to count
     //   only the batch's photos, and after a crash its edits did not come back. A name counts only while
     //   that photo is in memory in another batch (open, trashed or closed).
+    // ITALIANO: le foto si riconoscono dall'id e dalla chiave in questa cartella (`aperteImpronta`), non dal
+    //   solo nome: con 0001.png in 10_face e in 20_body i due nomi uguali di 10_face venivano scartati
+    //   (l'impronta diventava "ds|2|..." invece di "ds|4|...") e dopo un crash non tornava niente.
+    // ENGLISH: the photos are recognised by id and by their key in this folder (`aperteImpronta`), not by
+    //   name alone: with 0001.png in 10_face and in 20_body the two same names of 10_face were dropped
+    //   (the fingerprint became "ds|2|..." instead of "ds|4|...") and after a crash nothing came back.
     const lottiDelNome = new Map<string, Set<string>>();
-    const segna = (nome: string, lotto: string, foto: any) => {
+    const lottoDellId = new Map<string, string>();
+    const segna = (nome: string, lotto: string, foto: any, id: string) => {
         let s = lottiDelNome.get(nome);
         if (!s) { s = new Set(); lottiDelNome.set(nome, s); }
         s.add(lotto);
-        if (foto && Array.isArray(foto.nomiImpronta)) {
+        if (id && !lottoDellId.has(id)) lottoDellId.set(id, lotto);
+        if (foto && Array.isArray(foto.aperteImpronta)) {
             const l = lotti.get(lotto);
-            if (l) for (const n of foto.nomiImpronta) if (typeof n === 'string' && n) l.extra.add(n);
+            if (l) for (const v of foto.aperteImpronta) {
+                if (!v || typeof v.nome !== 'string' || !v.nome || typeof v.chiave !== 'string') continue;
+                const id = typeof v.id === 'string' ? v.id : '';
+                l.extra.set(id ? 'id' + BACKUP_KEY_SEP + id : 'chiave' + BACKUP_KEY_SEP + v.chiave, { id, nome: v.nome, chiave: v.chiave });
+            }
         }
     };
+    const fotoDellId = new Map<string, any>();
     const presenti = new Set<string>();
     const chiaviPresenti = new Set<string>();
     for (const img of images) {
@@ -206,7 +227,9 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         chiaviPresenti.add(String(img.lottoImport || '') + BACKUP_KEY_SEP + (img.backupKey || (BACKUP_KEY_SEP + img.file.name)));
         const l = lottoDi(String(img.lottoImport || ''), String(img.cartellaImport || ''));
         l.nomi.push(img.file.name);
-        segna(img.file.name, String(img.lottoImport || ''), img);
+        l.chiavi.add(img.backupKey || (BACKUP_KEY_SEP + img.file.name));
+        segna(img.file.name, String(img.lottoImport || ''), img, String(img.id));
+        fotoDellId.set(String(img.id), img);
         l.vivi++;
         if (img.isTrashed) continue;
         if (!fotoDaSalvare(img, triggers)) continue;
@@ -243,8 +266,10 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
         const chiaveChiusa = (fotoChiusa && typeof fotoChiusa.backupKey === 'string' && fotoChiusa.backupKey) || (BACKUP_KEY_SEP + c.name);
         const chiaveCompleta = String(c.lotto || '') + BACKUP_KEY_SEP + chiaveChiusa;
         if (chiaviPresenti.has(chiaveCompleta)) continue;
-        lottoDi(String(c.lotto || ''), String(c.cartella || '')).nomi.push(c.name);
-        segna(c.name, String(c.lotto || ''), fotoChiusa);
+        const lc = lottoDi(String(c.lotto || ''), String(c.cartella || ''));
+        lc.nomi.push(c.name);
+        lc.chiavi.add(chiaveChiusa);
+        segna(c.name, String(c.lotto || ''), fotoChiusa, String(c.id));
         // ITALIANO: una foto chiusa, ripresa riaprendo la cartella e chiusa di nuovo lascia fra le
         //           chiuse due voci (id vecchio e id nuovo) con lo stesso lotto e la stessa chiave: e'
         //           lo stesso file e si conta una volta. Solo per le chiavi con la cartella: senza
@@ -264,9 +289,35 @@ export const costruisciBackup = (images: any[], chiuse: Iterable<FotoChiusa>, ca
     const aperte = new Set<string>();
     const conFirma: { firma: string; lotto: string; data: Record<string, VoceBackup>; voci: number }[] = [];
     for (const [lotto, l] of lotti) {
+        // ITALIANO: una foto gia' aperta altrove conta finche' quella foto (per id) e' in memoria in un altro
+        //   lotto, e non se il lotto ha gia' lo STESSO file (la stessa chiave in questa cartella): una foto
+        //   sciolta chiusa con la X e ripresa riaprendo la cartella conta una volta. Senza id (foto ancora
+        //   in arrivo) vale la regola di prima, per nome.
+        // ENGLISH: a photo already open elsewhere counts while that photo (by id) is in memory in another
+        //   batch, and not when the batch already holds the SAME file (the same key in this folder): a loose
+        //   photo closed with the X and taken back by reopening the folder counts once. With no id (a photo
+        //   still on its way in) the earlier rule by name applies.
         const propri = l.extra.size > 0 ? new Set(l.nomi) : null;
-        const altrove = propri ? [...l.extra].filter(n => !propri.has(n) && [...(lottiDelNome.get(n) || [])].some(x => x !== lotto)) : [];
-        const firma = folderSignature(l.cartella, [...l.nomi, ...altrove]);
+        const altrove = propri ? [...l.extra.values()].filter(v => {
+            if (l.chiavi.has(v.chiave)) return false;
+            if (v.id) { const suo = lottoDellId.get(v.id); return suo !== undefined && suo !== lotto; }
+            return !propri.has(v.nome) && [...(lottiDelNome.get(v.nome) || [])].some(x => x !== lotto);
+        }) : [];
+        // ITALIANO: la modifica non salvata di una foto aperta altrove entra ANCHE in questo lotto, con la
+        //   chiave che ha in questa cartella: una riapertura normale della cartella intera la trova. Prima
+        //   restava solo nella sorgente del suo lotto (la sottocartella o le foto sciolte), che la
+        //   riapertura della cartella madre non vede. Resta anche li': riaprendo quella da sola torna.
+        // ENGLISH: the unsaved edit of a photo open elsewhere goes into this batch TOO, with the key it has
+        //   in this folder: a normal reopening of the whole folder finds it. It used to stay only in its own
+        //   batch's source (the subfolder or the loose photos), which reopening the parent folder does not
+        //   see. It stays there too: reopening that one alone brings it back.
+        for (const v of altrove) {
+            const img = v.id ? fotoDellId.get(v.id) : undefined;
+            if (!img || img.isTrashed || v.chiave.startsWith(BACKUP_KEY_SEP) || !fotoDaSalvare(img, triggers)) continue;
+            l.data[v.chiave] = { tags: img.tags, base: improntaTag(img.originalTags || []) };
+            l.voci++;
+        }
+        const firma = folderSignature(l.cartella, [...l.nomi, ...altrove.map(v => v.nome)]);
         aperte.add(firma);
         if (l.vivi > 0) firme.set(firma, (firme.get(firma) || 0) + 1);
         conFirma.push({ firma, lotto, data: l.data, voci: l.voci });
