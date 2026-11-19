@@ -39,7 +39,7 @@ body:
     attributes:
       label: Version
       description: "Shown on the loading screen and in Settings"
-      placeholder: "1.1.0"
+      placeholder: "2.0.3"
     validations:
       required: true
 
@@ -49,7 +49,8 @@ body:
       label: Which build?
       options:
         - Installer
-        - Portable
+        - Portable (.exe)
+        - Portable (.zip)
         - Not sure
     validations:
       required: true

@@ -12,18 +12,22 @@
 //          Now the backdrop closes only if the press ALSO started on the backdrop.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const radice = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let errori = 0;
 const ok = (cond, msg) => { console.log(`${cond ? 'OK' : 'NO'}  ${msg}`); if (!cond) errori++; };
 
 // ---------------------------------------------------------------------------------------------
-// 1. Logica (modulo vero, Node toglie i tipi da solo)
+// 1. Logica (modulo vero passato da esbuild, come nelle altre prove: un import() diretto del .ts
+//    funziona solo sui Node che tolgono i tipi da soli; react resta dentro il pacchetto, perche'
+//    un modulo caricato da un indirizzo data: non trova i pacchetti per nome)
 // ---------------------------------------------------------------------------------------------
 let gestoriSfondo = null;
 try {
-    ({ gestoriSfondo } = await import(pathToFileURL(path.join(radice, 'src/utils/backdropClose.ts')).href));
+    const esbuild = await import('esbuild');
+    const out = await esbuild.build({ entryPoints: [path.join(radice, 'src/utils/backdropClose.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent' });
+    ({ gestoriSfondo } = await import('data:text/javascript;base64,' + Buffer.from(out.outputFiles[0].text).toString('base64')));
 } catch (e) {
     console.log('     modulo non caricato: ' + (e && e.code ? e.code : e));
 }
