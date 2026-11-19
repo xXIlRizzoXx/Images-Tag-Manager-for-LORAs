@@ -56,6 +56,8 @@ It runs entirely on your machine and sends **no telemetry**. AI tagging is **opt
 
 <img src="docs/img/features/19-mcp-light.jpg" alt="MCP light: next to Trash, red until an AI connects, green once one has, yellow while an external AI works, a red triangle if the server did not start; a click shows the connection details, and a chime tells you when the AI has finished changing tags" width="100%" />
 
+<img src="docs/img/features/20-claude-desktop.jpg" alt="Connect Claude Desktop: save the images-tag-manager.mcpb extension, drag it onto Claude's Settings, Extensions page, paste the secret token and switch the extension on, with no Node.js needed; or by hand, with a button that copies only this server's entry for Claude's configuration file" width="100%" />
+
 <img src="docs/img/features/18-help.jpg" alt="Help where you need it: a question-mark button next to every Settings section opens its explanation" width="100%" />
 
 <img src="docs/img/features/13-trash.jpg" alt="Trash: removed photos are recoverable and files go to the Windows Recycle Bin" width="100%" />

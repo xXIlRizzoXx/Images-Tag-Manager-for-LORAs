@@ -142,6 +142,13 @@ const SCHEDE = [
         punti: ['Red until an AI connects, green after, yellow while it works', 'Click it for the address, token and setups to copy', 'Changed tags, then 30 s of quiet: chime and notice'],
     },
     {
+        file: '20-claude-desktop.png', nome: '20-claude-desktop',
+        occhiello: 'Connect Claude Desktop',
+        titolo: 'Claude Desktop,<br>one file to drag', badge: 'BETA',
+        testo: 'Save the .mcpb extension and drag it onto Claude\'s Extensions page. No Node.js needed, and the token stays with Claude, not in the file.',
+        punti: ['Paste the token, then switch the extension on', 'By hand: copy only this server\'s entry, not a whole file', 'Program closed? Claude asks you to open it'],
+    },
+    {
         file: '18-help.png', nome: '18-help',
         occhiello: 'Help where you need it',
         titolo: 'A "?" next to<br>every section',

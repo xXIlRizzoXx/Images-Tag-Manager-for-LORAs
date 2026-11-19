@@ -654,9 +654,9 @@ async function main() {
     await shot('15-trigger-words');
     }
 
-    // --- 7, 16-19: Impostazioni AI e MCP e semaforo MCP, col ponte finto ---
-    // --- 7, 16-19: AI and MCP Settings and the MCP light, with the fake bridge
-    if (vuole('07', '16', '17', '18', '19')) {
+    // --- 7, 16-20: Impostazioni AI e MCP, semaforo MCP e guida di Claude Desktop, col ponte finto ---
+    // --- 7, 16-20: AI and MCP Settings, the MCP light and the Claude Desktop guide, with the fake bridge
+    if (vuole('07', '16', '17', '18', '19', '20')) {
         await apriFinestra(true);
         // porta in vista una sezione del pannello Impostazioni (il pannello scorre)
         // brings a section of the Settings panel into view (the panel scrolls)
@@ -764,6 +764,27 @@ async function main() {
             const img19 = await wc.capturePage();
             fs.writeFileSync(path.join(OUT_DIR, '19-mcp-light.png'), img19.toPNG());
             console.log('  ->', path.relative(ROOT, path.join(OUT_DIR, '19-mcp-light.png')), img19.getSize().width + 'x' + img19.getSize().height);
+        }
+
+        // 20. la guida "Connect Claude Desktop: extension or by hand", aperta dalla sezione MCP
+        //     delle Impostazioni. La guida non mostra ne' l'indirizzo ne' il codice; l'indirizzo
+        //     nel pannello dietro viene comunque sfocato da shot().
+        //     the "Connect Claude Desktop: extension or by hand" guide, opened from the MCP part of
+        //     Settings. The guide shows neither the address nor the token; the address in the panel
+        //     behind is blurred by shot() anyway.
+        if (vuole('20')) {
+            await daCapo();
+            await run(`window.__shot.click('Settings')`);
+            await sleep(1600);
+            console.log('   sezione MCP in vista:', await inVista('MCP'));
+            await sleep(800);
+            console.log('   apro la guida di Claude Desktop:', await run(`(() => {
+                const b = document.querySelector('[data-mcp-guida-claude]');
+                if (b) { b.click(); return true; } return false;
+            })()`));
+            await sleep(1600);
+            console.log('   guida aperta:', await run(`!!document.querySelector('[data-mcp-salva-estensione]')`));
+            await shot('20-claude-desktop');
         }
     }
 
