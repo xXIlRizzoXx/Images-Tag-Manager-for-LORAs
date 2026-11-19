@@ -48,7 +48,13 @@ export const TagInput = ({ tags, setTags, placeholder = "", isGlobal = false, ma
             // ITALIANO: "Smile" su una foto che ha "smile" non e' un tag nuovo (vedi tagCase).
             // ENGLISH: "Smile" on a photo that has "smile" is not a new tag (see tagCase).
             if (newTag && !hasTagIgnoringCase(tags, newTag)) { setTags([...tags, newTag]); setInputValue(''); soundManager.pop(); }
-        } else if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
+        } else if (e.key === 'Backspace' && !e.repeat && !inputValue && tags.length > 0) {
+            // ITALIANO: solo una pressione vera toglie l'ultimo tag: tenendo premuto Backspace per
+            //           cancellare una parola, le ripetizioni automatiche (repeat) toglievano un tag
+            //           dopo l'altro appena finito il testo (nel riquadro delle trigger, da tutte le foto).
+            // ENGLISH: only a real press removes the last tag: holding Backspace to erase a word, the
+            //          automatic repeats (repeat) removed one tag after another once the text was
+            //          gone (in the trigger box, from every photo).
             setTags(tags.slice(0, -1)); soundManager.click();
         }
     };

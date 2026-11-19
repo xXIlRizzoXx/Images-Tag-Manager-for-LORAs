@@ -110,16 +110,32 @@ const minimalExifSegment = (orientation: number): number[] => [
     0x00, 0x00, 0x00, 0x00,                         // nessun altro IFD / no next IFD
 ];
 
-// ITALIANO: JPEG. Restano APP0 solo se JFIF, il profilo colore (APP2 ICC_PROFILE), APP14 (Adobe, serve a
-//           decodificare i colori) e tutte le parti dell'immagine; via APP1 (Exif, XMP), gli altri
-//           APPn (Photoshop/IPTC, C2PA, dati dei produttori) e i commenti, anche fra una scansione e
-//           l'altra di un JPEG progressivo. Quello che segue la fine dell'immagine (foto secondarie,
-//           video delle "foto in movimento", dati dei produttori) non si manda.
-// ENGLISH: JPEG. Kept: APP0 only if JFIF, the colour profile (APP2 ICC_PROFILE), APP14 (Adobe, needed to
-//          decode the colours) and every part of the image; removed: APP1 (Exif, XMP), the other
-//          APPn (Photoshop/IPTC, C2PA, maker data) and comments, also between the scans of a
-//          progressive JPEG. What follows the end of the image (secondary pictures, the video of
-//          "motion photos", maker data) is not sent.
+// ITALIANO: copia di un segmento con i soli primi `campi` byte dopo la lunghezza, che viene riscritta;
+//           `zeri` = da dove azzerare (le misure della miniatura JFIF). Il file di partenza non cambia.
+// ENGLISH: copy of a segment with only the first `campi` bytes after the length, which is rewritten;
+//          `zeri` = where to start zeroing (the JFIF thumbnail size). The source file is not changed.
+const soliCampi = (b: Uint8Array, i: number, campi: number, zeri = campi + 4): Uint8Array => {
+    const s = b.slice(i, i + 4 + campi);
+    s[2] = 0; s[3] = campi + 2;
+    s.fill(0, zeri);
+    return s;
+};
+
+// ITALIANO: JPEG. Restano APP0 solo se JFIF, il profilo colore (APP2 ICC_PROFILE), APP14 solo se Adobe
+//           (serve a decodificare i colori) e le parti dell'immagine; via APP1 (Exif, XMP), gli altri
+//           APPn (Photoshop/IPTC, C2PA, dati dei produttori), i commenti, anche fra una scansione e
+//           l'altra di un JPEG progressivo, e il DNL (chi disegna lo ignora). Di JFIF e Adobe partono
+//           solo i campi che chi disegna legge (14 e 12 byte): la miniatura del JFIF (pixel non
+//           compressi, magari della foto prima del ritaglio) e i byte in coda non partono. Quello
+//           che segue la fine dell'immagine (foto secondarie, video delle "foto in movimento", dati
+//           dei produttori) non si manda.
+// ENGLISH: JPEG. Kept: APP0 only if JFIF, the colour profile (APP2 ICC_PROFILE), APP14 only if Adobe
+//          (needed to decode the colours) and the parts of the image; removed: APP1 (Exif, XMP), the
+//          other APPn (Photoshop/IPTC, C2PA, maker data), comments, also between the scans of a
+//          progressive JPEG, and DNL (the decoder ignores it). Of JFIF and Adobe only the fields the
+//          decoder reads go (14 and 12 bytes): the JFIF thumbnail (uncompressed pixels, maybe of the
+//          photo before cropping) and any trailing bytes are not sent. What follows the end of the
+//          image (secondary pictures, the video of "motion photos", maker data) is not sent.
 const stripJpeg = (b: Uint8Array): Uint8Array => {
     const out: Uint8Array[] = [b.subarray(0, 2)];
     let i = 2;
@@ -149,9 +165,13 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
             if (ascii(b, i + 4, 12) === 'ICC_PROFILE\0') out.push(b.subarray(i, end));
         } else if (m === 0xE0) {
             // ITALIANO: solo JFIF; via JFXX (miniatura), CIFF (proprietario e numero di serie), AVI1...
+            //           Del JFIF una copia di 16 byte con la miniatura 0x0; uno piu' corto parte com'e'.
             // ENGLISH: JFIF only; JFXX (thumbnail), CIFF (owner and serial number), AVI1... removed.
-            if (ascii(b, i + 4, 5) === 'JFIF\0') out.push(b.subarray(i, end));
-        } else if (m === 0xFE || (isApp && m !== 0xE0 && m !== 0xEE)) {
+            //          Of JFIF a 16-byte copy with a 0x0 thumbnail; a shorter one goes as it is.
+            if (ascii(b, i + 4, 5) === 'JFIF\0') out.push(len >= 16 ? soliCampi(b, i, 14, 16) : b.subarray(i, end));
+        } else if (m === 0xEE) {
+            if (ascii(b, i + 4, 5) === 'Adobe') out.push(len >= 14 ? soliCampi(b, i, 12) : b.subarray(i, end));
+        } else if (m === 0xFE || m === 0xDC || isApp) {
             // via / removed
         } else {
             out.push(b.subarray(i, end));
@@ -182,11 +202,15 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
 
 // ITALIANO: PNG. Restano le parti che servono a disegnare la foto (quelle obbligatorie e quelle
 //           di colore, trasparenza, dimensione dei pixel e animazione APNG); via testi (tEXt, zTXt,
-//           iTXt: autore, programma, a volte percorsi), eXIf, data (tIME), C2PA e parti private.
+//           iTXt: autore, programma, a volte percorsi), eXIf, data (tIME), C2PA, parti private, le
+//           tavolozze suggerite sPLT e l'istogramma hIST (chi disegna non li usa, e sPLT ha un nome
+//           libero).
 // ENGLISH: PNG. Kept: the parts needed to draw the photo (the mandatory ones and those for colour,
 //          transparency, pixel size and APNG animation); removed: text (tEXt, zTXt, iTXt: author,
-//          software, sometimes paths), eXIf, date (tIME), C2PA and private parts.
-const PNG_KEEP = new Set(['tRNS', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'cICP', 'mDCV', 'cLLI', 'bKGD', 'hIST', 'pHYs', 'sPLT',
+//          software, sometimes paths), eXIf, date (tIME), C2PA, private parts, the suggested
+//          palettes sPLT and the histogram hIST (the decoder does not use them, and sPLT has a free
+//          name).
+const PNG_KEEP = new Set(['tRNS', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'cICP', 'mDCV', 'cLLI', 'bKGD', 'pHYs',
     'acTL', 'fcTL', 'fdAT']);
 // ITALIANO: un PNG che finisce prima di IEND (copia interrotta, programma che non lo scrive) e che
 //           ha gia' almeno un IDAT completo parte con le sole parti COMPLETE lette fin li', come il
@@ -216,7 +240,9 @@ const stripPng = (b: Uint8Array): Uint8Array => {
 };
 
 // ITALIANO: WebP. Via le parti EXIF e XMP e i loro segni nell'intestazione VP8X; resta il resto.
+//           Di VP8X partono solo i suoi 10 byte: quelli in piu' chi disegna non li legge.
 // ENGLISH: WebP. The EXIF and XMP parts and their flags in the VP8X header go; the rest stays.
+//          Of VP8X only its 10 bytes go: the decoder does not read any extra ones.
 const WEBP_KEEP = new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF', 'ICCP']);
 // ITALIANO: alcuni programmi contano nella lunghezza RIFF il byte di riempimento dell'ultima parte
 //           (lunghezza dispari) senza scriverlo: un solo byte in meno si accetta; se manca un byte
@@ -237,7 +263,8 @@ const stripWebp = (b: Uint8Array): Uint8Array => {
         const end = i + 8 + len + (len & 1);
         if (i + 8 + len > riffEnd) throw malformed();
         if (WEBP_KEEP.has(type)) {
-            const chunk = b.slice(i, Math.min(end, riffEnd));
+            const chunk = type === 'VP8X' && len > 10 ? b.slice(i, i + 18) : b.slice(i, Math.min(end, riffEnd));
+            if (type === 'VP8X' && len > 10) { chunk[4] = 10; chunk[5] = 0; chunk[6] = 0; chunk[7] = 0; }
             if (type === 'VP8X' && len >= 1) chunk[8] &= ~(0x08 | 0x04);
             out.push(chunk);
         }
