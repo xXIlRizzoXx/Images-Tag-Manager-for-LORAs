@@ -161,5 +161,162 @@ const VP8 = wchunk('VP8 ', B([1, 2, 3, 4, 5, 6]));
     confronta('WebP semplice: parte identico', pulisci(semplice).dati, semplice);
 }
 
+// =============================================================================
+// ITALIANO: GIRO 3, REVISIONE. Le parti che chi disegna non legge (o che lo fanno fermare) e che
+//           partivano intere con un testo dentro. Ogni regola ha accanto il caso vicino che deve
+//           restare identico. Le regole sono state provate su foto vere con libpng 1.6.57,
+//           libjpeg-turbo 3.1 e libwebp 1.6: pixel identici prima e dopo.
+// ENGLISH: ROUND 3, REVIEW. The parts the decoder does not read (or that make it stop) and that went
+//          whole with a text inside. Every rule has next to it the neighbouring case that must stay
+//          identical. The rules were tried on real photos with libpng 1.6.57, libjpeg-turbo 3.1 and
+//          libwebp 1.6: identical pixels before and after.
+const rifiutata = (cosa, file) => {
+    let errore = null;
+    try { M.stripImageMetadata(new Uint8Array(file)); } catch (e) { errore = e; }
+    dice(cosa, errore !== null && errore.message === 'Unsupported file type', errore ? errore.message : 'la foto partirebbe');
+};
+const T = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; T[n] = c >>> 0; }
+const crc = (b) => { let c = 0xFFFFFFFF; for (const x of b) c = T[(c ^ x) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+const chunkCrc = (tipo, corpo) => { const d = B(corpo); return B(be32(d.length), tipo, d, be32(crc(B(tipo, d)))); };
+const SEGRETO = 'SEGRETO prompt: masterpiece, Via Roma 12';
+
+console.log('\n--- JPEG: marcatori riservati e FF 00 fuori dai dati ---');
+for (const m of [0xF0, 0xF7, 0xFD, 0xDE, 0xDF, 0xC8, 0x02, 0xBF]) {
+    rifiutata(`marcatore riservato 0x${m.toString(16)} con un testo: la foto non parte`, B([0xFF, 0xD8], JFIF_NORMALE, seg(m, B(SEGRETO)), IMMAGINE));
+}
+rifiutata('un secondo SOI con un testo: la foto non parte', B([0xFF, 0xD8], JFIF_NORMALE, seg(0xD8, B(SEGRETO)), IMMAGINE));
+{
+    // ITALIANO: prima della correzione FF 00 era letto come una parte con lunghezza: qui il file risultava rovinato.
+    // ENGLISH: before the fix FF 00 was read as a part with a length: here the file came out as damaged.
+    let r = null;
+    try { r = pulisci(B([0xFF, 0xD8], JFIF_NORMALE, [0xFF, 0x00], SEGRETO, IMMAGINE)); } catch (e) { dice('FF 00 fuori dai dati compressi: la foto si pulisce', false, e.message); }
+    if (r) {
+        senza('FF 00 fuori dai dati compressi, con un testo dopo: non parte', r.dati, [SEGRETO]);
+        confronta('senza FF 00 e il testo il resto identico', r.dati, B([0xFF, 0xD8], JFIF_NORMALE, IMMAGINE));
+    }
+    const DAC = seg(0xCC, B([0x10, 0x01]));
+    const conDac = B([0xFF, 0xD8], JFIF_NORMALE, DQT, seg(0xC9, B([8], be16(16), be16(16), [1, 1, 0x11, 0])), DAC, SOS, DATI, EOI);
+    confronta('caso vicino: JPEG aritmetico (SOF9, DAC) parte identico', pulisci(conDac).dati, conDac);
+    const tem = B([0xFF, 0xD8], JFIF_NORMALE, [0xFF, 0x01], IMMAGINE);
+    confronta('caso vicino: il marcatore TEM (0x01, senza lunghezza) parte identico', pulisci(tem).dati, tem);
+}
+
+console.log('\n--- PNG: parti dell\'immagine con un testo dentro ---');
+const IHDR = (colore, profondita = 8) => chunk('IHDR', B(be32(1), be32(1), [profondita, colore, 0, 0, 0]));
+const PLTE_TESTO = chunk('PLTE', B(SEGRETO, 'xx')); // 42 byte = 14 colori / 14 colours
+{
+    for (const [colore, nome] of [[2, 'a colori pieni'], [6, 'con il canale alfa'], [0, 'in grigio']]) {
+        const r = pulisci(B(FIRMA, IHDR(colore), PLTE_TESTO, IDAT, IEND));
+        senza(`PLTE in un PNG ${nome} (colore ${colore}): non parte`, r.dati, [SEGRETO]);
+        confronta(`  senza PLTE il resto identico (colore ${colore})`, r.dati, B(FIRMA, IHDR(colore), IDAT, IEND));
+    }
+    const pal1 = chunk('PLTE', B([0, 0, 0, 255, 255, 255]));
+    const r = pulisci(B(FIRMA, IHDR(3, 1), chunk('PLTE', B([0, 0, 0, 255, 255, 255], SEGRETO, 'xx')), IDAT, IEND));
+    senza('PLTE con piu\' colori di quelli della profondita\' (1 bit = 2): i colori in piu\' non partono', r.dati, [SEGRETO]);
+    confronta('  resta la PLTE dei 2 colori, con il CRC giusto', r.dati, B(FIRMA, IHDR(3, 1), chunkCrc('PLTE', B([0, 0, 0, 255, 255, 255])), IDAT, IEND));
+    const giusta = B(FIRMA, IHDR(3, 1), pal1, IDAT, IEND);
+    confronta('caso vicino: PLTE di 2 colori con 1 bit parte identica', pulisci(giusta).dati, giusta);
+    rifiutata('una seconda PLTE in un PNG a tavolozza: la foto non parte', B(FIRMA, IHDR3, PLTE, PLTE_TESTO, IDAT, IEND));
+}
+{
+    const TRNS_TESTO = chunk('tRNS', B(SEGRETO));
+    for (const colore of [0, 2, 4, 6]) {
+        const r = pulisci(B(FIRMA, IHDR(colore), TRNS_TESTO, IDAT, IEND));
+        senza(`tRNS della misura sbagliata (colore ${colore}): non parte`, r.dati, [SEGRETO]);
+        confronta(`  senza tRNS il resto identico (colore ${colore})`, r.dati, B(FIRMA, IHDR(colore), IDAT, IEND));
+    }
+    const grigio = B(FIRMA, IHDR(0), chunk('tRNS', B(be16(7))), IDAT, IEND);
+    confronta('caso vicino: tRNS di 2 byte in grigio parte identico', pulisci(grigio).dati, grigio);
+    const rgb = B(FIRMA, IHDR(2), chunk('tRNS', B(be16(1), be16(2), be16(3))), IDAT, IEND);
+    confronta('caso vicino: tRNS di 6 byte a colori pieni parte identico', pulisci(rgb).dati, rgb);
+    const r = pulisci(B(FIRMA, IHDR3, PLTE, chunk('tRNS', B([1, 2], SEGRETO)), IDAT, IEND));
+    senza('tRNS piu\' lunga della tavolozza: non parte', r.dati, [SEGRETO]);
+    confronta('  senza tRNS il resto identico', r.dati, B(FIRMA, IHDR3, PLTE, IDAT, IEND));
+    const prima = pulisci(B(FIRMA, IHDR3, TRNS, PLTE, IDAT, IEND));
+    confronta('tRNS prima della PLTE (libpng la ignora): non parte', prima.dati, B(FIRMA, IHDR3, PLTE, IDAT, IEND));
+}
+{
+    const FCTL = chunk('fcTL', B(be32(0), Array(22).fill(0)));
+    const r = pulisci(B(FIRMA, IHDR(6), IDAT, FCTL, chunk('fdAT', B(be32(1), SEGRETO)), IEND));
+    senza('fcTL e fdAT senza acTL (PNG non animato): non partono', r.dati, [SEGRETO]);
+    confronta('  il resto identico', r.dati, B(FIRMA, IHDR(6), IDAT, IEND));
+    const tardi = pulisci(B(FIRMA, IHDR(6), IDAT, chunk('acTL', B(be32(2), be32(0))), FCTL, chunk('fdAT', B(be32(1), SEGRETO)), IEND));
+    senza('acTL dopo il primo IDAT (l\'animazione non vale): acTL, fcTL e fdAT non partono', tardi.dati, [SEGRETO]);
+    confronta('  il resto identico', tardi.dati, B(FIRMA, IHDR(6), IDAT, IEND));
+    rifiutata('parte "critica" sconosciuta (XXXX) con un testo: la foto non parte', B(FIRMA, IHDR(2), chunk('XXXX', B(SEGRETO)), IDAT, IEND));
+    rifiutata('IHDR di 14 byte: la foto non parte', B(FIRMA, chunk('IHDR', B(be32(1), be32(1), [8, 2, 0, 0, 0], 'x')), IDAT, IEND));
+    rifiutata('IHDR che non e\' la prima parte: la foto non parte', B(FIRMA, chunk('gAMA', B(be32(45455))), IHDR(2), IDAT, IEND));
+    rifiutata('una seconda IHDR: la foto non parte', B(FIRMA, IHDR(2), IHDR(2), IDAT, IEND));
+    // ITALIANO: senza IHDR (come i PNG minimi delle altre prove) la foto parte, ma senza le parti di colore.
+    // ENGLISH: without IHDR (like the minimal PNGs of the other tests) the photo goes, but without the colour parts.
+    const senzaIhdr = pulisci(B(FIRMA, PLTE_TESTO, chunk('tRNS', B(SEGRETO)), IDAT, IEND));
+    confronta('PNG senza IHDR: partono solo IDAT e IEND', senzaIhdr.dati, B(FIRMA, IDAT, IEND));
+    const minimo = B(FIRMA, IEND);
+    confronta('caso vicino: il PNG minimo (firma + IEND) parte identico', pulisci(minimo).dati, minimo);
+    const iend = pulisci(B(FIRMA, IHDR(2), IDAT, chunk('IEND', B(SEGRETO))));
+    senza('IEND con dei dati dentro: i dati non partono', iend.dati, [SEGRETO]);
+    confronta('  resta una IEND vuota con il CRC giusto', iend.dati, B(FIRMA, IHDR(2), IDAT, B(be32(0), 'IEND', [0xAE, 0x42, 0x60, 0x82])));
+}
+{
+    const r = pulisci(B(FIRMA, IHDR(2), chunk('gAMA', B(be32(45455), SEGRETO)), chunk('bKGD', B(be16(1), be16(2), be16(3), SEGRETO)),
+        chunk('sRGB', B([0], SEGRETO)), chunk('pHYs', B(be32(2835), be32(2835), [1], SEGRETO)), chunk('sBIT', B([8, 8, 8], SEGRETO)), IDAT, IEND));
+    senza('gAMA, bKGD, sRGB, pHYs e sBIT della misura sbagliata (libpng le ignora): non partono', r.dati, [SEGRETO]);
+    confronta('  il resto identico', r.dati, B(FIRMA, IHDR(2), IDAT, IEND));
+    const giuste = B(FIRMA, IHDR(2), chunk('gAMA', B(be32(45455))), chunk('cHRM', B(Array(32).fill(1))), chunk('sRGB', B([0])), chunk('sBIT', B([8, 8, 8])),
+        chunk('bKGD', B(be16(1), be16(2), be16(3))), chunk('pHYs', B(be32(2835), be32(2835), [1])), chunk('iCCP', B('icc\0', [0], [0x78, 0x9C, 1])), IDAT, IEND);
+    confronta('caso vicino: le stesse parti della misura giusta (e iCCP) partono identiche', pulisci(giuste).dati, giuste);
+    const pal = B(FIRMA, IHDR3, PLTE, chunk('bKGD', B([1])), chunk('sBIT', B([8, 8, 8])), TRNS, IDAT, IEND);
+    confronta('caso vicino: bKGD di 1 byte, sBIT di 3 e tRNS di 2 in un PNG a tavolozza partono identici', pulisci(pal).dati, pal);
+}
+
+console.log('\n--- WebP: parti che chi disegna non legge ---');
+const VP8L = wchunk('VP8L', B([0x2F, 1, 0, 0, 0]));
+{
+    const r = pulisci(riff(wchunk('VP8X', campiVp8x(0)), wchunk('ALPH', B([1], SEGRETO)), VP8));
+    senza('ALPH senza il segno della trasparenza (libwebp non la usa): non parte', r.dati, [SEGRETO]);
+    confronta('  il resto identico', r.dati, riff(wchunk('VP8X', campiVp8x(0)), VP8));
+    const conSegno = riff(wchunk('VP8X', campiVp8x(0x10)), wchunk('ALPH', B([1, 5, 6, 7])), VP8);
+    confronta('caso vicino: ALPH con il segno, prima della VP8, parte identica', pulisci(conSegno).dati, conSegno);
+    const ALPH = wchunk('ALPH', B([1], SEGRETO));
+    for (const [nome, file, atteso] of [
+        ['ALPH prima di una VP8L (ha gia\' la sua trasparenza)', riff(wchunk('VP8X', campiVp8x(0x10)), ALPH, VP8L), riff(wchunk('VP8X', campiVp8x(0x10)), VP8L)],
+        ['ALPH dopo la VP8', riff(wchunk('VP8X', campiVp8x(0x10)), VP8, ALPH), riff(wchunk('VP8X', campiVp8x(0x10)), VP8)],
+        ['una seconda ALPH', riff(wchunk('VP8X', campiVp8x(0x10)), wchunk('ALPH', B([1, 5, 6, 7])), ALPH, VP8), riff(wchunk('VP8X', campiVp8x(0x10)), wchunk('ALPH', B([1, 5, 6, 7])), VP8)],
+        ['ALPH in un WebP animato (la trasparenza sta nei fotogrammi)', riff(wchunk('VP8X', campiVp8x(0x10 | 0x02)), wchunk('ANIM', B(Array(6).fill(0))), ALPH, wchunk('ANMF', B(Array(16).fill(0), VP8))),
+            riff(wchunk('VP8X', campiVp8x(0x10 | 0x02)), wchunk('ANIM', B(Array(6).fill(0))), wchunk('ANMF', B(Array(16).fill(0), VP8)))],
+    ]) {
+        const x = pulisci(file);
+        senza(nome + ': non parte', x.dati, [SEGRETO]);
+        confronta('  il resto identico', x.dati, atteso);
+    }
+    // ITALIANO: tela 2x2: un'ALPH non compressa (metodo 0) usa 1 + 4 byte.
+    // ENGLISH: 2x2 canvas: an uncompressed ALPH (method 0) uses 1 + 4 bytes.
+    const tela2 = (flag) => B([flag, 0, 0, 0], [1, 0, 0], [1, 0, 0]);
+    const raw = pulisci(riff(wchunk('VP8X', tela2(0x10)), wchunk('ALPH', B([0], [9, 8, 7, 6], SEGRETO)), VP8));
+    senza('ALPH non compressa con dei byte dopo larghezza x altezza: i byte in piu\' non partono', raw.dati, [SEGRETO]);
+    confronta('  resta l\'ALPH di 1 + 4 byte', raw.dati, riff(wchunk('VP8X', tela2(0x10)), wchunk('ALPH', B([0], [9, 8, 7, 6])), VP8));
+    const rawGiusta = riff(wchunk('VP8X', tela2(0x10)), wchunk('ALPH', B([0], [9, 8, 7, 6])), VP8);
+    confronta('caso vicino: ALPH non compressa della misura giusta parte identica', pulisci(rawGiusta).dati, rawGiusta);
+}
+{
+    const r = pulisci(riff(wchunk('VP8X', campiVp8x(0)), wchunk('ANIM', B(Array(6).fill(0))), wchunk('ANMF', B(SEGRETO)), VP8));
+    senza('ANIM e ANMF senza il segno dell\'animazione: non partono', r.dati, [SEGRETO]);
+    confronta('  il resto identico', r.dati, riff(wchunk('VP8X', campiVp8x(0)), VP8));
+    const ANMF = wchunk('ANMF', B(Array(16).fill(0), VP8));
+    const animato = riff(wchunk('VP8X', campiVp8x(0x02)), wchunk('ANIM', B([1, 2, 3, 4, 0, 0])), ANMF, ANMF);
+    confronta('caso vicino: WebP animato parte identico', pulisci(animato).dati, animato);
+    const lungo = pulisci(riff(wchunk('VP8X', campiVp8x(0x02)), wchunk('ANIM', B([1, 2, 3, 4, 0, 0], SEGRETO)), ANMF));
+    senza('ANIM piu\' lunga dei suoi 6 byte: i byte in piu\' non partono', lungo.dati, [SEGRETO]);
+    confronta('  resta ANIM di 6 byte, il resto identico', lungo.dati, riff(wchunk('VP8X', campiVp8x(0x02)), wchunk('ANIM', B([1, 2, 3, 4, 0, 0])), ANMF));
+    const icc = pulisci(riff(wchunk('VP8X', campiVp8x(0)), wchunk('ICCP', B(SEGRETO)), VP8));
+    senza('ICCP senza il segno del profilo colore (non viene letto): non parte', icc.dati, [SEGRETO]);
+    confronta('  il resto identico', icc.dati, riff(wchunk('VP8X', campiVp8x(0)), VP8));
+    const coda = pulisci(riff(VP8, wchunk('ICCP', B(SEGRETO)), wchunk('ALPH', B(SEGRETO))));
+    senza('WebP semplice con altre parti dopo l\'immagine (ignorate): non partono', coda.dati, [SEGRETO]);
+    confronta('  resta la sola VP8', coda.dati, riff(VP8));
+    const sempliceL = riff(VP8L);
+    confronta('caso vicino: WebP semplice senza perdita (VP8L) parte identico', pulisci(sempliceL).dati, sempliceL);
+}
+
 console.log(`\n${guai === 0 ? 'TUTTO A POSTO' : 'PROBLEMI: ' + guai} (${fatti} controlli)`);
 process.exit(guai === 0 ? 0 : 1);

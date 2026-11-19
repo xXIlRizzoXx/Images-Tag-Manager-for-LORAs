@@ -78,6 +78,9 @@
 !ifndef BUILD_UNINSTALLER
   Var CleanInstall
   Var CleanInstallCheckbox
+  ; ITALIANO: "1" se all'avvio dell'installer c'era gia' il collegamento sul desktop (customInit).
+  ; ENGLISH: "1" if the desktop shortcut was already there when the installer started (customInit).
+  Var DesktopShortcutWasThere
 !endif
 
 !macro customHeader
@@ -287,12 +290,49 @@ Var pid
 ;          already been closed by CHECK_APP_RUNNING, which with customCheckAppRunning (above)
 ;          looks for it by name, the portable version included. It touches ONLY the app's own
 ;          data folder; the user's photos and .txt files live in their own folders, not here.
+;
+; ITALIANO: Poi il collegamento sul desktop, se c'era gia' all'avvio (customInit, qui sotto): si
+;           ricrea verso la cartella NUOVA. Serve in due casi dell'aggiornamento, in cui gira il
+;           disinstallatore della versione installata (uninstallOldVersion, prima di questa macro):
+;           - si e' scelta un'altra cartella: il disinstallatore cancella la cartella vecchia e il
+;             collegamento rimasto puntava a un programma che non c'e' piu';
+;           - la versione installata e' la 2.0.2 o piu' vecchia: il suo disinstallatore cancella il
+;             collegamento senza guardare --updated.
+;           Vale anche togliendo la spunta "Crea un collegamento sul desktop" nella pagina finale
+;           e con /S: un collegamento che c'era resta, verso il programma nuovo. La spunta crea il
+;           collegamento quando non c'era (e lo riscrive uguale quando c'era).
+; ENGLISH: Then the desktop shortcut, if it was already there at startup (customInit, below): it is
+;          created again towards the NEW folder. It matters in two update cases, where the
+;          uninstaller of the installed version runs (uninstallOldVersion, before this macro):
+;          - another folder was chosen: the uninstaller deletes the old folder and the shortcut left
+;            behind pointed at a program that is no longer there;
+;          - the installed version is 2.0.2 or older: its uninstaller deletes the shortcut without
+;            looking at --updated.
+;          It also holds when the "Create a desktop shortcut" box on the finish page is cleared and
+;          with /S: a shortcut that was there stays, towards the new program. The box creates the
+;          shortcut when it was not there (and writes it again, identical, when it was).
 !macro customInstall
   !ifdef APP_PACKAGE_NAME
     ${If} $CleanInstall == ${BST_CHECKED}
       RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
     ${EndIf}
   !endif
+  ${If} $DesktopShortcutWasThere == "1"
+    Call CreateDesktopShortcutNow
+  ${EndIf}
+!macroend
+
+; ITALIANO: Si guarda SOLO qui, in .onInit, prima di qualunque pagina e prima che giri il
+;           disinstallatore vecchio. electron-builder la inserisce solo nell'installer (installer.nsi,
+;           dentro !ifndef BUILD_UNINSTALLER), dopo initMultiUser: $DESKTOP e' gia' quello
+;           dell'utente.
+; ENGLISH: Checked ONLY here, in .onInit, before any page and before the old uninstaller runs.
+;          electron-builder inserts it only in the installer (installer.nsi, inside !ifndef
+;          BUILD_UNINSTALLER), after initMultiUser: $DESKTOP is already the user's one.
+!macro customInit
+  ${If} ${FileExists} "$DESKTOP\Images Tag Manager for LORAs.lnk"
+    StrCpy $DesktopShortcutWasThere "1"
+  ${EndIf}
 !macroend
 
 ; ITALIANO: Lingua PREDEFINITA del wizard = INGLESE, qualunque sia la lingua di
