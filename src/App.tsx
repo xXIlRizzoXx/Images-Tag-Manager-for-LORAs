@@ -11,7 +11,7 @@
 **                                                                            **
 *******************************************************************************
 *******************************************************************************/
-import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import { Folder, Trash, Trash2, RefreshCw, Tag, Tags, Save, SaveAll, ImageIcon, Settings, Volume2, VolumeX, Globe, LayoutGrid, Grid3X3, ZoomOut, ZoomIn, X, Check, ArrowDownUp, Sun, Moon, PieChart, BarChart3, AlertTriangle, Sparkles, Loader2, Wand2, KeyRound, BookOpen, ChevronUp, ChevronDown, ExternalLink, Download, Upload, Copy, ClipboardPaste, Search, Ungroup, Undo2, Plug, Eye, EyeOff } from 'lucide-react';
 import { eseguiStrumentoMcp, fotoPerMcp } from './utils/mcpBridge';
 import type { RispostaMcp } from './utils/mcpBridge';
@@ -875,7 +875,15 @@ export default function App() {
         setImages(prev => [...prev]);
     }, [customProjectTags]);
 
-    useEffect(() => { imagesRef.current = images; }, [images]);
+    // ITALIANO: dentro il commit (useLayoutEffect), non in un compito dopo: il gestore MCP e
+    //           updateImageTags aggiornano imagesRef subito, e un useEffect vecchio, girato dopo
+    //           una chiamata MCP gia' in coda, rimetteva i tag di prima (la modifica dopo li
+    //           riscriveva sopra e una modifica dell'AI spariva).
+    // ENGLISH: inside the commit (useLayoutEffect), not in a later task: the MCP handler and
+    //          updateImageTags update imagesRef at once, and a stale useEffect, run after an MCP
+    //          call already queued, put the old tags back (the next change wrote over them and
+    //          one of the AI's changes vanished).
+    useLayoutEffect(() => { imagesRef.current = images; }, [images]);
 
     // ITALIANO: cosa c'e' su disco per ogni foto (id -> l'ultimo originalTags visto), tenuto FUORI
     //           dalla cronologia. Ctrl+Z e Ctrl+Shift+Z lo rimettono sulle foto che riportano a
