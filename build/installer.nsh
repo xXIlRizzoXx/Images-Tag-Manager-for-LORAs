@@ -336,8 +336,16 @@ Var pid
 
 ; ITALIANO: Alla disinstallazione togliamo anche il collegamento sul desktop
 ;           (electron-builder non lo fa: createDesktopShortcut e' false).
+;           Solo nella disinstallazione VERA: in un aggiornamento l'installer
+;           nuovo fa girare questo disinstallatore con --updated (installUtil.nsh,
+;           uninstallOldVersion) e il collegamento deve restare al suo posto.
 ; ENGLISH: On uninstall also remove the desktop shortcut (electron-builder
-;          skips it because createDesktopShortcut is false).
+;          skips it because createDesktopShortcut is false). Only on a REAL
+;          uninstall: during an update the new installer runs this uninstaller
+;          with --updated (installUtil.nsh, uninstallOldVersion) and the
+;          shortcut must stay where it is.
 !macro customUnInstall
-  Delete "$DESKTOP\Images Tag Manager for LORAs.lnk"
+  ${ifNot} ${isUpdated}
+    Delete "$DESKTOP\Images Tag Manager for LORAs.lnk"
+  ${endIf}
 !macroend
