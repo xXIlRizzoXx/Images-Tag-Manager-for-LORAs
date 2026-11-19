@@ -68,7 +68,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
     'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef',
-    'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport'];
+    'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport', 'ripresiSuFotoAperta'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData };');
 
 /* ITALIANO: l'app finta. `percorsi` = Electron con i percorsi su disco (false = cartella di rete,
@@ -88,7 +88,7 @@ const creaApp = ({ percorsi = true, backup = null } = {}) => {
         B.folderSignature, B.backupDellImport, { getItem: () => backup }, 1024 * 1024, S.parseSidecarText,
         async (f) => { await app.cancelli.get(f.name); return { url: '', width: 1, height: 1 }; }, S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef, { current: false }, { current: false }, () => { }, B.recuperoDellImport);
+        refs.importAttiviRef, { current: false }, { current: false }, () => { }, B.recuperoDellImport, B.ripresiSuFotoAperta);
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).

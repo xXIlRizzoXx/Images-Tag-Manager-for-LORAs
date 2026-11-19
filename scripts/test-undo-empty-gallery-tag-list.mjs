@@ -41,6 +41,30 @@ console.log('\n--- Ctrl+Z oltre l\'import, poi un tag nell\'elenco, poi Ctrl+Shi
     dice('il tag scritto a galleria vuota non taglia i passi da rifare', 3, r.stato.history.length);
     await redo(r); await redo(r);
     dice('due Ctrl+Shift+Z: le foto tornano con la modifica non salvata', ['a:ohwx+hat', 'b:ohwx'], schermo(r));
+    // ITALIANO: e «foo» resta nell'elenco: prima ogni Ctrl+Shift+Z rimetteva l'elenco salvato nel passo,
+    //           che «foo» non l'aveva, e il tag spariva senza avviso.
+    // ENGLISH: and "foo" stays in the list: every Ctrl+Shift+Z used to put back the list saved in the step,
+    //          which did not have "foo", and the tag vanished with no notice.
+    dice('due Ctrl+Shift+Z: «foo» resta nell\'elenco dei tag del progetto', ['foo'], r.stato.customProjectTags);
+    await undo(r);
+    dice('un Ctrl+Z dopo: «foo» resta ancora', ['foo'], r.stato.customProjectTags);
+}
+
+console.log('\n--- «Pulisci tag inutilizzati» a galleria vuota, un tag nuovo, poi Ctrl+Shift+Z ---');
+{
+    // ITALIANO: anche un tag TOLTO a galleria vuota resta tolto: l'elenco scritto dopo l'ultimo passo vale.
+    // ENGLISH: a tag REMOVED with an empty gallery stays removed too: the list written after the last step wins.
+    const r = creaApp([foto('a', ['ohwx'])]);
+    r.aggiungiAlProgetto('vecchio'); await r.attendi();
+    r.importa(); await r.attendi();
+    r.modifica(prev => prev.map(f => ({ ...f, tags: [...f.tags, 'hat'] }))); await r.attendi();
+    await undo(r); await undo(r);
+    dice('premessa: galleria vuota, l\'elenco ha «vecchio»', [[], ['vecchio']], [schermo(r), r.stato.customProjectTags]);
+    r.render().handleCleanUnusedTags(); await r.attendi();
+    r.aggiungiAlProgetto('nuovo'); await r.attendi();
+    dice('premessa: l\'elenco ora ha solo «nuovo»', ['nuovo'], r.stato.customProjectTags);
+    await redo(r); await redo(r);
+    dice('due Ctrl+Shift+Z: le foto tornano e l\'elenco resta quello scritto dopo', [['a:ohwx+hat'], ['nuovo']], [schermo(r), r.stato.customProjectTags]);
 }
 
 console.log('\n--- tag aggiunto all\'elenco PRIMA di caricare le foto ---');

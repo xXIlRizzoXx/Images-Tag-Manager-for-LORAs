@@ -158,7 +158,12 @@ export const cartellaFinta = (attuali) => ({
 //          file's bytes now, `r.rimosso` = the file was removed (handle.remove()).
 // ITALIANO: `discoPieno` = la prima scrittura fallisce come con il disco pieno.
 // ENGLISH: `discoPieno` = the first write fails as with a full disk.
-export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc', lang = 'en', fileDiPrima = 0, discoPieno = false } = {}) => {
+// ITALIANO: `chiusuraFallita` = close() fallisce (su Windows lo spostamento del file di scambio sul file
+//           scelto non riesce, per esempio perche' un altro programma lo tiene aperto): il file scelto
+//           resta com'era.
+// ENGLISH: `chiusuraFallita` = close() fails (on Windows moving the swap file onto the chosen file does
+//          not work, for instance because another program keeps it open): the chosen file stays as it was.
+export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc', lang = 'en', fileDiPrima = 0, discoPieno = false, chiusuraFallita = false } = {}) => {
     const r = { notifiche: [], scelta: null, pezzi: [], chiuso: false, annullato: false, scaricato: null, sulDisco: fileDiPrima, rimosso: false };
     const finestra = {};
     if (conFinestra) {
@@ -181,7 +186,10 @@ export const creaApp = (images, sonda, { conFinestra = true, ordine = 'name-asc'
                         r.pezzi.push(Buffer.from(b));
                         sonda.scrittura(b.length);
                     },
-                    close: async () => { r.chiuso = true; r.sulDisco = r.pezzi.reduce((n, p) => n + p.length, 0); },
+                    close: async () => {
+                        if (chiusuraFallita) throw new DOMException('The process cannot access the file because it is being used by another process', 'InvalidStateError');
+                        r.chiuso = true; r.sulDisco = r.pezzi.reduce((n, p) => n + p.length, 0);
+                    },
                     abort: async () => { r.annullato = true; },
                 }),
                 getFile: async () => ({ size: r.sulDisco }),

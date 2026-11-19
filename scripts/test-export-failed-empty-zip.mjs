@@ -52,6 +52,23 @@ console.log('\n--- disco pieno alla prima scrittura ---');
     dice('il dataset.zip rimasto vuoto si toglie', [true, true], [r.annullato, r.rimosso]);
 }
 
+// ITALIANO: l'archivio e' scritto tutto, ma close() fallisce (il file scelto tenuto aperto da un altro
+//           programma o dall'antivirus): la pulizia stava solo intorno alle scritture.
+// ENGLISH: the archive is written in full, but close() fails (the chosen file kept open by another
+//          program or by the antivirus): the clean-up wrapped only the writes.
+console.log('\n--- close() che fallisce ---');
+{
+    const sonda = creaSonda();
+    const r = await creaApp(progetto(sonda, false), sonda, { chiusuraFallita: true }).esporta(true);
+    dice('premessa: l\'avviso generico dell\'archivio', [t.zipError, 'error'], ultima(r));
+    dice('il dataset.zip rimasto vuoto si toglie', true, r.rimosso);
+}
+{
+    const sonda = creaSonda();
+    const r = await creaApp(progetto(sonda, false), sonda, { chiusuraFallita: true, fileDiPrima: 12345 }).esporta(true);
+    dice('close() fallisce ma il file scelto NON e\' vuoto: non si tocca', false, r.rimosso);
+}
+
 console.log('\n--- quello che NON deve cambiare ---');
 {
     const sonda = creaSonda();

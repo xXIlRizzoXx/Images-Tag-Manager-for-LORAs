@@ -107,6 +107,19 @@ const dopoIlCrash = (grezzo) => grezzo.split('"lotto":"lotto').join('"lotto":"ve
 const conTag = (images, chiaviDaCambiare, tag) => images.map(i => (chiaviDaCambiare.includes(i.backupKey) ? { ...i, tags: [...i.tags, tag] } : i));
 const tagDi = (app, chiave) => (app.images.find(i => i.backupKey === chiave) || { tags: null }).tags;
 const firme = (grezzo) => (grezzo ? JSON.parse(grezzo).sources.map(s => s.signature) : []);
+// ITALIANO: il riepilogo riaperto da confermaImport (quante foto annuncia adesso: null = niente casella), e
+//           «Importa» premuto di nuovo su quello, fino alla fine dell'import.
+// ENGLISH: the summary reopened by confermaImport (how many photos it announces now: null = no checkbox),
+//          and "Import" pressed again on it, until the end of the import.
+const riaperto = (app) => (app.riepilogoRiaperto ? ((app.riepilogoRiaperto.summary || {}).recupero || { n: null }).n : 'non riaperto');
+const confermaRiaperto = async (app, d, ...recupera) => {
+    const v = app.riepilogoRiaperto;
+    if (!v) return;
+    app.riepilogoRiaperto = undefined;
+    const prima = app.refs.importAttiviRef.current;
+    await app.render(d, v.summary).confermaImport(...recupera);
+    for (let i = 0; i < 500 && app.refs.importAttiviRef.current > prima; i++) await new Promise(ok => setTimeout(ok, 10));
+};
 const chiaviNelBackup = (grezzo) => (grezzo ? JSON.parse(grezzo).sources.flatMap(s => Object.keys(s.data)).sort() : []);
 
 console.log('\n--- 1) gli stessi nomi in due sottocartelle: 10_face aperta prima, poi ds ---');
@@ -199,8 +212,78 @@ const crash = async () => {
     await app.conferma(sotto('10_face', PARTI['10_face']), true);
     app.images = app.images.map(i => (i.file.name === 'a1.png' ? { ...i, tags: ['mio tag'] } : i));
     app.refs.imagesRef.current = app.images;
-    await app.conferma(madre(PARTI), true);
+    const d = madre(PARTI);
+    await app.conferma(d, true);
+    // ITALIANO: il riepilogo al clic diceva 4, ma a1 non riprende la sua voce: si riapre con 3.
+    // ENGLISH: the summary at the click said 4, but a1 does not take its entry back: it reopens with 3.
+    dice('a1 con modifiche sue: il riepilogo si riapre con 3 foto, niente importato ancora', [3, 2], [riaperto(app), app.images.length]);
+    await confermaRiaperto(app, d, true);
     dice('a1 con modifiche sue: restano; a2 recuperata', [['mio tag'], ['nuovo tag']], [tagDi(app, '10_face' + SEP + 'a1.png'), tagDi(app, '10_face' + SEP + 'a2.png')]);
+    dice('...e l\'avviso conta 3 foto recuperate, come il riepilogo', true, String((app.ultimo() || [''])[0]).includes(t.importRestoredFromBackup.replace('{n}', '3')));
+}
+
+console.log('\n--- 4) sottocartella recuperata per prima, poi la madre: il riepilogo dice quante tornano davvero ---');
+{
+    // ITALIANO: 10_face poi ds, modifiche su 10_face/a.png e 20_body/b.png, crash. Alla ripartenza 10_face
+    //           (a.png recuperata), poi ds: la voce di a.png sta anche nella sorgente di ds, ma a.png ha gia'
+    //           i suoi tag e non la riprende. Prima il riepilogo proponeva 2 foto e l'avviso diceva 1.
+    // ENGLISH: 10_face then ds, edits on 10_face/a.png and 20_body/b.png, crash. On restart 10_face (a.png
+    //          recovered), then ds: a.png's entry is also in ds's source, but a.png already has its tags and
+    //          does not take it back. The summary used to offer 2 photos and the notice said 1.
+    const app1 = creaApp();
+    await app1.conferma(sotto('10_face', ['a.png']));
+    await app1.conferma(madre({ '10_face': ['a.png'], '20_body': ['b.png'] }));
+    const st = memoria();
+    C.scriviBackupSubito(st, conTag(app1.images, ['10_face' + SEP + 'a.png', 'ds/20_body' + SEP + 'b.png'], 'modifica'), [], 'ds', [], new Set());
+    const grezzo = dopoIlCrash(st.valore);
+    const app2 = creaApp({ backup: grezzo });
+    await app2.conferma(sotto('10_face', ['a.png']), true);
+    dice('premessa: riaprendo 10_face a.png torna con la modifica', ['modifica'], tagDi(app2, '10_face' + SEP + 'a.png'));
+    const d = madre({ '10_face': ['a.png'], '20_body': ['b.png'] });
+    dice('premessa: il riepilogo al clic su ds conta 2 foto (calcolato su tutte)', 2, (riepilogoDi(app2, grezzo, d) || {}).n);
+    await app2.conferma(d, true);
+    dice('il riepilogo si riapre con 1 foto, niente importato ancora', [1, 1], [riaperto(app2), app2.images.length]);
+    await confermaRiaperto(app2, d, true);
+    dice('b.png torna con la modifica, a.png resta com\'era', [['modifica'], ['modifica']], [tagDi(app2, 'ds/20_body' + SEP + 'b.png'), tagDi(app2, '10_face' + SEP + 'a.png')]);
+    dice('l\'avviso conta 1 foto recuperata, come il riepilogo', true, String((app2.ultimo() || [''])[0]).includes(t.importRestoredFromBackup.replace('{n}', '1')));
+    dice('...e il riepilogo non si riapre una seconda volta', 'non riaperto', riaperto(app2));
+}
+{
+    // ITALIANO: l'unica voce e' quella della foto gia' recuperata: il riepilogo si riapre senza casella e
+    //           l'import non dice di aver recuperato niente. Prima chiedeva di recuperare 1 foto e non
+    //           recuperava niente.
+    // ENGLISH: the only entry is the already recovered photo's: the summary reopens with no checkbox and the
+    //          import does not claim to have recovered anything. It used to ask to recover 1 photo and
+    //          recovered nothing.
+    const app1 = creaApp();
+    await app1.conferma(sotto('10_face', ['a.png']));
+    await app1.conferma(madre({ '10_face': ['a.png'], '20_body': ['b.png'] }));
+    const st = memoria();
+    C.scriviBackupSubito(st, conTag(app1.images, ['10_face' + SEP + 'a.png'], 'modifica'), [], 'ds', [], new Set());
+    const grezzo = dopoIlCrash(st.valore);
+    const app2 = creaApp({ backup: grezzo });
+    await app2.conferma(sotto('10_face', ['a.png']), true);
+    const d = madre({ '10_face': ['a.png'], '20_body': ['b.png'] });
+    dice('premessa: il riepilogo al clic su ds conta 1 foto', 1, (riepilogoDi(app2, grezzo, d) || {}).n);
+    await app2.conferma(d, true);
+    dice('il riepilogo si riapre senza la casella del recupero', null, riaperto(app2));
+    await confermaRiaperto(app2, d, true);
+    dice('b.png entra senza tag, a.png resta com\'era', [[], ['modifica']], [tagDi(app2, 'ds/20_body' + SEP + 'b.png'), tagDi(app2, '10_face' + SEP + 'a.png')]);
+    dice('l\'avviso non parla di foto recuperate', false, String((app2.ultimo() || [''])[0]).includes(t.importRestoredFromBackup.split('{n}')[0]));
+}
+{
+    // ITALIANO: con la casella tolta non si riapre niente: non si applica nessuna voce.
+    // ENGLISH: with the box unticked nothing reopens: no entry is applied.
+    const app1 = creaApp();
+    await app1.conferma(sotto('10_face', ['a.png']));
+    await app1.conferma(madre({ '10_face': ['a.png'], '20_body': ['b.png'] }));
+    const st = memoria();
+    C.scriviBackupSubito(st, conTag(app1.images, ['10_face' + SEP + 'a.png', 'ds/20_body' + SEP + 'b.png'], 'modifica'), [], 'ds', [], new Set());
+    const grezzo = dopoIlCrash(st.valore);
+    const app2 = creaApp({ backup: grezzo });
+    await app2.conferma(sotto('10_face', ['a.png']), true);
+    await app2.conferma(madre({ '10_face': ['a.png'], '20_body': ['b.png'] }), false);
+    dice('casella tolta: il riepilogo non si riapre e b.png entra senza la modifica', ['non riaperto', []], [riaperto(app2), tagDi(app2, 'ds/20_body' + SEP + 'b.png')]);
 }
 {
     // ITALIANO: casella tolta: niente si applica, come per le foto nuove.

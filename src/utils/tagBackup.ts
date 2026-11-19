@@ -14,7 +14,7 @@
 *******************************************************************************
 *******************************************************************************/
 
-import { parseSidecarText, fotoDaSalvare, TXT_MAX_TAGS_PER_FILE, TXT_TAG_MAX_CHARS } from './sidecarTags';
+import { parseSidecarText, fotoDaSalvare, tagDiImport, TXT_MAX_TAGS_PER_FILE, TXT_TAG_MAX_CHARS } from './sidecarTags';
 import { uniqueTagsIgnoringCase } from './tagCase';
 
 // ITALIANO: separatore fra cartella e nome nelle chiavi del backup (vedi makeBackupKeyer in App.tsx).
@@ -550,4 +550,24 @@ export const tagDaRipristinare = (entry: any, orderedTags: string[], originalTag
     //          comes back like the others. It used to come back with its old tags without a word.
     if (!differs || (vecchiaVersione && backupTags.length === 0)) return null;
     return unite;
+};
+
+// ITALIANO: I tag da rimettere su una foto GIA' APERTA in un altro lotto quando si apre la cartella che la
+//   contiene (vedi aperteImpronta in App.tsx), o null = la foto resta com'e'. La voce torna solo se la foto
+//   non e' nel cestino, il suo .txt e' stato letto (niente baseTxtNonLetto), non ha modifiche sue (i suoi tag
+//   sono quelli del .txt piu' le trigger) e tagDaRipristinare la accetta. Una sola regola per il conteggio
+//   del riepilogo (confermaImport) e per il ripristino (processImportData): prima il riepilogo contava
+//   anche le voci di foto gia' recuperate, e annunciava piu' foto di quelle che poi tornavano.
+// ENGLISH: The tags to put back on a photo ALREADY OPEN in another batch when the folder holding it is
+//   opened (see aperteImpronta in App.tsx), or null = the photo stays as it is. The entry comes back only
+//   when the photo is not in the trash, its .txt was read (no baseTxtNonLetto), it has no edits of its own
+//   (its tags are the .txt's plus the triggers) and tagDaRipristinare accepts it. One rule for the summary's
+//   count (confermaImport) and for the restore (processImportData): the summary used to count the entries
+//   of photos already recovered too, and announced more photos than came back.
+export const ripresiSuFotoAperta = (entry: any, img: { tags: string[]; originalTags?: string[]; isTrashed?: boolean; baseTxtNonLetto?: unknown } | null | undefined, triggerAttive: string[]): string[] | null => {
+    if (!img || img.isTrashed || img.baseTxtNonLetto || !Array.isArray(img.tags)) return null;
+    const dalTxt = img.originalTags || [];
+    const comeDalTxt = tagDiImport(triggerAttive, dalTxt).tags;
+    if (JSON.stringify([...img.tags].sort()) !== JSON.stringify([...comeDalTxt].sort())) return null;
+    return tagDaRipristinare(entry, img.tags, dalTxt, triggerAttive);
 };

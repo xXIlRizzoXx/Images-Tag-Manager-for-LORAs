@@ -42,7 +42,7 @@ import { Lightbox } from './components/Lightbox';
 import { TagSuggestionsPanel } from './components/TagSuggestionsPanel';
 import { sanitizeFileName, buildTagFileName, sidecarTagFileName } from './utils/pathUtils';
 import { makeFolderKeyer, cartellaImmagine, cartellaTesto, fileDaSidecar, leggiTestoSidecar, parseSidecarText, tagDiImport, tagDopoEditor, pulisciTagProgetto, txtNonLettoInVigore, txtCambiatoSulDisco, testoTxtSulDisco } from './utils/sidecarTags';
-import { BACKUP_KEY_SEP, folderSignature, backupDellImport, recuperoDellImport, tagDaRipristinare, type FotoChiusa } from './utils/tagBackup';
+import { BACKUP_KEY_SEP, folderSignature, backupDellImport, recuperoDellImport, tagDaRipristinare, ripresiSuFotoAperta, type FotoChiusa } from './utils/tagBackup';
 import { modificheNonSalvate, fotoDaSalvare, scriviBackupSubito, backupDopoChiusura } from './utils/closeGuard';
 import { isLetterShortcut, isTextEditingWithText } from './utils/shortcuts';
 import { qualityWarningText } from './utils/imageQuality';
@@ -880,7 +880,19 @@ export default function App() {
         //          an empty step, which Ctrl+Z always skips, but it cut the steps to redo (after a Ctrl+Z
         //          past the import the photos never came back) and stayed before the import, where "Undo
         //          the emptying" filled it. The import after records the list in its own step.
+        // ITALIANO: ma il cambio vale per tutti i passi: i tag aggiunti entrano nell'elenco di ogni passo e
+        //           quelli tolti ne escono. Senza, Ctrl+Shift+Z (o Ctrl+Z) verso un passo con foto rimetteva
+        //           l'elenco salvato li', e un tag scritto a galleria vuota spariva senza avviso.
+        // ENGLISH: but the change holds for every step: the added tags go into each step's list and the
+        //          removed ones leave it. Without this, Ctrl+Shift+Z (or Ctrl+Z) to a step with photos put
+        //          back the list saved there, and a tag typed with an empty gallery vanished with no notice.
         if (images.length === 0) {
+            const tolti = registrato.filter(tag => !customProjectTags.includes(tag));
+            const aggiunti = customProjectTags.filter(tag => !registrato.includes(tag));
+            customTagsHistoryRef.current = customTagsHistoryRef.current.map(delPasso => {
+                const resta = delPasso.filter(tag => !tolti.includes(tag));
+                return [...resta, ...aggiunti.filter(tag => !resta.includes(tag))];
+            });
             elencoRegistratoRef.current = customProjectTags;
             return;
         }
@@ -3821,11 +3833,13 @@ export default function App() {
             // ITALIANO: l'import usa solo le foto nuove, e la loro impronta puo' trovare un backup che il
             //           riepilogo (calcolato su tutte) non aveva annunciato: il backup non si applica senza
             //           chiedere, il riepilogo si riapre con la casella. Se invece il riepilogo l'aveva
-            //           annunciato ma sulle foto nuove non c'e' niente, non c'e' niente da applicare.
+            //           annunciato con un altro numero (o sulle foto nuove non c'e' niente), si riapre con
+            //           quello giusto (vedi sotto).
             // ENGLISH: the import uses only the new photos, and their fingerprint can find a backup the
             //          summary (computed on all of them) had not announced: the backup is not applied without
-            //          asking, the summary reopens with the checkbox. When the summary had announced it but
-            //          there is nothing for the new photos, there is nothing to apply.
+            //          asking, the summary reopens with the checkbox. When the summary had announced it with
+            //          another number instead (or there is nothing for the new photos), it reopens with the
+            //          right one (see below).
             const chiesto = !!(riepilogoAlClic && riepilogoAlClic.recupero);
             let recuperoNuove: { n: number; ts: number | null } | null = null;
             try {
@@ -3836,9 +3850,42 @@ export default function App() {
                 // ENGLISH: the entries of the photos already open elsewhere count too: processImportData puts
                 //          them back on those photos (see aperteImpronta). The summary used to announce them,
                 //          the import did not apply them and they vanished when the backup was rewritten.
-                recuperoNuove = recuperoDellImport(localStorage.getItem('tagBackup'), d.handle, [...nuove, ...nomiImpronta.map(name => ({ name }))],
-                    [...nuove.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]), ...aperteImpronta.filter(v => v.id).map(v => v.chiave)]);
+                const grezzo = localStorage.getItem('tagBackup');
+                const immaginiImpronta = [...nuove, ...nomiImpronta.map(name => ({ name }))];
+                const chiaviImpronta = [...nuove.flatMap((f: any) => [chiaveDi(f), fogliaDi(f)]), ...aperteImpronta.filter(v => v.id).map(v => v.chiave)];
+                recuperoNuove = recuperoDellImport(grezzo, d.handle, immaginiImpronta, chiaviImpronta);
+                // ITALIANO: ma solo quelle che processImportData rimettera' davvero (ripresiSuFotoAperta): una
+                //           foto gia' recuperata riaprendo la sottocartella, o con modifiche sue, o nel cestino,
+                //           resta com'e'. Prima contava ogni voce, e l'avviso finale diceva meno foto del
+                //           riepilogo. Stessa sorgente di processImportData (stesse chiavi e stessa impronta).
+                // ENGLISH: but only those processImportData will really put back (ripresiSuFotoAperta): a photo
+                //          already recovered by reopening the subfolder, or with edits of its own, or in the
+                //          trash, stays as it is. Every entry used to count, and the final notice said fewer
+                //          photos than the summary. Same source as processImportData (same keys and fingerprint).
+                const aperteConId = aperteImpronta.filter(v => v.id);
+                if (recuperoNuove && aperteConId.length > 0) {
+                    const b = backupDellImport(grezzo, importFolder, folderSignature(importFolder, immaginiImpronta.map(f => String(f.name || ''))), chiaviImpronta);
+                    const vive = new Map(imagesRef.current.map((img: any) => [String(img.id), img]));
+                    const triggerAdesso = globalTriggersRef.current;
+                    const saltate = new Set(aperteConId.filter(v => b && Object.prototype.hasOwnProperty.call(b.voci, v.chiave)
+                        && !ripresiSuFotoAperta(b.voci[v.chiave], vive.get(v.id), triggerAdesso)).map(v => v.chiave));
+                    const n = recuperoNuove.n - saltate.size;
+                    recuperoNuove = n > 0 ? { ...recuperoNuove, n } : null;
+                }
             } catch (_) { recuperoNuove = null; }
+            // ITALIANO: il riepilogo al clic contava tutte le foto della cartella, anche quelle gia' aperte
+            //           che non riprendono la loro voce: se il numero giusto e' un altro, il riepilogo si
+            //           riapre con quello (o senza la casella, se non resta niente) invece di annunciare
+            //           foto che poi non tornano. Con la casella tolta non si applica niente: si va avanti.
+            // ENGLISH: the summary at the click counted every photo of the folder, those already open that do
+            //          not take their entry back too: when the right number is another, the summary reopens
+            //          with it (or without the checkbox, when nothing is left) instead of announcing photos
+            //          that then do not come back. With the box unticked nothing is applied: go on.
+            if (chiesto && recuperaBackup !== false && (recuperoNuove ? recuperoNuove.n : 0) !== riepilogoAlClic.recupero.n) {
+                if (folderInputRef.current) folderInputRef.current.value = '';
+                setImportSummary({ isOpen: true, summary: { ...riepilogoAlClic, recupero: recuperoNuove }, pendingData: d });
+                return;
+            }
             if (recuperoNuove && !chiesto) {
                 if (folderInputRef.current) folderInputRef.current.value = '';
                 setImportSummary({ isOpen: true, summary: { ...(riepilogoAlClic || {}), recupero: recuperoNuove }, pendingData: d });
@@ -4169,10 +4216,10 @@ export default function App() {
                 const chiaveDellId = new Map(aperteImpronta.filter(v => v.id).map(v => [v.id, v.chiave]));
                 for (const img of leggiAperte()) {
                     const chiave = chiaveDellId.get(String(img.id));
-                    if (!chiave || img.isTrashed || img.baseTxtNonLetto || !Object.prototype.hasOwnProperty.call(backupMap, chiave)) continue;
-                    const comeDalTxt = tagDiImport(triggerAttive, img.originalTags || []).tags;
-                    if (JSON.stringify([...img.tags].sort()) !== JSON.stringify([...comeDalTxt].sort())) continue;
-                    const ripresi = tagDaRipristinare(backupMap[chiave], img.tags, img.originalTags || [], triggerAttive);
+                    if (!chiave || !Object.prototype.hasOwnProperty.call(backupMap, chiave)) continue;
+                    // ITALIANO: la stessa regola del conteggio in confermaImport (vedi ripresiSuFotoAperta).
+                    // ENGLISH: the same rule as the count in confermaImport (see ripresiSuFotoAperta).
+                    const ripresi = ripresiSuFotoAperta(backupMap[chiave], img, triggerAttive);
                     if (ripresi) daRimettere.set(String(img.id), { prima: img.tags, tags: ripresi });
                 }
                 restoredCount += daRimettere.size;
@@ -5983,6 +6030,15 @@ export default function App() {
                 try {
                     writable = await handle.createWritable();
                     await scriviZip(voci, { write: (pezzo) => writable.write(pezzo) }, { onAvanzamento: avanzamento });
+                    // ITALIANO: anche close() sta qui dentro: su Windows lo spostamento del file di scambio
+                    //           sul file scelto puo' fallire (un altro programma o l'antivirus lo tiene
+                    //           aperto), e il dataset.zip da 0 byte restava perche' la pulizia sotto non
+                    //           girava. abort() dopo un close() fallito puo' fallire a sua volta: si ignora.
+                    // ENGLISH: close() is in here too: on Windows moving the swap file onto the chosen file
+                    //          can fail (another program or the antivirus keeps it open), and the 0-byte
+                    //          dataset.zip stayed because the clean-up below did not run. abort() after a
+                    //          failed close() may fail in turn: it is ignored.
+                    await writable.close();
                 } catch (errScrittura) {
                     // ITALIANO: si butta via, NON si chiude: close() SALVEREBBE il pezzo scritto
                     //           fin qui, e resterebbe sul disco un dataset.zip troncato che
@@ -6003,7 +6059,6 @@ export default function App() {
                     } catch (_) { }
                     throw errScrittura;
                 }
-                await writable.close();
             } else {
                 // ITALIANO: riserva per i browser senza finestra di salvataggio: l'archivio si
                 //           raccoglie in memoria e si scarica (qui non c'e' un file su cui scrivere).
