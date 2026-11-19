@@ -110,16 +110,42 @@ const minimalExifSegment = (orientation: number): number[] => [
     0x00, 0x00, 0x00, 0x00,                         // nessun altro IFD / no next IFD
 ];
 
-// ITALIANO: JPEG. Restano APP0 solo se JFIF, il profilo colore (APP2 ICC_PROFILE), APP14 (Adobe, serve a
-//           decodificare i colori) e tutte le parti dell'immagine; via APP1 (Exif, XMP), gli altri
-//           APPn (Photoshop/IPTC, C2PA, dati dei produttori) e i commenti, anche fra una scansione e
-//           l'altra di un JPEG progressivo. Quello che segue la fine dell'immagine (foto secondarie,
-//           video delle "foto in movimento", dati dei produttori) non si manda.
-// ENGLISH: JPEG. Kept: APP0 only if JFIF, the colour profile (APP2 ICC_PROFILE), APP14 (Adobe, needed to
-//          decode the colours) and every part of the image; removed: APP1 (Exif, XMP), the other
-//          APPn (Photoshop/IPTC, C2PA, maker data) and comments, also between the scans of a
-//          progressive JPEG. What follows the end of the image (secondary pictures, the video of
-//          "motion photos", maker data) is not sent.
+// ITALIANO: copia di un segmento con i soli primi `campi` byte dopo la lunghezza, che viene riscritta;
+//           `zeri` = da dove azzerare (le misure della miniatura JFIF). Il file di partenza non cambia.
+// ENGLISH: copy of a segment with only the first `campi` bytes after the length, which is rewritten;
+//          `zeri` = where to start zeroing (the JFIF thumbnail size). The source file is not changed.
+const soliCampi = (b: Uint8Array, i: number, campi: number, zeri = campi + 4): Uint8Array => {
+    const s = b.slice(i, i + 4 + campi);
+    s[2] = 0; s[3] = campi + 2;
+    s.fill(0, zeri);
+    return s;
+};
+
+// ITALIANO: JPEG. Restano APP0 solo se JFIF, il profilo colore (APP2 ICC_PROFILE), APP14 solo se Adobe
+//           (serve a decodificare i colori) e le parti dell'immagine; via APP1 (Exif, XMP), gli altri
+//           APPn (Photoshop/IPTC, C2PA, dati dei produttori), i commenti, anche fra una scansione e
+//           l'altra di un JPEG progressivo, e il DNL (chi disegna lo ignora). Di JFIF e Adobe partono
+//           solo i campi che chi disegna legge (14 e 12 byte): la miniatura del JFIF (pixel non
+//           compressi, magari della foto prima del ritaglio) e i byte in coda non partono. Quello
+//           che segue la fine dell'immagine (foto secondarie, video delle "foto in movimento", dati
+//           dei produttori) non si manda.
+// ENGLISH: JPEG. Kept: APP0 only if JFIF, the colour profile (APP2 ICC_PROFILE), APP14 only if Adobe
+//          (needed to decode the colours) and the parts of the image; removed: APP1 (Exif, XMP), the
+//          other APPn (Photoshop/IPTC, C2PA, maker data), comments, also between the scans of a
+//          progressive JPEG, and DNL (the decoder ignores it). Of JFIF and Adobe only the fields the
+//          decoder reads go (14 and 12 bytes): the JFIF thumbnail (uncompressed pixels, maybe of the
+//          photo before cropping) and any trailing bytes are not sent. What follows the end of the
+//          image (secondary pictures, the video of "motion photos", maker data) is not sent.
+// ITALIANO: i marcatori riservati o di estensione (JPG 0xC8, DHP 0xDE, EXP 0xDF, JPG0-13 0xF0-0xFD,
+//           RES 0x02-0xBF) e un secondo SOI: libjpeg-turbo (quella di Chromium) si ferma con un errore
+//           su ognuno, quindi nessuno li vede disegnati. Possono pero' portare un testo: la foto non
+//           parte (come un file rovinato) invece di mandarli interi.
+// ENGLISH: reserved or extension markers (JPG 0xC8, DHP 0xDE, EXP 0xDF, JPG0-13 0xF0-0xFD, RES
+//          0x02-0xBF) and a second SOI: libjpeg-turbo (Chromium's) stops with an error on each of them,
+//          so nobody sees such a file drawn. They can carry a text though: the photo is not sent (like
+//          a damaged file) instead of sending them whole.
+const jpegMarcatoreRifiutato = (m: number): boolean =>
+    m === 0xD8 || m === 0xC8 || m === 0xDE || m === 0xDF || (m >= 0xF0 && m <= 0xFD) || (m >= 0x02 && m <= 0xBF);
 const stripJpeg = (b: Uint8Array): Uint8Array => {
     const out: Uint8Array[] = [b.subarray(0, 2)];
     let i = 2;
@@ -134,6 +160,14 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
         const m = b[i + 1];
         if (m === 0xD9) { out.push(b.subarray(i, i + 2)); break; }
         if ((m >= 0xD0 && m <= 0xD7) || m === 0x01) { out.push(b.subarray(i, i + 2)); i += 2; continue; }
+        // ITALIANO: FF 00 fuori dai dati compressi non e' un marcatore: libjpeg lo scarta con i byte che
+        //           seguono fino al prossimo FF. Prima veniva letto come una parte con la sua lunghezza
+        //           e partiva intero; ora si salta come gli altri byte di troppo.
+        // ENGLISH: FF 00 outside the compressed data is not a marker: libjpeg discards it with the bytes
+        //          that follow up to the next FF. It used to be read as a part with its own length and
+        //          sent whole; now it is skipped like the other extra bytes.
+        if (m === 0x00) { i += 2; continue; }
+        if (jpegMarcatoreRifiutato(m)) throw malformed();
         if (i + 4 > b.length) throw malformed();
         const len = (b[i + 2] << 8) | b[i + 3];
         const end = i + 2 + len;
@@ -149,9 +183,13 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
             if (ascii(b, i + 4, 12) === 'ICC_PROFILE\0') out.push(b.subarray(i, end));
         } else if (m === 0xE0) {
             // ITALIANO: solo JFIF; via JFXX (miniatura), CIFF (proprietario e numero di serie), AVI1...
+            //           Del JFIF una copia di 16 byte con la miniatura 0x0; uno piu' corto parte com'e'.
             // ENGLISH: JFIF only; JFXX (thumbnail), CIFF (owner and serial number), AVI1... removed.
-            if (ascii(b, i + 4, 5) === 'JFIF\0') out.push(b.subarray(i, end));
-        } else if (m === 0xFE || (isApp && m !== 0xE0 && m !== 0xEE)) {
+            //          Of JFIF a 16-byte copy with a 0x0 thumbnail; a shorter one goes as it is.
+            if (ascii(b, i + 4, 5) === 'JFIF\0') out.push(len >= 16 ? soliCampi(b, i, 14, 16) : b.subarray(i, end));
+        } else if (m === 0xEE) {
+            if (ascii(b, i + 4, 5) === 'Adobe') out.push(len >= 14 ? soliCampi(b, i, 12) : b.subarray(i, end));
+        } else if (m === 0xFE || m === 0xDC || isApp) {
             // via / removed
         } else {
             out.push(b.subarray(i, end));
@@ -182,12 +220,61 @@ const stripJpeg = (b: Uint8Array): Uint8Array => {
 
 // ITALIANO: PNG. Restano le parti che servono a disegnare la foto (quelle obbligatorie e quelle
 //           di colore, trasparenza, dimensione dei pixel e animazione APNG); via testi (tEXt, zTXt,
-//           iTXt: autore, programma, a volte percorsi), eXIf, data (tIME), C2PA e parti private.
+//           iTXt: autore, programma, a volte percorsi), eXIf, data (tIME), C2PA, parti private, le
+//           tavolozze suggerite sPLT e l'istogramma hIST (chi disegna non li usa, e sPLT ha un nome
+//           libero).
+//           Delle parti tenute parte solo quello che chi disegna legge davvero (le regole di libpng,
+//           quella di Chromium): PLTE solo nelle foto a tavolozza (colore 3) e al massimo con i colori
+//           che la profondita' permette (nelle altre e' solo "suggerita", o vietata); tRNS, bKGD, sBIT
+//           e le parti a misura fissa solo con la loro misura giusta (con un'altra libpng le ignora);
+//           tRNS mai nelle foto con il canale alfa e, a tavolozza, non piu' lunga della tavolozza;
+//           acTL, fcTL e fdAT solo in un APNG vero (acTL prima del primo IDAT); IEND sempre vuota.
+//           Una IHDR che non e' la prima o non e' lunga 13, una parte "critica" sconosciuta
+//           (iniziale maiuscola) o una seconda PLTE fanno fermare libpng: la foto non parte.
 // ENGLISH: PNG. Kept: the parts needed to draw the photo (the mandatory ones and those for colour,
 //          transparency, pixel size and APNG animation); removed: text (tEXt, zTXt, iTXt: author,
-//          software, sometimes paths), eXIf, date (tIME), C2PA and private parts.
-const PNG_KEEP = new Set(['tRNS', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'cICP', 'mDCV', 'cLLI', 'bKGD', 'hIST', 'pHYs', 'sPLT',
+//          software, sometimes paths), eXIf, date (tIME), C2PA, private parts, the suggested
+//          palettes sPLT and the histogram hIST (the decoder does not use them, and sPLT has a free
+//          name).
+//          Of the kept parts only what the decoder really reads goes (libpng's rules, Chromium's
+//          decoder): PLTE only in palette photos (colour type 3) and with at most the colours the
+//          bit depth allows (elsewhere it is only "suggested", or forbidden); tRNS, bKGD, sBIT and
+//          the fixed-size parts only with their right size (with another one libpng ignores them);
+//          tRNS never in photos with an alpha channel and, with a palette, not longer than the
+//          palette; acTL, fcTL and fdAT only in a real APNG (acTL before the first IDAT); IEND always
+//          empty. An IHDR that is not the first part or not 13 bytes long, an unknown "critical"
+//          part (capital initial) or a second PLTE make libpng stop: the photo is not sent.
+const PNG_KEEP = new Set(['tRNS', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'cICP', 'mDCV', 'cLLI', 'bKGD', 'pHYs',
     'acTL', 'fcTL', 'fdAT']);
+// ITALIANO: misure fisse; per sBIT, bKGD e tRNS la misura dipende dal tipo di colore (0, 2, 3, 4, 6).
+// ENGLISH: fixed sizes; for sBIT, bKGD and tRNS the size depends on the colour type (0, 2, 3, 4, 6).
+const PNG_MISURE: Record<string, number> = { cHRM: 32, gAMA: 4, sRGB: 1, pHYs: 9, cICP: 4, mDCV: 24, cLLI: 8, acTL: 8, fcTL: 26 };
+const PNG_MISURE_SBIT: Record<number, number> = { 0: 1, 2: 3, 3: 3, 4: 2, 6: 4 };
+const PNG_MISURE_BKGD: Record<number, number> = { 0: 2, 2: 6, 3: 1, 4: 2, 6: 6 };
+const PNG_MISURE_TRNS: Record<number, number> = { 0: 2, 2: 6 };
+const PNG_CRC = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        t[n] = c >>> 0;
+    }
+    return t;
+})();
+// ITALIANO: una parte PNG nuova (lunghezza, tipo, dati, CRC giusto), per le parti accorciate.
+// ENGLISH: a new PNG part (length, type, data, right CRC), for the shortened parts.
+const pngParte = (type: string, data: Uint8Array): Uint8Array => {
+    const n = data.length;
+    const s = new Uint8Array(12 + n);
+    s[0] = (n >>> 24) & 0xFF; s[1] = (n >>> 16) & 0xFF; s[2] = (n >>> 8) & 0xFF; s[3] = n & 0xFF;
+    for (let k = 0; k < 4; k++) s[4 + k] = type.charCodeAt(k);
+    s.set(data, 8);
+    let c = 0xFFFFFFFF;
+    for (let k = 4; k < 8 + n; k++) c = PNG_CRC[(c ^ s[k]) & 0xFF] ^ (c >>> 8);
+    c = (c ^ 0xFFFFFFFF) >>> 0;
+    s[8 + n] = (c >>> 24) & 0xFF; s[9 + n] = (c >>> 16) & 0xFF; s[10 + n] = (c >>> 8) & 0xFF; s[11 + n] = c & 0xFF;
+    return s;
+};
 // ITALIANO: un PNG che finisce prima di IEND (copia interrotta, programma che non lo scrive) e che
 //           ha gia' almeno un IDAT completo parte con le sole parti COMPLETE lette fin li', come il
 //           JPEG troncato; la parte tagliata non parte mai, perche' non si sa che cosa contiene.
@@ -200,6 +287,10 @@ const stripPng = (b: Uint8Array): Uint8Array => {
     const out: Uint8Array[] = [b.subarray(0, 8)];
     let i = 8;
     let pixel = false;
+    let colore = -1;
+    let voci = 0;          // colori della tavolozza tenuti / palette colours kept
+    let tavolozza = false; // PLTE gia' vista (colore 3) / PLTE already seen (colour type 3)
+    let animata = false;   // acTL prima del primo IDAT / acTL before the first IDAT
     while (true) {
         if (i + 12 > b.length) { if (pixel) break; throw malformed(); }
         const len = b[i] * 0x1000000 + ((b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]);
@@ -207,16 +298,54 @@ const stripPng = (b: Uint8Array): Uint8Array => {
         const end = i + 12 + len;
         if (end > b.length) { if (pixel) break; throw malformed(); }
         const critical = type.charCodeAt(0) >= 65 && type.charCodeAt(0) <= 90;
-        if (critical || PNG_KEEP.has(type)) out.push(b.subarray(i, end));
-        if (type === 'IDAT') pixel = true;
+        const intera = b.subarray(i, end);
+        // ITALIANO: senza IHDR in testa il tipo di colore resta sconosciuto (-1): PLTE, tRNS, sBIT e bKGD
+        //           non partono.
+        // ENGLISH: without IHDR at the top the colour type stays unknown (-1): PLTE, tRNS, sBIT and bKGD
+        //          are not sent.
+        if (type === 'IHDR') {
+            if (i !== 8 || len !== 13) throw malformed();
+            colore = b[i + 17];
+            if (!(colore in PNG_MISURE_SBIT)) throw malformed();
+            out.push(intera);
+        } else if (type === 'PLTE') {
+            if (colore === 3) {
+                if (tavolozza || pixel || len === 0 || len % 3 !== 0 || len > 768) throw malformed();
+                tavolozza = true;
+                voci = Math.min(len / 3, 1 << Math.min(b[24], 8)); // b[24] = profondita' / bit depth
+                out.push(voci * 3 < len ? pngParte('PLTE', b.subarray(i + 8, i + 8 + voci * 3)) : intera);
+            }
+        } else if (type === 'IDAT') {
+            out.push(intera);
+            pixel = true;
+        } else if (type === 'IEND') {
+            out.push(len === 0 ? intera : pngParte('IEND', new Uint8Array(0)));
+            break;
+        } else if (critical) {
+            throw malformed();
+        } else if (PNG_KEEP.has(type)) {
+            let giusta: boolean;
+            if (type === 'tRNS') giusta = colore === 3 ? tavolozza && len >= 1 && len <= voci : PNG_MISURE_TRNS[colore] === len;
+            else if (type === 'sBIT') giusta = PNG_MISURE_SBIT[colore] === len;
+            else if (type === 'bKGD') giusta = PNG_MISURE_BKGD[colore] === len;
+            else if (type === 'acTL') giusta = len === 8 && !pixel && !animata;
+            else if (type === 'fdAT') giusta = animata && len >= 4;
+            else if (type === 'fcTL') giusta = animata && len === 26;
+            else giusta = !(type in PNG_MISURE) || PNG_MISURE[type] === len;
+            if (giusta) out.push(intera);
+            if (type === 'acTL' && giusta) animata = true;
+        }
         i = end;
-        if (type === 'IEND') break;
     }
     return concat(out);
 };
 
-// ITALIANO: WebP. Via le parti EXIF e XMP e i loro segni nell'intestazione VP8X; resta il resto.
-// ENGLISH: WebP. The EXIF and XMP parts and their flags in the VP8X header go; the rest stays.
+// ITALIANO: WebP. Via le parti EXIF e XMP, ogni parte sconosciuta e i loro segni nell'intestazione
+//           VP8X; delle altre parte solo quello che chi disegna legge (vedi sotto, prima di stripWebp).
+//           Di VP8X partono solo i suoi 10 byte: quelli in piu' chi disegna non li legge.
+// ENGLISH: WebP. The EXIF and XMP parts, every unknown part and their flags in the VP8X header go;
+//          of the others only what the decoder reads goes (see below, before stripWebp).
+//          Of VP8X only its 10 bytes go: the decoder does not read any extra ones.
 const WEBP_KEEP = new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF', 'ICCP']);
 // ITALIANO: alcuni programmi contano nella lunghezza RIFF il byte di riempimento dell'ultima parte
 //           (lunghezza dispari) senza scriverlo: un solo byte in meno si accetta; se manca un byte
@@ -224,24 +353,72 @@ const WEBP_KEEP = new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF', 'ICCP
 // ENGLISH: some writers count the last part's pad byte (odd length) in the RIFF size without
 //          writing it: one missing byte is accepted; if a data byte is missing the part runs past
 //          the file and the photo is not sent.
+// ITALIANO: delle parti tenute parte solo quello che libwebp (quella di Chromium) legge davvero,
+//           provato con libwebp 1.6: in un WebP semplice (prima parte VP8 o VP8L) solo quella prima
+//           parte, le altre sono ignorate; ALPH solo in una foto ferma con il segno della trasparenza,
+//           la prima, prima della sua VP8 (con VP8L, dopo l'immagine, doppia o senza il segno non si
+//           usa, o rende la foto illeggibile) e, se non compressa, solo i byte larghezza x altezza;
+//           ANIM e ANMF solo con il segno dell'animazione, ANIM con i suoi 6 byte; ICCP solo con il
+//           segno del profilo colore.
+// ENGLISH: of the kept parts only what libwebp (Chromium's) really reads goes, tested with libwebp 1.6:
+//          in a simple WebP (first part VP8 or VP8L) only that first part, the others are ignored;
+//          ALPH only in a still photo with the transparency flag, the first one, before its VP8 (with
+//          VP8L, after the image, doubled or without the flag it is not used, or it makes the photo
+//          unreadable) and, if uncompressed, only the width x height bytes; ANIM and ANMF only with the
+//          animation flag, ANIM with its 6 bytes; ICCP only with the colour profile flag.
+const webpParte = (b: Uint8Array, at: number, n: number): Uint8Array => {
+    const s = new Uint8Array(8 + n + (n & 1));
+    s.set(b.subarray(at, at + 4));
+    s[4] = n & 0xFF; s[5] = (n >>> 8) & 0xFF; s[6] = (n >>> 16) & 0xFF; s[7] = (n >>> 24) & 0xFF;
+    s.set(b.subarray(at + 8, at + 8 + n), 8);
+    return s;
+};
 const stripWebp = (b: Uint8Array): Uint8Array => {
     let riffEnd = 8 + (b[4] | (b[5] << 8) | (b[6] << 16)) + b[7] * 0x1000000;
     if (riffEnd === b.length + 1) riffEnd = b.length;
     if (riffEnd > b.length) throw malformed();
-    const out: Uint8Array[] = [];
-    let i = 12;
-    while (i < riffEnd) {
+    const parti: { type: string; i: number; len: number; end: number }[] = [];
+    for (let i = 12; i < riffEnd;) {
         if (i + 8 > riffEnd) throw malformed();
         const type = ascii(b, i, 4);
         const len = (b[i + 4] | (b[i + 5] << 8) | (b[i + 6] << 16)) + b[i + 7] * 0x1000000;
         const end = i + 8 + len + (len & 1);
         if (i + 8 + len > riffEnd) throw malformed();
-        if (WEBP_KEEP.has(type)) {
-            const chunk = b.slice(i, Math.min(end, riffEnd));
-            if (type === 'VP8X' && len >= 1) chunk[8] &= ~(0x08 | 0x04);
-            out.push(chunk);
-        }
+        parti.push({ type, i, len, end });
         i = end;
+    }
+    const prima = parti[0];
+    const semplice = prima !== undefined && (prima.type === 'VP8 ' || prima.type === 'VP8L');
+    const flag = prima?.type === 'VP8X' && prima.len >= 1 ? b[prima.i + 8] : 0;
+    const animata = (flag & 0x02) !== 0;
+    const pixelAlfa = prima?.type === 'VP8X' && prima.len >= 10
+        ? (1 + (b[prima.i + 12] | (b[prima.i + 13] << 8) | (b[prima.i + 14] << 16)))
+          * (1 + (b[prima.i + 15] | (b[prima.i + 16] << 8) | (b[prima.i + 17] << 16)))
+        : Infinity;
+    const out: Uint8Array[] = [];
+    let alfaPresa = false;
+    let immagine = false;
+    for (let k = 0; k < (semplice ? 1 : parti.length); k++) {
+        const { type, i, len, end } = parti[k];
+        if (!WEBP_KEEP.has(type)) continue;
+        if (type === 'ALPH') {
+            const dopo = parti.slice(k + 1).find(x => x.type === 'VP8 ' || x.type === 'VP8L');
+            if ((flag & 0x10) === 0 || animata || alfaPresa || immagine || dopo?.type !== 'VP8 ') continue;
+            alfaPresa = true;
+            // ITALIANO: compressione 0 = alfa non compressa: chi disegna legge 1 + larghezza x altezza byte.
+            // ENGLISH: compression 0 = uncompressed alpha: the decoder reads 1 + width x height bytes.
+            const n = len >= 1 && (b[i + 8] & 0x03) === 0 ? Math.min(len, 1 + pixelAlfa) : len;
+            out.push(n < len ? webpParte(b, i, n) : b.slice(i, Math.min(end, riffEnd)));
+            continue;
+        }
+        if ((type === 'ANIM' || type === 'ANMF') && !animata) continue;
+        if (type === 'ICCP' && (flag & 0x20) === 0) continue;
+        if (type === 'VP8 ' || type === 'VP8L') immagine = true;
+        if (type === 'ANIM' && len > 6) { out.push(webpParte(b, i, 6)); continue; }
+        const chunk = type === 'VP8X' && len > 10 ? b.slice(i, i + 18) : b.slice(i, Math.min(end, riffEnd));
+        if (type === 'VP8X' && len > 10) { chunk[4] = 10; chunk[5] = 0; chunk[6] = 0; chunk[7] = 0; }
+        if (type === 'VP8X' && len >= 1) chunk[8] &= ~(0x08 | 0x04);
+        out.push(chunk);
     }
     const body = concat(out);
     const head = new Uint8Array(12);

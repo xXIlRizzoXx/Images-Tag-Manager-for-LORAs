@@ -1,7 +1,20 @@
 # Stato di sviluppo — Images Tag Manager for LORAs
 
-**Ultimo aggiornamento:** 17 novembre 2026
-**Versione attuale:** 2.0.3, pubblicata il 17 novembre 2026 (Latest, con installer, portable .exe e portable .zip), dopo il debug del 14 novembre e le prove dal vivo del 17 novembre sulla versione installata. Prima c'era la 2.0.2 (26 ottobre 2026). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+**Ultimo aggiornamento:** 19 novembre 2026
+**Versione attuale:** 2.0.3, pubblicata il 17 novembre 2026 (Latest, con installer, portable .exe e portable .zip), dopo il debug del 14 novembre e le prove dal vivo del 17 novembre sulla versione installata. Le correzioni del 19 novembre (traguardo 121) sono nel codice ma non ancora in una versione pubblicata. Prima c'era la 2.0.2 (26 ottobre 2026). Prima c'era la 2.0.1 (21 ottobre 2026). Prima di quella pubblicazione la storia del repository e' stata riscritta per togliere un indirizzo e-mail personale da 35 commit vecchi: tutti gli hash da febbraio in poi sono cambiati.
+Novità dopo la 2.0.3 (traguardo 121, 19 novembre 2026): **terzo giro di debug, non ancora pubblicato.**
+Una nuova ricerca dei problemi in tutto il programma ha trovato 17 difetti, tutti confermati da tre
+controllori e corretti con la loro prova; poi una passata sui 7 difetti che il revisore ha trovato nelle
+correzioni stesse. 24 correzioni in 7 commit. La più importante: quando un'AI esterna (MCP) mandava
+più comandi di fila sulle stesse foto, una modifica su due andava persa mentre all'AI veniva risposto
+«changed». Fra le altre: il recupero dopo un crash funziona anche con gli stessi nomi di file in
+sottocartelle diverse e con una sottocartella aperta prima della cartella madre, e il riepilogo non
+annuncia più foto di quelle che recupera; un'esportazione fallita non lascia più un dataset.zip vuoto al
+posto di quello buono; aggiornando con l'installer il collegamento sul desktop resta (anche cambiando
+cartella e venendo dalla 2.0.2); Backspace tenuto premuto non cancella più i tag; Ctrl+Z funziona subito
+dopo Invio; niente più triangolo giallo sulle misure SDXL (896x1152, 832x1216...); le foto JPEG, PNG e
+WebP mandate a Google sono ripulite meglio (pixel intatti). 322 file di prove automatiche verdi. Restano
+5 difetti minori annotati, nessun bloccante o grave; da fare a mano le prove dal vivo con una build nuova.
 Novità 2.0.3 (traguardo 120, 14 novembre 2026): **debug completo prima della pubblicazione.**
 Due giri di ricerca dei problemi in tutto il programma, ogni segnalazione verificata da tre controllori,
 ogni correzione con la sua prova automatica e poi fatta rivedere; poi due passate sui difetti trovati

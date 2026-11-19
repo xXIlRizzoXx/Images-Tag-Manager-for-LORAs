@@ -109,6 +109,12 @@ try {
     const manifest = JSON.parse(await zip.file('manifest.json').async('string'));
     dice('manifest: campi obbligatori della specifica', [true, true, true, true, true, true],
         ['manifest_version', 'name', 'version', 'description', 'author', 'server'].map((k) => k === 'author' ? !!manifest.author?.name : !!manifest[k]));
+    // ITALIANO: la versione dello schema la controlla una volta a mano «mcpb validate» (le prove non lo
+    //           possono lanciare): qui si tiene ferma, altrimenti un valore cambiato passerebbe inosservato.
+    // ENGLISH: the schema version is checked once by hand with "mcpb validate" (tests cannot run it): it is
+    //          pinned here, otherwise a changed value would go unnoticed.
+    dice('manifest: versione dello schema 0.3', '0.3', manifest.manifest_version);
+    dice('manifest: strumenti dati dal server e piattaforme', [true, ['win32', 'darwin', 'linux']], [manifest.tools_generated, manifest.compatibility?.platforms]);
     dice('manifest: versione del programma', '2.0.3', manifest.version);
     dice('manifest: server node con il ponte come punto di partenza', ['node', 'server/index.js', 'node', ['${__dirname}/server/index.js']],
         [manifest.server.type, manifest.server.entry_point, manifest.server.mcp_config.command, manifest.server.mcp_config.args]);

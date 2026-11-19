@@ -47,7 +47,7 @@ const NOMI = ['importSummary', 'window', 'fotoGiaAperte', 'fileGiaAperti', 'imag
     'progettoGenRef', 'importInCorsoRef', 'nuovoIdFoto', 'makeFolderKeyer', 'BACKUP_KEY_SEP',
     'globalTriggersRef', 'setImages', 'setDirHandle', 'setIsImporting', 'setImportProgress', 'folderSignature', 'backupDellImport', 'localStorage',
     'TXT_MAX_BYTES', 'parseSidecarText', 'generateThumbnail', 'tagDiImport', 'tagDaRipristinare', 'anteprimeProgettoRef', 'soundManager',
-    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport'];
+    'avvisoImport', 'console', 'URL', 'leggiTestoSidecar', 'importAttiviRef', 'ripristinoInCorsoRef', 'isUndoRedoAction', 'setHistory', 'recuperoDellImport', 'ripresiSuFotoAperta'];
 const fabbrica = new Function(...NOMI, codice + '\nreturn { confermaImport, processImportData, makeBackupKeyer };');
 
 /* ITALIANO: l'app finta, con le foto `iniziali` gia' aperte. `percorsi` = Electron con i percorsi
@@ -78,7 +78,7 @@ export const creaApp = ({ iniziali = [], percorsi = true, backup = null } = {}) 
         B.folderSignature, B.backupDellImport, { getItem: (k) => (k === 'tagBackup' ? backup : null) }, 1024 * 1024, S.parseSidecarText,
         async () => ({ url: '', width: 1, height: 1 }), S.tagDiImport, B.tagDaRipristinare,
         { current: new Set() }, { chime() { } }, N.avvisoImport, { log() { }, warn() { }, error() { } }, { revokeObjectURL() { } }, S.leggiTestoSidecar,
-        refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction, (f) => { app.cambiStoria.push(f); }, B.recuperoDellImport);
+        refs.importAttiviRef, refs.ripristinoInCorsoRef, refs.isUndoRedoAction, (f) => { app.cambiStoria.push(f); }, B.recuperoDellImport, B.ripresiSuFotoAperta);
     app.refs = refs;
     // ITALIANO: "Importa" del riepilogo, fino alla fine dell'import che fa partire (se ne fa partire uno).
     // ENGLISH: the summary's "Import", until the end of the import it starts (when it starts one).

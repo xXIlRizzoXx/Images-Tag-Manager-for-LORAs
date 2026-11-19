@@ -56,6 +56,27 @@ if (existsSync(statoPath)) {
   check(targets.length === 3 ? /tre file finali/.test(stato) : true, `STATO: i file finali sono ${targets.length} (${targets.join(', ')})`);
 }
 
+// ITALIANO: il modulo delle segnalazioni di bug su GitHub: alla domanda «Which build?» c'e' una scelta per
+//           ogni file pubblicato (installer, portable .exe, portable .zip), piu' «Not sure». Con solo
+//           «Installer / Portable» chi usava lo .zip non aveva una scelta giusta.
+// ENGLISH: the GitHub bug report form: the "Which build?" question has one choice per published file
+//          (installer, portable .exe, portable .zip), plus "Not sure". With only "Installer / Portable"
+//          whoever used the .zip had no right choice.
+const bugPath = join(root, '.github', 'ISSUE_TEMPLATE', 'bug.yml');
+check(existsSync(bugPath), '.github/ISSUE_TEMPLATE/bug.yml mancante');
+if (existsSync(bugPath)) {
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const targets = (pkg.build?.win?.target ?? []).map((t) => (typeof t === 'string' ? t : t.target));
+  const bug = readFileSync(bugPath, 'utf8');
+  const blocco = /^\s*id: build\s*$([\s\S]*?)^\s*validations:/m.exec(bug);
+  const scelte = blocco ? [...blocco[1].matchAll(/^\s*- (.+?)\s*$/gm)].map((m) => m[1]) : [];
+  const file = scelte.filter((s) => s !== 'Not sure');
+  check(blocco !== null, 'bug.yml: manca il menu "id: build"');
+  check(file.length === targets.length, `bug.yml: "Which build?" ha ${file.length} scelte (${file.join(', ')}) per ${targets.length} file pubblicati (${targets.join(', ')})`);
+  check(file.some((s) => /\.zip/.test(s)) === targets.includes('zip'), 'bug.yml: "Which build?" non ha una scelta per lo .zip');
+  check(scelte[scelte.length - 1] === 'Not sure', 'bug.yml: "Not sure" deve restare l\'ultima scelta');
+}
+
 if (problems) {
   console.log(`PROBLEMI: ${problems} (${checks} controlli)`);
   process.exit(1);

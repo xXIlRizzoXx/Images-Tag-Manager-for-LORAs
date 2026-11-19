@@ -50,9 +50,12 @@ const P = await (async () => {
 })();
 
 // ITALIANO: una cartella sul "disco" che si rilegge: getFileHandle senza create da' NotFoundError per
-//           cio' che manca, getFile da' il contenuto di adesso.
+//           cio' che manca, getFile da' il contenuto di adesso (testo o byte). Una funzione al posto
+//           del contenuto e' un file che c'e' ma non si legge: getFile chiama lei (che lancia).
 // ENGLISH: a folder on the "disk" that can be read back: getFileHandle without create gives
-//          NotFoundError for what is missing, getFile gives the current content.
+//          NotFoundError for what is missing, getFile gives the current content (text or bytes). A
+//          function instead of the content is a file that is there but cannot be read: getFile calls
+//          it (and it throws).
 const cartella = (voci) => {
     const disco = new Map(Object.entries(voci));
     const nonCe = () => new DOMException('not found', 'NotFoundError');
@@ -61,7 +64,11 @@ const cartella = (voci) => {
         getFileHandle: async (nome, o) => {
             if (!disco.has(nome) && !(o && o.create)) throw nonCe();
             return {
-                getFile: async () => { if (!disco.has(nome)) throw nonCe(); return new File([disco.get(nome)], nome, { type: 'text/plain' }); },
+                getFile: async () => {
+                    if (!disco.has(nome)) throw nonCe();
+                    const v = disco.get(nome);
+                    return typeof v === 'function' ? v() : new File([v], nome, { type: 'text/plain' });
+                },
                 createWritable: async () => { let s = ''; return { write: async (x) => { s += x; }, close: async () => { disco.set(nome, s); } }; },
             };
         },
@@ -150,6 +157,36 @@ console.log('\n--- due .txt cambiati: una domanda sola, al plurale ---');
     const corpo = ui.slice(ui.indexOf('export const CustomConfirmDialog'), ui.indexOf('export const SaveBeforeCloseDialog'));
     const m = /sopra \? \{ zIndex: (\d+) \}/.exec(corpo);
     dice('CustomConfirmDialog con `sopra` ha uno z-index sopra 500', true, !!m && Number(m[1]) > 500);
+}
+
+// ITALIANO: un .txt che al momento di Salva c'e' ma non si legge conta come cambiato: un altro programma
+//           lo tiene bloccato, lo ha riscritto in ANSI con lettere accentate o lo ha fatto diventare piu'
+//           grande di 1 MB. I tag sul disco non si possono confrontare, quindi si chiede. Il file oltre
+//           1 MB contiene apposta gli stessi tag che il programma ricorda: se il controllo della
+//           dimensione mancasse, il testo si leggerebbe uguale e non si chiederebbe niente.
+// ENGLISH: a .txt that is there at Save time but cannot be read counts as changed: another program
+//          keeps it locked, rewrote it in ANSI with accented letters or made it bigger than 1 MB. The
+//          tags on disk cannot be compared, so the question comes. The file over 1 MB holds on purpose
+//          the same tags the program remembers: without the size check the text would read the same and
+//          nothing would be asked.
+const TXT_MAX_BYTES = 1024 * 1024;
+const bloccato = () => { throw new DOMException('locked', 'NotReadableError'); };
+const illeggibili = [
+    ['bloccato da un altro programma (NotReadableError)', bloccato],
+    ['riscritto in ANSI ("cat" e una e accentata, non UTF-8)', new Uint8Array([0x63, 0x61, 0x74, 0xE8, 0x2C])],
+    ['piu\' grande di 1 MB, con gli stessi tag', 'cat,' + ' '.repeat(TXT_MAX_BYTES)],
+];
+for (const [come, contenuto] of illeggibili) {
+    console.log(`\n--- "Salva Modifiche": a.txt ${come} ---`);
+    const c = cartella({ 'a.png': 'x', 'a.txt': 'cat,', 'b.png': 'x', 'b.txt': 'dog,' });
+    const app = creaApp([foto('a', ['cat'], c), foto('b', ['dog'], c)], { trigger: ['ohwx'] });
+    app.importa(); await app.attendi();
+    c.disco.set('a.txt', contenuto);
+    conTrigger(app); await app.attendi();
+    const r = await salva(app, 'annulla');
+    dice('si chiede e la domanda nomina a.png', [true, true], [!!r.domanda, !!(r.domanda && String(r.domanda.message).includes('a.png'))]);
+    dice('...con Annulla a.txt resta com\'era, b.txt si scrive, a.png resta da salvare e Salva torna false',
+        [true, 'ohwx, dog,', ['cat'], false], [c.disco.get('a.txt') === contenuto, c.disco.get('b.txt'), app.fotoCon('a').originalTags, r.ok]);
 }
 
 console.log('\n--- quello che NON deve cambiare ---');
@@ -265,6 +302,22 @@ console.log('\n--- foto senza cartella ("Carica immagini"): i canali veri del pr
             conTrigger(app); await app.attendi();
             const r = await salva(app);
             dice('nessun cambio da fuori: nessuna domanda, c.txt scritto', [false, true, 'ohwx, cat,'], [!!r.domanda, r.ok, txt('c')]);
+        }
+        // ITALIANO: .txt che c'e' ma non si legge (il canale lo torna { skipped: true }): conta come cambiato.
+        //           Quello oltre 1 MB ha gli stessi tag che il programma ricorda (vedi sopra).
+        // ENGLISH: a .txt that is there but cannot be read (the channel returns it { skipped: true }):
+        //          counts as changed. The one over 1 MB holds the tags the program remembers (see above).
+        for (const [come, nome, byte] of [
+            ['riscritto in ANSI (non UTF-8)', 'd', Buffer.from([0x63, 0x61, 0x74, 0xE8, 0x2C])],
+            ['piu\' grande di 1 MB, con gli stessi tag', 'e', Buffer.from('cat,' + ' '.repeat(TXT_MAX_BYTES))],
+        ]) {
+            const app = creaApp([prepara(nome, 'cat,')], { trigger: ['ohwx'], finestra });
+            app.importa(); await app.attendi();
+            fs.writeFileSync(path.join(dir, nome + '.txt'), byte);
+            conTrigger(app); await app.attendi();
+            const r = await salva(app, 'annulla');
+            dice(`${nome}.txt ${come}: si chiede, e con Annulla resta com'era e Salva torna false`, [true, true, false],
+                [!!r.domanda, fs.readFileSync(path.join(dir, nome + '.txt')).equals(byte), r.ok]);
         }
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });

@@ -12,9 +12,13 @@
 *******************************************************************************
 *******************************************************************************/
 
-// ITALIANO: sotto questi pixel (1 megapixel, 1024x1024) la foto e' piccola per il training.
-// ENGLISH: below these pixels (1 megapixel, 1024x1024) the photo is small for training.
-const MIN_TRAINING_PIXELS = 1048576;
+// ITALIANO: sotto questi pixel (1 megapixel = 1.000.000 di pixel, come i megapixel mostrati) la foto
+//   e' piccola per il training. Prima la soglia era 1024x1024 (1.048.576): le misure dei bucket SDXL
+//   come 896x1152 (1,03 MP) ricevevano l'avviso «almeno 1 megapixel».
+// ENGLISH: below these pixels (1 megapixel = 1,000,000 pixels, like the megapixels shown) the photo
+//   is small for training. The threshold used to be 1024x1024 (1,048,576): SDXL bucket sizes such as
+//   896x1152 (1.03 MP) got the "at least 1 megapixel" warning.
+const MIN_TRAINING_PIXELS = 1000000;
 
 // ITALIANO: 'unreadable' = il programma non ha potuto leggere la foto (larghezza o altezza 0: TIFF,
 //   HEIC o un file rovinato, che Chromium non sa mostrare); 'low' = sotto 1 megapixel; 'ok' = niente
@@ -42,7 +46,9 @@ export const qualityWarningText = (t: any, width: number, height: number, lang?:
     if (stato === 'unreadable') return t.imageUnreadable;
     if (stato === 'low') {
         const punto = !lang || lang === 'en' || lang === 'zh' || lang === 'ja';
-        const mp = (width * height / 1000000).toFixed(2).replace('.', punto ? '.' : ',');
+        // ITALIANO: arrotondato per difetto, cosi' una foto sotto la soglia non mostra mai «1,00 MP».
+        // ENGLISH: rounded down, so a photo below the threshold never shows "1.00 MP".
+        const mp = (Math.floor(width * height / 10000) / 100).toFixed(2).replace('.', punto ? '.' : ',');
         const misura = String(t.imageQualityLabel).replace('{w}', String(width)).replace('{h}', String(height)).replace('{mp}', mp);
         return `${t.minQualityWarning}\n${misura}`;
     }

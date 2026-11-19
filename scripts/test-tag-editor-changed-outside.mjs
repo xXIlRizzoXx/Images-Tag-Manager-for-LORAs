@@ -203,6 +203,25 @@ console.log('\n--- quello che NON deve cambiare ---');
     const a = await salva(r, false);
     dice('file oltre 1 MB scritto da fuori: conta come cambiato (si chiede)', [true, false], [a.chiesto, a.ok]);
 }
+// ITALIANO: un file che c'e' ma non si legge (bloccato da un altro programma, riscritto in ANSI) conta
+//           come cambiato: si chiede e, con Annulla, resta com'e'.
+// ENGLISH: a file that is there but cannot be read (locked by another program, rewritten in ANSI)
+//          counts as changed: the question comes and, with Cancel, it stays as it is.
+{
+    const f = fileSulDisco('a.txt', 'cat,');
+    const r = editor(f, ['cat'], ['cat', 'smile']);
+    f.getFile = async () => { throw new DOMException('locked', 'NotReadableError'); };
+    const a = await salva(r, false);
+    dice('file bloccato da un altro programma (NotReadableError): si chiede, resta com\'e\'', [true, false, []], [a.chiesto, a.ok, f.scritture]);
+}
+{
+    const f = fileSulDisco('a.txt', 'cat,');
+    const r = editor(f, ['cat'], ['cat', 'smile']);
+    const ansi = new Uint8Array([0x63, 0x61, 0x74, 0xE8, 0x2C]);
+    f.testo = ansi;
+    const a = await salva(r, false);
+    dice('file riscritto in ANSI (non UTF-8): si chiede, resta com\'e\'', [true, false, true, []], [a.chiesto, a.ok, f.testo === ansi, f.scritture]);
+}
 
 console.log('\n--- file .json ---');
 {
